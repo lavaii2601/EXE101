@@ -270,9 +270,9 @@ select:focus {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 16px;
-    margin-bottom: 16px;
-    padding: 18px 20px;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 14px 16px; /* tighter header */
 }
 
 .section-header h2 {
@@ -284,7 +284,7 @@ select:focus {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin: 0 0 12px;
+    margin: 0 0 8px;
 }
 
 .tab-btn {
@@ -302,7 +302,7 @@ select:focus {
 }
 
 .tab-content {
-    padding: 14px 16px; /* tighter padding for compact layout */
+    padding: 12px 14px; /* slightly tighter */
 }
 
 .emails-list,
@@ -310,7 +310,7 @@ select:focus {
 .calendar-events-list,
 .history-list {
     display: grid;
-    gap: 12px;
+    gap: 8px; /* tighter spacing between items */
 }
 
 /* Center list items and constrain width so they don't span entire page */
@@ -325,17 +325,41 @@ select:focus {
 
 /* Chat specific: ensure chat messages area has internal padding and centered content */
 .chat-messages {
-    padding: 24px 18px;
+    padding: 16px 14px;
 }
 
 .email-item,
 .schedule-item,
 .calendar-event,
 .history-item {
-    padding: 14px;
+    padding: 10px 12px; /* compact padding */
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--panel-soft);
+    font-size: 14px;
+}
+
+.email-item .email-item-header,
+.schedule-item .schedule-item-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.email-item .email-item-subject {
+    font-weight: 700;
+}
+
+.email-item .email-item-sender,
+.email-item .email-item-snippet {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.email-item .email-item-actions button,
+.schedule-item .schedule-item-actions button {
+    padding: 6px 10px;
+    font-size: 13px;
 }
 
 .form-group {
