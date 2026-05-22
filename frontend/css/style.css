@@ -173,7 +173,7 @@ button {
 /* Make chat container a fixed-size panel so page height doesn't expand.
    Messages scroll inside this panel. Adjust `height` to taste. */
 .chat-container.fixed-height {
-    height: 640px;
+    height: 720px;
     max-height: calc(100vh - 160px);
 }
 .chat-messages {
