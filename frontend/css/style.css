@@ -140,6 +140,13 @@ button {
     display: block;
 }
 
+/* Keep page content centered and constrained so tabs don't shift */
+.page {
+    width: 100%;
+    max-width: 1100px; /* prevent extreme stretching */
+    margin: 0 auto;
+}
+
 .chat-container,
 .section-header,
 .tab-content,
@@ -172,7 +179,7 @@ button {
 }
 
 .message-content {
-    max-width: min(720px, 82%);
+    max-width: 680px; /* fixed comfortable width for bubbles */
     padding: 12px 14px;
     border-radius: 8px;
     background: var(--panel-soft);
