@@ -287,6 +287,15 @@ select:focus {
     margin: 0 0 8px;
 }
 
+/* Sticky tabs inside page when scrolling content */
+.page.active .tabs {
+    position: sticky;
+    top: 12px;
+    z-index: 30;
+    background: transparent;
+    padding-top: 6px;
+}
+
 .tab-btn {
     padding: 8px 12px; /* slightly smaller to avoid pushing content */
     border-radius: 8px;
@@ -313,14 +322,52 @@ select:focus {
     gap: 8px; /* tighter spacing between items */
 }
 
+/* Make list containers center their items so cards appear balanced */
+.emails-list {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Two-column layout for emails: list + preview on wide screens */
+.email-grid {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 16px;
+    align-items: start;
+}
+
+.email-preview {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    min-height: 280px;
+    max-height: calc(100vh - 260px);
+    overflow: auto;
+}
+
+.email-preview-empty {
+    color: var(--text-secondary);
+    padding: 18px;
+}
+
+/* Limit inbox list height and allow internal paging/scrolling */
+#inbox-tab .emails-list {
+    max-height: calc(100vh - 320px);
+    overflow: auto;
+    padding: 8px;
+}
+
 /* Center list items and constrain width so they don't span entire page */
 .emails-list .email-item,
 .schedules-list .schedule-item,
 .calendar-events-list .calendar-event,
 .history-list .history-item {
+    width: 100%;
     max-width: 920px;
-    margin-left: auto;
-    margin-right: auto;
+    box-sizing: border-box;
 }
 
 /* Chat specific: ensure chat messages area has internal padding and centered content */
@@ -516,6 +563,10 @@ select:focus {
     padding: 12px 18px; /* slightly smaller padding so content has breathing room */
 }
 
+@media (max-width: 1024px) {
+    .email-grid { grid-template-columns: 1fr; }
+    .email-preview { order: 2; }
+}
 /* Larger screens: improve readability */
 @media (min-width: 1400px) {
     .container {

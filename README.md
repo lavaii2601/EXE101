@@ -69,7 +69,3 @@ Muốn mình làm tiếp gì?
 - Tạo `DEPLOY.md` với các bước deploy production
 - Hoặc mình có thể chuyển background jobs sang Redis+RQ (cần setup Redis)
 
-UI / Thiết kế đồ họa
-- Thư mục `ui/` chứa bản sao front-end dành cho Designer (HTML/CSS/JS). Nếu nhóm Thiết kế muốn chỉnh giao diện hoặc template, họ có thể làm việc trực tiếp trong `ui/` mà không ảnh hưởng tới mã backend.
-
-

@@ -52,9 +52,6 @@ python backend/app.py
 
 Mở trình duyệt: http://127.0.0.1:5000
 
-UI / Thiết kế
-- Designer có thể làm việc trên thư mục `ui/` để chỉnh HTML/CSS/JS giao diện. Thư mục `frontend/` vẫn là nguồn chạy hiện tại; khi giao diện đã ổn, designer có thể gửi pull request để cập nhật runtime frontend.
-
 5) Kiểm tra server
 
 ```powershell
