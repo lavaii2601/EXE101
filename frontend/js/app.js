@@ -33,6 +33,7 @@ async function initApp() {
     console.log('🚀 Initializing app...');
     // Normalize page visibility on startup to avoid stale CSS/inline styles
     normalizePages();
+    ensureFixedChatHeight();
     setupEventListeners();
     await loadUserProfile();
     await loadChatHistory();
@@ -60,6 +61,14 @@ function normalizePages() {
             p.style.display = 'none';
         }
     });
+}
+
+// Ensure chat container uses fixed-height variant so page doesn't grow.
+function ensureFixedChatHeight() {
+    const chatContainer = document.querySelector('.chat-container');
+    if (chatContainer) {
+        chatContainer.classList.add('fixed-height');
+    }
 }
 
 async function apiFetch(url, options = {}) {

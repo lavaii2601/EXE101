@@ -169,6 +169,13 @@ button {
     flex: 1 1 auto;
     min-height: 0; /* allow internal scrolling */
 }
+
+/* Make chat container a fixed-size panel so page height doesn't expand.
+   Messages scroll inside this panel. Adjust `height` to taste. */
+.chat-container.fixed-height {
+    height: 640px;
+    max-height: calc(100vh - 160px);
+}
 .chat-messages {
     padding: 20px;
     overflow-y: auto;
