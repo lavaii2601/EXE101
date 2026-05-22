@@ -140,11 +140,11 @@ button {
     display: block;
 }
 
-/* Keep page content centered and constrained so tabs don't shift */
+/* Pages should use full width of the main content column; avoid forcing a global max-width here */
 .page {
-    width: 100%;
-    max-width: 1100px; /* prevent extreme stretching */
-    margin: 0 auto;
+    width: auto;
+    max-width: none;
+    margin: 0;
 }
 
 .chat-container,
