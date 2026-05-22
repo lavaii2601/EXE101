@@ -130,6 +130,9 @@ button {
 .main-content {
     min-width: 0;
     padding: 28px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* allow child flex items to control scrolling */
 }
 
 .page {
@@ -137,7 +140,10 @@ button {
 }
 
 .page.active {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0; /* important so children overflow works */
 }
 
 /* Pages should use full width of the main content column; avoid forcing a global max-width here */
@@ -158,15 +164,16 @@ button {
 }
 
 .chat-container {
-    display: grid;
-    grid-template-rows: minmax(360px, 1fr) auto auto;
-    min-height: calc(100vh - 56px);
-    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0; /* allow internal scrolling */
 }
-
 .chat-messages {
     padding: 20px;
     overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 .message {
@@ -200,6 +207,7 @@ button {
     padding: 16px;
     border-top: 1px solid var(--border);
     background: var(--panel);
+    flex: 0 0 auto;
 }
 
 textarea,
