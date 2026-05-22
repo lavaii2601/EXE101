@@ -461,22 +461,23 @@ select:focus {
     }
 }
 
-/* Ensure pages with tabs keep the tabs fixed and let tab-content fill/scroll */
-#emails-page,
-#schedule-page {
+/* Ensure pages with tabs keep the tabs fixed and let tab-content fill/scroll
+   Only apply the flex layout when the page is active to avoid multiple pages showing */
+#emails-page.page.active,
+#schedule-page.page.active {
     display: flex;
     flex-direction: column;
     gap: 12px;
     min-height: 0; /* allow child flex items to shrink properly */
 }
 
-#emails-page .tabs,
-#schedule-page .tabs {
+#emails-page.page.active .tabs,
+#schedule-page.page.active .tabs {
     flex: 0 0 auto;
 }
 
-#emails-page .tab-content,
-#schedule-page .tab-content {
+#emails-page.page.active .tab-content,
+#schedule-page.page.active .tab-content {
     flex: 1 1 auto;
     min-height: 0; /* important for overflow to work inside flex */
     overflow: auto;
