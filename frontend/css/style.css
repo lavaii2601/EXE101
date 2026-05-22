@@ -129,7 +129,7 @@ button {
 
 .main-content {
     min-width: 0;
-    padding: 28px;
+    padding: 18px; /* reduced padding to reclaim vertical space */
     display: flex;
     flex-direction: column;
     min-height: 0; /* allow child flex items to control scrolling */
@@ -173,11 +173,12 @@ button {
 /* Make chat container a fixed-size panel so page height doesn't expand.
    Messages scroll inside this panel. Adjust `height` to taste. */
 .chat-container.fixed-height {
-    height: 720px;
-    max-height: calc(100vh - 160px);
+    /* responsive fixed: use the smaller of 720px or available viewport space */
+    height: min(720px, calc(100vh - 140px));
+    max-height: calc(100vh - 120px);
 }
 .chat-messages {
-    padding: 20px;
+    padding: 16px; /* slightly smaller padding */
     overflow-y: auto;
     flex: 1 1 auto;
     min-height: 0;
@@ -211,7 +212,7 @@ button {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
-    padding: 16px;
+    padding: 12px; /* tighter input area */
     border-top: 1px solid var(--border);
     background: var(--panel);
     flex: 0 0 auto;
