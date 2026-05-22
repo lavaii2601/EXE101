@@ -430,6 +430,28 @@ select:focus {
     }
 }
 
+/* Ensure pages with tabs keep the tabs fixed and let tab-content fill/scroll */
+#emails-page,
+#schedule-page {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0; /* allow child flex items to shrink properly */
+}
+
+#emails-page .tabs,
+#schedule-page .tabs {
+    flex: 0 0 auto;
+}
+
+#emails-page .tab-content,
+#schedule-page .tab-content {
+    flex: 1 1 auto;
+    min-height: 0; /* important for overflow to work inside flex */
+    overflow: auto;
+    padding: 12px 18px; /* slightly smaller padding so content has breathing room */
+}
+
 /* Larger screens: improve readability */
 @media (min-width: 1400px) {
     .container {
