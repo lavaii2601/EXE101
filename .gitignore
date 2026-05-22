@@ -1,0 +1,8 @@
+__pycache__/
+.env
+data/
+.venv/
+*.pyc
+*.sqlite3
+*.db
+*.pickle
