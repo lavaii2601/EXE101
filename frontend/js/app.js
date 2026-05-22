@@ -437,7 +437,7 @@ function handlePageChange(btn) {
     if (!targetPage) targetPage = document.querySelector(`[data-page="${page}"]`);
     
     if (targetPage) {
-        targetPage.style.display = 'block';
+        targetPage.style.display = 'flex';
         targetPage.classList.add('active');
         console.log(`✅ Page ${page} displayed`);
     } else {
