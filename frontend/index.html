@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TeacherBot - Trợ lý giáo viên AI</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>TeacherBot</h1>
+                <p class="subtitle">Trợ lý AI cho giáo viên</p>
+                <div class="user-profile-section">
+                    <img id="userAvatar" class="user-avatar" alt="User Avatar" title="Đăng nhập Gmail">
+                    <div class="user-info">
+                        <div id="userName" class="user-name">Teacher</div>
+                        <div id="gmailStatus" class="gmail-status">Chưa kết nối Gmail</div>
+                    </div>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <button class="nav-btn active" data-page="chat">
+                    <span class="icon">💬</span> Chat
+                </button>
+                <button class="nav-btn" data-page="emails">
+                    <span class="icon">📧</span> Email
+                </button>
+                <button class="nav-btn" data-page="schedule">
+                    <span class="icon">📅</span> Lịch
+                </button>
+                <button class="nav-btn" data-page="history">
+                    <span class="icon">📜</span> Lịch sử
+                </button>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <button class="btn-secondary" id="clearBtn">Xóa lịch sử</button>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Chat Page -->
+            <section id="chat-page" class="page active">
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages"></div>
+                    <div class="chat-input-area">
+                        <textarea id="userInput" placeholder="Nhập tin nhắn của bạn..." rows="3"></textarea>
+                        <button id="sendBtn" class="btn-primary">Gửi</button>
+                    </div>
+                    <div id="providerStatus" class="provider-status-bar" style="padding: 8px 16px; background: #f5f5f5; border-top: 1px solid #ddd; font-size: 12px; color: #666;"></div>
+                </div>
+            </section>
+            
+            <!-- Email Page -->
+            <section id="emails-page" class="page">
+                <div class="section-header">
+                    <h2>Quản lý Email</h2>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <span id="gmailAccountBadge" class="gmail-account-badge">Chưa đăng nhập Gmail</span>
+                        <div id="gmailProfileCard" class="gmail-profile-card" style="display:none;">
+                            <img id="gmailAvatar" class="gmail-avatar" alt="avatar" src="">
+                            <div class="gmail-profile-info">
+                                <div id="gmailName" class="gmail-name">Google User</div>
+                                <div id="gmailEmail" class="gmail-email">example@gmail.com</div>
+                            </div>
+                        </div>
+                        <select id="emailFilterSelect" class="filter-select">
+                            <option value="all" selected>Tất cả</option>
+                            <option value="education">Giáo dục</option>
+                            <option value="work">Công việc</option>
+                            <option value="meeting">Họp</option>
+                            <option value="promotion">Khuyến mãi</option>
+                            <option value="finance">Tài chính</option>
+                            <option value="personal">Cá nhân</option>
+                            <option value="other">Khác</option>
+                        </select>
+                        <label style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; background: #f5f5f5; border-radius: 4px; cursor: pointer;">
+                            <input type="checkbox" id="includeReadCheckbox" style="cursor: pointer;">
+                            <span style="font-size: 14px;">Hiện cả đã đọc</span>
+                        </label>
+                        <button id="refreshEmailsBtn" class="btn-secondary">Làm mới</button>
+                        <button id="openGmailBtn" class="btn-secondary">Mở Gmail</button>
+                        <button id="gmailLoginBtn" class="btn-primary">Đăng nhập / Đổi tài khoản</button>
+                        <button id="gmailLogoutBtn" class="btn-secondary">Đăng xuất Gmail</button>
+                    </div>
+                </div>
+                
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="inbox">Hộp thư đến</button>
+                    <button class="tab-btn" data-tab="daily-report">Báo cáo theo ngày</button>
+                    <button class="tab-btn" data-tab="compose">Soạn thảo</button>
+                </div>
+                
+                <div class="tab-content" id="inbox-tab">
+                    <div id="emailsList" class="emails-list"></div>
+                </div>
+                
+                <div class="tab-content" id="compose-tab" style="display: none;">
+                    <form id="composeForm" class="compose-form">
+                        <div class="form-group">
+                            <label>Người nhận</label>
+                            <input type="email" id="emailTo" placeholder="email@example.com" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Tiêu đề</label>
+                            <input type="text" id="emailSubject" placeholder="Tiêu đề email" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Nội dung</label>
+                            <textarea id="emailBody" placeholder="Nội dung email" rows="6" required></textarea>
+                        </div>
+                        <button type="submit" class="btn-primary">Gửi email</button>
+                    </form>
+                </div>
+
+                <div class="tab-content" id="daily-report-tab" style="display: none;">
+                    <div class="report-controls">
+                        <div class="form-group" style="max-width: 260px; margin-bottom: 0;">
+                            <label>Chọn ngày</label>
+                            <input type="date" id="reportDate">
+                        </div>
+                        <button id="generateReportBtn" class="btn-primary">Tạo báo cáo</button>
+                    </div>
+                    <div id="dailyReportContainer" class="report-table-container"></div>
+                </div>
+            </section>
+            
+            <!-- Schedule Page (merged with Google Calendar) -->
+            <section id="schedule-page" class="page">
+                <div class="section-header">
+                    <h2>Lịch</h2>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <span id="calendarStatus" class="calendar-status">Chưa kết nối Google Calendar</span>
+                        <button id="refreshCalendarBtn" class="btn-secondary">Làm mới</button>
+                        <button id="openCalendarBtn" class="btn-secondary">Mở Google Calendar</button>
+                        <button id="createEventBtn" class="btn-primary" data-tab-target="new-schedule">Tạo sự kiện</button>
+                    </div>
+                </div>
+
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="upcoming">Sắp tới</button>
+                    <button class="tab-btn" data-tab="new-schedule">Tạo lịch hẹn mới</button>
+                </div>
+
+                <div class="tab-content" id="upcoming-tab">
+                    <div id="schedulesList" class="schedules-list"></div>
+                    <div id="calendarEventsList" class="calendar-events-list" style="margin-top:16px;"></div>
+                </div>
+
+                <div class="tab-content" id="new-schedule-tab" style="display: none;">
+                    <form id="scheduleForm" class="schedule-form">
+                        <div class="form-group">
+                            <label>Tiêu đề</label>
+                            <input type="text" id="scheduleTitle" placeholder="Tiêu đề lịch hẹn" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Mô tả</label>
+                            <textarea id="scheduleDesc" placeholder="Mô tả chi tiết" rows="3"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Ngày giờ bắt đầu</label>
+                            <input type="datetime-local" id="scheduleStartTime" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Ngày giờ kết thúc</label>
+                            <input type="datetime-local" id="scheduleEndTime">
+                        </div>
+                        <div class="form-group">
+                            <label>Thời lượng (phút)</label>
+                            <input type="number" id="scheduleDuration" min="15" step="15" value="60" placeholder="Ví dụ: 60">
+                        </div>
+                        <div class="form-group">
+                            <label>Địa điểm</label>
+                            <input type="text" id="scheduleLocation" placeholder="Địa điểm">
+                        </div>
+                        <div class="form-group">
+                            <label>Người tham dự (email, cách nhau bằng dấu phẩy)</label>
+                            <input type="text" id="scheduleAttendees" placeholder="email1@example.com, email2@example.com">
+                        </div>
+                        <button type="submit" class="btn-primary">Tạo lịch hẹn</button>
+                    </form>
+                </div>
+            </section>
+            
+            <!-- (Google Calendar merged into Schedule page above) -->
+            
+            <!-- History Page -->
+            <section id="history-page" class="page">
+                <div class="section-header">
+                    <h2>Lịch sử hoạt động</h2>
+                </div>
+                <div id="historyList" class="history-list"></div>
+            </section>
+        </main>
+    </div>
+    
+    <!-- Modals -->
+    <div id="emailDetailModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div id="emailDetail"></div>
+            <div class="modal-actions">
+                <button id="summarizeBtn" class="btn-secondary">Tóm tắt</button>
+                <button id="replyBtn" class="btn-primary">Trả lời tự động</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Edit Schedule Modal -->
+    <div id="editScheduleModal" class="modal">
+        <div class="modal-content">
+            <span class="close" data-modal="editScheduleModal">&times;</span>
+            <h2>Chỉnh sửa lịch hẹn</h2>
+            <form id="editScheduleForm">
+                <div class="form-group">
+                    <label>Tiêu đề</label>
+                    <input type="text" id="editScheduleTitle" placeholder="Tiêu đề lịch hẹn" required>
+                </div>
+                <div class="form-group">
+                    <label>Mô tả</label>
+                    <textarea id="editScheduleDesc" placeholder="Mô tả chi tiết" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Ngày giờ</label>
+                    <input type="datetime-local" id="editScheduleTime" required>
+                </div>
+                <div class="form-group">
+                    <label>Thời lượng (phút)</label>
+                    <input type="number" id="editScheduleDuration" min="15" step="15" value="60" placeholder="Ví dụ: 60">
+                </div>
+                <div class="form-group">
+                    <label>Người tham dự (email, cách nhau bằng dấu phẩy)</label>
+                    <input type="text" id="editScheduleAttendees" placeholder="email1@example.com, email2@example.com">
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Lưu thay đổi</button>
+                    <button type="button" class="btn-secondary" onclick="document.getElementById('editScheduleModal').style.display='none'">Hủy</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script src="/js/app.js"></script>
+</body>
+</html>
