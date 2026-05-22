@@ -268,15 +268,16 @@ select:focus {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin: 0 0 16px;
+    margin: 0 0 12px;
 }
 
 .tab-btn {
-    padding: 10px 14px;
+    padding: 8px 12px; /* slightly smaller to avoid pushing content */
     border-radius: 8px;
     background: #e8eef8;
     color: #22314a;
     cursor: pointer;
+    font-size: 14px;
 }
 
 .tab-btn.active {
@@ -285,7 +286,7 @@ select:focus {
 }
 
 .tab-content {
-    padding: 18px;
+    padding: 14px 16px; /* tighter padding for compact layout */
 }
 
 .emails-list,
@@ -294,6 +295,21 @@ select:focus {
 .history-list {
     display: grid;
     gap: 12px;
+}
+
+/* Center list items and constrain width so they don't span entire page */
+.emails-list .email-item,
+.schedules-list .schedule-item,
+.calendar-events-list .calendar-event,
+.history-list .history-item {
+    max-width: 920px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Chat specific: ensure chat messages area has internal padding and centered content */
+.chat-messages {
+    padding: 24px 18px;
 }
 
 .email-item,
