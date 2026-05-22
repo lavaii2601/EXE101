@@ -31,6 +31,8 @@ document.addEventListener('DOMContentLoaded', initApp);
 
 async function initApp() {
     console.log('🚀 Initializing app...');
+    // Normalize page visibility on startup to avoid stale CSS/inline styles
+    normalizePages();
     setupEventListeners();
     await loadUserProfile();
     await loadChatHistory();
@@ -45,6 +47,19 @@ async function initApp() {
     }
     
     console.log('✅ App initialized');
+}
+
+// Ensure only the active page is visible. This fixes cases where multiple
+// `.page` elements become visible due to cached CSS or inline styles.
+function normalizePages() {
+    document.querySelectorAll('.page').forEach(p => {
+        if (p.classList.contains('active')) {
+            // make sure active page uses flex to match CSS
+            p.style.display = 'flex';
+        } else {
+            p.style.display = 'none';
+        }
+    });
 }
 
 async function apiFetch(url, options = {}) {
