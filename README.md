@@ -64,8 +64,3 @@ Google OAuth (tóm tắt nhanh)
 4. Tạo OAuth Client ID (Web app) — thêm `http://127.0.0.1:5000` vào Authorized origins và `http://127.0.0.1:5000/oauth2callback` vào redirect URI
 5. Lưu client ID/secret an toàn (không commit lên git)
 
-Muốn mình làm tiếp gì?
-- Thêm hướng dẫn chi tiết tạo OAuth trên Google (mình có thể viết bước-by-step có hình)
-- Tạo `DEPLOY.md` với các bước deploy production
-- Hoặc mình có thể chuyển background jobs sang Redis+RQ (cần setup Redis)
-
