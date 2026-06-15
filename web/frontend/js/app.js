@@ -208,7 +208,7 @@ function applyStaticLanguage() {
             if (replacement) element.placeholder = replacement;
         }
     });
-    document.title = ui('FlowMate AI - Trợ lý AI', 'FlowMate AI - AI Assistant');
+    document.title = ui('FlowMate - Không gian làm việc thông minh', 'FlowMate - Intelligent Workspace');
     const filterButton = document.getElementById('emailFilterBtn');
     if (filterButton) filterButton.title = ui('Lọc email', 'Filter email');
 }
@@ -665,6 +665,10 @@ async function initApp() {
     if (!userModeRequired) {
         showWorkspace();
         await loadChatHistory();
+        const activeNavButton = document.querySelector('.sidebar-nav .nav-btn.active');
+        if (activeNavButton) {
+            await handlePageChange(activeNavButton);
+        }
     }
     await refreshAuthButtons();
     checkRuntimeConfig();
@@ -822,28 +826,102 @@ function extractScheduleDraft(text) {
 }
 
 function setupWorkspaceShell() {
-    const createButton = document.getElementById('assistantCreateEventBtn');
-    const editButton = document.getElementById('assistantEditEventBtn');
-    if (createButton) createButton.addEventListener('click', openNewScheduleModal);
-    if (editButton) editButton.addEventListener('click', openNewScheduleModal);
+    renderQuickActions(currentPage);
+}
 
-    const composer = document.getElementById('assistantComposer');
-    const assistantInput = document.getElementById('assistantInput');
-    if (composer && assistantInput) {
-        composer.addEventListener('submit', async (event) => {
-            event.preventDefault();
-            const message = assistantInput.value.trim();
-            if (!message) return;
-            const chatInput = document.getElementById('userInput');
-            if (chatInput) chatInput.value = message;
-            assistantInput.value = '';
-            const chatButton = document.querySelector('[data-page="chat"]');
-            if (chatButton) {
-                await handlePageChange(chatButton);
-                sendMessage();
-            }
-        });
+const QUICK_ACTIONS = {
+    chat: {
+        icon: 'AI',
+        title: 'Chat',
+        description: 'Trò chuyện với FlowMate cho yêu cầu cần phân tích hoặc xử lý nhiều bước.',
+        tip: 'Các thao tác ngắn đã được tách sang panel này để Chat tập trung vào hội thoại.',
+        actions: [
+            { icon: '✉', label: 'Mở hộp thư', detail: 'Xem và xử lý email', action: 'open-email' },
+            { icon: '▣', label: 'Mở lịch tuần', detail: 'Kiểm tra lịch và cuộc họp', action: 'open-calendar' }
+        ]
+    },
+    emails: {
+        icon: '✉',
+        title: 'Email',
+        description: 'Thao tác nhanh với hộp thư mà không cần mở hội thoại AI.',
+        tip: 'Chỉ dùng Chat khi cần phân tích nội dung nhiều email hoặc soạn phản hồi phức tạp.',
+        actions: [
+            { icon: '↻', label: 'Làm mới hộp thư', detail: 'Tải email mới nhất', action: 'refresh-email' },
+            { icon: '▤', label: 'Báo cáo theo ngày', detail: 'Mở công cụ tổng hợp email', action: 'daily-report' },
+            { icon: '+', label: 'Soạn email', detail: 'Tạo thư mới', action: 'compose-email' }
+        ]
+    },
+    schedule: {
+        icon: '▣',
+        title: 'Calendar',
+        description: 'Tạo và điều hướng lịch trực tiếp, không cần gửi lệnh qua Chat.',
+        tip: 'Dùng Chat khi lịch cần suy luận từ ngôn ngữ tự nhiên hoặc nhiều điều kiện.',
+        actions: [
+            { icon: '+', label: 'Tạo sự kiện', detail: 'Mở biểu mẫu lịch mới', action: 'create-event' },
+            { icon: '◎', label: 'Về tuần này', detail: 'Hiển thị tuần hiện tại', action: 'this-week' }
+        ]
+    },
+    history: {
+        icon: '↶',
+        title: 'Activity',
+        description: 'Theo dõi các thao tác FlowMate đã thực hiện cho tài khoản này.',
+        tip: 'Lịch sử giúp kiểm tra lại email, lịch và phản hồi AI đã xử lý.',
+        actions: [
+            { icon: '↻', label: 'Làm mới hoạt động', detail: 'Tải lại lịch sử mới nhất', action: 'refresh-history' }
+        ]
+    },
+    settings: {
+        icon: '⚙',
+        title: 'Settings',
+        description: 'Quản lý chế độ làm việc, tài khoản và tùy chọn hiển thị.',
+        tip: 'Mode được lưu theo tài khoản và áp dụng cho cách FlowMate ưu tiên công việc.',
+        actions: [
+            { icon: '◈', label: 'Đổi chế độ', detail: 'Chọn mode làm việc khác', action: 'change-mode' },
+            { icon: '↻', label: 'Đồng bộ trạng thái', detail: 'Làm mới thông tin tài khoản', action: 'refresh-settings' }
+        ]
     }
+};
+
+function renderQuickActions(page) {
+    const config = QUICK_ACTIONS[page] || QUICK_ACTIONS.chat;
+    const icon = document.getElementById('quickContextIcon');
+    const title = document.getElementById('quickContextTitle');
+    const description = document.getElementById('quickContextDescription');
+    const tip = document.getElementById('quickTipText');
+    const list = document.getElementById('quickActionsList');
+    if (!list) return;
+
+    if (icon) icon.textContent = config.icon;
+    if (title) title.textContent = config.title;
+    if (description) description.textContent = config.description;
+    if (tip) tip.textContent = config.tip;
+    list.innerHTML = config.actions.map((item) => `
+        <button type="button" class="quick-action-button" data-quick-action="${item.action}">
+            <span class="quick-action-icon">${item.icon}</span>
+            <span class="quick-action-copy">
+                <strong>${item.label}</strong>
+                <small>${item.detail}</small>
+            </span>
+            <span class="quick-action-arrow">→</span>
+        </button>
+    `).join('');
+    list.querySelectorAll('[data-quick-action]').forEach((button) => {
+        button.addEventListener('click', () => runQuickAction(button.dataset.quickAction));
+    });
+}
+
+async function runQuickAction(action) {
+    const pageButton = (page) => document.querySelector(`.sidebar-nav [data-page="${page}"]`);
+    if (action === 'open-email') return handlePageChange(pageButton('emails'));
+    if (action === 'open-calendar') return handlePageChange(pageButton('schedule'));
+    if (action === 'refresh-email') return document.getElementById('refreshEmailsBtn')?.click();
+    if (action === 'daily-report') return document.querySelector('#emails-page [data-tab="daily-report"]')?.click();
+    if (action === 'compose-email') return document.querySelector('#emails-page [data-tab="compose"]')?.click();
+    if (action === 'create-event') return openNewScheduleModal();
+    if (action === 'this-week') return document.getElementById('todayWeekBtn')?.click();
+    if (action === 'refresh-history') return loadActivityHistory();
+    if (action === 'change-mode') return openUserModeModal(false);
+    if (action === 'refresh-settings') return loadSettingsPage();
 }
 
 // Ensure only the active page is visible. This fixes cases where multiple
@@ -1281,6 +1359,7 @@ async function handlePageChange(btn) {
     }
     
     currentPage = page;
+    renderQuickActions(page);
     
     // Load page data
     if (page === 'emails') {
@@ -1338,14 +1417,13 @@ function setupSidebarMenu() {
     const isMobile = () => window.innerWidth <= 860;
     const updateToggle = () => {
         const mobileOpen = sidebar.classList.contains('open');
-        const collapsed = container.classList.contains('sidebar-collapsed');
-        const expanded = isMobile() ? mobileOpen : !collapsed;
+        const expanded = isMobile() ? mobileOpen : true;
         menuToggle.setAttribute('aria-expanded', String(expanded));
         menuToggle.setAttribute('aria-label', isMobile()
             ? ui(mobileOpen ? 'Đóng menu' : 'Mở menu', mobileOpen ? 'Close menu' : 'Open menu')
-            : ui(collapsed ? 'Mở rộng thanh bên' : 'Thu gọn thanh bên', collapsed ? 'Expand sidebar' : 'Collapse sidebar'));
+            : ui('Thanh điều hướng', 'Navigation'));
         const icon = menuToggle.querySelector('.menu-toggle-icon');
-        if (icon) icon.textContent = isMobile() ? (mobileOpen ? '×' : '☰') : (collapsed ? '›' : '‹');
+        if (icon) icon.textContent = isMobile() ? (mobileOpen ? '×' : '☰') : '‹';
     };
 
     const closeMobileSidebar = () => {
@@ -1355,12 +1433,11 @@ function setupSidebarMenu() {
     };
 
     const applyDesktopPreference = () => {
+        container.classList.remove('sidebar-collapsed');
+        localStorage.removeItem('flowmate-sidebar-collapsed');
         if (isMobile()) {
-            container.classList.remove('sidebar-collapsed');
             closeMobileSidebar();
         } else {
-            const collapsed = localStorage.getItem('flowmate-sidebar-collapsed') === 'true';
-            container.classList.toggle('sidebar-collapsed', collapsed);
             sidebar.classList.remove('open');
             overlay.classList.remove('show');
             updateToggle();
@@ -1373,9 +1450,6 @@ function setupSidebarMenu() {
             const shouldOpen = !sidebar.classList.contains('open');
             sidebar.classList.toggle('open', shouldOpen);
             overlay.classList.toggle('show', shouldOpen);
-        } else {
-            const collapsed = container.classList.toggle('sidebar-collapsed');
-            localStorage.setItem('flowmate-sidebar-collapsed', String(collapsed));
         }
         updateToggle();
     });
@@ -1668,11 +1742,16 @@ function updateUserModeUI(mode) {
     if (initial) initial.textContent = USER_MODES[currentUserMode].initial;
     const settingsModeText = document.getElementById('settingsModeText');
     if (settingsModeText) settingsModeText.textContent = modeLabel(USER_MODES[currentUserMode]);
+    const settingsModeDescription = document.getElementById('settingsModeDescription');
+    if (settingsModeDescription) settingsModeDescription.textContent = modeDescription(USER_MODES[currentUserMode]);
+    const settingsModeIcon = document.getElementById('settingsModeIcon');
+    if (settingsModeIcon) settingsModeIcon.textContent = USER_MODES[currentUserMode].initial;
+    const workspaceModeInitial = document.getElementById('workspaceModeInitial');
+    if (workspaceModeInitial) workspaceModeInitial.textContent = USER_MODES[currentUserMode].initial;
+    const workspaceModeLabel = document.getElementById('workspaceModeLabel');
+    if (workspaceModeLabel) workspaceModeLabel.textContent = modeLabel(USER_MODES[currentUserMode]);
     document.querySelectorAll('.user-mode-card').forEach((card) => {
         card.classList.toggle('active', card.dataset.mode === currentUserMode);
-    });
-    document.querySelectorAll('[data-workspace-mode]').forEach((button) => {
-        button.classList.toggle('active', button.dataset.workspaceMode === currentUserMode);
     });
 }
 
@@ -2554,7 +2633,7 @@ async function loadWeekSchedule() {
     timezoneHeader.textContent = 'GMT+7';
     headerRow.appendChild(timezoneHeader);
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 7; i++) {
         const dayDate = new Date(currentWeekStart);
         dayDate.setDate(dayDate.getDate() + i);
         const th = document.createElement('th');
@@ -2588,7 +2667,7 @@ async function loadWeekSchedule() {
             timeCell.textContent = `${hour}:00`;
             row.appendChild(timeCell);
 
-            for (let i = 0; i < 5; i++) {
+            for (let i = 0; i < 7; i++) {
                 const dayDate = new Date(currentWeekStart);
                 dayDate.setDate(dayDate.getDate() + i);
                 const td = document.createElement('td');

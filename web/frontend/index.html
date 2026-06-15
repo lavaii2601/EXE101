@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FlowMate AI - Trợ lý giáo viên AI</title>
-    <link rel="stylesheet" href="/css/style.css">
+    <title>FlowMate - Không gian làm việc thông minh</title>
+    <link rel="stylesheet" href="/css/style.css?v=20260615-6">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -15,7 +15,7 @@
             <div class="auth-logo" aria-hidden="true">
                 <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>
             </div>
-            <h1 id="authGateTitle">Productivity OS</h1>
+            <h1 id="authGateTitle">FlowMate</h1>
             <p>Đăng nhập để truy cập không gian làm việc thông minh của bạn.</p>
             <button type="button" id="authGateLoginBtn" class="auth-google-button">
                 <span class="google-mark" aria-hidden="true">G</span>
@@ -38,7 +38,7 @@
                     <span class="brand-mark" aria-hidden="true">
                         <svg viewBox="0 0 24 24"><path d="M7 7.5h10M7 12h7M7 16.5h4"/><path d="M5 3.5h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9l-5 3v-16a2 2 0 0 1 2-2Z"/></svg>
                     </span>
-                    <span class="brand-copy"><strong>FlowMate</strong><small>AI Workspace</small></span>
+                    <span class="brand-copy"><strong>FlowMate</strong><small>Không gian AI</small></span>
                 </div>
                 <div class="user-profile-section">
                     <img id="userAvatar" class="user-avatar" alt="User Avatar" title="Đăng nhập Gmail">
@@ -102,14 +102,17 @@
         <!-- Main Content -->
         <main class="main-content">
             <header class="workspace-header">
-                <strong>Workspace OS</strong>
-                <nav class="workspace-modes" aria-label="Workspace modes">
-                    <button type="button" data-workspace-mode="student">Student</button>
-                    <button type="button" class="active" data-workspace-mode="worker">Office Worker</button>
-                    <button type="button" data-workspace-mode="mentor">Mentor</button>
-                    <button type="button" data-workspace-mode="teacher">Teacher</button>
-                    <button type="button" data-workspace-mode="freelancer">Freelancer</button>
-                </nav>
+                <div class="workspace-heading">
+                    <strong>FlowMate</strong>
+                    <span>Không gian làm việc thông minh</span>
+                </div>
+                <div class="workspace-mode-status">
+                    <span id="workspaceModeInitial">VP</span>
+                    <div>
+                        <small>Chế độ hiện tại</small>
+                        <strong id="workspaceModeLabel">Nhân viên văn phòng</strong>
+                    </div>
+                </div>
                 <div class="workspace-actions" aria-hidden="true">
                     <span class="workspace-action">♧</span>
                     <span class="workspace-action">◎</span>
@@ -304,15 +307,22 @@
                         </div>
                     </article>
 
-                    <article class="settings-card">
+                    <article class="settings-card settings-mode-card">
                         <span class="settings-section-label">CÁ NHÂN HÓA</span>
-                        <div class="settings-row">
-                            <div>
-                                <strong>Chế độ người dùng</strong>
-                                <span id="settingsModeText">Nhân viên văn phòng</span>
+                        <div class="settings-mode-profile">
+                            <span id="settingsModeIcon" class="settings-mode-icon">VP</span>
+                            <div class="settings-mode-copy">
+                                <div class="settings-mode-heading">
+                                    <strong id="settingsModeText">Nhân viên văn phòng</strong>
+                                    <span class="settings-mode-active">Đang hoạt động</span>
+                                </div>
+                                <p id="settingsModeDescription">Ưu tiên email công việc, cuộc họp, báo cáo và việc cần theo dõi.</p>
                             </div>
-                            <button id="settingsModeBtn" class="btn-secondary">Thay đổi</button>
                         </div>
+                        <button id="settingsModeBtn" class="settings-mode-change">
+                            <span>Đổi chế độ làm việc</span>
+                            <span aria-hidden="true">→</span>
+                        </button>
                         <div class="settings-row">
                             <div>
                                 <strong>Giao diện tối</strong>
@@ -361,29 +371,29 @@
             <div class="assistant-header">
                 <div class="assistant-title">
                     <span class="assistant-bot-icon" aria-hidden="true">✣</span>
-                    <strong>AI Assistant</strong>
-                </div>
-                <button type="button" class="assistant-more" aria-label="More options">⋮</button>
-            </div>
-            <div class="assistant-conversation">
-                <div class="assistant-mode-chip">Schedule Mode Active</div>
-                <div class="assistant-message user-sample">Lên lịch họp với team vào 9h sáng mai</div>
-                <div class="assistant-response">
-                    <span class="assistant-mini-icon" aria-hidden="true">✣</span>
-                    <div class="assistant-event-card">
-                        <strong>Đã nháp sự kiện: <b>Team Sync</b></strong>
-                        <span>Ngày mai • 09:00 - 10:00</span>
-                        <div>
-                            <button type="button" class="assistant-confirm" id="assistantCreateEventBtn">Xác nhận</button>
-                            <button type="button" class="assistant-edit" id="assistantEditEventBtn">Chỉnh sửa</button>
-                        </div>
+                    <div>
+                        <strong>Quick Actions</strong>
+                        <small>Thao tác nhanh theo trang</small>
                     </div>
                 </div>
             </div>
-            <form class="assistant-composer" id="assistantComposer">
-                <textarea id="assistantInput" rows="1" placeholder="Nhập lệnh hoặc đặt câu hỏi..."></textarea>
-                <button type="submit" aria-label="Send">↑</button>
-            </form>
+            <div class="quick-actions-content">
+                <div class="quick-context">
+                    <span id="quickContextIcon">AI</span>
+                    <div>
+                        <small>Đang xem</small>
+                        <strong id="quickContextTitle">Chat</strong>
+                    </div>
+                </div>
+                <p id="quickContextDescription" class="quick-context-description">
+                    Trò chuyện với FlowMate cho các yêu cầu cần phân tích chi tiết.
+                </p>
+                <div id="quickActionsList" class="quick-actions-list"></div>
+                <div class="quick-tip">
+                    <strong>Mẹo</strong>
+                    <p id="quickTipText">Dùng Chat khi bạn cần hỏi tự do hoặc xử lý nhiều bước.</p>
+                </div>
+            </div>
         </aside>
     </div>
     
@@ -543,6 +553,6 @@
         </div>
     </div>
     
-    <script src="/js/app.js"></script>
+    <script src="/js/app.js?v=20260615-6"></script>
 </body>
 </html>
