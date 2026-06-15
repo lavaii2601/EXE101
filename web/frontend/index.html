@@ -7,7 +7,27 @@
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-    <div class="container">
+    <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
+        <div class="auth-orb auth-orb-one"></div>
+        <div class="auth-orb auth-orb-two"></div>
+        <div class="auth-orb auth-orb-three"></div>
+        <div class="auth-card">
+            <div class="auth-logo" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>
+            </div>
+            <h1 id="authGateTitle">Productivity OS</h1>
+            <p>Đăng nhập để truy cập không gian làm việc thông minh của bạn.</p>
+            <button type="button" id="authGateLoginBtn" class="auth-google-button">
+                <span class="google-mark" aria-hidden="true">G</span>
+                <span class="auth-button-label">Đăng nhập với Google</span>
+                <span class="auth-spinner" aria-hidden="true"></span>
+            </button>
+            <div id="authGateStatus" class="auth-gate-status" aria-live="polite"></div>
+            <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Xem chính sách bảo mật</a>
+        </div>
+    </section>
+
+    <div id="workspaceApp" class="container workspace-app" aria-hidden="true">
         <button id="menuToggle" class="menu-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
             <span class="menu-toggle-icon" aria-hidden="true">‹</span>
         </button>

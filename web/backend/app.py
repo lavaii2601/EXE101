@@ -64,6 +64,7 @@ def make_session_permanent():
         '/api/status',
         '/api/email/auth',
         '/api/email/auth_url',
+        '/api/email/auth-status',
         '/api/email/oauth2callback',
         '/api/email/oauth-config-check',
         '/api/email/google-auth',
