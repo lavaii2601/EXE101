@@ -35,6 +35,7 @@ let currentUserMode = 'worker';
 let pendingUserMode = '';
 let userModeRequired = false;
 let pendingPageAfterMode = '';
+let isAuthenticated = false;
 let currentLanguage = localStorage.getItem('flowmate-language') === 'en' ? 'en' : 'vi';
 
 const I18N = {
@@ -352,6 +353,7 @@ async function initApp() {
     userModeSelect = document.getElementById('userModeSelect');
     userModeModal = document.getElementById('userModeModal');
     emailSearchInput = document.getElementById('emailSearchInput');
+    setupAuthGate();
     setupWorkspaceShell();
     applyLanguage();
     const savedTheme = localStorage.getItem('flowmate-theme');
@@ -648,11 +650,19 @@ async function initApp() {
         console.error('❌ Error attaching event listeners:', err);
     }
     
+    await checkOAuthCallback();
+    const authenticated = await resolveInitialAuthState();
+    if (!authenticated) {
+        checkRuntimeConfig();
+        console.log('✅ App initialized in signed-out state');
+        return;
+    }
+
     await loadUserProfile();
     if (!userModeRequired) {
+        showWorkspace();
         await loadChatHistory();
     }
-    await checkOAuthCallback();
     await refreshAuthButtons();
     checkRuntimeConfig();
     
@@ -663,6 +673,68 @@ async function initApp() {
     }
     
     console.log('✅ App initialized');
+}
+
+function setupAuthGate() {
+    const loginButton = document.getElementById('authGateLoginBtn');
+    if (loginButton) loginButton.addEventListener('click', gmailLogin);
+    showAuthGate(ui('Đang kiểm tra phiên đăng nhập...', 'Checking your sign-in session...'), true);
+}
+
+function showAuthGate(message = '', loading = false) {
+    const gate = document.getElementById('authGate');
+    const status = document.getElementById('authGateStatus');
+    const button = document.getElementById('authGateLoginBtn');
+    const label = button?.querySelector('.auth-button-label');
+    document.body.classList.remove('workspace-ready');
+    gate?.classList.remove('is-hidden');
+    gate?.classList.toggle('is-loading', loading);
+    if (status) status.textContent = message;
+    if (button) button.disabled = loading;
+    if (label) {
+        label.textContent = loading
+            ? ui('Đang xác thực...', 'Authenticating...')
+            : ui('Đăng nhập với Google', 'Sign in with Google');
+    }
+    document.getElementById('workspaceApp')?.setAttribute('aria-hidden', 'true');
+}
+
+function showWorkspace() {
+    const gate = document.getElementById('authGate');
+    gate?.classList.add('is-hidden');
+    gate?.classList.remove('is-loading');
+    document.body.classList.add('workspace-ready');
+    document.getElementById('workspaceApp')?.setAttribute('aria-hidden', 'false');
+}
+
+function showModeSelectionStage() {
+    const gate = document.getElementById('authGate');
+    gate?.classList.add('is-hidden');
+    gate?.classList.remove('is-loading');
+    document.body.classList.remove('workspace-ready');
+    document.getElementById('workspaceApp')?.setAttribute('aria-hidden', 'true');
+}
+
+async function resolveInitialAuthState() {
+    try {
+        const response = await fetch(`${API_BASE}/email/auth-status`, {
+            credentials: 'include',
+            headers: { Accept: 'application/json' }
+        });
+        const data = await response.json();
+        isAuthenticated = !!(response.ok && data.authenticated);
+    } catch (error) {
+        console.error('Initial auth check failed:', error);
+        isAuthenticated = false;
+    }
+
+    if (!isAuthenticated) {
+        showAuthGate(ui(
+            'Đăng nhập để truy cập không gian làm việc thông minh của bạn.',
+            'Sign in to access your intelligent workspace.'
+        ));
+    }
+    return isAuthenticated;
 }
 
 // Simple intent detection for scheduling prompts (Vietnamese + English keywords)
@@ -815,12 +887,11 @@ async function apiFetch(url, options = {}) {
         });
 
         if (resp.status === 401) {
-            showNotification(ui(
-                '⚠️ Chưa đăng nhập hoặc hết phiên. Vui lòng đăng nhập Gmail.',
-                '⚠️ You are signed out or your session expired. Please sign in to Gmail.'
-            ), 'info');
-            // If gmailLogin is available, open the login flow to help the user
-            try { if (typeof gmailLogin === 'function') gmailLogin(); } catch (e) { /* ignore */ }
+            isAuthenticated = false;
+            showAuthGate(ui(
+                'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+                'Your session has expired. Please sign in again.'
+            ));
         }
 
         return resp;
@@ -849,6 +920,7 @@ async function checkOAuthCallback() {
                 return;
             }
 
+            showWorkspace();
             const emailNavBtn = document.querySelector('[data-page="emails"]');
             if (emailNavBtn) {
                 await handlePageChange(emailNavBtn);
@@ -1149,13 +1221,14 @@ async function gmailLogout() {
 
         if (data.success) {
             showNotification(ui('✅ Đã đăng xuất Gmail', '✅ Signed out of Gmail'), 'success');
-            apiFetch(`${API_BASE}/user/gmail-disconnected`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            }).catch(err => console.error('Error marking Gmail disconnected:', err));
-            
-            await refreshAuthButtons();
-            await loadUserProfile();
+            isAuthenticated = false;
+            userModeRequired = false;
+            pendingPageAfterMode = '';
+            userModeModal?.classList.remove('show', 'is-required');
+            showAuthGate(ui(
+                'Bạn đã đăng xuất. Đăng nhập để tiếp tục.',
+                'You are signed out. Sign in to continue.'
+            ));
             const emailsList = document.getElementById('emailsList');
             if (emailsList) emailsList.innerHTML = `<p>${ui('Đã đăng xuất Gmail. Vui lòng đăng nhập lại.', 'You have signed out of Gmail. Please sign in again.')}</p>`;
         }
@@ -1166,6 +1239,13 @@ async function gmailLogout() {
 
 // PAGE MANAGEMENT (CRITICAL FIX)
 async function handlePageChange(btn) {
+    if (!isAuthenticated) {
+        showAuthGate(ui(
+            'Vui lòng đăng nhập để tiếp tục.',
+            'Please sign in to continue.'
+        ));
+        return;
+    }
     if (userModeRequired) {
         openUserModeModal(true);
         return;
@@ -1756,6 +1836,7 @@ async function saveUserMode(mode, closeAfterSave = false) {
         if (closeAfterSave) {
             setTimeout(() => userModeModal?.classList.remove('show'), 200);
         }
+        showWorkspace();
         await resumeWorkspaceAfterModeSelection();
     } catch (error) {
         updateUserModeUI(previousMode);
@@ -1798,7 +1879,10 @@ async function loadUserProfile() {
             const user = data.user;
             const storedMode = user.user_mode && USER_MODES[user.user_mode] ? user.user_mode : '';
             updateUserModeUI(storedMode || 'worker');
-            const gmailConnected = !!(gmailData && gmailData.success && gmailData.gmail_connected);
+            const gmailConnected = !!(
+                (gmailData && gmailData.success && gmailData.gmail_connected)
+                || user.gmail_connected
+            );
             const currentSidebarName = document.getElementById('userName')?.textContent?.trim() || '';
             const currentSidebarAvatar = document.getElementById('userAvatar')?.getAttribute('src') || '';
 
@@ -1814,9 +1898,12 @@ async function loadUserProfile() {
                 userAvatar.title = gmailConnected ? ui('Đã kết nối Gmail', 'Gmail connected') : ui('Đăng nhập Gmail', 'Sign in to Gmail');
             }
             if (gmailConnected && (user.mode_required || !storedMode)) {
+                isAuthenticated = true;
+                showModeSelectionStage();
                 openUserModeModal(true);
             } else {
                 userModeRequired = false;
+                isAuthenticated = gmailConnected;
             }
             return user;
         }
