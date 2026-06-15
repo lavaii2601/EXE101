@@ -36,7 +36,11 @@ def _merge_gmail_profile(user):
     merged['email'] = merged.get('email') or merged.get('gmail_email') or ''
     merged['avatar_url'] = merged.get('avatar_url') or merged.get('gmail_picture') or ''
     merged['gmail_connected'] = bool(merged.get('gmail_connected')) or bool(session_gmail_email)
-    merged['mode_required'] = bool(merged['gmail_connected'] and not merged.get('user_mode'))
+    stored_mode = (merged.get('user_mode') or '').strip().lower()
+    merged['user_mode'] = stored_mode
+    merged['mode_required'] = bool(
+        merged['gmail_connected'] and stored_mode not in USER_MODES
+    )
     return merged
 
 
@@ -64,7 +68,7 @@ def update_profile():
     User.get_or_create(user_id)
     
     requested_mode = (data.get('user_mode') or '').strip().lower()
-    if requested_mode and requested_mode not in USER_MODES:
+    if 'user_mode' in data and requested_mode not in USER_MODES:
         return jsonify({
             'success': False,
             'error': 'Invalid user mode'
@@ -72,7 +76,7 @@ def update_profile():
 
     update_data = {
         k: v for k, v in data.items()
-        if k in ['name', 'email', 'avatar_url', 'user_mode']
+        if k in ['name', 'email', 'avatar_url']
     }
     if requested_mode:
         update_data['user_mode'] = requested_mode

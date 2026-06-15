@@ -34,6 +34,7 @@ let currentDetailEmail = null;
 let currentUserMode = 'worker';
 let pendingUserMode = '';
 let userModeRequired = false;
+let pendingPageAfterMode = '';
 let currentLanguage = localStorage.getItem('flowmate-language') === 'en' ? 'en' : 'vi';
 
 const I18N = {
@@ -627,10 +628,13 @@ async function initApp() {
                 if (ev.origin === window.location.origin && ev.data && ev.data.type === 'gmail_auth' && ev.data.status === 'success') {
                     console.log('📥 Received gmail_auth success message');
                     refreshAuthButtons();
-                    loadUserProfile();
-                    if (currentPage === 'emails') {
-                        setTimeout(() => loadEmails(), 300);
-                    }
+                    loadUserProfile().then(() => {
+                        if (userModeRequired) {
+                            pendingPageAfterMode = 'emails';
+                        } else if (currentPage === 'emails') {
+                            setTimeout(() => loadEmails(), 300);
+                        }
+                    });
                 }
             } catch (e) {
                 console.warn('PostMessage handling error', e);
@@ -645,8 +649,10 @@ async function initApp() {
     }
     
     await loadUserProfile();
-    await loadChatHistory();
-    checkOAuthCallback();
+    if (!userModeRequired) {
+        await loadChatHistory();
+    }
+    await checkOAuthCallback();
     await refreshAuthButtons();
     checkRuntimeConfig();
     
@@ -823,33 +829,33 @@ async function apiFetch(url, options = {}) {
     }
 }
 
-function checkOAuthCallback() {
+async function checkOAuthCallback() {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('gmail_auth') === 'success') {
         console.log('✅ OAuth callback detected');
-        
-        const emailNavBtn = document.querySelector('[data-page="emails"]');
-        if (emailNavBtn) {
-            handlePageChange(emailNavBtn);
-            showNotification(ui('✅ Gmail đã kết nối thành công!', '✅ Gmail connected successfully!'), 'success');
-            
-            apiFetch(`${API_BASE}/user/gmail-connected`, {
+        window.history.replaceState({}, document.title, window.location.pathname);
+
+        try {
+            await apiFetch(`${API_BASE}/user/gmail-connected`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
-            }).catch(err => console.error('Error marking Gmail connected:', err));
-            
-            setTimeout(() => {
-                refreshAuthButtons();
-                loadUserProfile();
-                setTimeout(() => {
-                    loadEmails().catch(err => {
-                        console.error('First email load failed:', err);
-                        setTimeout(() => loadEmails(), 1000);
-                    });
-                }, 300);
-            }, 200);
+            });
+            await refreshAuthButtons();
+            await loadUserProfile();
+
+            showNotification(ui('✅ Gmail đã kết nối thành công!', '✅ Gmail connected successfully!'), 'success');
+            if (userModeRequired) {
+                pendingPageAfterMode = 'emails';
+                return;
+            }
+
+            const emailNavBtn = document.querySelector('[data-page="emails"]');
+            if (emailNavBtn) {
+                await handlePageChange(emailNavBtn);
+            }
+        } catch (error) {
+            console.error('OAuth completion refresh failed:', error);
         }
-        window.history.replaceState({}, document.title, window.location.pathname);
     }
 }
 
@@ -1160,6 +1166,10 @@ async function gmailLogout() {
 
 // PAGE MANAGEMENT (CRITICAL FIX)
 async function handlePageChange(btn) {
+    if (userModeRequired) {
+        openUserModeModal(true);
+        return;
+    }
     const page = btn.dataset.page;
     console.log(`🔄 Changing page to: ${page}`);
     
@@ -1679,7 +1689,9 @@ function renderUserModeGrid() {
 function openUserModeModal(required = false) {
     if (!userModeModal) return;
     userModeRequired = required;
-    pendingUserMode = required ? '' : currentUserMode;
+    pendingUserMode = !required && ONBOARDING_MODE_KEYS.includes(currentUserMode)
+        ? currentUserMode
+        : '';
     userModeModal.classList.toggle('is-required', required);
     const closeButton = userModeModal.querySelector('.user-mode-close');
     const cancelButton = document.getElementById('userModeCancelBtn');
@@ -1693,7 +1705,9 @@ function openUserModeModal(required = false) {
     if (status) {
         status.textContent = required
             ? ui('Hãy chọn một chế độ để tiếp tục sử dụng FlowMate.', 'Choose a mode to continue using FlowMate.')
-            : '';
+            : pendingUserMode
+                ? ''
+                : ui('Hãy chọn chế độ mới rồi xác nhận.', 'Choose a new mode, then confirm.');
     }
     renderUserModeGrid();
     userModeModal.classList.add('show');
@@ -1728,6 +1742,7 @@ async function saveUserMode(mode, closeAfterSave = false) {
             throw new Error(data.error || 'Không thể lưu chế độ người dùng');
         }
         renderUserModeGrid();
+        updateUserModeUI(currentUserMode);
         if (status) status.textContent = ui(
             `Đã áp dụng ${modeLabel(USER_MODES[currentUserMode])}.`,
             `Applied ${modeLabel(USER_MODES[currentUserMode])}.`
@@ -1738,7 +1753,10 @@ async function saveUserMode(mode, closeAfterSave = false) {
         ), 'success');
         userModeRequired = false;
         userModeModal?.classList.remove('is-required');
-        if (closeAfterSave) setTimeout(() => userModeModal?.classList.remove('show'), 350);
+        if (closeAfterSave) {
+            setTimeout(() => userModeModal?.classList.remove('show'), 200);
+        }
+        await resumeWorkspaceAfterModeSelection();
     } catch (error) {
         updateUserModeUI(previousMode);
         renderUserModeGrid();
@@ -1748,6 +1766,21 @@ async function saveUserMode(mode, closeAfterSave = false) {
         document.querySelectorAll('.user-mode-card').forEach((card) => {
             card.disabled = false;
         });
+    }
+}
+
+async function resumeWorkspaceAfterModeSelection() {
+    const targetPage = pendingPageAfterMode || currentPage;
+    pendingPageAfterMode = '';
+
+    if (targetPage === 'chat') {
+        await loadChatHistory();
+        return;
+    }
+
+    const targetButton = document.querySelector(`[data-page="${targetPage}"]`);
+    if (targetButton) {
+        await handlePageChange(targetButton);
     }
 }
 
@@ -1782,11 +1815,15 @@ async function loadUserProfile() {
             }
             if (gmailConnected && (user.mode_required || !storedMode)) {
                 openUserModeModal(true);
+            } else {
+                userModeRequired = false;
             }
+            return user;
         }
     } catch (error) {
         console.error('Error loading user profile:', error);
     }
+    return null;
 }
 
 async function loadChatHistory() {
