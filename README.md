@@ -7,6 +7,16 @@ Mục tiêu chính
 - Chat với AI để tóm tắt email hoặc đề xuất tạo lịch.
 - Quản lý lịch (tạo, sửa, xoá) và đồng bộ với Google Calendar ở chế độ nền.
 
+Cấu trúc thư mục
+- `web/` — backend Flask (`web/backend`) + frontend web (`web/frontend`), dữ liệu (`web/data`) và `web/.env`.
+- `app/` — ứng dụng Android native (TeacherBot) gọi API của `web/backend`.
+- `mobile/` — ứng dụng Expo/React Native (FlowMate AI), cũng gọi API của `web/backend`.
+
+Liên kết web <-> app
+- `app` và `mobile` gọi backend qua URL cấu hình sẵn cho máy ảo Android: `http://10.0.2.2:5000/api`
+  (mặc định trong `app/app/src/main/java/com/exe101/teacherbot/ApiClient.java` và `mobile/src/api/config.js`).
+- Trên thiết bị thật, đổi URL này thành `http://<IP-máy-chạy-backend>:5000/api`.
+
 Nhanh: cài và chạy (development)
 
 Yêu cầu trước
@@ -22,12 +32,12 @@ pip install -r requirements.txt
 ```
 
 2) Cấu hình
-- Chỉnh `backend/config.py` hoặc đặt biến môi trường như `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `OPENROUTER_API_KEY`,... tùy bạn dùng dịch vụ nào.
+- Chỉnh `web/backend/config.py` hoặc đặt biến môi trường như `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `OPENROUTER_API_KEY`,... tùy bạn dùng dịch vụ nào (đọc từ `web/.env`).
 
 3) Chạy ứng dụng
 
 ```powershell
-python backend/app.py
+python web/backend/app.py
 ```
 
 Mở http://127.0.0.1:5000
@@ -40,9 +50,9 @@ Một số endpoint thường dùng
 - Lịch: `/api/schedule/*` (tạo, liệt kê, sửa, xóa)
 
 Dữ liệu & token
-- DB chính: `data/assistant.db`
-- DB người dùng: `data/users/<user>.db`
-- Token Gmail lưu dưới `data/users/gmail_token_<user>.pickle`
+- DB chính: `web/data/assistant.db`
+- DB người dùng: `web/data/users/<user>.db`
+- Token Gmail lưu dưới `web/data/users/gmail_token_<user>.pickle`
 
 Ghi chú phát triển
 - Nội dung email tải khi cần để giảm số lần gọi API.

@@ -11,6 +11,7 @@ from services.ai_service import AIService
 from services.schedule_service import ScheduleService
 from models.history import History
 from models.schedule import Schedule
+from models.user import User
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from services.calendar_service import CalendarService
 
@@ -124,6 +125,40 @@ def send_message():
     """Send message to AI assistant"""
     data = request.get_json() or {}
     user_message = data.get('message', '').strip()
+    user_id = get_current_user_id(request)
+    stored_user = User.get(user_id) or {}
+    mode = (data.get('mode') or stored_user.get('user_mode') or 'worker').strip().lower()
+    mode_prompts = {
+        'student': (
+            "Student Mode: prioritize assignments, class email, study deadlines, "
+            "group projects, and clear study plans."
+        ),
+        'freelancer': (
+            "Freelancer Mode: prioritize client communication, project delivery, "
+            "invoices, scope, and independent workload planning."
+        ),
+        'creator': (
+            "Creator Mode: prioritize brand communication, content calendars, campaign "
+            "briefs, publishing reminders, and creative deliverables."
+        ),
+        'worker': (
+            "Worker Mode: prioritize work email, meetings, daily tasks, follow-ups, "
+            "and concise progress reports."
+        ),
+        'business': (
+            "Business Mode: prioritize operations, executive email, team calendars, "
+            "decisions, risks, and action-oriented business summaries."
+        ),
+        'mentor': (
+            "Mentor Mode: prioritize mentee communication, guidance sessions, "
+            "feedback deadlines, and progress tracking."
+        ),
+        'teacher': (
+            "Teacher Mode: prioritize classes, curriculum, student communication, "
+            "grading deadlines, and teaching follow-ups."
+        )
+    }
+    mode_prompt = mode_prompts.get(mode, mode_prompts['worker'])
     task = (data.get('task', 'chat') or 'chat').strip().lower()
     if task not in ['chat', 'summary', 'reply', 'analyze']:
         task = 'chat'
@@ -131,18 +166,21 @@ def send_message():
     if not user_message:
         return jsonify({'error': 'Empty message'}), 400
     
-    user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
     History.init_db(db_path=db_path)
     Schedule.init_db(db_path=db_path)
 
     # Build messages for AI with recent chat context for smarter responses
-    messages = [
-        {
-            "role": "system",
-            "content": "Bạn là TeacherBot, trợ lý giáo viên. Trả lời ngắn gọn, chuyên nghiệp, hữu ích về email, lịch hẹn và công việc giảng dạy."
-        }
-    ]
+    messages = [{
+        "role": "system",
+        "content": (
+            "You are FlowMate AI. " + mode_prompt
+            + " Be concise, clear, and action-focused. Classify useful information as "
+            "meetings, deadlines, tasks, reminders, important information, or low priority. "
+            "Suggest the next action, but do not claim a sensitive action was completed "
+            "unless the user explicitly confirmed it."
+        )
+    }]
 
     recent_history = History.get_recent(limit=8, db_path=db_path)
     for record in reversed(recent_history):

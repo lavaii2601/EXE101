@@ -1,16 +1,23 @@
-from flask import Flask, send_from_directory, jsonify, session as flask_session
+from flask import Flask, send_from_directory, jsonify, session as flask_session, request
 from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
 import os
 import sys
 import logging
 
+# Ensure stdout/stderr can print emoji/unicode log messages on Windows consoles
+# (default cp1252 encoding raises UnicodeEncodeError on prints like "🔄").
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, 'reconfigure'):
+        _stream.reconfigure(encoding='utf-8', errors='replace')
+
 # Add backend directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Allow insecure OAuth transport for local development (HTTP)
 # Must be set before importing google oauth flow modules
-os.environ.setdefault('OAUTHLIB_INSECURE_TRANSPORT', '1')
+if os.getenv("DEBUG", "true").lower() in ("1", "true", "yes", "on"):
+    os.environ.setdefault('OAUTHLIB_INSECURE_TRANSPORT', '1')
 
 from config import Config
 from models.schedule import Schedule
@@ -22,9 +29,12 @@ from routes.schedule import schedule_bp
 from routes.user import user_bp
 from routes.calendar import calendar_bp
 from routes._background import bg_bp
+from utils.security import authenticated_user_id, enforce_rate_limit, valid_request_origin
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
+# Keep application diagnostics without logging OAuth request/response tokens.
+logging.basicConfig(level=logging.INFO)
+logging.getLogger('requests_oauthlib').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -32,9 +42,10 @@ app.config.from_object(Config)
 
 # Enhanced session configuration for OAuth and user tracking
 app.config.update(
-    SESSION_COOKIE_SECURE=False,  # HTTP in development, set to True for HTTPS production
+    SESSION_COOKIE_SECURE=Config.SESSION_COOKIE_SECURE,
     SESSION_COOKIE_HTTPONLY=True,  # Prevent JS from accessing session cookie
     SESSION_COOKIE_SAMESITE='Lax',  # Allow cross-site redirects from OAuth providers
+    SESSION_COOKIE_NAME='flowmate_session',
     PERMANENT_SESSION_LIFETIME=86400,  # 24 hours
     SESSION_REFRESH_EACH_REQUEST=True,  # Extend session lifetime on each request
 )
@@ -43,15 +54,53 @@ app.config.update(
 @app.before_request
 def make_session_permanent():
     flask_session.permanent = True
+    limited = enforce_rate_limit()
+    if limited:
+        return jsonify(limited[0]), limited[1]
+    if request.path.startswith('/api/') and not valid_request_origin():
+        return jsonify({'error': 'invalid_request_origin'}), 403
+    public_api_paths = {
+        '/api/health',
+        '/api/status',
+        '/api/email/auth',
+        '/api/email/auth_url',
+        '/api/email/oauth2callback',
+        '/api/email/oauth-config-check',
+        '/api/email/google-auth',
+    }
+    if (
+        request.path.startswith('/api/')
+        and request.path not in public_api_paths
+        and not authenticated_user_id()
+    ):
+        return jsonify({'error': 'not_authenticated'}), 401
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 # Allow CORS with credentials for the frontend origin(s) so session cookies are preserved
-allowed_origins = [
-    "http://localhost:5000",
-    "http://127.0.0.1:5000",
-    "http://192.168.0.102:5000"
-]
+allowed_origins = Config.ALLOWED_ORIGINS
 CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
+    response.headers['Cross-Origin-Opener-Policy'] = 'same-origin-allow-popups'
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "img-src 'self' data: https://*.googleusercontent.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    )
+    if request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store'
+    if request.is_secure:
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
 
 # Register blueprints
 app.register_blueprint(chat_bp)

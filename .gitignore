@@ -1,0 +1,16 @@
+.env
+data/
+*.pickle
+*.log
+__pycache__/
+*.py[cod]
+.gradle/
+**/build/
+mobile/node_modules/
+app/local.properties
+
+# IDE
+.idea/
+.run/
+*.iml
+.vscode/

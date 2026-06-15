@@ -1,14 +1,22 @@
 import sqlite3
 import os
+import sys
 from datetime import datetime
-from backend.config import Config
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from config import Config
 
 
 class User:
+    _initialized_dbs = set()
+
     @staticmethod
     def init_db():
         """Initialize users table"""
         db_path = Config.DATABASE_PATH
+        if db_path in User._initialized_dbs:
+            return
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
@@ -24,6 +32,8 @@ class User:
                 gmail_picture TEXT,
                 gmail_connected INTEGER DEFAULT 0,
                 gmail_connected_at DATETIME,
+                user_mode TEXT DEFAULT '',
+                user_mode_selected_at DATETIME,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -46,9 +56,18 @@ class User:
             cursor.execute('ALTER TABLE users ADD COLUMN gmail_connected_at DATETIME')
         except sqlite3.OperationalError:
             pass
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN user_mode TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN user_mode_selected_at DATETIME")
+        except sqlite3.OperationalError:
+            pass
         
         conn.commit()
         conn.close()
+        User._initialized_dbs.add(db_path)
 
     @staticmethod
     def get_or_create(user_id, name='Teacher', email=''):
@@ -82,7 +101,11 @@ class User:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        allowed_fields = ['name', 'email', 'avatar_url', 'gmail_connected', 'gmail_email', 'gmail_name', 'gmail_picture', 'gmail_connected_at']
+        allowed_fields = [
+            'name', 'email', 'avatar_url', 'gmail_connected', 'gmail_email',
+            'gmail_name', 'gmail_picture', 'gmail_connected_at', 'user_mode',
+            'user_mode_selected_at'
+        ]
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
         
         if not updates:

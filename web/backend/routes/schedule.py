@@ -214,6 +214,179 @@ def list_schedules():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+def _parse_dt(value):
+    """Parse an ISO datetime/date string into a naive local datetime."""
+    if not value:
+        return None
+    try:
+        cleaned = value.replace('Z', '+00:00')
+        dt = datetime.fromisoformat(cleaned)
+    except ValueError:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone().replace(tzinfo=None)
+    return dt
+
+
+def _event_fingerprint(title, start_time):
+    """Build a stable fallback key for events that do not share a Google ID."""
+    start_dt = _parse_dt(start_time)
+    normalized_start = start_dt.isoformat(timespec='minutes') if start_dt else str(start_time or '')
+    normalized_title = ' '.join(str(title or '').strip().lower().split())
+    return f'{normalized_title}|{normalized_start}'
+
+
+def _unified_schedule_item(schedule):
+    google_event_id = schedule.get('calendar_event_id') or ''
+    return {
+        **schedule,
+        'local_id': schedule.get('id'),
+        'google_event_id': google_event_id,
+        'source': 'synced' if google_event_id else 'local',
+    }
+
+
+@schedule_bp.route('/unified', methods=['GET'])
+def get_unified_schedules():
+    """Merge upcoming local schedules and Google Calendar events into one timeline."""
+    try:
+        user_id = get_current_user_id(request)
+        db_path = get_user_db_path(user_id)
+        now = datetime.now()
+        max_results = min(max(request.args.get('max_results', 50, type=int), 1), 200)
+
+        local_schedules = []
+        for schedule in Schedule.get_all(limit=200, db_path=db_path):
+            start_dt = _parse_dt(schedule.get('start_time'))
+            if start_dt and start_dt >= now:
+                local_schedules.append(_unified_schedule_item(schedule))
+
+        by_google_id = {
+            item['google_event_id']: item
+            for item in local_schedules
+            if item.get('google_event_id')
+        }
+        by_fingerprint = {
+            _event_fingerprint(item.get('title'), item.get('start_time')): item
+            for item in local_schedules
+        }
+
+        calendar_connected = False
+        calendar_service = _load_calendar_service(user_id)
+        if calendar_service:
+            calendar_connected = True
+            try:
+                time_max = (datetime.utcnow() + timedelta(days=90)).isoformat() + 'Z'
+                for event in calendar_service.get_events(
+                    max_results=max_results,
+                    time_max=time_max
+                ):
+                    event_id = event.get('id') or ''
+                    fingerprint = _event_fingerprint(event.get('title'), event.get('start'))
+                    existing = by_google_id.get(event_id) or by_fingerprint.get(fingerprint)
+                    if existing:
+                        existing['source'] = 'synced'
+                        existing['google_event_id'] = event_id or existing.get('google_event_id', '')
+                        continue
+
+                    item = {
+                        'id': f'google:{event_id}',
+                        'local_id': None,
+                        'google_event_id': event_id,
+                        'source': 'google',
+                        'title': event.get('title') or 'Untitled',
+                        'description': event.get('description') or '',
+                        'start_time': event.get('start'),
+                        'end_time': event.get('end'),
+                        'attendees': ','.join(event.get('attendees') or []),
+                        'location': event.get('location') or '',
+                        'status': event.get('status') or 'confirmed',
+                    }
+                    local_schedules.append(item)
+                    if event_id:
+                        by_google_id[event_id] = item
+                    by_fingerprint[fingerprint] = item
+            except Exception as e:
+                logger.warning(f"Failed to merge Google Calendar events: {e}")
+
+        local_schedules.sort(
+            key=lambda item: _parse_dt(item.get('start_time')) or datetime.max
+        )
+        return jsonify({
+            'success': True,
+            'items': local_schedules,
+            'count': len(local_schedules),
+            'calendar_connected': calendar_connected,
+        })
+    except Exception as e:
+        logger.error(f"Error building unified schedule: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@schedule_bp.route('/week', methods=['GET'])
+def get_week_schedules():
+    """Get schedules for a Mon-Sun week, importing any new Google Calendar events first."""
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+
+    start_param = request.args.get('start')
+    ref_date = _parse_dt(start_param) if start_param else None
+    if not ref_date:
+        ref_date = datetime.now()
+
+    monday = (ref_date - timedelta(days=ref_date.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    week_end = monday + timedelta(days=7)
+
+    # Sync events from Google Calendar into the local schedule table
+    calendar_service = _load_calendar_service(user_id)
+    if calendar_service:
+        try:
+            local_tz = datetime.now().astimezone().tzinfo
+            time_min = monday.replace(tzinfo=local_tz).isoformat()
+            time_max = week_end.replace(tzinfo=local_tz).isoformat()
+            gcal_events = calendar_service.get_events(max_results=100, time_min=time_min, time_max=time_max)
+            for event in gcal_events:
+                event_id = event.get('id')
+                if not event_id:
+                    continue
+                if Schedule.get_by_calendar_event_id(event_id, db_path=db_path):
+                    continue
+                Schedule.create(
+                    title=event.get('title') or 'Untitled',
+                    description=event.get('description') or '',
+                    start_time=event.get('start'),
+                    end_time=event.get('end'),
+                    attendees=','.join(event.get('attendees') or []),
+                    email_body='',
+                    location=event.get('location') or '',
+                    calendar_event_id=event_id,
+                    db_path=db_path
+                )
+        except Exception as e:
+            logger.warning(f"Failed to sync Google Calendar events for week: {e}")
+
+    # Build the Mon-Sun grid from local schedules
+    all_schedules = Schedule.get_all(limit=200, db_path=db_path)
+    days = [[] for _ in range(7)]
+    for schedule in all_schedules:
+        start_dt = _parse_dt(schedule.get('start_time'))
+        if not start_dt:
+            continue
+        day_index = (start_dt - monday).days
+        if 0 <= day_index < 7:
+            days[day_index].append(schedule)
+
+    for day_schedules in days:
+        day_schedules.sort(key=lambda s: s.get('start_time') or '')
+
+    return jsonify({
+        'success': True,
+        'week_start': monday.date().isoformat(),
+        'week_end': (monday + timedelta(days=6)).date().isoformat(),
+        'days': days
+    })
+
+
 @schedule_bp.route('/upcoming', methods=['GET'])
 def get_upcoming():
     """Get upcoming schedules"""
@@ -228,7 +401,7 @@ def get_upcoming():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@schedule_bp.route('/<int:schedule_id>/update-status', methods=['PATCH'])
+@schedule_bp.route('/<int:schedule_id>/update-status', methods=['PATCH', 'POST'])
 def update_status(schedule_id):
     """Update schedule status"""
     data = request.get_json()

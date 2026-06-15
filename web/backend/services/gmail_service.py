@@ -3,6 +3,8 @@ import sys
 import logging
 import pickle
 import base64
+import html
+import re
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,12 +18,16 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 class GmailService:
-    # require both read and send permissions for our features
+    # Keep this in sync with MainActivity's GoogleSignInOptions. Google adds
+    # the OpenID identity scopes to Android server auth codes.
     SCOPES = [
+        'openid',
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile',
         'https://www.googleapis.com/auth/gmail.readonly',
         'https://www.googleapis.com/auth/gmail.send',
+        'https://www.googleapis.com/auth/gmail.modify',
         'https://www.googleapis.com/auth/calendar.events',
-        'https://www.googleapis.com/auth/userinfo.profile'
     ]
     
     def __init__(self, token_file=None):
@@ -66,6 +72,11 @@ class GmailService:
     def get_emails(self, max_results=10, query='is:unread', include_read=False):
         """Get emails from inbox with lazy body loading"""
         try:
+            try:
+                max_results = max(1, min(int(max_results), 70))
+            except Exception:
+                max_results = 10
+
             # If include_read, get all emails in inbox (read + unread)
             if include_read and query == 'is:unread':
                 query = 'in:inbox'
@@ -80,19 +91,61 @@ class GmailService:
             messages = results.get('messages', [])
             logger.info(f"Found {len(messages)} messages matching query: {query}")
             
-            emails = []
-            
-            # Serial fetch with lazy body loading (skip body for speed)
-            for msg in messages:
-                email_data = self.get_email_details(msg['id'], lazy=True)
-                if email_data:
-                    emails.append(email_data)
+            message_ids = [msg.get('id') for msg in messages if msg.get('id')]
+            emails = self._get_email_details_batch(message_ids, lazy=True)
             
             logger.info(f"Successfully fetched {len(emails)} email details")
             return emails
         except Exception as e:
             logger.error(f"Error getting emails: {str(e)}")
             return []
+
+    def _get_email_details_batch(self, message_ids, lazy=True, batch_size=25):
+        """Fetch many email metadata records with Gmail batch requests."""
+        if not message_ids:
+            return []
+
+        collected = {}
+        format_type = 'metadata' if lazy else 'full'
+
+        try:
+            for start in range(0, len(message_ids), batch_size):
+                chunk = message_ids[start:start + batch_size]
+                batch = self.service.new_batch_http_request()
+
+                def _callback(request_id, response, exception):
+                    if exception:
+                        logger.warning(f"Batch email fetch failed for {request_id}: {exception}")
+                        return
+                    parsed = self._parse_message(response, request_id, lazy=lazy)
+                    if parsed:
+                        collected[request_id] = parsed
+
+                for message_id in chunk:
+                    request_kwargs = {
+                        'userId': 'me',
+                        'id': message_id,
+                        'format': format_type
+                    }
+                    if lazy:
+                        request_kwargs['metadataHeaders'] = ['Subject', 'From', 'Date']
+                    batch.add(
+                        self.service.users().messages().get(**request_kwargs),
+                        request_id=message_id,
+                        callback=_callback
+                    )
+
+                batch.execute()
+
+            return [collected[mid] for mid in message_ids if mid in collected]
+        except Exception as e:
+            logger.warning(f"Batch email fetch failed, falling back to serial fetch: {e}")
+            emails = []
+            for message_id in message_ids:
+                email_data = self.get_email_details(message_id, lazy=lazy)
+                if email_data:
+                    emails.append(email_data)
+            return emails
 
     def get_emails_by_date(self, date_str, max_results=20):
         """Get emails received on a specific date.
@@ -135,38 +188,50 @@ class GmailService:
         try:
             # Use 'metadata' format for lazy loading (has headers but no body), 'full' for complete body
             format_type = 'metadata' if lazy else 'full'
-            message = self.service.users().messages().get(
-                userId='me',
-                id=message_id,
-                format=format_type
-            ).execute()
-            
-            headers = message['payload']['headers']
-            
-            # Extract header information
-            subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
-            sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown')
-            date = next((h['value'] for h in headers if h['name'] == 'Date'), '')
-            snippet = message.get('snippet', '')
-            
-            # Extract body only if not lazy loading
-            body = "" if lazy else self._get_email_body(message['payload'])
-            
-            # Check if email is unread based on labels
-            label_ids = message.get('labelIds', [])
-            is_unread = 'UNREAD' in label_ids
-            
+            request_kwargs = {
+                'userId': 'me',
+                'id': message_id,
+                'format': format_type
+            }
+            if lazy:
+                request_kwargs['metadataHeaders'] = ['Subject', 'From', 'Date']
+            message = self.service.users().messages().get(**request_kwargs).execute()
+            return self._parse_message(message, message_id, lazy=lazy)
+        except Exception as e:
+            print(f"Error getting email details: {str(e)}")
+            return None
+
+    def _parse_message(self, message, message_id, lazy=False):
+        try:
+            payload = message.get('payload', {}) or {}
+            headers = payload.get('headers', []) or []
+
+            def header_value(name, default=''):
+                name_lower = name.lower()
+                return next(
+                    (h.get('value', default) for h in headers if h.get('name', '').lower() == name_lower),
+                    default
+                )
+
+            subject = header_value('Subject', 'No Subject')
+            sender = header_value('From', 'Unknown')
+            date = header_value('Date', '')
+            snippet = message.get('snippet', '') or ''
+            body = "" if lazy else self._get_email_body(payload)
+            label_ids = message.get('labelIds', []) or []
+
             return {
                 'id': message_id,
+                'thread_id': message.get('threadId', ''),
                 'subject': subject,
                 'sender': sender,
                 'date': date,
                 'body': body,
                 'snippet': snippet,
-                'is_unread': is_unread
+                'is_unread': 'UNREAD' in label_ids
             }
         except Exception as e:
-            print(f"Error getting email details: {str(e)}")
+            logger.warning(f"Error parsing email message {message_id}: {e}")
             return None
     
     def _get_email_body(self, payload):
@@ -197,23 +262,37 @@ class GmailService:
                 
                 # Prefer plain text over HTML
                 if text_plain:
-                    body = text_plain[:5000]  # Limit to first 5000 chars
+                    body = text_plain
                 elif text_html:
-                    body = text_html[:5000]
+                    body = self._html_to_text(text_html)
                 elif body:
-                    body = body[:5000]
+                    body = body
                 else:
                     body = ""
             else:
                 # Simple payload (not multipart)
                 data = payload['body'].get('data', '')
                 if data:
-                    body = base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')[:5000]
+                    decoded = base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')
+                    body = self._html_to_text(decoded) if payload.get('mimeType') == 'text/html' else decoded
             
             return body if body else "Email body unavailable"
         except Exception as e:
             print(f"Error extracting email body: {str(e)}")
             return f"Error reading email: {str(e)[:100]}"
+
+    @staticmethod
+    def _html_to_text(value):
+        if not value:
+            return ''
+        text = re.sub(r'(?is)<(script|style).*?>.*?</\1>', ' ', value)
+        text = re.sub(r'(?i)<br\s*/?>', '\n', text)
+        text = re.sub(r'(?i)</p\s*>', '\n\n', text)
+        text = re.sub(r'(?s)<[^>]+>', ' ', text)
+        text = html.unescape(text)
+        text = re.sub(r'[ \t]+', ' ', text)
+        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+        return text.strip()
     
     def send_email(self, to, subject, body):
         """Send email reply"""

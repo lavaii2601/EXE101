@@ -8,10 +8,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
 
 class Schedule:
+    _initialized_dbs = set()
+
     @staticmethod
     def init_db(db_path=None):
         """Initialize schedule table"""
         db_path = db_path or Config.DATABASE_PATH
+        if db_path in Schedule._initialized_dbs:
+            return
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
@@ -44,22 +48,38 @@ class Schedule:
         
         conn.commit()
         conn.close()
-    
+        Schedule._initialized_dbs.add(db_path)
+
     @staticmethod
-    def create(title, description, start_time, end_time, attendees, email_body='', location=None, db_path=None):
+    def create(title, description, start_time, end_time, attendees, email_body='', location=None, calendar_event_id=None, db_path=None):
         """Create new schedule"""
         db_path = db_path or Config.DATABASE_PATH
         Schedule.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO schedules (title, description, start_time, end_time, attendees, email_body, location, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
-        ''', (title, description, start_time, end_time, attendees, email_body, location))
+            INSERT INTO schedules (title, description, start_time, end_time, attendees, email_body, location, calendar_event_id, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        ''', (title, description, start_time, end_time, attendees, email_body, location, calendar_event_id))
         conn.commit()
         schedule_id = cursor.lastrowid
         conn.close()
         return schedule_id
+
+    @staticmethod
+    def get_by_calendar_event_id(calendar_event_id, db_path=None):
+        """Get schedule by Google Calendar event ID"""
+        if not calendar_event_id:
+            return None
+        db_path = db_path or Config.DATABASE_PATH
+        Schedule.init_db(db_path=db_path)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM schedules WHERE calendar_event_id = ?', (calendar_event_id,))
+        schedule = cursor.fetchone()
+        conn.close()
+        return dict(schedule) if schedule else None
     
     @staticmethod
     def get_all(limit=50, db_path=None):

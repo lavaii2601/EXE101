@@ -21,10 +21,307 @@ let gmailName;
 let gmailEmail;
 let openGmailBtn;
 let emailFilterSelect;
+let userModeSelect;
+let userModeModal;
+let emailSearchInput;
+let emailSearchTimer;
 
 // State
-let currentPage = 'chat';
+let currentPage = 'schedule';
 let currentEmailPage = 1;
+let currentWeekStart = getMonday(new Date());
+let currentDetailEmail = null;
+let currentUserMode = 'worker';
+let pendingUserMode = '';
+let userModeRequired = false;
+let currentLanguage = localStorage.getItem('flowmate-language') === 'en' ? 'en' : 'vi';
+
+const I18N = {
+    vi: {
+        'nav.chat': 'Chat',
+        'nav.email': 'Email',
+        'nav.calendar': 'Lịch',
+        'nav.history': 'Lịch sử',
+        'nav.settings': 'Cài đặt',
+        'common.clear': 'Xóa',
+        'common.refresh': 'Làm mới',
+        'email.title': 'Quản lý Email',
+        'email.search': 'Tìm theo người gửi, tiêu đề hoặc nội dung...',
+        'email.includeRead': 'Giữ email đã đọc',
+        'email.openGmail': 'Mở Gmail',
+        'email.login': 'Đăng nhập / Đổi tài khoản',
+        'email.logout': 'Đăng xuất Gmail',
+        'email.inbox': 'Hộp thư đến',
+        'email.report': 'Báo cáo theo ngày',
+        'email.compose': 'Soạn thảo',
+        'settings.title': 'Cài đặt',
+        'settings.subtitle': 'Quản lý tài khoản, giao diện, dữ liệu và kết nối dịch vụ.',
+        'settings.languageSection': 'NGÔN NGỮ',
+        'settings.language': 'Ngôn ngữ hiển thị',
+        'settings.languageHint': 'Áp dụng ngay và được ghi nhớ trên thiết bị này.',
+        'settings.savedLanguage': 'Đã lưu ngôn ngữ',
+        'filter.all': 'Tất cả',
+        'filter.education': 'Giáo dục',
+        'filter.work': 'Công việc',
+        'filter.meeting': 'Họp',
+        'filter.promotion': 'Khuyến mãi',
+        'filter.finance': 'Tài chính',
+        'filter.personal': 'Cá nhân',
+        'filter.other': 'Khác'
+    },
+    en: {
+        'nav.chat': 'Chat',
+        'nav.email': 'Email',
+        'nav.calendar': 'Calendar',
+        'nav.history': 'Activity',
+        'nav.settings': 'Settings',
+        'common.clear': 'Clear',
+        'common.refresh': 'Refresh',
+        'email.title': 'Email Management',
+        'email.search': 'Search sender, subject, or content...',
+        'email.includeRead': 'Include read email',
+        'email.openGmail': 'Open Gmail',
+        'email.login': 'Sign in / Switch account',
+        'email.logout': 'Sign out of Gmail',
+        'email.inbox': 'Inbox',
+        'email.report': 'Daily report',
+        'email.compose': 'Compose',
+        'settings.title': 'Settings',
+        'settings.subtitle': 'Manage your account, appearance, data, and connected services.',
+        'settings.languageSection': 'LANGUAGE',
+        'settings.language': 'Display language',
+        'settings.languageHint': 'Applied immediately and remembered on this device.',
+        'settings.savedLanguage': 'Language saved',
+        'filter.all': 'All',
+        'filter.education': 'Education',
+        'filter.work': 'Work',
+        'filter.meeting': 'Meetings',
+        'filter.promotion': 'Promotions',
+        'filter.finance': 'Finance',
+        'filter.personal': 'Personal',
+        'filter.other': 'Other'
+    }
+};
+
+function t(key) {
+    return I18N[currentLanguage]?.[key] || I18N.vi[key] || key;
+}
+
+function ui(vietnamese, english) {
+    return currentLanguage === 'en' ? english : vietnamese;
+}
+
+const STATIC_ENGLISH_TEXT = {
+    'Không gian làm việc': 'Workspace',
+    'Xóa lịch sử': 'Clear history',
+    'Gửi': 'Send',
+    'Người nhận': 'Recipient',
+    'Tiêu đề': 'Subject',
+    'Nội dung': 'Content',
+    'Gửi email': 'Send email',
+    'Chọn ngày': 'Select date',
+    'Tạo báo cáo': 'Generate report',
+    'Lịch': 'Calendar',
+    'Mở Google Calendar': 'Open Google Calendar',
+    'Tạo sự kiện': 'Create event',
+    '‹ Tuần trước': '‹ Previous week',
+    'Tuần sau ›': 'Next week ›',
+    'Tuần này': 'This week',
+    'Lịch sử hoạt động': 'Activity history',
+    'TÀI KHOẢN': 'ACCOUNT',
+    'Người dùng': 'User',
+    'Làm mới trạng thái': 'Refresh status',
+    'CÁ NHÂN HÓA': 'PERSONALIZATION',
+    'Chế độ người dùng': 'User mode',
+    'Thay đổi': 'Change',
+    'Giao diện tối': 'Dark mode',
+    'Giảm độ sáng và tăng độ tương phản.': 'Reduce brightness and increase contrast.',
+    'KẾT NỐI': 'CONNECTION',
+    'Đang kiểm tra...': 'Checking...',
+    'Kết nối': 'Connect',
+    'DỮ LIỆU': 'DATA',
+    'Xóa toàn bộ lịch sử': 'Clear all history',
+    'Xóa chat, hoạt động email và lịch đã lưu.': 'Delete saved chat, email activity, and calendar history.',
+    'Xóa dữ liệu': 'Delete data',
+    'Đăng xuất Gmail': 'Sign out of Gmail',
+    'Ngắt quyền truy cập Gmail và Calendar.': 'Revoke access to Gmail and Calendar.',
+    'Đăng xuất': 'Sign out',
+    'CÁ NHÂN HÓA FLOWMATE': 'PERSONALIZE FLOWMATE',
+    'Bạn đang làm việc theo cách nào?': 'How do you work?',
+    'Mỗi mode thay đổi ưu tiên email, gợi ý lịch và cách AI phản hồi.': 'Each mode adjusts email priorities, calendar suggestions, and AI responses.',
+    'Tóm tắt': 'Summarize',
+    'Trả lời tự động': 'Draft reply',
+    'Tạo lịch hẹn mới': 'Create appointment',
+    'Mô tả': 'Description',
+    'Ngày giờ bắt đầu': 'Start date and time',
+    'Ngày giờ kết thúc': 'End date and time',
+    'Thời lượng (phút)': 'Duration (minutes)',
+    'Địa điểm': 'Location',
+    'Người tham dự (email, cách nhau bằng dấu phẩy)': 'Attendees (comma-separated emails)',
+    'Tạo lịch hẹn': 'Create appointment',
+    'Hủy': 'Cancel',
+    'Chỉnh sửa lịch hẹn': 'Edit appointment',
+    'Ngày giờ': 'Date and time',
+    'Lưu thay đổi': 'Save changes',
+    'Xác nhận tạo lịch hẹn': 'Confirm appointment',
+    'Ngày': 'Date',
+    'Bắt đầu': 'Start',
+    'Kết thúc': 'End',
+    'Hình thức': 'Format',
+    'Trực tiếp': 'In person',
+    'Điện thoại': 'Phone',
+    'Đối tượng': 'Participants',
+    'Nội dung cuộc hẹn': 'Appointment details',
+    'Xác nhận tạo lịch': 'Confirm appointment'
+};
+
+const STATIC_ENGLISH_PLACEHOLDERS = {
+    'Nhập tin nhắn của bạn...': 'Type your message...',
+    'Tiêu đề email': 'Email subject',
+    'Nội dung email': 'Email content',
+    'Tiêu đề lịch hẹn': 'Appointment title',
+    'Mô tả chi tiết': 'Detailed description',
+    'Ví dụ: 60': 'Example: 60',
+    'Địa điểm': 'Location',
+    'Tiêu đề (ví dụ: Họp phụ huynh)': 'Title (for example: Parent meeting)',
+    'Ví dụ: phụ huynh, học sinh, email@example.com': 'Example: parents, students, email@example.com',
+    'Mô tả / Nội dung cuộc hẹn': 'Description / Appointment details'
+};
+
+function applyStaticLanguage() {
+    const reverseText = Object.fromEntries(Object.entries(STATIC_ENGLISH_TEXT).map(([vi, en]) => [en, vi]));
+    const reversePlaceholders = Object.fromEntries(Object.entries(STATIC_ENGLISH_PLACEHOLDERS).map(([vi, en]) => [en, vi]));
+    const userContentSelector = '#chatMessages, #emailsList, #emailDetail, #dailyReportContainer, #historyList, #schedulesList';
+    document.querySelectorAll('body *').forEach((element) => {
+        if (element.closest(userContentSelector)) return;
+        if (element.children.length === 0) {
+            const text = element.textContent.trim();
+            const replacement = currentLanguage === 'en' ? STATIC_ENGLISH_TEXT[text] : reverseText[text];
+            if (replacement) element.textContent = replacement;
+        }
+        if ('placeholder' in element && element.placeholder) {
+            const replacement = currentLanguage === 'en'
+                ? STATIC_ENGLISH_PLACEHOLDERS[element.placeholder]
+                : reversePlaceholders[element.placeholder];
+            if (replacement) element.placeholder = replacement;
+        }
+    });
+    document.title = ui('FlowMate AI - Trợ lý AI', 'FlowMate AI - AI Assistant');
+    const filterButton = document.getElementById('emailFilterBtn');
+    if (filterButton) filterButton.title = ui('Lọc email', 'Filter email');
+}
+
+function applyLanguage() {
+    document.documentElement.lang = currentLanguage;
+    document.querySelectorAll('[data-i18n]').forEach((element) => {
+        element.textContent = t(element.dataset.i18n);
+    });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((element) => {
+        element.placeholder = t(element.dataset.i18nPlaceholder);
+    });
+    document.querySelectorAll('[data-language]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.language === currentLanguage);
+    });
+    applyStaticLanguage();
+    updateUserModeUI(currentUserMode);
+    updateEmailFilterUI();
+    updateSidebarTooltips();
+}
+
+function updateSidebarTooltips() {
+    document.querySelectorAll('.sidebar-nav .nav-btn').forEach((button) => {
+        const label = button.querySelector('.nav-label')?.textContent?.trim() || '';
+        button.dataset.tooltip = label;
+        button.setAttribute('aria-label', label);
+    });
+    const clearButton = document.getElementById('clearBtn');
+    if (clearButton) {
+        const label = clearButton.querySelector('.sidebar-footer-label')?.textContent?.trim() || t('common.clear');
+        clearButton.dataset.tooltip = label;
+        clearButton.setAttribute('aria-label', label);
+    }
+}
+
+function setLanguage(language) {
+    currentLanguage = language === 'en' ? 'en' : 'vi';
+    localStorage.setItem('flowmate-language', currentLanguage);
+    applyLanguage();
+    setSettingsState(t('settings.savedLanguage'));
+}
+
+function updateEmailFilterUI() {
+    if (!emailFilterSelect) return;
+    const value = emailFilterSelect.value || 'all';
+    const label = document.getElementById('emailFilterLabel');
+    if (label) label.textContent = t(`filter.${value}`);
+    document.querySelectorAll('#emailFilterPopup [data-filter]').forEach((button) => {
+        const filter = button.dataset.filter;
+        button.textContent = t(`filter.${filter}`);
+        button.classList.toggle('active', filter === value);
+    });
+}
+
+const USER_MODES = {
+    student: {
+        initial: 'ST',
+        label: 'Sinh viên',
+        labelEn: 'Student',
+        description: 'Ưu tiên bài tập, deadline, email lớp và lịch học.',
+        descriptionEn: 'Prioritize assignments, deadlines, class email, and study schedules.'
+    },
+    worker: {
+        initial: 'VP',
+        label: 'Nhân viên văn phòng',
+        labelEn: 'Office worker',
+        description: 'Ưu tiên email công việc, cuộc họp, báo cáo và việc cần theo dõi.',
+        descriptionEn: 'Prioritize work email, meetings, reports, and follow-up tasks.'
+    },
+    freelancer: {
+        initial: 'FR',
+        label: 'Freelancer',
+        labelEn: 'Freelancer',
+        description: 'Ưu tiên khách hàng, dự án, hóa đơn và lịch bàn giao.',
+        descriptionEn: 'Prioritize clients, projects, invoices, and delivery dates.'
+    },
+    mentor: {
+        initial: 'MT',
+        label: 'Mentor',
+        labelEn: 'Mentor',
+        description: 'Ưu tiên học viên, lịch hướng dẫn và hạn phản hồi.',
+        descriptionEn: 'Prioritize students, mentoring sessions, and feedback deadlines.'
+    },
+    teacher: {
+        initial: 'GV',
+        label: 'Giáo viên',
+        labelEn: 'Teacher',
+        description: 'Quản lý lớp học, chương trình và tương tác với học sinh.',
+        descriptionEn: 'Manage classes, curriculum, and student engagement.'
+    },
+    business: {
+        initial: 'KD',
+        label: 'Kinh doanh',
+        labelEn: 'Business',
+        description: 'Ưu tiên vận hành, quyết định, đội nhóm và rủi ro.',
+        descriptionEn: 'Prioritize operations, decisions, teams, and risks.'
+    },
+    creator: {
+        initial: 'CR',
+        label: 'Nhà sáng tạo',
+        labelEn: 'Creator',
+        description: 'Ưu tiên thương hiệu, chiến dịch và lịch nội dung.',
+        descriptionEn: 'Prioritize brands, campaigns, and content schedules.'
+    }
+};
+
+const ONBOARDING_MODE_KEYS = ['student', 'worker', 'mentor', 'teacher', 'freelancer'];
+
+function modeLabel(mode) {
+    return currentLanguage === 'en' ? (mode.labelEn || mode.label) : mode.label;
+}
+
+function modeDescription(mode) {
+    return currentLanguage === 'en' ? (mode.descriptionEn || mode.description) : mode.description;
+}
 
 // Initialize
 document.addEventListener('DOMContentLoaded', initApp);
@@ -51,10 +348,302 @@ async function initApp() {
     gmailEmail = document.getElementById('gmailEmail');
     openGmailBtn = document.getElementById('openGmailBtn');
     emailFilterSelect = document.getElementById('emailFilterSelect');
+    userModeSelect = document.getElementById('userModeSelect');
+    userModeModal = document.getElementById('userModeModal');
+    emailSearchInput = document.getElementById('emailSearchInput');
+    setupWorkspaceShell();
+    applyLanguage();
+    const savedTheme = localStorage.getItem('flowmate-theme');
+    document.body.classList.toggle('dark-theme', savedTheme === 'dark');
     // Normalize page visibility on startup to avoid stale CSS/inline styles
     normalizePages();
-    ensureFixedChatHeight();
-    setupEventListeners();
+    
+    // Manually attach event listeners (setupEventListeners has scope issues)
+    try {
+        // Send message button
+        if (sendBtn) {
+            sendBtn.addEventListener('click', () => sendMessage());
+        }
+        
+        // Enter key in input
+        if (userInput) {
+            userInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+        }
+        
+        // Page navigation
+        navBtns.forEach(btn => {
+            btn.addEventListener('click', () => handlePageChange(btn));
+        });
+        
+        // Tab switching
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => handleTabChange(btn));
+        });
+
+        // New schedule form submit
+        if (scheduleForm) {
+            scheduleForm.addEventListener('submit', handleScheduleSubmit);
+        }
+
+        // Edit schedule form submit
+        const editScheduleForm = document.getElementById('editScheduleForm');
+        if (editScheduleForm) {
+            editScheduleForm.addEventListener('submit', handleEditScheduleSubmit);
+        }
+
+        // Create event button (opens the new-schedule popup)
+        const createEventBtn = document.getElementById('createEventBtn');
+        if (createEventBtn) {
+            createEventBtn.addEventListener('click', () => openNewScheduleModal());
+        }
+
+        // New Schedule modal close handlers (X button and Hủy button)
+        const newScheduleModal = document.getElementById('newScheduleModal');
+        if (newScheduleModal) {
+            newScheduleModal.querySelectorAll('[data-modal="newScheduleModal"]').forEach(el => {
+                el.addEventListener('click', () => closeNewScheduleModal());
+            });
+        }
+
+        // Compose email form submit
+        if (composeForm) {
+            composeForm.addEventListener('submit', handleComposeSubmit);
+        }
+
+        // Email detail modal action buttons
+        const summarizeBtn = document.getElementById('summarizeBtn');
+        if (summarizeBtn) {
+            summarizeBtn.addEventListener('click', handleSummarizeEmail);
+        }
+        const replyBtn = document.getElementById('replyBtn');
+        if (replyBtn) {
+            replyBtn.addEventListener('click', handleAutoReply);
+        }
+        const emailDetailCloseBtn = emailDetailModal
+            ? emailDetailModal.querySelector('.email-detail-close')
+            : null;
+        if (emailDetailCloseBtn) {
+            emailDetailCloseBtn.addEventListener('click', closeModalWindow);
+        }
+        if (emailDetailModal) {
+            emailDetailModal.addEventListener('click', (event) => {
+                if (event.target === emailDetailModal) closeModalWindow();
+            });
+        }
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && emailDetailModal?.classList.contains('show')) {
+                closeModalWindow();
+            }
+            if (event.key === 'Escape' && userModeModal?.classList.contains('show')) {
+                closeUserModeModal();
+            }
+        });
+
+        // Clear history
+        if (clearBtn) {
+            clearBtn.addEventListener('click', clearConversation);
+        }
+
+        // Gmail buttons
+        const userAvatar = document.getElementById('userAvatar');
+        if (userAvatar) userAvatar.addEventListener('click', gmailLogin);
+        if (gmailLoginBtn) gmailLoginBtn.addEventListener('click', gmailLogin);
+        if (gmailLogoutBtn) gmailLogoutBtn.addEventListener('click', gmailLogout);
+        if (openGmailBtn) openGmailBtn.addEventListener('click', () => openExternalUrl('https://mail.google.com'));
+        if (userModeSelect) {
+            userModeSelect.addEventListener('change', () => saveUserMode(userModeSelect.value));
+            updateUserModeUI(currentUserMode);
+        }
+        const openUserModeBtn = document.getElementById('openUserModeBtn');
+        if (openUserModeBtn) openUserModeBtn.addEventListener('click', () => openUserModeModal(false));
+        const userModeClose = userModeModal?.querySelector('.user-mode-close');
+        if (userModeClose) userModeClose.addEventListener('click', closeUserModeModal);
+        const userModeCancelBtn = document.getElementById('userModeCancelBtn');
+        if (userModeCancelBtn) userModeCancelBtn.addEventListener('click', closeUserModeModal);
+        const userModeConfirmBtn = document.getElementById('userModeConfirmBtn');
+        if (userModeConfirmBtn) {
+            userModeConfirmBtn.addEventListener('click', () => {
+                if (pendingUserMode) saveUserMode(pendingUserMode, true);
+            });
+        }
+        if (userModeModal) {
+            userModeModal.addEventListener('click', (event) => {
+                if (event.target === userModeModal) closeUserModeModal();
+            });
+        }
+
+        // Email filter
+        if (emailFilterSelect) {
+            emailFilterSelect.addEventListener('change', () => {
+                console.log(`🔍 Filter changed: ${emailFilterSelect.value}`);
+                updateEmailFilterUI();
+                currentEmailPage = 1;
+                loadEmails();
+            });
+        }
+
+        const emailFilterBtn = document.getElementById('emailFilterBtn');
+        const emailFilterPopup = document.getElementById('emailFilterPopup');
+        if (emailFilterBtn && emailFilterPopup) {
+            emailFilterBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                const isOpen = emailFilterPopup.classList.toggle('show');
+                emailFilterBtn.setAttribute('aria-expanded', String(isOpen));
+            });
+            emailFilterPopup.querySelectorAll('[data-filter]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    emailFilterSelect.value = button.dataset.filter;
+                    emailFilterSelect.dispatchEvent(new Event('change'));
+                    emailFilterPopup.classList.remove('show');
+                    emailFilterBtn.setAttribute('aria-expanded', 'false');
+                });
+            });
+            document.addEventListener('click', (event) => {
+                if (!event.target.closest('.email-filter-control')) {
+                    emailFilterPopup.classList.remove('show');
+                    emailFilterBtn.setAttribute('aria-expanded', 'false');
+                }
+            });
+        }
+        if (emailSearchInput) {
+            emailSearchInput.addEventListener('input', () => {
+                clearTimeout(emailSearchTimer);
+                emailSearchTimer = setTimeout(() => {
+                    currentEmailPage = 1;
+                    loadEmails(1);
+                }, 300);
+            });
+        }
+        const clearEmailSearchBtn = document.getElementById('clearEmailSearchBtn');
+        if (clearEmailSearchBtn) {
+            clearEmailSearchBtn.addEventListener('click', () => {
+                if (!emailSearchInput) return;
+                emailSearchInput.value = '';
+                currentEmailPage = 1;
+                loadEmails(1);
+                emailSearchInput.focus();
+            });
+        }
+        const settingsModeBtn = document.getElementById('settingsModeBtn');
+        if (settingsModeBtn) settingsModeBtn.addEventListener('click', () => openUserModeModal(false));
+        const settingsRefreshBtn = document.getElementById('settingsRefreshBtn');
+        if (settingsRefreshBtn) settingsRefreshBtn.addEventListener('click', loadSettingsPage);
+        const settingsDarkMode = document.getElementById('settingsDarkMode');
+        if (settingsDarkMode) {
+            settingsDarkMode.checked = document.body.classList.contains('dark-theme');
+            settingsDarkMode.addEventListener('change', () => {
+                document.body.classList.toggle('dark-theme', settingsDarkMode.checked);
+                localStorage.setItem('flowmate-theme', settingsDarkMode.checked ? 'dark' : 'light');
+                setSettingsState('Đã lưu giao diện');
+            });
+        }
+        const settingsGoogleBtn = document.getElementById('settingsGoogleBtn');
+        if (settingsGoogleBtn) settingsGoogleBtn.addEventListener('click', handleSettingsGoogleAction);
+        const settingsLogoutBtn = document.getElementById('settingsLogoutBtn');
+        if (settingsLogoutBtn) settingsLogoutBtn.addEventListener('click', gmailLogout);
+        const settingsClearDataBtn = document.getElementById('settingsClearDataBtn');
+        if (settingsClearDataBtn) settingsClearDataBtn.addEventListener('click', clearAllUserHistory);
+        document.querySelectorAll('[data-language]').forEach((button) => {
+            button.addEventListener('click', () => setLanguage(button.dataset.language));
+        });
+
+        // Include read checkbox
+        const includeReadCheckbox = document.getElementById('includeReadCheckbox');
+        if (includeReadCheckbox) {
+            includeReadCheckbox.addEventListener('change', () => {
+                console.log(`📬 Include read: ${includeReadCheckbox.checked}`);
+                currentEmailPage = 1;
+                loadEmails();
+            });
+        }
+
+        // Refresh emails
+        const refreshEmailsBtn = document.getElementById('refreshEmailsBtn');
+        if (refreshEmailsBtn) {
+            refreshEmailsBtn.addEventListener('click', () => {
+                console.log('🔄 Refreshing emails');
+                apiFetch(`${API_BASE}/email/cache/clear`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                }).then(() => {
+                    loadEmails();
+                }).catch(err => console.error('Cache clear error:', err));
+            });
+        }
+
+        // Generate daily report
+        const generateReportBtn = document.getElementById('generateReportBtn');
+        if (generateReportBtn) {
+            generateReportBtn.addEventListener('click', generateDailyReport);
+        }
+
+        // Calendar buttons
+        const refreshCalendarBtn = document.getElementById('refreshCalendarBtn');
+        if (refreshCalendarBtn) {
+            refreshCalendarBtn.addEventListener('click', () => {
+                console.log('🔄 Refreshing calendar events');
+                loadCalendarEvents();
+            });
+        }
+
+        const openCalendarBtn = document.getElementById('openCalendarBtn');
+        if (openCalendarBtn) {
+            openCalendarBtn.addEventListener('click', () => openExternalUrl('https://calendar.google.com'));
+        }
+
+        // Weekly schedule table navigation
+        const prevWeekBtn = document.getElementById('prevWeekBtn');
+        if (prevWeekBtn) {
+            prevWeekBtn.addEventListener('click', () => {
+                currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+                loadWeekSchedule();
+            });
+        }
+
+        const nextWeekBtn = document.getElementById('nextWeekBtn');
+        if (nextWeekBtn) {
+            nextWeekBtn.addEventListener('click', () => {
+                currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+                loadWeekSchedule();
+            });
+        }
+
+        const todayWeekBtn = document.getElementById('todayWeekBtn');
+        if (todayWeekBtn) {
+            todayWeekBtn.addEventListener('click', () => {
+                currentWeekStart = getMonday(new Date());
+                loadWeekSchedule();
+            });
+        }
+
+        // Listen for postMessage from OAuth popup to update UI without redirect
+        window.addEventListener('message', (ev) => {
+            try {
+                if (ev.origin === window.location.origin && ev.data && ev.data.type === 'gmail_auth' && ev.data.status === 'success') {
+                    console.log('📥 Received gmail_auth success message');
+                    refreshAuthButtons();
+                    loadUserProfile();
+                    if (currentPage === 'emails') {
+                        setTimeout(() => loadEmails(), 300);
+                    }
+                }
+            } catch (e) {
+                console.warn('PostMessage handling error', e);
+            }
+        });
+
+        setupSidebarMenu();
+
+        console.log('✅ Event listeners attached');
+    } catch (err) {
+        console.error('❌ Error attaching event listeners:', err);
+    }
+    
     await loadUserProfile();
     await loadChatHistory();
     checkOAuthCallback();
@@ -150,6 +739,31 @@ function extractScheduleDraft(text) {
     return draft;
 }
 
+function setupWorkspaceShell() {
+    const createButton = document.getElementById('assistantCreateEventBtn');
+    const editButton = document.getElementById('assistantEditEventBtn');
+    if (createButton) createButton.addEventListener('click', openNewScheduleModal);
+    if (editButton) editButton.addEventListener('click', openNewScheduleModal);
+
+    const composer = document.getElementById('assistantComposer');
+    const assistantInput = document.getElementById('assistantInput');
+    if (composer && assistantInput) {
+        composer.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const message = assistantInput.value.trim();
+            if (!message) return;
+            const chatInput = document.getElementById('userInput');
+            if (chatInput) chatInput.value = message;
+            assistantInput.value = '';
+            const chatButton = document.querySelector('[data-page="chat"]');
+            if (chatButton) {
+                await handlePageChange(chatButton);
+                sendMessage();
+            }
+        });
+    }
+}
+
 // Ensure only the active page is visible. This fixes cases where multiple
 // `.page` elements become visible due to cached CSS or inline styles.
 function normalizePages() {
@@ -163,11 +777,27 @@ function normalizePages() {
     });
 }
 
-// Ensure chat container uses fixed-height variant so page doesn't grow.
-function ensureFixedChatHeight() {
-    const chatContainer = document.querySelector('.chat-container');
-    if (chatContainer) {
-        chatContainer.classList.add('fixed-height');
+// Update sidebar user profile display
+function updateSidebarUserProfile(profile) {
+    if (!profile) return;
+    const { name, email, avatarUrl, connected } = profile;
+    
+    // Update username
+    const userNameEl = document.getElementById('userName');
+    if (userNameEl) {
+        userNameEl.textContent = name || 'Teacher';
+    }
+    
+    // Update Gmail status
+    const gmailStatusEl = document.getElementById('gmailStatus');
+    if (gmailStatusEl) {
+        gmailStatusEl.textContent = connected ? 'Gmail connected' : 'Not connected';
+    }
+    
+    // Update avatar if provided
+    const userAvatarEl = document.getElementById('userAvatar');
+    if (userAvatarEl && avatarUrl) {
+        userAvatarEl.src = avatarUrl;
     }
 }
 
@@ -179,7 +809,10 @@ async function apiFetch(url, options = {}) {
         });
 
         if (resp.status === 401) {
-            showNotification('⚠️ Chưa đăng nhập hoặc hết phiên. Vui lòng đăng nhập Gmail.', 'info');
+            showNotification(ui(
+                '⚠️ Chưa đăng nhập hoặc hết phiên. Vui lòng đăng nhập Gmail.',
+                '⚠️ You are signed out or your session expired. Please sign in to Gmail.'
+            ), 'info');
             // If gmailLogin is available, open the login flow to help the user
             try { if (typeof gmailLogin === 'function') gmailLogin(); } catch (e) { /* ignore */ }
         }
@@ -198,7 +831,7 @@ function checkOAuthCallback() {
         const emailNavBtn = document.querySelector('[data-page="emails"]');
         if (emailNavBtn) {
             handlePageChange(emailNavBtn);
-            showNotification('✅ Gmail đã kết nối thành công!', 'success');
+            showNotification(ui('✅ Gmail đã kết nối thành công!', '✅ Gmail connected successfully!'), 'success');
             
             apiFetch(`${API_BASE}/user/gmail-connected`, {
                 method: 'POST',
@@ -218,6 +851,11 @@ function checkOAuthCallback() {
         }
         window.history.replaceState({}, document.title, window.location.pathname);
     }
+}
+
+function openExternalUrl(url) {
+    const popup = window.open(url, '_blank', 'noopener,noreferrer');
+    if (popup) popup.opener = null;
 }
 
 function showNotification(message, type = 'info') {
@@ -251,7 +889,12 @@ function showNotification(message, type = 'info') {
             const response = await apiFetch(`${API_BASE}/chat/message`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message, confirmed_schedule: confirmed, schedule_override: override })
+                body: JSON.stringify({
+                    message,
+                    mode: currentUserMode,
+                    confirmed_schedule: confirmed,
+                    schedule_override: override
+                })
             });
 
             if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -260,7 +903,7 @@ function showNotification(message, type = 'info') {
             loadingDiv.remove();
 
             if (!data.success) {
-                addMessage('❌ Lỗi: ' + (data.error || 'Unknown error'), 'assistant');
+                addMessage(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || 'Unknown error'), 'assistant');
                 console.error('AI error:', data.error);
                 return;
             }
@@ -268,19 +911,20 @@ function showNotification(message, type = 'info') {
             const providerBadge = data.provider ? `<span class="provider-badge" style="font-size:11px;padding:2px 8px;background:${data.demo_mode?'#FF9800':'#4CAF50'};color:white;border-radius:10px;margin-left:8px;">${data.demo_mode? '🎭 Demo' : ('🤖 '+data.provider.toUpperCase())}</span>` : '';
             addMessage(data.response, 'assistant', providerBadge);
 
-            if (data.demo_mode) showNotification('⚠️ Demo Mode - Tất cả AI providers đang cooldown', 'info');
+            if (data.demo_mode) showNotification(ui('⚠️ Chế độ demo - Tất cả nhà cung cấp AI đang tạm nghỉ', '⚠️ Demo mode - All AI providers are cooling down'), 'info');
 
             // If server already created the schedule, just notify and refresh
             if (data.schedule_created) {
                 try { await loadSchedules(); } catch (e) { /* ignore */ }
-                showNotification(`✅ Đã tạo lịch: ${data.schedule_created.title || 'Lịch hẹn'}`, 'success');
+                try { await loadWeekSchedule(); } catch (e) { /* ignore */ }
+                showNotification(`${ui('✅ Đã tạo lịch', '✅ Event created')}: ${data.schedule_created.title || ui('Lịch hẹn', 'Appointment')}`, 'success');
                 return;
             }
 
         } catch (error) {
             loadingDiv.remove();
             console.error('❌ Message send error:', error);
-            addMessage('❌ Lỗi kết nối: ' + error.message, 'assistant');
+            addMessage(ui('❌ Lỗi kết nối: ', '❌ Connection error: ') + error.message, 'assistant');
             console.error(`Lỗi: ${error.message}\nEndpoint: ${API_BASE}/chat/message`);
         }
     }
@@ -292,7 +936,7 @@ function setupEventListeners() {
     const closeBtn = editModal ? editModal.querySelector('.close[data-modal="editScheduleModal"]') : null;
         if (closeBtn) closeBtn.addEventListener('click', () => editModal.style.display = 'none');
     }
-    
+
     // Clear history
     if (clearBtn) {
         clearBtn.addEventListener('click', clearConversation);
@@ -303,7 +947,7 @@ function setupEventListeners() {
     if (userAvatar) userAvatar.addEventListener('click', gmailLogin);
     if (gmailLoginBtn) gmailLoginBtn.addEventListener('click', gmailLogin);
     if (gmailLogoutBtn) gmailLogoutBtn.addEventListener('click', gmailLogout);
-    if (openGmailBtn) openGmailBtn.addEventListener('click', () => window.open('https://mail.google.com', '_blank'));
+    if (openGmailBtn) openGmailBtn.addEventListener('click', () => openExternalUrl('https://mail.google.com'));
     
     // Email filter
     if (emailFilterSelect) {
@@ -359,16 +1003,31 @@ function setupEventListeners() {
     
     const openCalendarBtn = document.getElementById('openCalendarBtn');
     if (openCalendarBtn) {
-        openCalendarBtn.addEventListener('click', () => window.open('https://calendar.google.com', '_blank'));
+        openCalendarBtn.addEventListener('click', () => openExternalUrl('https://calendar.google.com'));
     }
 
-    // Create event button (in merged schedule header)
-    const createEventBtn = document.getElementById('createEventBtn');
-    if (createEventBtn) {
-        createEventBtn.addEventListener('click', () => {
-            // switch to new-schedule tab
-            const tabBtn = document.querySelector('.tab-btn[data-tab="new-schedule"]');
-            if (tabBtn) tabBtn.click();
+    // Weekly schedule table navigation
+    const prevWeekBtn = document.getElementById('prevWeekBtn');
+    if (prevWeekBtn) {
+        prevWeekBtn.addEventListener('click', () => {
+            currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+            loadWeekSchedule();
+        });
+    }
+
+    const nextWeekBtn = document.getElementById('nextWeekBtn');
+    if (nextWeekBtn) {
+        nextWeekBtn.addEventListener('click', () => {
+            currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+            loadWeekSchedule();
+        });
+    }
+
+    const todayWeekBtn = document.getElementById('todayWeekBtn');
+    if (todayWeekBtn) {
+        todayWeekBtn.addEventListener('click', () => {
+            currentWeekStart = getMonday(new Date());
+            loadWeekSchedule();
         });
     }
 
@@ -447,7 +1106,9 @@ async function refreshAuthButtons() {
         if (openGmailBtn) openGmailBtn.style.display = isAuth ? 'inline-block' : 'none';
 
         if (gmailAccountBadge) {
-            gmailAccountBadge.textContent = isAuth ? 'Đã kết nối Gmail' : 'Chưa đăng nhập Gmail';
+            gmailAccountBadge.textContent = isAuth
+                ? ui('Đã kết nối Gmail', 'Gmail connected')
+                : ui('Chưa đăng nhập Gmail', 'Gmail not connected');
             gmailAccountBadge.style.display = isAuth ? 'none' : 'inline-block';
         }
 
@@ -471,7 +1132,7 @@ async function refreshAuthButtons() {
 }
 
 async function gmailLogout() {
-    if (!confirm('Bạn có chắc muốn đăng xuất Gmail?')) return;
+    if (!confirm(ui('Bạn có chắc muốn đăng xuất Gmail?', 'Are you sure you want to sign out of Gmail?'))) return;
 
     try {
         const response = await apiFetch(`${API_BASE}/email/logout`, {
@@ -481,7 +1142,7 @@ async function gmailLogout() {
         const data = await response.json();
 
         if (data.success) {
-            showNotification('✅ Đã đăng xuất Gmail', 'success');
+            showNotification(ui('✅ Đã đăng xuất Gmail', '✅ Signed out of Gmail'), 'success');
             apiFetch(`${API_BASE}/user/gmail-disconnected`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
@@ -490,10 +1151,10 @@ async function gmailLogout() {
             await refreshAuthButtons();
             await loadUserProfile();
             const emailsList = document.getElementById('emailsList');
-            if (emailsList) emailsList.innerHTML = '<p>Đã đăng xuất Gmail. Vui lòng đăng nhập lại.</p>';
+            if (emailsList) emailsList.innerHTML = `<p>${ui('Đã đăng xuất Gmail. Vui lòng đăng nhập lại.', 'You have signed out of Gmail. Please sign in again.')}</p>`;
         }
     } catch (err) {
-        alert('Lỗi: ' + err.message);
+        alert(ui('Lỗi: ', 'Error: ') + err.message);
     }
 }
 
@@ -534,7 +1195,7 @@ async function handlePageChange(btn) {
             const authResp = await apiFetch(`${API_BASE}/email/auth-status`);
             if (authResp.status === 401) {
                 const emailsList = document.getElementById('emailsList');
-                if (emailsList) emailsList.innerHTML = `<div style="padding:20px;text-align:center;">Vui lòng đăng nhập Gmail để xem email.<br><br><button class="btn-primary" id="promptLoginBtn">Đăng nhập Gmail</button></div>`;
+                if (emailsList) emailsList.innerHTML = `<div style="padding:20px;text-align:center;">${ui('Vui lòng đăng nhập Gmail để xem email.', 'Please sign in to Gmail to view email.')}<br><br><button class="btn-primary" id="promptLoginBtn">${ui('Đăng nhập Gmail', 'Sign in to Gmail')}</button></div>`;
                 const btnLogin = document.getElementById('promptLoginBtn');
                 if (btnLogin) btnLogin.addEventListener('click', gmailLogin);
                 return;
@@ -542,7 +1203,7 @@ async function handlePageChange(btn) {
             const authData = await authResp.json();
             if (!authData || !authData.authenticated) {
                 const emailsList = document.getElementById('emailsList');
-                if (emailsList) emailsList.innerHTML = `<div style="padding:20px;text-align:center;">Vui lòng đăng nhập Gmail để xem email.<br><br><button class="btn-primary" id="promptLoginBtn">Đăng nhập Gmail</button></div>`;
+                if (emailsList) emailsList.innerHTML = `<div style="padding:20px;text-align:center;">${ui('Vui lòng đăng nhập Gmail để xem email.', 'Please sign in to Gmail to view email.')}<br><br><button class="btn-primary" id="promptLoginBtn">${ui('Đăng nhập Gmail', 'Sign in to Gmail')}</button></div>`;
                 const btnLogin = document.getElementById('promptLoginBtn');
                 if (btnLogin) btnLogin.addEventListener('click', gmailLogin);
                 return;
@@ -554,12 +1215,85 @@ async function handlePageChange(btn) {
 
         loadEmails().catch(err => console.error('Email load error:', err));
     } else if (page === 'schedule') {
+        loadWeekSchedule().catch(err => console.error('Week schedule load error:', err));
         loadSchedules().catch(err => console.error('Schedule load error:', err));
         // also load Google Calendar events (merged into schedule tab)
         loadCalendarEvents().catch(err => console.error('Calendar load error:', err));
     } else if (page === 'history') {
         loadActivityHistory().catch(err => console.error('History load error:', err));
+    } else if (page === 'settings') {
+        loadSettingsPage().catch(err => console.error('Settings load error:', err));
     }
+}
+
+function setupSidebarMenu() {
+    const container = document.querySelector('.container');
+    const sidebar = document.querySelector('.sidebar');
+    const menuToggle = document.getElementById('menuToggle');
+    if (!container || !sidebar || !menuToggle || menuToggle.dataset.ready === 'true') return;
+
+    menuToggle.dataset.ready = 'true';
+    let overlay = document.getElementById('sidebarOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'sidebarOverlay';
+        overlay.className = 'overlay';
+        document.body.appendChild(overlay);
+    }
+
+    const isMobile = () => window.innerWidth <= 860;
+    const updateToggle = () => {
+        const mobileOpen = sidebar.classList.contains('open');
+        const collapsed = container.classList.contains('sidebar-collapsed');
+        const expanded = isMobile() ? mobileOpen : !collapsed;
+        menuToggle.setAttribute('aria-expanded', String(expanded));
+        menuToggle.setAttribute('aria-label', isMobile()
+            ? ui(mobileOpen ? 'Đóng menu' : 'Mở menu', mobileOpen ? 'Close menu' : 'Open menu')
+            : ui(collapsed ? 'Mở rộng thanh bên' : 'Thu gọn thanh bên', collapsed ? 'Expand sidebar' : 'Collapse sidebar'));
+        const icon = menuToggle.querySelector('.menu-toggle-icon');
+        if (icon) icon.textContent = isMobile() ? (mobileOpen ? '×' : '☰') : (collapsed ? '›' : '‹');
+    };
+
+    const closeMobileSidebar = () => {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('show');
+        updateToggle();
+    };
+
+    const applyDesktopPreference = () => {
+        if (isMobile()) {
+            container.classList.remove('sidebar-collapsed');
+            closeMobileSidebar();
+        } else {
+            const collapsed = localStorage.getItem('flowmate-sidebar-collapsed') === 'true';
+            container.classList.toggle('sidebar-collapsed', collapsed);
+            sidebar.classList.remove('open');
+            overlay.classList.remove('show');
+            updateToggle();
+        }
+    };
+
+    menuToggle.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (isMobile()) {
+            const shouldOpen = !sidebar.classList.contains('open');
+            sidebar.classList.toggle('open', shouldOpen);
+            overlay.classList.toggle('show', shouldOpen);
+        } else {
+            const collapsed = container.classList.toggle('sidebar-collapsed');
+            localStorage.setItem('flowmate-sidebar-collapsed', String(collapsed));
+        }
+        updateToggle();
+    });
+
+    overlay.addEventListener('click', closeMobileSidebar);
+    navBtns.forEach((button) => {
+        button.addEventListener('click', () => {
+            if (isMobile()) closeMobileSidebar();
+        });
+    });
+    window.addEventListener('resize', applyDesktopPreference);
+    applyDesktopPreference();
 }
 
 // TAB MANAGEMENT
@@ -634,12 +1368,12 @@ function sendMessage() {
         if (contentEl) contentEl.value = draft.content;
         if (body) {
             body.innerHTML = `
-                <div><strong>Nội dung phát hiện:</strong> ${escapeHtml(draft.content)}</div>
+                <div><strong>${ui('Nội dung phát hiện', 'Detected content')}:</strong> ${escapeHtml(draft.content)}</div>
                 <div style="margin-top:8px; font-size:13px; line-height:1.5;">
-                    Ngày: ${escapeHtml(draft.date || 'Chưa xác định')}<br>
-                    Thời gian: ${escapeHtml(draft.startTime ? (draft.endTime ? `${draft.startTime} - ${draft.endTime}` : draft.startTime) : 'Chưa xác định')}<br>
-                    Hình thức: ${escapeHtml(draft.format || 'Trực tiếp')}<br>
-                    Đối tượng: ${escapeHtml(draft.attendees || 'Chưa xác định')}
+                    ${ui('Ngày', 'Date')}: ${escapeHtml(draft.date || ui('Chưa xác định', 'Not specified'))}<br>
+                    ${ui('Thời gian', 'Time')}: ${escapeHtml(draft.startTime ? (draft.endTime ? `${draft.startTime} - ${draft.endTime}` : draft.startTime) : ui('Chưa xác định', 'Not specified'))}<br>
+                    ${ui('Hình thức', 'Format')}: ${escapeHtml(draft.format || ui('Trực tiếp', 'In person'))}<br>
+                    ${ui('Đối tượng', 'Participants')}: ${escapeHtml(draft.attendees || ui('Chưa xác định', 'Not specified'))}
                 </div>
             `;
         }
@@ -714,7 +1448,7 @@ async function sendMessageConfirmed(message, opts = {}) {
         const response = await apiFetch(`${API_BASE}/chat/message`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message, confirmed_schedule: confirmed })
+            body: JSON.stringify({ message, mode: currentUserMode, confirmed_schedule: confirmed })
         });
 
         console.log(`⚙️ Response status: ${response.status}`);
@@ -737,14 +1471,15 @@ async function sendMessageConfirmed(message, opts = {}) {
             addMessage(data.response, 'assistant', providerBadge);
 
             if (data.demo_mode) {
-                showNotification('⚠️ Demo Mode - Tất cả AI providers đang cooldown', 'info');
+                showNotification(ui('⚠️ Chế độ demo - Tất cả nhà cung cấp AI đang tạm nghỉ', '⚠️ Demo mode - All AI providers are cooling down'), 'info');
             }
 
             // Handle schedule results from server
             if (data.schedule_created) {
                 // Server already created the schedule (user confirmed or server-side)
                 try { await loadSchedules(); } catch (e) { /* ignore */ }
-                showNotification(`✅ Đã tạo lịch: ${data.schedule_created.title || 'Lịch hẹn'}`, 'success');
+                try { await loadWeekSchedule(); } catch (e) { /* ignore */ }
+                showNotification(`${ui('✅ Đã tạo lịch', '✅ Event created')}: ${data.schedule_created.title || ui('Lịch hẹn', 'Appointment')}`, 'success');
             } else if (data.schedule_suggestion && isScheduleIntent(message)) {
                 const suggested = data.schedule_suggestion;
                 // Show inline suggestion with create/dismiss buttons
@@ -752,11 +1487,11 @@ async function sendMessageConfirmed(message, opts = {}) {
                 suggestionDiv.className = 'message assistant';
                 suggestionDiv.innerHTML = `
                     <div class="message-content">
-                        <div style="font-weight:700; margin-bottom:6px;">AI gợi ý tạo lịch: ${escapeHtml(suggested.title || 'Lịch hẹn')}</div>
+                        <div style="font-weight:700; margin-bottom:6px;">${ui('AI gợi ý tạo lịch', 'AI suggested an event')}: ${escapeHtml(suggested.title || ui('Lịch hẹn', 'Appointment'))}</div>
                         <div style="color:var(--text-secondary); font-size:13px; margin-bottom:8px;">${escapeHtml(suggested.description || '')}</div>
                         <div style="display:flex; gap:8px;">
-                            <button class="btn-primary confirm-create-schedule">Tạo lịch</button>
-                            <button class="btn-secondary dismiss-schedule">Bỏ qua</button>
+                            <button class="btn-primary confirm-create-schedule">${ui('Tạo lịch', 'Create event')}</button>
+                            <button class="btn-secondary dismiss-schedule">${ui('Bỏ qua', 'Dismiss')}</button>
                         </div>
                     </div>
                 `;
@@ -766,7 +1501,7 @@ async function sendMessageConfirmed(message, opts = {}) {
                 // wire buttons
                 suggestionDiv.querySelector('.dismiss-schedule').addEventListener('click', () => {
                     suggestionDiv.remove();
-                    showNotification('Đã bỏ qua gợi ý tạo lịch', 'info');
+                    showNotification(ui('Đã bỏ qua gợi ý tạo lịch', 'Event suggestion dismissed'), 'info');
                 });
 
                 suggestionDiv.querySelector('.confirm-create-schedule').addEventListener('click', async () => {
@@ -786,28 +1521,29 @@ async function sendMessageConfirmed(message, opts = {}) {
                         });
                         const j = await resp.json();
                         if (resp.ok && j.success) {
-                            showNotification(`✅ Đã tạo lịch: ${j.calendar_event_id ? 'đã đồng bộ Google Calendar' : suggested.title}`, 'success');
+                            showNotification(`${ui('✅ Đã tạo lịch', '✅ Event created')}: ${j.calendar_event_id ? ui('đã đồng bộ Google Calendar', 'synced with Google Calendar') : suggested.title}`, 'success');
                             try { await loadSchedules(); } catch (e) { /* ignore */ }
+                            try { await loadWeekSchedule(); } catch (e) { /* ignore */ }
                             suggestionDiv.remove();
                         } else {
-                            showNotification('❌ Không thể tạo lịch: ' + (j.error || resp.statusText || 'lỗi'), 'error');
+                            showNotification(ui('❌ Không thể tạo lịch: ', '❌ Could not create event: ') + (j.error || resp.statusText || ui('lỗi', 'error')), 'error');
                             suggestionDiv.querySelectorAll('button').forEach(b => b.disabled = false);
                         }
                     } catch (err) {
                         console.error('Create schedule error', err);
-                        showNotification('❌ Lỗi tạo lịch: ' + err.message, 'error');
+                        showNotification(ui('❌ Lỗi tạo lịch: ', '❌ Event creation error: ') + err.message, 'error');
                         suggestionDiv.querySelectorAll('button').forEach(b => b.disabled = false);
                     }
                 });
             }
         } else {
-            addMessage('❌ Lỗi: ' + (data.error || 'Unknown error'), 'assistant');
+            addMessage(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || 'Unknown error'), 'assistant');
             console.error('AI error:', data.error);
         }
     } catch (error) {
         loadingDiv.remove();
         console.error('❌ Message send error:', error);
-        addMessage('❌ Lỗi kết nối: ' + error.message, 'assistant');
+        addMessage(ui('❌ Lỗi kết nối: ', '❌ Connection error: ') + error.message, 'assistant');
 
         // Detailed error message
         const errorMsg = `
@@ -827,6 +1563,194 @@ function addMessage(text, role, badge = '') {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+function updateUserModeUI(mode) {
+    currentUserMode = USER_MODES[mode] ? mode : 'worker';
+    if (userModeSelect) userModeSelect.value = currentUserMode;
+    const description = document.getElementById('userModeDescription');
+    if (description) description.textContent = modeDescription(USER_MODES[currentUserMode]);
+    const label = document.getElementById('userModeLabel');
+    if (label) label.textContent = modeLabel(USER_MODES[currentUserMode]);
+    const initial = document.getElementById('userModeInitial');
+    if (initial) initial.textContent = USER_MODES[currentUserMode].initial;
+    const settingsModeText = document.getElementById('settingsModeText');
+    if (settingsModeText) settingsModeText.textContent = modeLabel(USER_MODES[currentUserMode]);
+    document.querySelectorAll('.user-mode-card').forEach((card) => {
+        card.classList.toggle('active', card.dataset.mode === currentUserMode);
+    });
+    document.querySelectorAll('[data-workspace-mode]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.workspaceMode === currentUserMode);
+    });
+}
+
+function setSettingsState(message, isError = false) {
+    const state = document.getElementById('settingsSaveState');
+    if (!state) return;
+    state.textContent = message;
+    state.style.color = isError ? '#b91c1c' : '#0f766e';
+}
+
+async function loadSettingsPage() {
+    setSettingsState(ui('Đang đồng bộ...', 'Syncing...'));
+    try {
+        const [profileResponse, authResponse] = await Promise.all([
+            apiFetch(`${API_BASE}/user/profile`),
+            apiFetch(`${API_BASE}/email/auth-status`)
+        ]);
+        const profileData = await profileResponse.json();
+        const authData = await authResponse.json();
+        const user = profileData.user || {};
+        const connected = !!authData.authenticated;
+
+        const name = document.getElementById('settingsName');
+        const email = document.getElementById('settingsEmail');
+        const avatar = document.getElementById('settingsAvatar');
+        const googleStatus = document.getElementById('settingsGoogleStatus');
+        const googleBtn = document.getElementById('settingsGoogleBtn');
+        if (name) name.textContent = user.gmail_name || user.name || ui('Người dùng', 'User');
+        if (email) email.textContent = user.gmail_email || user.email || ui('Chưa kết nối Gmail', 'Gmail not connected');
+        if (avatar) avatar.src = user.gmail_picture || user.avatar_url || 'https://www.gravatar.com/avatar/?d=mp&s=96';
+        if (googleStatus) googleStatus.textContent = connected
+            ? ui('Đã kết nối và sẵn sàng đồng bộ.', 'Connected and ready to sync.')
+            : ui('Chưa kết nối tài khoản Google.', 'Google account not connected.');
+        if (googleBtn) {
+            googleBtn.textContent = connected ? ui('Mở Gmail', 'Open Gmail') : ui('Kết nối', 'Connect');
+            googleBtn.dataset.connected = connected ? 'true' : 'false';
+        }
+        updateUserModeUI(user.user_mode || currentUserMode);
+        setSettingsState(ui('Đã đồng bộ', 'Synced'));
+    } catch (error) {
+        setSettingsState(`${ui('Lỗi', 'Error')}: ${error.message}`, true);
+    }
+}
+
+function handleSettingsGoogleAction() {
+    const button = document.getElementById('settingsGoogleBtn');
+    if (button?.dataset.connected === 'true') {
+        openExternalUrl('https://mail.google.com');
+    } else {
+        gmailLogin();
+    }
+}
+
+async function clearAllUserHistory() {
+    if (!confirm(ui(
+        'Xóa toàn bộ lịch sử chat, email và lịch đã ghi nhận?',
+        'Delete all saved chat, email, and calendar history?'
+    ))) return;
+    setSettingsState(ui('Đang xóa dữ liệu...', 'Deleting data...'));
+    try {
+        const response = await apiFetch(`${API_BASE}/chat/clear-all`, { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || ui('Không thể xóa dữ liệu', 'Unable to delete data'));
+        if (chatMessages) chatMessages.innerHTML = '';
+        const historyList = document.getElementById('historyList');
+        if (historyList) historyList.innerHTML = '';
+        setSettingsState(ui(`Đã xóa ${data.deleted_count || 0} mục`, `Deleted ${data.deleted_count || 0} items`));
+        showNotification(ui('Đã xóa toàn bộ lịch sử', 'All history deleted'), 'success');
+    } catch (error) {
+        setSettingsState(`${ui('Lỗi', 'Error')}: ${error.message}`, true);
+    }
+}
+
+function renderUserModeGrid() {
+    const grid = document.getElementById('userModeGrid');
+    if (!grid) return;
+    grid.innerHTML = ONBOARDING_MODE_KEYS.map((value) => {
+        const mode = USER_MODES[value];
+        return `
+        <button type="button" class="user-mode-card${value === pendingUserMode ? ' active' : ''}" data-mode="${value}">
+            <span class="user-mode-card-icon">${mode.initial}</span>
+            <strong>${modeLabel(mode)}</strong>
+            <p>${modeDescription(mode)}</p>
+            <span class="user-mode-card-check">${value === pendingUserMode ? '✓' : ''}</span>
+        </button>
+    `;
+    }).join('');
+    grid.querySelectorAll('.user-mode-card').forEach((card) => {
+        card.addEventListener('click', () => {
+            pendingUserMode = card.dataset.mode;
+            renderUserModeGrid();
+            const confirmButton = document.getElementById('userModeConfirmBtn');
+            if (confirmButton) confirmButton.disabled = false;
+        });
+    });
+}
+
+function openUserModeModal(required = false) {
+    if (!userModeModal) return;
+    userModeRequired = required;
+    pendingUserMode = required ? '' : currentUserMode;
+    userModeModal.classList.toggle('is-required', required);
+    const closeButton = userModeModal.querySelector('.user-mode-close');
+    const cancelButton = document.getElementById('userModeCancelBtn');
+    const confirmButton = document.getElementById('userModeConfirmBtn');
+    if (closeButton) closeButton.hidden = required;
+    if (cancelButton) cancelButton.hidden = required;
+    if (confirmButton) confirmButton.disabled = !pendingUserMode;
+    const title = document.getElementById('userModeModalTitle');
+    if (title) title.textContent = ui('Chọn chế độ làm việc', 'Select Your Workspace Mode');
+    const status = document.getElementById('userModeSaveStatus');
+    if (status) {
+        status.textContent = required
+            ? ui('Hãy chọn một chế độ để tiếp tục sử dụng FlowMate.', 'Choose a mode to continue using FlowMate.')
+            : '';
+    }
+    renderUserModeGrid();
+    userModeModal.classList.add('show');
+    (required ? gridFirstModeCard() : closeButton)?.focus();
+}
+
+function closeUserModeModal() {
+    if (userModeRequired) return;
+    userModeModal?.classList.remove('show');
+}
+
+function gridFirstModeCard() {
+    return document.querySelector('#userModeGrid .user-mode-card');
+}
+
+async function saveUserMode(mode, closeAfterSave = false) {
+    const previousMode = currentUserMode;
+    updateUserModeUI(mode);
+    const status = document.getElementById('userModeSaveStatus');
+    if (status) status.textContent = ui('Đang áp dụng chế độ...', 'Applying mode...');
+    document.querySelectorAll('.user-mode-card').forEach((card) => {
+        card.disabled = true;
+    });
+    try {
+        const response = await apiFetch(`${API_BASE}/user/profile`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_mode: currentUserMode })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Không thể lưu chế độ người dùng');
+        }
+        renderUserModeGrid();
+        if (status) status.textContent = ui(
+            `Đã áp dụng ${modeLabel(USER_MODES[currentUserMode])}.`,
+            `Applied ${modeLabel(USER_MODES[currentUserMode])}.`
+        );
+        showNotification(ui(
+            `Đã chuyển sang ${modeLabel(USER_MODES[currentUserMode])}`,
+            `Switched to ${modeLabel(USER_MODES[currentUserMode])}`
+        ), 'success');
+        userModeRequired = false;
+        userModeModal?.classList.remove('is-required');
+        if (closeAfterSave) setTimeout(() => userModeModal?.classList.remove('show'), 350);
+    } catch (error) {
+        updateUserModeUI(previousMode);
+        renderUserModeGrid();
+        if (status) status.textContent = ui(`Không thể lưu: ${error.message}`, `Could not save: ${error.message}`);
+        showNotification(ui(`Lỗi lưu chế độ: ${error.message}`, `Mode save error: ${error.message}`), 'error');
+    } finally {
+        document.querySelectorAll('.user-mode-card').forEach((card) => {
+            card.disabled = false;
+        });
+    }
+}
+
 async function loadUserProfile() {
     try {
         const [profileResponse, gmailResponse] = await Promise.all([
@@ -839,6 +1763,8 @@ async function loadUserProfile() {
         
         if (data.success && data.user) {
             const user = data.user;
+            const storedMode = user.user_mode && USER_MODES[user.user_mode] ? user.user_mode : '';
+            updateUserModeUI(storedMode || 'worker');
             const gmailConnected = !!(gmailData && gmailData.success && gmailData.gmail_connected);
             const currentSidebarName = document.getElementById('userName')?.textContent?.trim() || '';
             const currentSidebarAvatar = document.getElementById('userAvatar')?.getAttribute('src') || '';
@@ -852,7 +1778,10 @@ async function loadUserProfile() {
 
             const userAvatar = document.getElementById('userAvatar');
             if (userAvatar) {
-                userAvatar.title = gmailConnected ? 'Đã kết nối Gmail' : 'Đăng nhập Gmail';
+                userAvatar.title = gmailConnected ? ui('Đã kết nối Gmail', 'Gmail connected') : ui('Đăng nhập Gmail', 'Sign in to Gmail');
+            }
+            if (gmailConnected && (user.mode_required || !storedMode)) {
+                openUserModeModal(true);
             }
         }
     } catch (error) {
@@ -878,7 +1807,7 @@ async function loadChatHistory() {
 }
 
 async function clearConversation() {
-    if (!confirm('Bạn có chắc chắn muốn làm mới cuộc trò chuyện?')) return;
+    if (!confirm(ui('Bạn có chắc chắn muốn làm mới cuộc trò chuyện?', 'Are you sure you want to clear this conversation?'))) return;
     
     try {
         const response = await apiFetch(`${API_BASE}/chat/clear`, {
@@ -889,10 +1818,10 @@ async function clearConversation() {
         const data = await response.json();
         if (data.success) {
             chatMessages.innerHTML = '';
-            showNotification('✅ Lịch sử đã bị xóa', 'success');
+            showNotification(ui('✅ Lịch sử đã bị xóa', '✅ History cleared'), 'success');
         }
     } catch (error) {
-        showNotification('❌ Lỗi: ' + error.message, 'error');
+        showNotification(ui('❌ Lỗi: ', '❌ Error: ') + error.message, 'error');
     }
 }
 
@@ -903,13 +1832,13 @@ async function gmailLogin() {
         const data = await response.json();
 
         if (!response.ok || !data.auth_url) {
-            alert('Lỗi: ' + (data.error || 'OAuth chưa được cấu hình'));
+            alert(ui('Lỗi: ', 'Error: ') + (data.error || ui('OAuth chưa được cấu hình', 'OAuth is not configured')));
             return;
         }
 
         window.location.href = data.auth_url;
     } catch (err) {
-        alert('Lỗi: ' + err.message);
+        alert(ui('Lỗi: ', 'Error: ') + err.message);
     }
 }
 
@@ -926,16 +1855,16 @@ async function toggleEmailReadStatus(emailId, isUnread) {
         const data = await response.json();
         
         if (data.success) {
-            const action = isUnread ? 'đã đọc' : 'chưa đọc';
-            showNotification(`✅ Đã đánh dấu email ${action}`, 'success');
+            const action = isUnread ? ui('đã đọc', 'read') : ui('chưa đọc', 'unread');
+            showNotification(ui(`✅ Đã đánh dấu email ${action}`, `✅ Email marked as ${action}`), 'success');
             // Reload emails to reflect the change
             await loadEmails(currentEmailPage);
         } else {
-            showNotification(`❌ Lỗi: ${data.error || 'Không thể đánh dấu email'}`, 'error');
+            showNotification(`${ui('❌ Lỗi', '❌ Error')}: ${data.error || ui('Không thể đánh dấu email', 'Unable to update email')}`, 'error');
         }
     } catch (error) {
         console.error('Error toggling email read status:', error);
-        showNotification(`❌ Lỗi: ${error.message}`, 'error');
+        showNotification(`${ui('❌ Lỗi', '❌ Error')}: ${error.message}`, 'error');
     }
 }
 
@@ -964,16 +1893,17 @@ async function loadEmails(page = 1) {
         return;
     }
     
-    emailsList.innerHTML = '<p style="padding: 20px; text-align: center; color: #666;">⏳ Đang tải email...</p>';
+    emailsList.innerHTML = `<p style="padding: 20px; text-align: center; color: #666;">${ui('⏳ Đang tải email...', '⏳ Loading email...')}</p>`;
     const selectedFilter = emailFilterSelect ? emailFilterSelect.value : 'all';
     const includeReadCheckbox = document.getElementById('includeReadCheckbox');
-    const includeRead = includeReadCheckbox ? includeReadCheckbox.checked : false;
+    const includeRead = includeReadCheckbox ? includeReadCheckbox.checked : true;
     currentEmailPage = page;
 
     await refreshAuthButtons();
     
     try {
-        const url = `${API_BASE}/email/get-unread?max_results=20&page=${page}&filter=${encodeURIComponent(selectedFilter)}&include_read=${includeRead}`;
+        const search = emailSearchInput ? emailSearchInput.value.trim() : '';
+        const url = `${API_BASE}/email/get-unread?max_results=20&page=${page}&filter=${encodeURIComponent(selectedFilter)}&include_read=${includeRead}&search=${encodeURIComponent(search)}`;
         console.log(`📧 Loading emails: ${url}`);
         console.log(`🔍 Filter: ${selectedFilter}, Page: ${page}, Include read: ${includeRead}`);
         
@@ -990,8 +1920,8 @@ async function loadEmails(page = 1) {
         if (data && data.error === 'not_authenticated') {
             emailsList.innerHTML = `
                 <div style="padding: 30px; text-align: center; background: #FFF3E0; border-radius: 8px; margin: 20px;">
-                    <p style="font-size: 16px; color: #E65100; margin-bottom: 15px;">⚠️ Chưa đăng nhập Gmail</p>
-                    <button id="loginPromptBtn" class="btn-primary">Đăng nhập Gmail</button>
+                    <p style="font-size: 16px; color: #E65100; margin-bottom: 15px;">${ui('⚠️ Chưa đăng nhập Gmail', '⚠️ Gmail not connected')}</p>
+                    <button id="loginPromptBtn" class="btn-primary">${ui('Đăng nhập Gmail', 'Sign in to Gmail')}</button>
                 </div>
             `;
             document.getElementById('loginPromptBtn').addEventListener('click', gmailLogin);
@@ -1003,7 +1933,7 @@ async function loadEmails(page = 1) {
             emailsList.innerHTML = `
                 <div style="padding: 20px; background: #FFEBEE; border-radius: 8px; margin: 20px;">
                     <p style="color: #C62828; font-weight: bold;">❌ Lỗi: ${escapeHtml(data.error || 'Unknown error')}</p>
-                    <button onclick="loadEmails(1)" class="btn-primary" style="margin-top: 10px;">🔄 Thử lại</button>
+                        <button onclick="loadEmails(1)" class="btn-primary" style="margin-top: 10px;">${ui('🔄 Thử lại', '🔄 Try again')}</button>
                 </div>
             `;
             return;
@@ -1013,14 +1943,14 @@ async function loadEmails(page = 1) {
             console.warn('⚠️ No emails found');
             emailsList.innerHTML = `
                 <div style="padding: 30px; text-align: center; background: #E8F5E9; border-radius: 8px; margin: 20px;">
-                    <p style="font-size: 16px; color: #2E7D32; margin-bottom: 10px;">📭 Không tìm thấy email</p>
+                    <p style="font-size: 16px; color: #2E7D32; margin-bottom: 10px;">${ui('📭 Không tìm thấy email', '📭 No email found')}</p>
                     <p style="color: #666; font-size: 14px; margin-bottom: 15px;">
-                        Filter hiện tại: <strong>${selectedFilter}</strong><br>
-                        ${data.debug ? `Tổng email quét: ${data.debug.raw_email_count || 0}` : ''}
+                        ${ui('Bộ lọc hiện tại', 'Current filter')}: <strong>${t(`filter.${selectedFilter}`)}</strong><br>
+                        ${data.debug ? `${ui('Tổng email quét', 'Email scanned')}: ${data.debug.raw_email_count || 0}` : ''}
                     </p>
                     <div style="display: flex; gap: 10px; justify-content: center;">
-                        <button onclick="emailFilterSelect.value='all'; loadEmails(1);" class="btn-primary">🔍 Xem tất cả</button>
-                        <button onclick="loadEmails(1)" class="btn-secondary">🔄 Làm mới</button>
+                        <button onclick="emailFilterSelect.value='all'; updateEmailFilterUI(); loadEmails(1);" class="btn-primary">${ui('🔍 Xem tất cả', '🔍 View all')}</button>
+                        <button onclick="loadEmails(1)" class="btn-secondary">${ui('🔄 Làm mới', '🔄 Refresh')}</button>
                     </div>
                 </div>
             `;
@@ -1034,7 +1964,7 @@ async function loadEmails(page = 1) {
         // If API provides pagination info, use server-side pages.
         if (data.pagination && data.pagination.total_pages > 0) {
             data.emails.forEach(email => {
-                renderEmailItem(email, emailsList);
+                renderEnhancedEmailItem(email, emailsList);
             });
 
             const { current_page, total_pages } = data.pagination;
@@ -1042,18 +1972,18 @@ async function loadEmails(page = 1) {
                 const paginationDiv = document.createElement('div');
                 paginationDiv.style.cssText = 'padding: 16px; display: flex; justify-content: center; gap: 8px; margin-top: 16px;';
                 const prevBtn = document.createElement('button');
-                prevBtn.textContent = '◀ Trang trước';
+                prevBtn.textContent = ui('◀ Trang trước', '◀ Previous');
                 prevBtn.disabled = current_page === 1;
                 prevBtn.addEventListener('click', () => loadEmails(current_page - 1));
                 paginationDiv.appendChild(prevBtn);
 
                 const pageInfo = document.createElement('span');
-                pageInfo.textContent = `Trang ${current_page} / ${total_pages}`;
+                pageInfo.textContent = ui(`Trang ${current_page} / ${total_pages}`, `Page ${current_page} / ${total_pages}`);
                 pageInfo.style.cssText = 'font-weight: bold; padding: 0 16px;';
                 paginationDiv.appendChild(pageInfo);
 
                 const nextBtn = document.createElement('button');
-                nextBtn.textContent = 'Trang sau ▶';
+                nextBtn.textContent = ui('Trang sau ▶', 'Next ▶');
                 nextBtn.disabled = current_page === total_pages;
                 nextBtn.addEventListener('click', () => loadEmails(current_page + 1));
                 paginationDiv.appendChild(nextBtn);
@@ -1070,25 +2000,25 @@ async function loadEmails(page = 1) {
             const pageItems = emailsCache.slice(startIdx, startIdx + pageSize);
 
             pageItems.forEach(email => {
-                renderEmailItem(email, emailsList);
+                renderEnhancedEmailItem(email, emailsList);
             });
 
             if (total_pages > 1) {
                 const paginationDiv = document.createElement('div');
                 paginationDiv.style.cssText = 'padding: 16px; display: flex; justify-content: center; gap: 8px; margin-top: 16px;';
                 const prevBtn = document.createElement('button');
-                prevBtn.textContent = '◀ Trang trước';
+                prevBtn.textContent = ui('◀ Trang trước', '◀ Previous');
                 prevBtn.disabled = current_page === 1;
                 prevBtn.addEventListener('click', () => loadEmails(current_page - 1));
                 paginationDiv.appendChild(prevBtn);
 
                 const pageInfo = document.createElement('span');
-                pageInfo.textContent = `Trang ${current_page} / ${total_pages}`;
+                pageInfo.textContent = ui(`Trang ${current_page} / ${total_pages}`, `Page ${current_page} / ${total_pages}`);
                 pageInfo.style.cssText = 'font-weight: bold; padding: 0 16px;';
                 paginationDiv.appendChild(pageInfo);
 
                 const nextBtn = document.createElement('button');
-                nextBtn.textContent = 'Trang sau ▶';
+                nextBtn.textContent = ui('Trang sau ▶', 'Next ▶');
                 nextBtn.disabled = current_page === total_pages;
                 nextBtn.addEventListener('click', () => loadEmails(current_page + 1));
                 paginationDiv.appendChild(nextBtn);
@@ -1106,18 +2036,37 @@ async function loadEmails(page = 1) {
             
             // Add visual indicator for unread emails
             const readStatus = email.is_unread ? 
-                '<span style="display: inline-block; width: 8px; height: 8px; background: #4CAF50; border-radius: 50%; margin-right: 6px;" title="Chưa đọc"></span>' : 
-                '<span style="display: inline-block; width: 8px; height: 8px; background: #ccc; border-radius: 50%; margin-right: 6px;" title="Đã đọc"></span>';
+                `<span style="display: inline-block; width: 8px; height: 8px; background: #4CAF50; border-radius: 50%; margin-right: 6px;" title="${ui('Chưa đọc', 'Unread')}"></span>` :
+                `<span style="display: inline-block; width: 8px; height: 8px; background: #ccc; border-radius: 50%; margin-right: 6px;" title="${ui('Đã đọc', 'Read')}"></span>`;
             
-            const markButtonText = email.is_unread ? '✅ Đánh dấu đã đọc' : '📧 Đánh dấu chưa đọc';
+            const markButtonText = email.is_unread ? ui('✅ Đánh dấu đã đọc', '✅ Mark as read') : ui('📧 Đánh dấu chưa đọc', '📧 Mark as unread');
             const markButtonClass = email.is_unread ? 'mark-read-btn' : 'mark-unread-btn';
+            
+            // Tag styling
+            const tagColors = {
+                'education': '#4CAF50',
+                'business': '#2196F3',
+                'ads': '#FF9800',
+                'notification': '#9C27B0',
+                'personal': '#F44336',
+                'social': '#00BCD4',
+                'other': '#757575'
+            };
+            const tagColor = tagColors[email.tag] || tagColors['other'];
+            const tagHTML = email.tag ? 
+                `<span style="display: inline-block; background: ${tagColor}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-right: 6px; font-weight: bold;">${email.tag}</span>` : '';
+            
+            // Summary display
+            const summaryHTML = email.summary ? 
+                `<div class="email-item-summary" style="font-size: 13px; color: #666; margin-top: 6px; font-style: italic;">${escapeHtml(email.summary)}</div>` : '';
             
             emailDiv.innerHTML = `
                 <div class="email-item-header">
-                    <span class="email-item-subject">${readStatus}${escapeHtml(email.subject)}</span>
+                    <span class="email-item-subject">${readStatus}${tagHTML}${escapeHtml(email.subject)}</span>
                 </div>
-                <div class="email-item-sender">Từ: ${escapeHtml(email.sender)}</div>
-                <div class="email-item-snippet">${escapeHtml(email.snippet)}</div>
+                <div class="email-item-sender">${ui('Từ', 'From')}: ${escapeHtml(email.sender)}</div>
+                ${summaryHTML}
+                <div class="email-item-snippet" style="color: #888; font-size: 12px; margin-top: 4px;">${escapeHtml(email.snippet)}</div>
                 <div class="email-item-actions" style="margin-top: 8px; display: flex; gap: 6px;">
                     <button class="email-view-detail-btn" style="padding: 4px 12px; font-size: 12px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer;">👁️ Xem</button>
                     <button class="${markButtonClass}" data-email-id="${email.id}" data-is-unread="${email.is_unread}" style="padding: 4px 12px; font-size: 12px; background: ${email.is_unread ? '#4CAF50' : '#FF9800'}; color: white; border: none; border-radius: 4px; cursor: pointer;">${markButtonText}</button>
@@ -1126,13 +2075,13 @@ async function loadEmails(page = 1) {
             
             emailDiv.querySelector('.email-view-detail-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
-                showEmailDetail(email);
+                showFormattedEmailDetail(email);
             });
 
             // Click on the item opens the full-email modal
             emailDiv.addEventListener('click', (e) => {
                 if (e.target && e.target.closest('button')) return;
-                showEmailDetail(email);
+                showFormattedEmailDetail(email);
             });
             
             // Add mark as read/unread handler
@@ -1152,7 +2101,7 @@ async function loadEmails(page = 1) {
             paginationDiv.style.cssText = 'padding: 16px; display: flex; justify-content: center; gap: 8px; margin-top: 16px;';
             
             const prevBtn = document.createElement('button');
-            prevBtn.textContent = '◀ Trang trước';
+            prevBtn.textContent = ui('◀ Trang trước', '◀ Previous');
             prevBtn.disabled = current_page === 1;
             prevBtn.addEventListener('click', () => loadEmails(current_page - 1));
             paginationDiv.appendChild(prevBtn);
@@ -1172,21 +2121,230 @@ async function loadEmails(page = 1) {
         }
     } catch (error) {
         console.error('Email load error:', error);
-        emailsList.innerHTML = `<p>❌ Lỗi: ${error.message}</p>`;
+        emailsList.innerHTML = `<p>${ui('❌ Lỗi', '❌ Error')}: ${escapeHtml(error.message)}</p>`;
     }
+}
+
+function updateEmailReadAppearance(emailDiv, email) {
+    emailDiv.classList.toggle('is-unread', !!email.is_unread);
+    emailDiv.classList.toggle('is-read', !email.is_unread);
+    const state = emailDiv.querySelector('.email-read-state');
+    if (state) state.textContent = email.is_unread ? ui('Chưa đọc', 'Unread') : ui('Đã đọc', 'Read');
+    const button = emailDiv.querySelector('.email-read-toggle-btn');
+    if (button) button.textContent = email.is_unread
+        ? ui('Đánh dấu đã đọc', 'Mark as read')
+        : ui('Đánh dấu chưa đọc', 'Mark as unread');
+}
+
+async function toggleEnhancedEmailReadStatus(email, emailDiv) {
+    const wasUnread = !!email.is_unread;
+    const endpoint = wasUnread ? 'mark-as-read' : 'mark-as-unread';
+    try {
+        const response = await apiFetch(`${API_BASE}/email/${endpoint}/${email.id}`, { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || ui('Không thể cập nhật email', 'Unable to update email'));
+        email.is_unread = !wasUnread;
+        updateEmailReadAppearance(emailDiv, email);
+        showNotification(ui(
+            ui(`Đã đánh dấu ${wasUnread ? 'đã đọc' : 'chưa đọc'}`, `Marked as ${wasUnread ? 'read' : 'unread'}`),
+            `Marked as ${wasUnread ? 'read' : 'unread'}`
+        ), 'success');
+    } catch (error) {
+        showNotification(`${ui('Lỗi cập nhật email', 'Email update error')}: ${error.message}`, 'error');
+    }
+}
+
+async function summarizeEnhancedEmail(email, emailDiv, button) {
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = ui('AI đang tóm tắt...', 'AI is summarizing...');
+    try {
+        const response = await apiFetch(`${API_BASE}/email/summary/${email.id}`, { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || ui('Không thể tóm tắt email', 'Unable to summarize email'));
+        email.summary = data.summary;
+        let summary = emailDiv.querySelector('.email-item-summary');
+        if (!summary) {
+            summary = document.createElement('div');
+            summary.className = 'email-item-summary';
+            emailDiv.querySelector('.email-item-snippet')?.before(summary);
+        }
+        summary.textContent = data.summary;
+        button.textContent = ui('Xem tóm tắt AI', 'View AI summary');
+        showNotification(
+            data.cache_hit ? ui('Đã tải tóm tắt AI', 'AI summary loaded') : ui('Đã tạo tóm tắt AI', 'AI summary created'),
+            'success'
+        );
+    } catch (error) {
+        button.textContent = originalText;
+        showNotification(`${ui('Lỗi tóm tắt', 'Summary error')}: ${error.message}`, 'error');
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function renderEnhancedEmailItem(email, container) {
+    const emailDiv = document.createElement('div');
+    emailDiv.className = `email-item ${email.is_unread ? 'is-unread' : 'is-read'}`;
+    const tagColors = {
+        education: '#4CAF50',
+        business: '#2196F3',
+        ads: '#FF9800',
+        notification: '#9C27B0',
+        personal: '#F44336',
+        social: '#00BCD4',
+        other: '#757575'
+    };
+    const tagColor = tagColors[email.tag] || tagColors.other;
+    const tagHTML = email.tag
+        ? `<span style="display:inline-block;background:${tagColor};color:white;padding:2px 8px;border-radius:12px;font-size:11px;margin-right:6px;font-weight:bold;">${escapeHtml(email.tag)}</span>`
+        : '';
+    const normalizedSummary = String(email.summary || '').replace(/\s+/g, ' ').trim();
+    const normalizedSnippet = String(email.snippet || '').replace(/\s+/g, ' ').trim();
+    const summaryHTML = normalizedSummary
+        ? `<div class="email-item-summary">${escapeHtml(email.summary)}</div>`
+        : '';
+    const snippetHTML = normalizedSnippet && normalizedSnippet !== normalizedSummary
+        ? `<div class="email-item-snippet">${escapeHtml(email.snippet)}</div>`
+        : '';
+
+    emailDiv.innerHTML = `
+        <div class="email-item-header">
+            <span class="email-item-subject">
+                <span class="email-read-state">${email.is_unread ? ui('Chưa đọc', 'Unread') : ui('Đã đọc', 'Read')}</span>
+                ${tagHTML}${escapeHtml(email.subject || ui('(Không có tiêu đề)', '(No subject)'))}
+            </span>
+        </div>
+        <div class="email-item-sender">${ui('Từ', 'From')}: ${escapeHtml(email.sender || ui('Không xác định', 'Unknown'))}</div>
+        ${summaryHTML}
+        ${snippetHTML}
+        <div class="email-item-actions">
+            <button class="email-view-detail-btn btn-secondary">${ui('Xem chi tiết', 'View details')}</button>
+            <button class="email-summary-btn">${email.summary ? ui('Xem tóm tắt AI', 'View AI summary') : ui('Tóm tắt bằng AI', 'Summarize with AI')}</button>
+            <button class="email-read-toggle-btn btn-secondary">${email.is_unread ? ui('Đánh dấu đã đọc', 'Mark as read') : ui('Đánh dấu chưa đọc', 'Mark as unread')}</button>
+        </div>
+    `;
+
+    emailDiv.querySelector('.email-view-detail-btn').addEventListener('click', (event) => {
+        event.stopPropagation();
+        showFormattedEmailDetail(email);
+    });
+    emailDiv.querySelector('.email-summary-btn').addEventListener('click', async (event) => {
+        event.stopPropagation();
+        if (email.summary) {
+            showFormattedEmailDetail(email);
+            return;
+        }
+        await summarizeEnhancedEmail(email, emailDiv, event.currentTarget);
+    });
+    emailDiv.querySelector('.email-read-toggle-btn').addEventListener('click', async (event) => {
+        event.stopPropagation();
+        await toggleEnhancedEmailReadStatus(email, emailDiv);
+    });
+    emailDiv.addEventListener('click', (event) => {
+        if (!event.target.closest('button')) showFormattedEmailDetail(email);
+    });
+    container.appendChild(emailDiv);
+}
+
+function buildEmailDetailMarkup(email, bodyHtml, isLoading = false) {
+    const tagColors = {
+        education: '#4CAF50',
+        business: '#2196F3',
+        ads: '#FF9800',
+        notification: '#9C27B0',
+        personal: '#F44336',
+        social: '#00BCD4',
+        other: '#757575'
+    };
+    const tagColor = tagColors[email.tag] || tagColors.other;
+    const tagHTML = email.tag
+        ? `<span class="email-detail-tag" style="--email-tag-color: ${tagColor}">${escapeHtml(email.tag.toUpperCase())}</span>`
+        : '';
+    const summaryHTML = email.summary
+        ? `<div class="email-detail-summary" style="--email-tag-color: ${tagColor}">
+                <strong>${ui('Tóm tắt', 'Summary')}</strong>
+                <div>${formatEmailText(email.summary)}</div>
+           </div>`
+        : '';
+
+    return `
+        <div class="email-detail-header">
+            <div class="email-detail-heading">
+                <div class="email-detail-label">${ui('Chi tiết email', 'Email details')}</div>
+                <h2 id="emailDetailTitle" class="email-detail-subject">${escapeHtml(email.subject || ui('(Không có tiêu đề)', '(No subject)'))}</h2>
+            </div>
+            ${tagHTML}
+        </div>
+        ${summaryHTML}
+        <div class="email-detail-meta">
+            <div><span>${ui('Từ', 'From')}</span><strong>${escapeHtml(email.sender || ui('Không xác định', 'Unknown'))}</strong></div>
+            <div><span>${ui('Ngày', 'Date')}</span><strong>${escapeHtml(email.date || ui('Không xác định', 'Unknown'))}</strong></div>
+        </div>
+        <div class="email-detail-body${isLoading ? ' email-detail-loading' : ''}">${bodyHtml}</div>
+    `;
+}
+
+async function showFormattedEmailDetail(email) {
+    const emailDetail = document.getElementById('emailDetail');
+    if (!emailDetail || !emailDetailModal) return;
+
+    currentDetailEmail = email;
+    emailDetail.innerHTML = buildEmailDetailMarkup(email, ui('Đang tải nội dung...', 'Loading content...'), true);
+    emailDetailModal.classList.add('show');
+    emailDetailModal.querySelector('.email-detail-close')?.focus();
+
+    if (!email.body) {
+        try {
+            const response = await apiFetch(`${API_BASE}/email/get-email-body/${email.id}`);
+            const data = await response.json();
+            email.body = data.success ? data.body : ui('Không thể tải nội dung.', 'Unable to load content.');
+        } catch (error) {
+            email.body = `Lỗi: ${error.message}`;
+        }
+    }
+
+    if (currentDetailEmail !== email || !emailDetailModal.classList.contains('show')) return;
+    emailDetail.innerHTML = buildEmailDetailMarkup(
+        email,
+        formatEmailText(email.body || ui('Email không có nội dung.', 'This email has no content.'))
+    );
 }
 
 async function showEmailDetail(email) {
     const emailDetail = document.getElementById('emailDetail');
     if (!emailDetail) return;
+    currentDetailEmail = email;
+
+    // Tag styling
+    const tagColors = {
+        'education': '#4CAF50',
+        'business': '#2196F3',
+        'ads': '#FF9800',
+        'notification': '#9C27B0',
+        'personal': '#F44336',
+        'social': '#00BCD4',
+        'other': '#757575'
+    };
+    const tagColor = tagColors[email.tag] || tagColors['other'];
+    const tagHTML = email.tag ? 
+        `<div style="margin: 12px 0;"><span style="display: inline-block; background: ${tagColor}; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold;">📁 ${email.tag.toUpperCase()}</span></div>` : '';
+    
+    const summaryHTML = email.summary ? 
+        `<div style="margin: 12px 0; padding: 12px; background: #F5F5F5; border-left: 3px solid ${tagColor}; border-radius: 4px;">
+            <strong style="color: #333;">📋 ${ui('Tóm tắt', 'Summary')}:</strong>
+            <p style="margin: 6px 0 0 0; color: #666;">${escapeHtml(email.summary)}</p>
+        </div>` : '';
     
     emailDetail.innerHTML = `
         <div class="email-detail-subject">${escapeHtml(email.subject)}</div>
+        ${tagHTML}
+        ${summaryHTML}
         <div class="email-detail-meta">
-            <strong>Từ:</strong> ${escapeHtml(email.sender)}<br>
-            <strong>Ngày:</strong> ${escapeHtml(email.date)}
+            <strong>${ui('Từ', 'From')}:</strong> ${escapeHtml(email.sender)}<br>
+            <strong>${ui('Ngày', 'Date')}:</strong> ${escapeHtml(email.date)}
         </div>
-        <div class="email-detail-body" style="color: #666; font-style: italic;">Đang tải nội dung...</div>
+        <div class="email-detail-body" style="color: #666; font-style: italic;">${ui('Đang tải nội dung...', 'Loading content...')}</div>
     `;
     
     if (emailDetailModal) emailDetailModal.classList.add('show');
@@ -1196,17 +2354,19 @@ async function showEmailDetail(email) {
         try {
             const response = await apiFetch(`${API_BASE}/email/get-email-body/${email.id}`);
             const data = await response.json();
-            email.body = data.success ? data.body : 'Không thể tải nội dung';
+            email.body = data.success ? data.body : ui('Không thể tải nội dung', 'Unable to load content');
         } catch (error) {
-            email.body = 'Lỗi: ' + error.message;
+            email.body = ui('Lỗi: ', 'Error: ') + error.message;
         }
     }
     
     emailDetail.innerHTML = `
         <div class="email-detail-subject">${escapeHtml(email.subject)}</div>
+        ${tagHTML}
+        ${summaryHTML}
         <div class="email-detail-meta">
-            <strong>Từ:</strong> ${escapeHtml(email.sender)}<br>
-            <strong>Ngày:</strong> ${escapeHtml(email.date)}
+            <strong>${ui('Từ', 'From')}:</strong> ${escapeHtml(email.sender)}<br>
+            <strong>${ui('Ngày', 'Date')}:</strong> ${escapeHtml(email.date)}
         </div>
         <div class="email-detail-body">${escapeHtml(email.body)}</div>
     `;
@@ -1214,59 +2374,234 @@ async function showEmailDetail(email) {
 
 // Note: Preview pane removed — email items open the modal showing full content.
 
+// WEEKLY SCHEDULE TABLE (Mon-Sun, synced with Google Calendar)
+function weekDayNames() {
+    return currentLanguage === 'en'
+        ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+        : ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
+}
+
+function getMonday(date) {
+    const d = new Date(date);
+    const day = d.getDay(); // 0 = Sunday, 1 = Monday, ...
+    const diff = (day === 0 ? -6 : 1) - day;
+    d.setDate(d.getDate() + diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+
+function formatWeekDate(date) {
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    return `${dd}/${mm}`;
+}
+
+function isSameDate(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+async function loadWeekSchedule() {
+    const headerRow = document.getElementById('weekTableHeader');
+    const tableBody = document.getElementById('weekTableBody');
+    const rangeLabel = document.getElementById('weekRangeLabel');
+    if (!headerRow || !tableBody) return;
+
+    const weekStartStr = `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}-${String(currentWeekStart.getDate()).padStart(2, '0')}`;
+    const today = new Date();
+    headerRow.innerHTML = '';
+    const timezoneHeader = document.createElement('th');
+    timezoneHeader.className = 'week-timezone';
+    timezoneHeader.textContent = 'GMT+7';
+    headerRow.appendChild(timezoneHeader);
+
+    for (let i = 0; i < 5; i++) {
+        const dayDate = new Date(currentWeekStart);
+        dayDate.setDate(dayDate.getDate() + i);
+        const th = document.createElement('th');
+        if (isSameDate(dayDate, today)) th.classList.add('is-today');
+        th.innerHTML = `<span class="week-day-name">${weekDayNames()[i]}</span><span class="week-day-date">${formatWeekDate(dayDate)}</span>`;
+        headerRow.appendChild(th);
+    }
+
+    if (rangeLabel) {
+        const sunday = new Date(currentWeekStart);
+        sunday.setDate(sunday.getDate() + 6);
+        rangeLabel.textContent = `${formatWeekDate(currentWeekStart)} - ${formatWeekDate(sunday)}/${sunday.getFullYear()}`;
+    }
+
+    tableBody.innerHTML = `<tr><td colspan="6" class="week-loading">${ui('Đang tải...', 'Loading...')}</td></tr>`;
+
+    try {
+        const response = await apiFetch(`${API_BASE}/schedule/week?start=${weekStartStr}`);
+        const data = await response.json();
+
+        if (!data.success) {
+            tableBody.innerHTML = `<tr><td colspan="6" class="week-loading">${ui('Không thể tải lịch tuần', 'Unable to load weekly calendar')}</td></tr>`;
+            return;
+        }
+
+        tableBody.innerHTML = '';
+        for (let hour = 8; hour <= 18; hour++) {
+            const row = document.createElement('tr');
+            const timeCell = document.createElement('th');
+            timeCell.className = 'week-time-label';
+            timeCell.textContent = `${hour}:00`;
+            row.appendChild(timeCell);
+
+            for (let i = 0; i < 5; i++) {
+                const dayDate = new Date(currentWeekStart);
+                dayDate.setDate(dayDate.getDate() + i);
+                const td = document.createElement('td');
+                td.className = 'week-hour-cell';
+                if (isSameDate(dayDate, today)) td.classList.add('is-today');
+
+                const dayEvents = (data.days && data.days[i]) || [];
+                dayEvents
+                    .filter((schedule) => new Date(schedule.start_time).getHours() === hour)
+                    .forEach((schedule) => {
+                    const eventDiv = document.createElement('div');
+                    eventDiv.className = 'week-event';
+                    const startTime = new Date(schedule.start_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                    const endTime = schedule.end_time ? new Date(schedule.end_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '';
+
+                    eventDiv.innerHTML = `
+                        <div class="week-event-title">${escapeHtml(schedule.title)}</div>
+                        <div class="week-event-time">${startTime}${endTime ? ' - ' + endTime : ''}</div>
+                    `;
+                    eventDiv.addEventListener('click', () => openEditSchedule(schedule.id));
+                    td.appendChild(eventDiv);
+                });
+                row.appendChild(td);
+            }
+            tableBody.appendChild(row);
+        }
+    } catch (error) {
+        tableBody.innerHTML = `<tr><td colspan="6" class="week-loading">${ui('Không thể tải lịch tuần', 'Unable to load weekly calendar')}</td></tr>`;
+    }
+}
+
+function openNewScheduleModal() {
+    const modal = document.getElementById('newScheduleModal');
+    if (modal) modal.classList.add('show');
+}
+
+function closeNewScheduleModal() {
+    const modal = document.getElementById('newScheduleModal');
+    if (modal) modal.classList.remove('show');
+}
+
 // SCHEDULE FUNCTIONS
 async function loadSchedules() {
     const schedulesList = document.getElementById('schedulesList');
     if (!schedulesList) return;
-    
+
+    schedulesList.innerHTML = `<p class="schedule-empty-state">${ui('Đang tải lịch tổng hợp...', 'Loading calendar...')}</p>`;
+
     try {
-        const response = await apiFetch(`${API_BASE}/schedule/upcoming`);
+        const response = await apiFetch(`${API_BASE}/schedule/unified?max_results=100`);
         const data = await response.json();
-        
-        if (data.success && data.schedules.length > 0) {
+
+        const calendarStatus = document.getElementById('calendarStatus');
+        if (calendarStatus) {
+            calendarStatus.textContent = data.calendar_connected
+                ? ui(`Đã kết nối - ${data.count || 0} sự kiện`, `Connected - ${data.count || 0} events`)
+                : ui('Lịch FlowMate', 'FlowMate Calendar');
+        }
+
+        const schedules = Array.isArray(data.items) ? data.items : [];
+        if (data.success && schedules.length > 0) {
             schedulesList.innerHTML = '';
-            data.schedules.forEach(schedule => {
+            schedules.forEach(schedule => {
                 const scheduleDiv = document.createElement('div');
-                scheduleDiv.className = 'schedule-item';
+                scheduleDiv.className = `schedule-item unified-schedule-item source-${schedule.source || 'local'}`;
                 const startTime = new Date(schedule.start_time).toLocaleString('vi-VN');
                 const endTime = schedule.end_time ? new Date(schedule.end_time).toLocaleString('vi-VN') : '';
                 const durationMinutes = getDurationMinutes(schedule.start_time, schedule.end_time);
                 const statusClass = schedule.status === 'completed' ? 'completed' : 'pending';
-                const statusText = schedule.status === 'completed' ? 'Đã hoàn thành' : 'Chưa hoàn thành';
-                const syncBadge = schedule.calendar_event_id
-                    ? '<span class="schedule-item-status" style="background:#E8F5E9;color:#2E7D32;">Đã đồng bộ Google Calendar</span>'
-                    : '<span class="schedule-item-status" style="background:#FFF3E0;color:#E65100;">Chưa đồng bộ Google Calendar</span>';
-                
+                const statusText = schedule.status === 'completed'
+                    ? ui('Đã hoàn thành', 'Completed')
+                    : ui('Chưa hoàn thành', 'Pending');
+                const isLocal = schedule.local_id !== null && schedule.local_id !== undefined;
+                const sourceText = schedule.source === 'synced'
+                    ? 'FlowMate + Google'
+                    : schedule.source === 'google' ? 'Google Calendar' : 'FlowMate';
+                const sourceClass = schedule.source === 'synced'
+                    ? 'synced'
+                    : schedule.source === 'google' ? 'google' : 'local';
+                const attendees = Array.isArray(schedule.attendees)
+                    ? schedule.attendees.join(', ')
+                    : String(schedule.attendees || '');
+                const description = plainTextFromHtml(schedule.description || '');
+                const localActions = isLocal
+                    ? `
+                        ${schedule.status === 'completed'
+                            ? `<button class="btn-check" onclick="markScheduleIncomplete(${schedule.local_id})">${ui('↩ Chưa xong', '↩ Mark pending')}</button>`
+                            : `<button class="btn-check" onclick="markScheduleComplete(${schedule.local_id})">${ui('✓ Hoàn thành', '✓ Complete')}</button>`}
+                        <button class="btn-edit" onclick="openEditSchedule(${schedule.local_id})">${ui('Sửa', 'Edit')}</button>
+                        <button class="btn-delete" onclick="deleteSchedule(${schedule.local_id})">${ui('Xóa', 'Delete')}</button>
+                    `
+                    : `<button class="btn-delete" data-google-event-id="${escapeHtml(schedule.google_event_id || '')}">${ui('Xóa khỏi Google', 'Delete from Google')}</button>`;
+
                 scheduleDiv.innerHTML = `
-                    <div class="schedule-item-info">
-                        <div class="schedule-item-title">${escapeHtml(schedule.title)}</div>
-                        <span class="schedule-item-status ${statusClass}">${statusText}</span>
-                        ${syncBadge}
-                        <div class="schedule-item-time">${startTime}</div>
-                        ${endTime ? `<div class="schedule-item-time">Kết thúc: ${endTime}</div>` : ''}
-                        ${durationMinutes ? `<div class="schedule-item-time">Thời lượng: ${durationMinutes} phút</div>` : ''}
+                    <div class="schedule-item-main">
+                        <div class="schedule-item-heading">
+                            <div>
+                                <div class="schedule-item-title">${escapeHtml(schedule.title || ui('Sự kiện', 'Event'))}</div>
+                                <div class="schedule-item-time">${startTime}${endTime ? ` - ${endTime}` : ''}</div>
+                            </div>
+                            <div class="schedule-item-badges">
+                                ${isLocal ? `<span class="schedule-item-status ${statusClass}">${statusText}</span>` : ''}
+                                <span class="schedule-source-badge ${sourceClass}">${sourceText}</span>
+                            </div>
+                        </div>
+                        <div class="schedule-item-meta">
+                            ${durationMinutes ? `<span>${ui('Thời lượng', 'Duration')}: ${durationMinutes} ${ui('phút', 'minutes')}</span>` : ''}
+                            ${schedule.location ? `<span>${ui('Địa điểm', 'Location')}: ${escapeHtml(schedule.location)}</span>` : ''}
+                            ${attendees ? `<span>${ui('Người tham dự', 'Attendees')}: ${escapeHtml(attendees)}</span>` : ''}
+                        </div>
+                        ${description ? `<div class="schedule-item-description">${escapeHtml(description)}</div>` : ''}
                     </div>
-                    <div class="schedule-item-actions">
-                        ${schedule.status === 'completed' ? 
-                            `<button class="btn-check" onclick="markScheduleIncomplete(${schedule.id})">↩️ Chưa xong</button>` :
-                            `<button class="btn-check" onclick="markScheduleComplete(${schedule.id})">✓ Hoàn thành</button>`
-                        }
-                        <button class="btn-edit" onclick="openEditSchedule(${schedule.id})">✏️ Sửa</button>
-                        <button class="btn-delete" onclick="deleteSchedule(${schedule.id})">🗑️ Xóa</button>
-                    </div>
+                    <div class="schedule-item-actions">${localActions}</div>
                 `;
+
+                const deleteGoogleButton = scheduleDiv.querySelector('[data-google-event-id]');
+                if (deleteGoogleButton) {
+                    deleteGoogleButton.addEventListener('click', () => {
+                        deleteCalendarEvent(deleteGoogleButton.dataset.googleEventId);
+                    });
+                }
                 schedulesList.appendChild(scheduleDiv);
             });
         } else {
-            schedulesList.innerHTML = '<p>Không có lịch hẹn sắp tới</p>';
+            schedulesList.innerHTML = `<p class="schedule-empty-state">${ui('Không có sự kiện sắp tới', 'No upcoming events')}</p>`;
         }
     } catch (error) {
-        schedulesList.innerHTML = `<p>❌ Lỗi: ${error.message}</p>`;
+        schedulesList.innerHTML = `<p class="schedule-empty-state">${ui('Lỗi', 'Error')}: ${escapeHtml(error.message)}</p>`;
     }
 }
 
+function plainTextFromHtml(value) {
+    let decoded = String(value || '').trim();
+    for (let index = 0; index < 2; index += 1) {
+        const container = document.createElement('div');
+        container.innerHTML = decoded
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/(?:p|div|li|h[1-6])>/gi, '\n');
+        const next = container.textContent || container.innerText || '';
+        if (next === decoded) break;
+        decoded = next;
+    }
+    return decoded
+        .replace(/\u00a0/g, ' ')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n[ \t]+/g, '\n')
+        .replace(/[ \t]{2,}/g, ' ')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
 async function markScheduleComplete(scheduleId) {
-    if (!confirm('Đánh dấu lịch hẹn đã hoàn thành?')) return;
+    if (!confirm(ui('Đánh dấu lịch hẹn đã hoàn thành?', 'Mark this appointment as completed?'))) return;
     
     try {
         const response = await apiFetch(`${API_BASE}/schedule/${scheduleId}/update-status`, {
@@ -1277,16 +2612,19 @@ async function markScheduleComplete(scheduleId) {
         
         const data = await response.json();
         if (data.success) {
-            showNotification('✓ Đã đánh dấu hoàn thành', 'success');
+            showNotification(ui('✓ Đã đánh dấu hoàn thành', '✓ Marked as completed'), 'success');
             await loadSchedules();
+            await loadWeekSchedule();
+        } else {
+            showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể cập nhật trạng thái', 'Unable to update status')), 'error');
         }
     } catch (error) {
-        showNotification('❌ Lỗi: ' + error.message, 'error');
+        showNotification(ui('❌ Lỗi: ', '❌ Error: ') + error.message, 'error');
     }
 }
 
 async function markScheduleIncomplete(scheduleId) {
-    if (!confirm('Đánh dấu lịch hẹn chưa hoàn thành?')) return;
+    if (!confirm(ui('Đánh dấu lịch hẹn chưa hoàn thành?', 'Mark this appointment as pending?'))) return;
     
     try {
         const response = await apiFetch(`${API_BASE}/schedule/${scheduleId}/update-status`, {
@@ -1297,11 +2635,14 @@ async function markScheduleIncomplete(scheduleId) {
         
         const data = await response.json();
         if (data.success) {
-            showNotification('↩️ Đã cập nhật trạng thái', 'success');
+            showNotification(ui('↩️ Đã cập nhật trạng thái', '↩️ Status updated'), 'success');
             await loadSchedules();
+            await loadWeekSchedule();
+        } else {
+            showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể cập nhật trạng thái', 'Unable to update status')), 'error');
         }
     } catch (error) {
-        showNotification('❌ Lỗi: ' + error.message, 'error');
+        showNotification(ui('❌ Lỗi: ', '❌ Error: ') + error.message, 'error');
     }
 }
 
@@ -1310,10 +2651,10 @@ async function openEditSchedule(scheduleId) {
         const response = await apiFetch(`${API_BASE}/schedule/list`);
         const data = await response.json();
         
-        if (!data.success) throw new Error('Lỗi lấy dữ liệu');
+        if (!data.success) throw new Error(ui('Lỗi lấy dữ liệu', 'Unable to load data'));
         
         const schedule = data.schedules.find(s => s.id === scheduleId);
-        if (!schedule) throw new Error('Lịch hẹn không tìm thấy');
+        if (!schedule) throw new Error(ui('Lịch hẹn không tìm thấy', 'Appointment not found'));
         
         const editForm = document.getElementById('editScheduleForm');
         document.getElementById('editScheduleTitle').value = schedule.title;
@@ -1328,7 +2669,7 @@ async function openEditSchedule(scheduleId) {
         
         document.getElementById('editScheduleModal').style.display = 'block';
     } catch (error) {
-        showNotification('❌ Lỗi: ' + error.message, 'error');
+        showNotification(ui('❌ Lỗi: ', '❌ Error: ') + error.message, 'error');
     }
 }
 
@@ -1352,13 +2693,16 @@ async function handleEditScheduleSubmit(e) {
         
         const data = await response.json();
         if (data.success) {
-            showNotification('✓ Đã cập nhật lịch hẹn', 'success');
+            showNotification(ui('✓ Đã cập nhật lịch hẹn', '✓ Appointment updated'), 'success');
             document.getElementById('editScheduleModal').style.display = 'none';
             await loadSchedules();
             await loadCalendarEvents();
+            await loadWeekSchedule();
+        } else {
+            showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể cập nhật lịch hẹn', 'Unable to update appointment')), 'error');
         }
     } catch (error) {
-        showNotification('❌ Lỗi: ' + error.message, 'error');
+        showNotification(ui('❌ Lỗi: ', '❌ Error: ') + error.message, 'error');
     }
 }
 
@@ -1383,7 +2727,7 @@ async function pollScheduleSync(scheduleId, timeoutMs = 30000, intervalMs = 2000
 }
 
 async function deleteSchedule(scheduleId) {
-    if (!confirm('Xóa lịch hẹn này?')) return;
+    if (!confirm(ui('Xóa lịch hẹn này?', 'Delete this appointment?'))) return;
     
     try {
         const response = await apiFetch(`${API_BASE}/schedule/${scheduleId}`, {
@@ -1393,12 +2737,15 @@ async function deleteSchedule(scheduleId) {
         
         const data = await response.json();
         if (data.success) {
-            showNotification('🗑️ Đã xóa', 'success');
+            showNotification(ui('🗑️ Đã xóa', '🗑️ Deleted'), 'success');
             await loadSchedules();
             await loadCalendarEvents();
+            await loadWeekSchedule();
+        } else {
+            showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể xóa lịch hẹn', 'Unable to delete appointment')), 'error');
         }
     } catch (error) {
-        showNotification('❌ Lỗi: ' + error.message, 'error');
+        showNotification(ui('❌ Lỗi: ', '❌ Error: ') + error.message, 'error');
     }
 }
 
@@ -1425,32 +2772,37 @@ async function handleScheduleSubmit(e) {
         if (data.success) {
             const sid = data.schedule_id;
             if (data.calendar_event_id) {
-                showNotification('✅ Lịch hẹn đã được tạo và đồng bộ Google Calendar', 'success');
+                showNotification(ui('✅ Lịch hẹn đã được tạo và đồng bộ Google Calendar', '✅ Appointment created and synced with Google Calendar'), 'success');
             } else {
-                showNotification('✅ Đã tạo lịch hẹn. Đang đồng bộ với Google Calendar...', 'info');
+                showNotification(ui('✅ Đã tạo lịch hẹn. Đang đồng bộ với Google Calendar...', '✅ Appointment created. Syncing with Google Calendar...'), 'info');
             }
             scheduleForm.reset();
+            closeNewScheduleModal();
             await loadSchedules();
             // refresh calendar events too
             await loadCalendarEvents();
+            await loadWeekSchedule();
 
             // If calendar_event_id not present, poll for status in background
             if (!data.calendar_event_id && sid) {
                 pollScheduleSync(sid, 30000).then(synced => {
                     if (synced) {
-                        showNotification('✅ Lịch hẹn đã được đồng bộ với Google Calendar', 'success');
+                        showNotification(ui('✅ Lịch hẹn đã được đồng bộ với Google Calendar', '✅ Appointment synced with Google Calendar'), 'success');
                     } else {
-                        showNotification('⚠️ Đồng bộ lịch hẹn chưa hoàn tất - thử lại sau', 'info');
+                        showNotification(ui('⚠️ Đồng bộ lịch hẹn chưa hoàn tất - thử lại sau', '⚠️ Appointment sync is not complete - try again later'), 'info');
                     }
                     loadSchedules();
                     loadCalendarEvents();
+                    loadWeekSchedule();
                 }).catch(err => {
                     console.warn('Poll schedule sync error', err);
                 });
             }
+        } else {
+            showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể tạo lịch hẹn', 'Unable to create appointment')), 'error');
         }
     } catch (error) {
-        showNotification('❌ Lỗi: ' + error.message, 'error');
+        showNotification(ui('❌ Lỗi: ', '❌ Error: ') + error.message, 'error');
     }
 }
 
@@ -1459,7 +2811,7 @@ async function loadCalendarEvents() {
     const eventsList = document.getElementById('calendarEventsList');
     if (!eventsList) return;
     
-    eventsList.innerHTML = '<p style="padding: 20px; text-align: center; color: #666;">⏳ Đang tải sự kiện Google Calendar...</p>';
+    eventsList.innerHTML = `<p style="padding: 20px; text-align: center; color: #666;">${ui('⏳ Đang tải sự kiện Google Calendar...', '⏳ Loading Google Calendar events...')}</p>`;
     
     try {
         const response = await apiFetch(`${API_BASE}/calendar/events?max_results=10`);
@@ -1470,12 +2822,12 @@ async function loadCalendarEvents() {
         if (data && data.error === 'not_authenticated') {
             eventsList.innerHTML = `
                 <div style="padding: 30px; text-align: center; background: #FFF3E0; border-radius: 8px; margin: 20px;">
-                    <p style="font-size: 16px; color: #E65100; margin-bottom: 15px;">⚠️ Chưa kết nối Google Calendar</p>
-                    <p style="color: #666; font-size: 14px; margin-bottom: 15px;">Vui lòng đăng nhập Gmail để truy cập Google Calendar</p>
-                    <button id="calendarLoginBtn" class="btn-primary">Đăng nhập Gmail</button>
+                    <p style="font-size: 16px; color: #E65100; margin-bottom: 15px;">${ui('⚠️ Chưa kết nối Google Calendar', '⚠️ Google Calendar not connected')}</p>
+                    <p style="color: #666; font-size: 14px; margin-bottom: 15px;">${ui('Vui lòng đăng nhập Gmail để truy cập Google Calendar', 'Please sign in to Gmail to access Google Calendar.')}</p>
+                    <button id="calendarLoginBtn" class="btn-primary">${ui('Đăng nhập Gmail', 'Sign in to Gmail')}</button>
                 </div>
             `;
-            if (calendarStatus) calendarStatus.textContent = 'Chưa kết nối Google Calendar';
+            if (calendarStatus) calendarStatus.textContent = ui('Chưa kết nối Google Calendar', 'Google Calendar not connected');
             
             const calendarLoginBtn = document.getElementById('calendarLoginBtn');
             if (calendarLoginBtn) {
@@ -1487,22 +2839,22 @@ async function loadCalendarEvents() {
         if (!data.success) {
             eventsList.innerHTML = `
                 <div style="padding: 20px; background: #FFEBEE; border-radius: 8px; margin: 20px;">
-                    <p style="color: #C62828; font-weight: bold;">❌ Lỗi: ${escapeHtml(data.error || 'Unknown error')}</p>
-                    <button onclick="loadCalendarEvents()" class="btn-primary" style="margin-top: 10px;">🔄 Thử lại</button>
+                    <p style="color: #C62828; font-weight: bold;">${ui('❌ Lỗi', '❌ Error')}: ${escapeHtml(data.error || 'Unknown error')}</p>
+                    <button onclick="loadCalendarEvents()" class="btn-primary" style="margin-top: 10px;">${ui('🔄 Thử lại', '🔄 Try again')}</button>
                 </div>
             `;
-            if (calendarStatus) calendarStatus.textContent = 'Lỗi tải sự kiện';
+            if (calendarStatus) calendarStatus.textContent = ui('Lỗi tải sự kiện', 'Unable to load events');
             return;
         }
         
         if (!data.events || data.events.length === 0) {
             eventsList.innerHTML = `
                 <div style="padding: 30px; text-align: center; background: #E8F5E9; border-radius: 8px; margin: 20px;">
-                    <p style="font-size: 16px; color: #2E7D32; margin-bottom: 10px;">📭 Không có sự kiện sắp tới</p>
-                    <p style="color: #666; font-size: 14px; margin-bottom: 15px;">Hãy tạo sự kiện mới hoặc kiểm tra Google Calendar</p>
+                    <p style="font-size: 16px; color: #2E7D32; margin-bottom: 10px;">${ui('📭 Không có sự kiện sắp tới', '📭 No upcoming events')}</p>
+                    <p style="color: #666; font-size: 14px; margin-bottom: 15px;">${ui('Hãy tạo sự kiện mới hoặc kiểm tra Google Calendar', 'Create a new event or check Google Calendar.')}</p>
                 </div>
             `;
-            if (calendarStatus) calendarStatus.textContent = 'Đã kết nối - Không có sự kiện';
+            if (calendarStatus) calendarStatus.textContent = ui('Đã kết nối - Không có sự kiện', 'Connected - No events');
             return;
         }
         
@@ -1512,26 +2864,27 @@ async function loadCalendarEvents() {
         data.events.forEach(event => {
             const eventDiv = document.createElement('div');
             eventDiv.className = 'event-item';
-            const startTime = new Date(event.start).toLocaleString('vi-VN');
-            const endTime = new Date(event.end).toLocaleString('vi-VN');
+            const locale = currentLanguage === 'en' ? 'en-US' : 'vi-VN';
+            const startTime = new Date(event.start).toLocaleString(locale);
+            const endTime = new Date(event.end).toLocaleString(locale);
             const attendeeList = event.attendees && event.attendees.length > 0 
-                ? `<div style="margin-top: 8px; font-size: 12px; color: #666;"><strong>Người tham dự:</strong> ${event.attendees.join(', ')}</div>`
+                ? `<div style="margin-top: 8px; font-size: 12px; color: #666;"><strong>${ui('Người tham dự', 'Attendees')}:</strong> ${event.attendees.join(', ')}</div>`
                 : '';
             
             eventDiv.innerHTML = `
                 <div style="padding: 16px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px; background: white;">
                     <div class="event-item-title" style="font-weight: 600; font-size: 16px; margin-bottom: 8px;">📆 ${escapeHtml(event.title)}</div>
                     <div style="font-size: 13px; color: #666; margin-bottom: 6px;">
-                        <strong>Bắt đầu:</strong> ${startTime}
+                        <strong>${ui('Bắt đầu', 'Start')}:</strong> ${startTime}
                     </div>
                     <div style="font-size: 13px; color: #666; margin-bottom: 6px;">
-                        <strong>Kết thúc:</strong> ${endTime}
+                        <strong>${ui('Kết thúc', 'End')}:</strong> ${endTime}
                     </div>
-                    ${event.location ? `<div style="font-size: 13px; color: #666; margin-bottom: 6px;"><strong>Địa điểm:</strong> ${escapeHtml(event.location)}</div>` : ''}
-                    ${event.description ? `<div style="font-size: 13px; color: #666; margin-bottom: 6px; margin-top: 8px;"><strong>Mô tả:</strong> ${escapeHtml(event.description)}</div>` : ''}
+                    ${event.location ? `<div style="font-size: 13px; color: #666; margin-bottom: 6px;"><strong>${ui('Địa điểm', 'Location')}:</strong> ${escapeHtml(event.location)}</div>` : ''}
+                    ${event.description ? `<div style="font-size: 13px; color: #666; margin-bottom: 6px; margin-top: 8px;"><strong>${ui('Mô tả', 'Description')}:</strong> ${escapeHtml(event.description)}</div>` : ''}
                     ${attendeeList}
                     <div style="margin-top: 12px; display: flex; gap: 6px;">
-                        <button class="event-delete-btn" data-event-id="${event.id}" style="padding: 6px 12px; font-size: 12px; background: #F44336; color: white; border: none; border-radius: 4px; cursor: pointer;">🗑️ Xóa</button>
+                        <button class="event-delete-btn" data-event-id="${event.id}" style="padding: 6px 12px; font-size: 12px; background: #F44336; color: white; border: none; border-radius: 4px; cursor: pointer;">${ui('🗑️ Xóa', '🗑️ Delete')}</button>
                     </div>
                 </div>
             `;
@@ -1545,12 +2898,12 @@ async function loadCalendarEvents() {
             eventsList.appendChild(eventDiv);
         });
         
-        if (calendarStatus) calendarStatus.textContent = `Đã kết nối - ${data.count} sự kiện sắp tới`;
+        if (calendarStatus) calendarStatus.textContent = ui(`Đã kết nối - ${data.count} sự kiện sắp tới`, `Connected - ${data.count} upcoming events`);
     } catch (error) {
         console.error('Calendar load error:', error);
-        eventsList.innerHTML = `<p>❌ Lỗi: ${error.message}</p>`;
+        eventsList.innerHTML = `<p>${ui('❌ Lỗi', '❌ Error')}: ${escapeHtml(error.message)}</p>`;
         const calendarStatus = document.getElementById('calendarStatus');
-        if (calendarStatus) calendarStatus.textContent = 'Lỗi kết nối';
+        if (calendarStatus) calendarStatus.textContent = ui('Lỗi kết nối', 'Connection error');
     }
 }
 
@@ -1566,7 +2919,7 @@ async function handleCalendarEventSubmit(e) {
     const attendees = attendees_str ? attendees_str.split(',').map(e => e.trim()).filter(e => e) : [];
     
     if (!title || !start_time || !end_time) {
-        showNotification('❌ Vui lòng điền đầy đủ thông tin bắt buộc', 'error');
+        showNotification(ui('❌ Vui lòng điền đầy đủ thông tin bắt buộc', '❌ Please complete all required fields'), 'error');
         return;
     }
     
@@ -1586,19 +2939,20 @@ async function handleCalendarEventSubmit(e) {
         
         const data = await response.json();
         if (data.success) {
-            showNotification(`✅ Sự kiện "${title}" đã được tạo`, 'success');
+            showNotification(ui(`✅ Sự kiện "${title}" đã được tạo`, `✅ Event "${title}" created`), 'success');
             document.getElementById('calendarEventForm').reset();
-            await loadCalendarEvents();
+            await loadSchedules();
+            await loadWeekSchedule();
         } else {
-            showNotification(`❌ Lỗi: ${data.error || 'Không thể tạo sự kiện'}`, 'error');
+            showNotification(`${ui('❌ Lỗi', '❌ Error')}: ${data.error || ui('Không thể tạo sự kiện', 'Unable to create event')}`, 'error');
         }
     } catch (error) {
-        showNotification(`❌ Lỗi: ${error.message}`, 'error');
+        showNotification(`${ui('❌ Lỗi', '❌ Error')}: ${error.message}`, 'error');
     }
 }
 
 async function deleteCalendarEvent(eventId) {
-    if (!confirm('Xóa sự kiện này?')) return;
+    if (!confirm(ui('Xóa sự kiện này?', 'Delete this event?'))) return;
     
     try {
         const response = await apiFetch(`${API_BASE}/calendar/delete/${eventId}`, {
@@ -1608,13 +2962,14 @@ async function deleteCalendarEvent(eventId) {
         
         const data = await response.json();
         if (data.success) {
-            showNotification('🗑️ Đã xóa sự kiện', 'success');
-            await loadCalendarEvents();
+            showNotification(ui('🗑️ Đã xóa sự kiện', '🗑️ Event deleted'), 'success');
+            await loadSchedules();
+            await loadWeekSchedule();
         } else {
-            showNotification(`❌ Lỗi: ${data.error || 'Không thể xóa sự kiện'}`, 'error');
+            showNotification(`${ui('❌ Lỗi', '❌ Error')}: ${data.error || ui('Không thể xóa sự kiện', 'Unable to delete event')}`, 'error');
         }
     } catch (error) {
-        showNotification(`❌ Lỗi: ${error.message}`, 'error');
+        showNotification(`${ui('❌ Lỗi', '❌ Error')}: ${error.message}`, 'error');
     }
 }
 
@@ -1641,25 +2996,120 @@ async function loadActivityHistory() {
                 historyList.appendChild(historyDiv);
             });
         } else {
-            historyList.innerHTML = '<p>Không có lịch sử</p>';
+            historyList.innerHTML = `<p>${ui('Không có lịch sử', 'No activity history')}</p>`;
         }
     } catch (error) {
-        historyList.innerHTML = `<p>❌ Lỗi: ${error.message}</p>`;
+        historyList.innerHTML = `<p>${ui('❌ Lỗi', '❌ Error')}: ${escapeHtml(error.message)}</p>`;
     }
 }
 
 function getActionLabel(actionType) {
     const labels = {
         'chat': '💬 Chat',
-        'email_summary': '📧 Tóm tắt',
-        'schedule_created': '📅 Tạo lịch'
+        'email_summary': ui('📧 Tóm tắt', '📧 Summary'),
+        'schedule_created': ui('📅 Tạo lịch', '📅 Event created')
     };
     return labels[actionType] || actionType;
 }
 
 // MODAL
 function closeModalWindow() {
-    if (emailDetailModal) emailDetailModal.classList.remove('show');
+    if (emailDetailModal) {
+        emailDetailModal.classList.remove('show');
+        currentDetailEmail = null;
+    }
+}
+
+// Summarize the currently open email using AI
+async function handleSummarizeEmail() {
+    if (!currentDetailEmail) return;
+    const btn = document.getElementById('summarizeBtn');
+    const originalText = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = ui('⏳ Đang tóm tắt...', '⏳ Summarizing...');
+    }
+
+    try {
+        const response = await apiFetch(`${API_BASE}/email/summary/${currentDetailEmail.id}`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            currentDetailEmail.summary = data.summary;
+            const emailDetail = document.getElementById('emailDetail');
+            const bodyEl = emailDetail ? emailDetail.querySelector('.email-detail-body') : null;
+            if (bodyEl) {
+                const summaryEl = document.createElement('div');
+                summaryEl.className = 'email-detail-summary';
+                summaryEl.style.setProperty('--email-tag-color', '#2196F3');
+                summaryEl.innerHTML = `<strong>${ui('Tóm tắt', 'Summary')}</strong><div>${formatEmailText(data.summary)}</div>`;
+                bodyEl.parentNode.insertBefore(summaryEl, bodyEl);
+            }
+            showNotification(ui('✅ Đã tóm tắt email', '✅ Email summarized'), 'success');
+        } else {
+            showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể tóm tắt email', 'Unable to summarize email')), 'error');
+        }
+    } catch (error) {
+        showNotification(ui('❌ Lỗi: ', '❌ Error: ') + error.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+}
+
+// Generate an automatic reply draft for the currently open email
+async function handleAutoReply() {
+    if (!currentDetailEmail) return;
+    const btn = document.getElementById('replyBtn');
+    const originalText = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = ui('⏳ Đang soạn trả lời...', '⏳ Drafting reply...');
+    }
+
+    try {
+        const context = `Tiêu đề: ${currentDetailEmail.subject}\nTừ: ${currentDetailEmail.sender}\nNội dung: ${currentDetailEmail.body || currentDetailEmail.summary || ''}`;
+        const response = await apiFetch(`${API_BASE}/chat/generate-reply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                context,
+                choice: 'Xác nhận đã nhận được email và sẽ phản hồi/xử lý sớm, văn phong lịch sự'
+            })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            // Pre-fill the compose form with the AI-generated reply for review before sending
+            const senderEmail = (currentDetailEmail.sender.match(/<(.+?)>/) || [null, currentDetailEmail.sender])[1];
+            document.getElementById('emailTo').value = senderEmail || '';
+            document.getElementById('emailSubject').value = currentDetailEmail.subject.startsWith('Re:')
+                ? currentDetailEmail.subject
+                : `Re: ${currentDetailEmail.subject}`;
+            document.getElementById('emailBody').value = data.reply;
+
+            closeModalWindow();
+
+            // Switch to the compose tab on the emails page
+            const composeTabBtn = document.querySelector('#emails-page [data-tab="compose"]');
+            if (composeTabBtn) handleTabChange(composeTabBtn);
+
+            showNotification(ui('✅ Đã tạo bản nháp trả lời. Vui lòng kiểm tra trước khi gửi.', '✅ Reply draft created. Please review it before sending.'), 'success');
+        } else {
+            showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể tạo trả lời', 'Unable to create reply')), 'error');
+        }
+    } catch (error) {
+        showNotification(ui('❌ Lỗi: ', '❌ Error: ') + error.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
 }
 
 // UTILITIES
@@ -1690,17 +3140,44 @@ function getDurationMinutes(startTime, endTime) {
 
 function escapeHtml(text) {
     const div = document.createElement('div');
-    div.textContent = text;
+    div.textContent = text == null ? '' : String(text);
     return div.innerHTML;
+}
+
+function formatEmailText(text) {
+    const escaped = escapeHtml(text).replace(/\r\n?/g, '\n');
+    const linked = escaped.replace(
+        /(https?:\/\/[^\s<]+)/gi,
+        '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+    );
+    return linked
+        .split(/\n{2,}/)
+        .map(block => `<p>${block.replace(/\n/g, '<br>')}</p>`)
+        .join('');
 }
 
 function renderMarkdown(text) {
     let result = text;
     result = result.replace(/\*\*([^\*]+)\*\*/g, '<strong>$1</strong>');
     result = result.replace(/\*([^\*]+)\*/g, '<em>$1</em>');
-    result = result.replace(/\[([^\]]+)\]\(([^\)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+    result = result.replace(/\[([^\]]+)\]\(([^\)]+)\)/g, (match, label, url) => {
+        const safeUrl = sanitizeExternalUrl(url);
+        return safeUrl
+            ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`
+            : label;
+    });
     result = result.replace(/\n/g, '<br>');
     return result;
+}
+
+function sanitizeExternalUrl(value) {
+    try {
+        const parsed = new URL(String(value || '').trim(), window.location.origin);
+        if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) return '';
+        return escapeHtml(parsed.href);
+    } catch (error) {
+        return '';
+    }
 }
 
 // COMPOSE
@@ -1720,11 +3197,13 @@ async function handleComposeSubmit(e) {
         
         const data = await response.json();
         if (data.success) {
-            showNotification('✅ Email đã gửi', 'success');
+            showNotification(ui('✅ Email đã gửi', '✅ Email sent'), 'success');
             composeForm.reset();
+        } else {
+            showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể gửi email', 'Unable to send email')), 'error');
         }
     } catch (error) {
-        showNotification('❌ Lỗi: ' + error.message, 'error');
+        showNotification(ui('❌ Lỗi: ', '❌ Error: ') + error.message, 'error');
     }
 }
 
@@ -1737,14 +3216,14 @@ async function generateDailyReport() {
     if (!dateInput || !container) return;
 
     if (!dateInput.value) {
-        alert('Vui lòng chọn ngày');
+        alert(ui('Vui lòng chọn ngày', 'Please select a date'));
         return;
     }
 
     const [yyyy, mm, dd] = dateInput.value.split('-');
     const dateForApi = `${dd}/${mm}/${yyyy}`;
 
-    container.innerHTML = '<p style="padding: 20px; text-align: center; color: #666;">⏳ Đang tải email và tạo báo cáo...</p>';
+    container.innerHTML = `<p style="padding: 20px; text-align: center; color: #666;">${ui('⏳ Đang tải email và tạo báo cáo...', '⏳ Loading email and generating report...')}</p>`;
     if (btn) btn.disabled = true;
 
     try {
@@ -1765,8 +3244,8 @@ async function generateDailyReport() {
         if (data && data.error === 'not_authenticated') {
             container.innerHTML = `
                 <div style="padding: 20px; text-align: center; background: #FFF3E0; border-radius: 8px; margin: 20px;">
-                    <p style="font-size: 16px; color: #E65100; margin-bottom: 10px;">⚠️ Chưa đăng nhập Gmail</p>
-                    <button onclick="gmailLogin()" class="btn-primary">Đăng nhập Gmail</button>
+                    <p style="font-size: 16px; color: #E65100; margin-bottom: 10px;">${ui('⚠️ Chưa đăng nhập Gmail', '⚠️ Gmail not connected')}</p>
+                    <button onclick="gmailLogin()" class="btn-primary">${ui('Đăng nhập Gmail', 'Sign in to Gmail')}</button>
                 </div>
             `;
             return;
@@ -1775,8 +3254,8 @@ async function generateDailyReport() {
         if (!data.success) {
             container.innerHTML = `
                 <div style="padding: 20px; background: #FFEBEE; border-radius: 8px; margin: 20px;">
-                    <p style="color: #C62828; font-weight: bold;">❌ Lỗi: ${escapeHtml(data.error || 'Không thể tạo báo cáo')}</p>
-                    <p style="color: #666; font-size: 14px; margin-top: 10px;">Hãy thử: Kiểm tra kết nối Gmail, chọn ngày khác, hoặc xem F12 console</p>
+                    <p style="color: #C62828; font-weight: bold;">${ui('❌ Lỗi', '❌ Error')}: ${escapeHtml(data.error || ui('Không thể tạo báo cáo', 'Unable to generate report'))}</p>
+                    <p style="color: #666; font-size: 14px; margin-top: 10px;">${ui('Hãy thử: Kiểm tra kết nối Gmail, chọn ngày khác, hoặc xem F12 console', 'Try checking your Gmail connection, selecting another date, or reviewing the F12 console.')}</p>
                 </div>
             `;
             return;
@@ -1785,8 +3264,8 @@ async function generateDailyReport() {
         if (!data.rows || data.rows.length === 0) {
             container.innerHTML = `
                 <div style="padding: 20px; text-align: center; background: #E8F5E9; border-radius: 8px; margin: 20px;">
-                    <p style="font-size: 16px; color: #2E7D32; margin-bottom: 10px;">📭 Không có email trong ngày ${escapeHtml(data.date)}</p>
-                    <p style="color: #666; font-size: 14px;">Hãy thử chọn ngày khác có nhiều email hơn</p>
+                    <p style="font-size: 16px; color: #2E7D32; margin-bottom: 10px;">${ui('📭 Không có email trong ngày', '📭 No email found for')} ${escapeHtml(data.date)}</p>
+                    <p style="color: #666; font-size: 14px;">${ui('Hãy thử chọn ngày khác có nhiều email hơn', 'Try another date that contains more email.')}</p>
                 </div>
             `;
             return;
@@ -1812,11 +3291,11 @@ async function generateDailyReport() {
                         <div style="font-size:12px;color:#666;margin-top:4px;">${escapeHtml(row.subject || '')}</div>
                     </td>
                     <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; vertical-align: top;">
-                        <div>${escapeHtml(row.summary || 'Không có tóm tắt')}</div>
+                        <div>${escapeHtml(row.summary || ui('Không có tóm tắt', 'No summary available'))}</div>
                         ${meetingNote ? `<div style="margin-top:8px;padding:8px 10px;background:#FFF8E1;border-left:4px solid #FFB300;border-radius:6px;font-size:13px;color:#8D6E63;">${escapeHtml(meetingNote)}</div>` : ''}
                     </td>
                     <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; vertical-align: top; min-width: 180px;">
-                        <span style="display:inline-block;padding:4px 8px;border-radius:999px;background:${isMeeting ? '#FFF3E0' : '#F5F5F5'};color:${isMeeting ? '#E65100' : '#666'};font-size:12px;font-weight:600;">${isMeeting ? '📅 Gợi ý tạo lịch' : 'Không phải cuộc họp'}</span>
+                        <span style="display:inline-block;padding:4px 8px;border-radius:999px;background:${isMeeting ? '#FFF3E0' : '#F5F5F5'};color:${isMeeting ? '#E65100' : '#666'};font-size:12px;font-weight:600;">${isMeeting ? ui('📅 Gợi ý tạo lịch', '📅 Event suggested') : ui('Không phải cuộc họp', 'Not a meeting')}</span>
                         ${actionButtons}
                     </td>
                 </tr>
@@ -1826,16 +3305,16 @@ async function generateDailyReport() {
         container.innerHTML = `
             <div style="padding: 20px;">
                 <div style="margin-bottom: 16px; padding: 12px; background: #E8F5E9; border-radius: 8px;">
-                    <strong style="color: #2E7D32;">📧 Báo cáo email ngày ${escapeHtml(data.date)}</strong><br>
-                    <span style="color: #666; font-size: 14px;">Tổng: ${data.total_emails} email</span>
+                    <strong style="color: #2E7D32;">${ui('📧 Báo cáo email ngày', '📧 Email report for')} ${escapeHtml(data.date)}</strong><br>
+                    <span style="color: #666; font-size: 14px;">${ui('Tổng', 'Total')}: ${data.total_emails} email</span>
                 </div>
                 <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                     <thead>
                         <tr style="background: #4F46E5; color: white;">
-                            <th style="padding: 12px 8px; text-align: center; width: 60px;">STT</th>
-                            <th style="padding: 12px; text-align: left; width: 30%;">Người gửi</th>
-                            <th style="padding: 12px; text-align: left;">Nội dung tóm tắt</th>
-                            <th style="padding: 12px; text-align: left; width: 210px;">Chú thích / Hành động</th>
+                            <th style="padding: 12px 8px; text-align: center; width: 60px;">#</th>
+                            <th style="padding: 12px; text-align: left; width: 30%;">${ui('Người gửi', 'Sender')}</th>
+                            <th style="padding: 12px; text-align: left;">${ui('Nội dung tóm tắt', 'Summary')}</th>
+                            <th style="padding: 12px; text-align: left; width: 210px;">${ui('Chú thích / Hành động', 'Notes / Actions')}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1850,22 +3329,22 @@ async function generateDailyReport() {
             const noBtn = container.querySelector(`.report-schedule-no[data-report-index="${i}"]`);
             if (yesBtn) yesBtn.addEventListener('click', () => createScheduleFromReportRow(row, data.date, yesBtn, noBtn));
             if (noBtn) noBtn.addEventListener('click', () => {
-                showNotification('Đã bỏ qua gợi ý tạo lịch hẹn', 'info');
+                showNotification(ui('Đã bỏ qua gợi ý tạo lịch hẹn', 'Appointment suggestion dismissed'), 'info');
                 if (yesBtn) yesBtn.disabled = true;
                 if (noBtn) noBtn.disabled = true;
             });
         });
-        showNotification(`✅ Đã tạo báo cáo ${data.total_emails} email`, 'success');
+        showNotification(ui(`✅ Đã tạo báo cáo ${data.total_emails} email`, `✅ Report generated for ${data.total_emails} email`), 'success');
     } catch (error) {
         console.error('❌ Report generation error:', error);
         container.innerHTML = `
             <div style="padding: 20px; background: #FFEBEE; border-radius: 8px; margin: 20px;">
-                <p style="color: #C62828; font-weight: bold;">❌ Lỗi kết nối: ${escapeHtml(error.message)}</p>
-                <p style="color: #666; font-size: 14px; margin-top: 10px;">Kiểm tra:</p>
+                <p style="color: #C62828; font-weight: bold;">${ui('❌ Lỗi kết nối', '❌ Connection error')}: ${escapeHtml(error.message)}</p>
+                <p style="color: #666; font-size: 14px; margin-top: 10px;">${ui('Kiểm tra', 'Check')}:</p>
                 <ul style="color: #666; font-size: 14px; margin-left: 20px;">
-                    <li>Server đang chạy (http://localhost:5000)</li>
-                    <li>Đã đăng nhập Gmail</li>
-                    <li>Console (F12) để xem chi tiết</li>
+                    <li>${ui('Server đang chạy', 'The server is running')} (http://localhost:5000)</li>
+                    <li>${ui('Đã đăng nhập Gmail', 'You are signed in to Gmail')}</li>
+                    <li>${ui('Console (F12) để xem chi tiết', 'Open the console (F12) for details')}</li>
                 </ul>
             </div>
         `;
@@ -1903,12 +3382,12 @@ async function createScheduleFromReportRow(row, reportDate, yesBtn, noBtn) {
     const endTime = buildReportScheduleEnd(startTime, row.suggested_end_time);
 
     if (!startTime) {
-        showNotification('❌ Không xác định được thời gian để tạo lịch hẹn', 'error');
+        showNotification(ui('❌ Không xác định được thời gian để tạo lịch hẹn', '❌ Unable to determine an appointment time'), 'error');
         return;
     }
 
     const payload = {
-        title: row.schedule_title || row.subject || 'Lịch hẹn từ email',
+        title: row.schedule_title || row.subject || ui('Lịch hẹn từ email', 'Appointment from email'),
         description: row.suggested_description || row.summary || '',
         start_time: startTime,
         end_time: endTime,
@@ -1929,19 +3408,20 @@ async function createScheduleFromReportRow(row, reportDate, yesBtn, noBtn) {
         if (data.success) {
             showNotification(
                 data.calendar_event_id
-                    ? '✅ Đã tạo lịch hẹn và đồng bộ Google Calendar'
-                    : '✅ Đã tạo lịch hẹn từ email',
+                    ? ui('✅ Đã tạo lịch hẹn và đồng bộ Google Calendar', '✅ Appointment created and synced with Google Calendar')
+                    : ui('✅ Đã tạo lịch hẹn từ email', '✅ Appointment created from email'),
                 'success'
             );
             await loadSchedules();
             await loadCalendarEvents();
+            await loadWeekSchedule();
         } else {
-            showNotification(`❌ Lỗi: ${data.error || 'Không thể tạo lịch hẹn'}`, 'error');
+            showNotification(`${ui('❌ Lỗi', '❌ Error')}: ${data.error || ui('Không thể tạo lịch hẹn', 'Unable to create appointment')}`, 'error');
             if (yesBtn) yesBtn.disabled = false;
             if (noBtn) noBtn.disabled = false;
         }
     } catch (error) {
-        showNotification(`❌ Lỗi: ${error.message}`, 'error');
+        showNotification(`${ui('❌ Lỗi', '❌ Error')}: ${error.message}`, 'error');
         if (yesBtn) yesBtn.disabled = false;
         if (noBtn) noBtn.disabled = false;
     }

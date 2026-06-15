@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "FlowMate AI",
+    "slug": "flowmate-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#f7f8fc"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1e1e1d"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

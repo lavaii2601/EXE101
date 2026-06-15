@@ -3,17 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TeacherBot - Trợ lý giáo viên AI</title>
+    <title>FlowMate AI - Trợ lý giáo viên AI</title>
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
     <div class="container">
+        <button id="menuToggle" class="menu-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
+            <span class="menu-toggle-icon" aria-hidden="true">‹</span>
+        </button>
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <button id="menuToggle" class="menu-toggle" aria-label="Open menu" style="display:none; margin-bottom:8px;">☰</button>
-                <h1>TeacherBot</h1>
-                <p class="subtitle">Trợ lý AI cho giáo viên</p>
+                <div class="sidebar-brand">
+                    <span class="brand-mark" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><path d="M7 7.5h10M7 12h7M7 16.5h4"/><path d="M5 3.5h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9l-5 3v-16a2 2 0 0 1 2-2Z"/></svg>
+                    </span>
+                    <span class="brand-copy"><strong>FlowMate</strong><small>AI Workspace</small></span>
+                </div>
                 <div class="user-profile-section">
                     <img id="userAvatar" class="user-avatar" alt="User Avatar" title="Đăng nhập Gmail">
                     <div class="user-info">
@@ -21,46 +27,90 @@
                         <div id="gmailStatus" class="gmail-status">Chưa kết nối Gmail</div>
                     </div>
                 </div>
+                <div class="user-mode-picker">
+                    <label>Không gian làm việc</label>
+                    <select id="userModeSelect" class="visually-hidden" tabindex="-1" aria-hidden="true">
+                        <option value="student">Sinh viên</option>
+                        <option value="worker">Nhân viên văn phòng</option>
+                        <option value="freelancer">Freelancer</option>
+                        <option value="mentor">Mentor / Giáo viên</option>
+                        <option value="business">Kinh doanh</option>
+                        <option value="creator">Nhà sáng tạo</option>
+                    </select>
+                    <button type="button" id="openUserModeBtn" class="user-mode-current">
+                        <span id="userModeInitial" class="user-mode-initial">VP</span>
+                        <span>
+                            <strong id="userModeLabel">Nhân viên văn phòng</strong>
+                            <small id="userModeDescription"></small>
+                        </span>
+                        <span class="user-mode-chevron">›</span>
+                    </button>
+                </div>
             </div>
             
             <nav class="sidebar-nav">
-                <button class="nav-btn active" data-page="chat">
-                    <span class="icon">💬</span> Chat
+                <button class="nav-btn" data-page="chat">
+                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H6l-4 2 1.4-4.2A9 9 0 1 1 21 12Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg></span>
+                    <span class="nav-label" data-i18n="nav.chat">Chat</span>
                 </button>
                 <button class="nav-btn" data-page="emails">
-                    <span class="icon">📧</span> Email
+                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span>
+                    <span class="nav-label" data-i18n="nav.email">Email</span>
                 </button>
-                <button class="nav-btn" data-page="schedule">
-                    <span class="icon">📅</span> Lịch
+                <button class="nav-btn active" data-page="schedule">
+                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg></span>
+                    <span class="nav-label" data-i18n="nav.calendar">Lịch</span>
                 </button>
                 <button class="nav-btn" data-page="history">
-                    <span class="icon">📜</span> Lịch sử
+                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></span>
+                    <span class="nav-label" data-i18n="nav.history">Lịch sử</span>
+                </button>
+                <button class="nav-btn" data-page="settings">
+                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21h-4v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H3v-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V3h4v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.1v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg></span>
+                    <span class="nav-label" data-i18n="nav.settings">Cài đặt</span>
                 </button>
             </nav>
             
             <div class="sidebar-footer">
-                <button class="btn-secondary" id="clearBtn">Xóa lịch sử</button>
+                <button class="btn-secondary" id="clearBtn">
+                    <span class="sidebar-footer-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg></span>
+                    <span class="sidebar-footer-label">Xóa lịch sử</span>
+                </button>
             </div>
         </aside>
         
         <!-- Main Content -->
         <main class="main-content">
+            <header class="workspace-header">
+                <strong>Workspace OS</strong>
+                <nav class="workspace-modes" aria-label="Workspace modes">
+                    <button type="button" data-workspace-mode="student">Student</button>
+                    <button type="button" class="active" data-workspace-mode="worker">Office Worker</button>
+                    <button type="button" data-workspace-mode="mentor">Mentor</button>
+                    <button type="button" data-workspace-mode="teacher">Teacher</button>
+                    <button type="button" data-workspace-mode="freelancer">Freelancer</button>
+                </nav>
+                <div class="workspace-actions" aria-hidden="true">
+                    <span class="workspace-action">♧</span>
+                    <span class="workspace-action">◎</span>
+                </div>
+            </header>
             <!-- Chat Page -->
-            <section id="chat-page" class="page active">
+            <section id="chat-page" class="page">
                 <div class="chat-container">
                     <div class="chat-messages" id="chatMessages"></div>
                     <div class="chat-input-area">
                         <textarea id="userInput" placeholder="Nhập tin nhắn của bạn..." rows="3"></textarea>
                         <button id="sendBtn" class="btn-primary">Gửi</button>
                     </div>
-                    <div id="providerStatus" class="provider-status-bar" style="padding: 8px 16px; background: #f5f5f5; border-top: 1px solid #ddd; font-size: 12px; color: #666;"></div>
+                    <div id="providerStatus" class="provider-status-bar"></div>
                 </div>
             </section>
             
             <!-- Email Page -->
             <section id="emails-page" class="page">
                 <div class="section-header">
-                    <h2>Quản lý Email</h2>
+                    <h2 data-i18n="email.title">Quản lý Email</h2>
                     <div style="display:flex; gap:8px; align-items:center;">
                         <span id="gmailAccountBadge" class="gmail-account-badge">Chưa đăng nhập Gmail</span>
                         <div id="gmailProfileCard" class="gmail-profile-card" style="display:none;">
@@ -70,7 +120,7 @@
                                 <div id="gmailEmail" class="gmail-email">example@gmail.com</div>
                             </div>
                         </div>
-                        <select id="emailFilterSelect" class="filter-select">
+                        <select id="emailFilterSelect" class="filter-select visually-hidden" aria-hidden="true" tabindex="-1">
                             <option value="all" selected>Tất cả</option>
                             <option value="education">Giáo dục</option>
                             <option value="work">Công việc</option>
@@ -81,23 +131,44 @@
                             <option value="other">Khác</option>
                         </select>
                         <label style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; background: #f5f5f5; border-radius: 4px; cursor: pointer;">
-                            <input type="checkbox" id="includeReadCheckbox" style="cursor: pointer;">
-                            <span style="font-size: 14px;">Hiện cả đã đọc</span>
+                            <input type="checkbox" id="includeReadCheckbox" checked style="cursor: pointer;">
+                            <span style="font-size: 14px;" data-i18n="email.includeRead">Giữ email đã đọc</span>
                         </label>
-                        <button id="refreshEmailsBtn" class="btn-secondary">Làm mới</button>
-                        <button id="openGmailBtn" class="btn-secondary">Mở Gmail</button>
-                        <button id="gmailLoginBtn" class="btn-primary">Đăng nhập / Đổi tài khoản</button>
-                        <button id="gmailLogoutBtn" class="btn-secondary">Đăng xuất Gmail</button>
+                        <button id="refreshEmailsBtn" class="btn-secondary" data-i18n="common.refresh">Làm mới</button>
+                        <button id="openGmailBtn" class="btn-secondary" data-i18n="email.openGmail">Mở Gmail</button>
+                        <button id="gmailLoginBtn" class="btn-primary" data-i18n="email.login">Đăng nhập / Đổi tài khoản</button>
+                        <button id="gmailLogoutBtn" class="btn-secondary" data-i18n="email.logout">Đăng xuất Gmail</button>
                     </div>
                 </div>
                 
                 <div class="tabs">
-                    <button class="tab-btn active" data-tab="inbox">Hộp thư đến</button>
-                    <button class="tab-btn" data-tab="daily-report">Báo cáo theo ngày</button>
-                    <button class="tab-btn" data-tab="compose">Soạn thảo</button>
+                    <button class="tab-btn active" data-tab="inbox" data-i18n="email.inbox">Hộp thư đến</button>
+                    <button class="tab-btn" data-tab="daily-report" data-i18n="email.report">Báo cáo theo ngày</button>
+                    <button class="tab-btn" data-tab="compose" data-i18n="email.compose">Soạn thảo</button>
                 </div>
                 
                 <div class="tab-content" id="inbox-tab">
+                    <div class="email-search-bar">
+                        <span class="email-search-icon">⌕</span>
+                        <input id="emailSearchInput" type="search" placeholder="Tìm theo người gửi, tiêu đề hoặc nội dung..." data-i18n-placeholder="email.search" autocomplete="off">
+                        <div class="email-filter-control">
+                            <button id="emailFilterBtn" type="button" class="email-filter-btn" aria-haspopup="true" aria-expanded="false" title="Lọc email">
+                                <span class="email-filter-icon">≡</span>
+                                <span id="emailFilterLabel">Tất cả</span>
+                            </button>
+                            <div id="emailFilterPopup" class="email-filter-popup" role="menu">
+                                <button type="button" data-filter="all">Tất cả</button>
+                                <button type="button" data-filter="education">Giáo dục</button>
+                                <button type="button" data-filter="work">Công việc</button>
+                                <button type="button" data-filter="meeting">Họp</button>
+                                <button type="button" data-filter="promotion">Khuyến mãi</button>
+                                <button type="button" data-filter="finance">Tài chính</button>
+                                <button type="button" data-filter="personal">Cá nhân</button>
+                                <button type="button" data-filter="other">Khác</button>
+                            </div>
+                        </div>
+                        <button id="clearEmailSearchBtn" type="button" class="btn-secondary" data-i18n="common.clear">Xóa</button>
+                    </div>
                     <div id="emailsList" class="emails-list"></div>
                 </div>
                 
@@ -132,59 +203,37 @@
             </section>
             
             <!-- Schedule Page (merged with Google Calendar) -->
-            <section id="schedule-page" class="page">
+            <section id="schedule-page" class="page active">
                 <div class="section-header">
                     <h2>Lịch</h2>
                     <div style="display:flex; gap:8px; align-items:center;">
                         <span id="calendarStatus" class="calendar-status">Chưa kết nối Google Calendar</span>
                         <button id="refreshCalendarBtn" class="btn-secondary">Làm mới</button>
                         <button id="openCalendarBtn" class="btn-secondary">Mở Google Calendar</button>
-                        <button id="createEventBtn" class="btn-primary" data-tab-target="new-schedule">Tạo sự kiện</button>
+                        <button id="createEventBtn" class="btn-primary">Tạo sự kiện</button>
                     </div>
                 </div>
 
-                <div class="tabs">
-                    <button class="tab-btn active" data-tab="upcoming">Sắp tới</button>
-                    <button class="tab-btn" data-tab="new-schedule">Tạo lịch hẹn mới</button>
-                </div>
-
                 <div class="tab-content" id="upcoming-tab">
-                    <div id="schedulesList" class="schedules-list"></div>
-                    <div id="calendarEventsList" class="calendar-events-list" style="margin-top:16px;"></div>
-                </div>
-
-                <div class="tab-content" id="new-schedule-tab" style="display: none;">
-                    <form id="scheduleForm" class="schedule-form">
-                        <div class="form-group">
-                            <label>Tiêu đề</label>
-                            <input type="text" id="scheduleTitle" placeholder="Tiêu đề lịch hẹn" required>
+                    <div class="week-schedule-section">
+                        <div class="week-nav">
+                            <button id="prevWeekBtn" class="btn-secondary">‹ Tuần trước</button>
+                            <div id="weekRangeLabel" class="week-range-label"></div>
+                            <button id="nextWeekBtn" class="btn-secondary">Tuần sau ›</button>
+                            <button id="todayWeekBtn" class="btn-secondary">Tuần này</button>
                         </div>
-                        <div class="form-group">
-                            <label>Mô tả</label>
-                            <textarea id="scheduleDesc" placeholder="Mô tả chi tiết" rows="3"></textarea>
+                        <div class="week-table-wrapper">
+                            <table class="week-table">
+                                <thead>
+                                    <tr id="weekTableHeader"></tr>
+                                </thead>
+                                <tbody id="weekTableBody">
+                                    <tr id="weekTableRow"></tr>
+                                </tbody>
+                            </table>
                         </div>
-                        <div class="form-group">
-                            <label>Ngày giờ bắt đầu</label>
-                            <input type="datetime-local" id="scheduleStartTime" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Ngày giờ kết thúc</label>
-                            <input type="datetime-local" id="scheduleEndTime">
-                        </div>
-                        <div class="form-group">
-                            <label>Thời lượng (phút)</label>
-                            <input type="number" id="scheduleDuration" min="15" step="15" value="60" placeholder="Ví dụ: 60">
-                        </div>
-                        <div class="form-group">
-                            <label>Địa điểm</label>
-                            <input type="text" id="scheduleLocation" placeholder="Địa điểm">
-                        </div>
-                        <div class="form-group">
-                            <label>Người tham dự (email, cách nhau bằng dấu phẩy)</label>
-                            <input type="text" id="scheduleAttendees" placeholder="email1@example.com, email2@example.com">
-                        </div>
-                        <button type="submit" class="btn-primary">Tạo lịch hẹn</button>
-                    </form>
+                    </div>
+                    <div id="schedulesList" class="schedules-list unified-schedules-list" style="margin-top:16px;"></div>
                 </div>
             </section>
             
@@ -197,13 +246,148 @@
                 </div>
                 <div id="historyList" class="history-list"></div>
             </section>
+
+            <section id="settings-page" class="page">
+                <div class="settings-page-header">
+                    <div>
+                        <span class="settings-kicker">FLOWMATE WORKSPACE</span>
+                        <h2 data-i18n="settings.title">Cài đặt</h2>
+                        <p data-i18n="settings.subtitle">Quản lý tài khoản, giao diện, dữ liệu và kết nối dịch vụ.</p>
+                    </div>
+                    <span id="settingsSaveState" class="settings-save-state">Đã đồng bộ</span>
+                </div>
+
+                <div class="settings-grid">
+                    <article class="settings-card settings-profile-card">
+                        <span class="settings-section-label">TÀI KHOẢN</span>
+                        <div class="settings-account">
+                            <img id="settingsAvatar" class="settings-avatar" alt="">
+                            <div>
+                                <strong id="settingsName">Người dùng</strong>
+                                <span id="settingsEmail">Chưa kết nối Gmail</span>
+                            </div>
+                        </div>
+                        <button id="settingsRefreshBtn" class="btn-secondary">Làm mới trạng thái</button>
+                    </article>
+
+                    <article class="settings-card">
+                        <span class="settings-section-label" data-i18n="settings.languageSection">NGÔN NGỮ</span>
+                        <div class="settings-row">
+                            <div>
+                                <strong data-i18n="settings.language">Ngôn ngữ hiển thị</strong>
+                                <span data-i18n="settings.languageHint">Áp dụng ngay và được ghi nhớ trên thiết bị này.</span>
+                            </div>
+                            <div class="language-segmented" role="group" aria-label="Language">
+                                <button type="button" data-language="vi">Tiếng Việt</button>
+                                <button type="button" data-language="en">English</button>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="settings-card">
+                        <span class="settings-section-label">CÁ NHÂN HÓA</span>
+                        <div class="settings-row">
+                            <div>
+                                <strong>Chế độ người dùng</strong>
+                                <span id="settingsModeText">Nhân viên văn phòng</span>
+                            </div>
+                            <button id="settingsModeBtn" class="btn-secondary">Thay đổi</button>
+                        </div>
+                        <div class="settings-row">
+                            <div>
+                                <strong>Giao diện tối</strong>
+                                <span>Giảm độ sáng và tăng độ tương phản.</span>
+                            </div>
+                            <label class="settings-switch">
+                                <input id="settingsDarkMode" type="checkbox">
+                                <span></span>
+                            </label>
+                        </div>
+                    </article>
+
+                    <article class="settings-card">
+                        <span class="settings-section-label">KẾT NỐI</span>
+                        <div class="settings-row">
+                            <div>
+                                <strong>Gmail & Google Calendar</strong>
+                                <span id="settingsGoogleStatus">Đang kiểm tra...</span>
+                            </div>
+                            <button id="settingsGoogleBtn" class="btn-primary">Kết nối</button>
+                        </div>
+                    </article>
+
+                    <article class="settings-card">
+                        <span class="settings-section-label">DỮ LIỆU</span>
+                        <div class="settings-row">
+                            <div>
+                                <strong>Xóa toàn bộ lịch sử</strong>
+                                <span>Xóa chat, hoạt động email và lịch đã lưu.</span>
+                            </div>
+                            <button id="settingsClearDataBtn" class="btn-danger">Xóa dữ liệu</button>
+                        </div>
+                        <div class="settings-row">
+                            <div>
+                                <strong>Đăng xuất Gmail</strong>
+                                <span>Ngắt quyền truy cập Gmail và Calendar.</span>
+                            </div>
+                            <button id="settingsLogoutBtn" class="btn-secondary">Đăng xuất</button>
+                        </div>
+                    </article>
+                </div>
+            </section>
         </main>
+
+        <aside class="assistant-panel">
+            <div class="assistant-header">
+                <div class="assistant-title">
+                    <span class="assistant-bot-icon" aria-hidden="true">✣</span>
+                    <strong>AI Assistant</strong>
+                </div>
+                <button type="button" class="assistant-more" aria-label="More options">⋮</button>
+            </div>
+            <div class="assistant-conversation">
+                <div class="assistant-mode-chip">Schedule Mode Active</div>
+                <div class="assistant-message user-sample">Lên lịch họp với team vào 9h sáng mai</div>
+                <div class="assistant-response">
+                    <span class="assistant-mini-icon" aria-hidden="true">✣</span>
+                    <div class="assistant-event-card">
+                        <strong>Đã nháp sự kiện: <b>Team Sync</b></strong>
+                        <span>Ngày mai • 09:00 - 10:00</span>
+                        <div>
+                            <button type="button" class="assistant-confirm" id="assistantCreateEventBtn">Xác nhận</button>
+                            <button type="button" class="assistant-edit" id="assistantEditEventBtn">Chỉnh sửa</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <form class="assistant-composer" id="assistantComposer">
+                <textarea id="assistantInput" rows="1" placeholder="Nhập lệnh hoặc đặt câu hỏi..."></textarea>
+                <button type="submit" aria-label="Send">↑</button>
+            </form>
+        </aside>
     </div>
     
     <!-- Modals -->
-    <div id="emailDetailModal" class="modal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
+    <div id="userModeModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="userModeModalTitle">
+        <div class="modal-content user-mode-modal-content">
+            <button type="button" class="close user-mode-close" aria-label="Đóng">&times;</button>
+            <div class="user-mode-modal-header">
+                <span class="user-mode-kicker">CÁ NHÂN HÓA FLOWMATE</span>
+                <h2 id="userModeModalTitle">Bạn đang làm việc theo cách nào?</h2>
+                <p>Mỗi mode thay đổi ưu tiên email, gợi ý lịch và cách AI phản hồi.</p>
+            </div>
+            <div id="userModeGrid" class="user-mode-grid"></div>
+            <div id="userModeSaveStatus" class="user-mode-save-status" aria-live="polite"></div>
+            <div class="user-mode-modal-actions">
+                <button type="button" id="userModeCancelBtn" class="btn-secondary">Hủy</button>
+                <button type="button" id="userModeConfirmBtn" class="btn-primary" disabled>Xác nhận</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="emailDetailModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="emailDetailTitle">
+        <div class="modal-content email-detail-modal-content">
+            <button type="button" class="close email-detail-close" aria-label="Đóng cửa sổ xem email">&times;</button>
             <div id="emailDetail"></div>
             <div class="modal-actions">
                 <button id="summarizeBtn" class="btn-secondary">Tóm tắt</button>
@@ -212,6 +396,48 @@
         </div>
     </div>
     
+    <!-- New Schedule Modal -->
+    <div id="newScheduleModal" class="modal">
+        <div class="modal-content">
+            <span class="close" data-modal="newScheduleModal">&times;</span>
+            <h2>Tạo lịch hẹn mới</h2>
+            <form id="scheduleForm" class="schedule-form">
+                <div class="form-group">
+                    <label>Tiêu đề</label>
+                    <input type="text" id="scheduleTitle" placeholder="Tiêu đề lịch hẹn" required>
+                </div>
+                <div class="form-group">
+                    <label>Mô tả</label>
+                    <textarea id="scheduleDesc" placeholder="Mô tả chi tiết" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Ngày giờ bắt đầu</label>
+                    <input type="datetime-local" id="scheduleStartTime" required>
+                </div>
+                <div class="form-group">
+                    <label>Ngày giờ kết thúc</label>
+                    <input type="datetime-local" id="scheduleEndTime">
+                </div>
+                <div class="form-group">
+                    <label>Thời lượng (phút)</label>
+                    <input type="number" id="scheduleDuration" min="15" step="15" value="60" placeholder="Ví dụ: 60">
+                </div>
+                <div class="form-group">
+                    <label>Địa điểm</label>
+                    <input type="text" id="scheduleLocation" placeholder="Địa điểm">
+                </div>
+                <div class="form-group">
+                    <label>Người tham dự (email, cách nhau bằng dấu phẩy)</label>
+                    <input type="text" id="scheduleAttendees" placeholder="email1@example.com, email2@example.com">
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Tạo lịch hẹn</button>
+                    <button type="button" class="btn-secondary" data-modal="newScheduleModal">Hủy</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Edit Schedule Modal -->
     <div id="editScheduleModal" class="modal">
         <div class="modal-content">

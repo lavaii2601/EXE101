@@ -1,14 +1,21 @@
 import os
 import sqlite3
+import sys
 from datetime import datetime
 
-from backend.config import Config
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from config import Config
 
 
 class History:
+    _initialized_dbs = set()
+
     @staticmethod
     def init_db(db_path=None):
         db_path = db_path or Config.DATABASE_PATH
+        if db_path in History._initialized_dbs:
+            return
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
@@ -24,6 +31,7 @@ class History:
         """)
         conn.commit()
         conn.close()
+        History._initialized_dbs.add(db_path)
 
     @staticmethod
     def create(user_message, assistant_response, action_type="chat", related_id=None, db_path=None):

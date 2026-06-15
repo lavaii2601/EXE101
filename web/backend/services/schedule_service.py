@@ -11,6 +11,24 @@ from models.schedule import Schedule
 # Configure module logger
 logger = logging.getLogger(__name__)
 
+
+def _to_local_naive(value):
+    """Parse ISO date/time and normalize aware values to naive local time."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        except (TypeError, ValueError):
+            return None
+
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed
+
+
 class ScheduleService:
     @staticmethod
     def parse_schedule_request(text):
@@ -63,7 +81,12 @@ class ScheduleService:
         now = datetime.now()
         
         for schedule in schedules:
-            if datetime.fromisoformat(schedule['start_time']) > now:
-                upcoming.append(schedule)
+            start_dt = _to_local_naive(schedule.get('start_time'))
+            if not start_dt:
+                logger.warning("Skipping schedule %s with invalid start_time: %r", schedule.get('id'), schedule.get('start_time'))
+                continue
+            if start_dt > now:
+                upcoming.append((start_dt, schedule))
         
-        return sorted(upcoming, key=lambda x: x['start_time'])[:5]
+        upcoming.sort(key=lambda item: item[0])
+        return [schedule for _, schedule in upcoming[:5]]

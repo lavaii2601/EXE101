@@ -6,6 +6,7 @@ from flask import session as flask_session
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
+from utils.security import bearer_user_id
 
 
 def sanitize_user_id(user_id):
@@ -29,13 +30,16 @@ def get_current_user_id(request, session=None):
     if session is None:
         session = flask_session
 
-    user_id = session.get('gmail_user_email') or session.get('user_id')
+    mobile_user_id = bearer_user_id()
+    user_id = mobile_user_id or session.get('gmail_user_email') or session.get('user_id')
     user_id = sanitize_user_id(user_id)
-    # persist sanitized id back to session for consistency
-    try:
-        session['user_id'] = user_id
-    except Exception:
-        pass
+    # Browser sessions keep a normalized id. Native Bearer identities remain
+    # stateless and must never be copied into a browser cookie session.
+    if not mobile_user_id:
+        try:
+            session['user_id'] = user_id
+        except Exception:
+            pass
 
     return user_id
 

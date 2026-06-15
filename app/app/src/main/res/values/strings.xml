@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name" translatable="false">FlowMate AI</string>
+    <!-- Android OAuth client registered for this package/signing certificate. -->
+    <string name="google_android_client_id">307526067911-70k2adf2t48fi2bcdubd4hd6g4mnkodd.apps.googleusercontent.com</string>
+    <!-- Web OAuth client used to request a server auth code for the Flask backend. -->
+    <string name="google_web_client_id">307526067911-rbdm9k0gqbjvbtqphogvmuo090chhlq9.apps.googleusercontent.com</string>
+</resources>

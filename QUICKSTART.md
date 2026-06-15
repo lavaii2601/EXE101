@@ -47,7 +47,7 @@ OPENAI_API_KEY=
 4) Chạy ứng dụng (development)
 
 ```powershell
-python backend/app.py
+python web/backend/app.py
 ```
 
 Mở trình duyệt: http://127.0.0.1:5000

@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify, session
+from datetime import datetime
 import sys
 import os
 
@@ -8,6 +9,11 @@ from models.user import User
 from utils.user_context import get_current_user_id
 
 user_bp = Blueprint('user', __name__, url_prefix='/api/user')
+
+USER_MODES = {
+    'student', 'worker', 'freelancer', 'mentor', 'teacher',
+    'business', 'creator'
+}
 
 
 def _merge_gmail_profile(user):
@@ -30,6 +36,7 @@ def _merge_gmail_profile(user):
     merged['email'] = merged.get('email') or merged.get('gmail_email') or ''
     merged['avatar_url'] = merged.get('avatar_url') or merged.get('gmail_picture') or ''
     merged['gmail_connected'] = bool(merged.get('gmail_connected')) or bool(session_gmail_email)
+    merged['mode_required'] = bool(merged['gmail_connected'] and not merged.get('user_mode'))
     return merged
 
 
@@ -54,21 +61,32 @@ def update_profile():
     """Update user profile"""
     user_id = get_current_user_id(request)
     data = request.get_json() or {}
+    User.get_or_create(user_id)
     
-    # Allow updating name, email, avatar_url
+    requested_mode = (data.get('user_mode') or '').strip().lower()
+    if requested_mode and requested_mode not in USER_MODES:
+        return jsonify({
+            'success': False,
+            'error': 'Invalid user mode'
+        }), 400
+
     update_data = {
         k: v for k, v in data.items()
-        if k in ['name', 'email', 'avatar_url']
+        if k in ['name', 'email', 'avatar_url', 'user_mode']
     }
+    if requested_mode:
+        update_data['user_mode'] = requested_mode
+        update_data['user_mode_selected_at'] = datetime.now().isoformat()
     
     success = User.update(user_id, **update_data)
     
-    if success:
-        user = User.get(user_id)
+    user = User.get(user_id)
+    unchanged = bool(update_data) and all(user.get(key) == value for key, value in update_data.items())
+    if success or unchanged:
         return jsonify({
             'success': True,
             'message': 'Profile updated',
-            'user': user
+            'user': _merge_gmail_profile(user)
         })
     else:
         return jsonify({

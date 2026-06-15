@@ -21,8 +21,30 @@ logger = logging.getLogger(__name__)
 DEMO_RESPONSES = {
     "tóm tắt": "Đây là tóm tắt email:\n- Điểm chính 1: Nội dung quan trọng\n- Điểm chính 2: Thông tin cần chú ý\n- Hành động: Cần phản hồi trong 24h",
     "lịch": "Tôi đề xuất lên lịch hẹn vào ngày mai lúc 14:00 để thảo luận chi tiết.",
-    "default": "Xin chào! Tôi là TeacherBot - trợ lý AI cho giáo viên. Tôi có thể giúp bạn với:\n- Soạn tài liệu giáo dục\n- Phân tích email\n- Lên lịch hẹn\n- Và nhiều hơn nữa!\n\n(Hiện đang ở mode Demo - hết quota OpenAI)"
+    "default": "Xin chào! Tôi là Lunex - trợ lý AI thông minh. Tôi có thể giúp bạn với:\n- Phân tích email\n- Lên lịch hẹn\n- Quản lý công việc\n- Và nhiều hơn nữa!\n\n(Hiện đang ở mode Demo - hết quota API)"
 }
+
+# Appended to prompts whose output is shown as plain text (email body, schedule
+# fields) so the model doesn't emit raw HTML/Markdown markup like <b> or **text**.
+PLAIN_TEXT_INSTRUCTION = (
+    " Chỉ viết văn bản thuần (plain text). KHÔNG dùng thẻ HTML (như <b>, </b>, <i>, <br>, <p>) "
+    "và KHÔNG dùng ký hiệu Markdown (**, __, #, ``` , -). Nếu cần nhấn mạnh, dùng chữ thường "
+    "và xuống dòng rõ ràng."
+)
+
+_HTML_TAG_RE = re.compile(r'</?[a-zA-Z][a-zA-Z0-9]*\s*/?>')
+_MD_BOLD_RE = re.compile(r'\*\*(.+?)\*\*|__(.+?)__')
+
+
+def strip_markup(text):
+    """Remove stray HTML tags and Markdown bold markers from AI output
+    so plain-text fields (email body, schedule fields) don't show raw
+    formatting like <b> or **text**."""
+    if not text:
+        return text
+    cleaned = _HTML_TAG_RE.sub('', text)
+    cleaned = _MD_BOLD_RE.sub(lambda m: m.group(1) or m.group(2), cleaned)
+    return cleaned
 
 # Quota/rate limit error keywords
 QUOTA_ERROR_KEYWORDS = [
@@ -697,25 +719,78 @@ class AIService:
             return DEMO_RESPONSES["default"]
     
     def summarize_email(self, email_content, user_id=None):
-        """Summarize email content"""
+        """Summarize email content with focus on key points and action items"""
         messages = [
             {
                 "role": "system",
-                "content": "Bạn là trợ lý giáo viên. Tóm tắt ngắn gọn email thành ý chính và 1-2 hành động."
+                "content": (
+                    "Bạn là trợ lý giáo viên thông minh. Tóm tắt email CỰC NGẮN (1-2 câu), tập trung vào:\n"
+                    "- Nội dung chính và ý nghĩa\n"
+                    "- Hành động cần thực hiện (nếu có)\n"
+                    "- Thời gian cần phản hồi (nếu có)\n"
+                    "BỎ các phần dư thừa như signature, quảng cáo, lời chào thông thường.\n"
+                    "Viết rõ, ngắn gọn, dễ hiểu." + PLAIN_TEXT_INSTRUCTION
+                )
             },
             {
                 "role": "user",
-                "content": f"Tóm tắt email sau:\n\n{self._truncate_text(email_content, self.max_input_chars)}"
+                "content": f"Tóm tắt email sau (bỏ dư thừa, giữ ý chính):\n\n{self._truncate_text(email_content, self.max_input_chars)}"
             }
         ]
         return self.generate_response(messages, task='summary', user_id=user_id)
+
+    def summarize_email_polished(self, email_data, user_id=None):
+        """Create a structured, accurate and action-oriented email summary."""
+        email_data = email_data or {}
+        subject = str(email_data.get('subject', '') or '').strip()
+        sender = str(email_data.get('sender', '') or '').strip()
+        date = str(email_data.get('date', '') or '').strip()
+        body = str(email_data.get('body', '') or email_data.get('snippet', '') or '').strip()
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Ban la tro ly email chuyen nghiep cho giao vien. Tra loi bang tieng Viet tu nhien, co dau. "
+                    "Chi dung thong tin co trong email; khong suy dien hay bia dat. Giu chinh xac ten, ngay gio, "
+                    "con so, dia diem va yeu cau. Bo loi chao, chu ky, tracking va quang cao. Trinh bay 4 muc: "
+                    "TOM TAT, DIEM QUAN TRONG, VIEC CAN LAM, THOI HAN / UU TIEN. Neu khong co, ghi 'Khong co'."
+                ) + PLAIN_TEXT_INSTRUCTION
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"From: {sender}\n"
+                    f"Subject: {subject}\n"
+                    f"Date: {date}\n\n"
+                    f"Email:\n{self._truncate_text(body, self.max_input_chars)}"
+                )
+            }
+        ]
+        response = self.generate_response(
+            messages,
+            max_tokens=420,
+            task='summary',
+            user_id=user_id
+        ).strip()
+
+        if self.last_provider_used == 'demo':
+            compact_body = re.sub(r'\s+', ' ', body).strip()
+            preview = self._truncate_text(compact_body, 700)
+            return (
+                f"TOM TAT\n{preview or 'Khong co noi dung de tom tat.'}\n\n"
+                "DIEM QUAN TRONG\n- Can kiem tra lai noi dung email goc.\n\n"
+                "VIEC CAN LAM\n- Khong xac dinh duoc khi AI dang o che do demo.\n\n"
+                "THOI HAN / UU TIEN\n- Khong co thong tin."
+            )
+        return strip_markup(response)
     
     def generate_reply(self, context, user_choice, user_id=None):
         """Generate automatic reply based on user choice"""
         messages = [
             {
                 "role": "system",
-                "content": "Bạn là trợ lý giáo viên. Viết email trả lời ngắn gọn, lịch sự, rõ ràng."
+                "content": "Bạn là trợ lý giáo viên. Viết email trả lời ngắn gọn, lịch sự, rõ ràng." + PLAIN_TEXT_INSTRUCTION
             },
             {
                 "role": "user",
@@ -726,7 +801,7 @@ class AIService:
                 )
             }
         ]
-        return self.generate_response(messages, task='reply', user_id=user_id)
+        return strip_markup(self.generate_response(messages, task='reply', user_id=user_id))
     
     def analyze_text(self, text):
         """Analyze text for sentiment and intent"""
@@ -741,38 +816,177 @@ class AIService:
             }
         ]
         return self.generate_response(messages, task='analyze')
-
-    def summarize_email_report(self, emails, report_date=None, user_id=None):
-        """Summarize multiple emails in a single AI call for reporting."""
-        if not emails:
-            return []
-
-        compact_items = []
-        for idx, email in enumerate(emails, start=1):
-            compact_text = self._truncate_text(
-                f"Subject: {email.get('subject', '')}\n"
-                f"Snippet: {email.get('snippet', '')}\n"
-                f"Body: {email.get('body', '')}",
-                420
-            )
-            compact_items.append(
-                f"[{idx}] Sender: {email.get('sender', 'Unknown')}\n{compact_text}"
-            )
-
-        prompt = (
-            "Tóm tắt từng email sau thành 1 câu ngắn. Nếu email là lịch họp/cuộc họp/lịch hẹn thì đặt is_meeting=true, "
-            "thêm meeting_note ngắn và tạo suggested_start_time nếu có thể. "
-            "Trả về JSON array, mỗi phần tử gồm: index (số), summary (chuỗi), is_meeting (bool), meeting_note (chuỗi), "
-            "schedule_title (chuỗi), suggested_start_time (ISO string hoặc null), suggested_end_time (ISO string hoặc null), "
-            "suggested_description (chuỗi). Không thêm giải thích ngoài JSON.\n\n"
-            + "\n\n".join(compact_items)
-        )
-
-        max_tokens = min(700, max(220, len(emails) * 70))
+    
+    def classify_email(self, email_data, user_id=None):
+        """Classify email into categories: education, business, ads, notification, personal, etc.
+        
+        Args:
+            email_data: dict with keys 'subject', 'sender', 'body', 'snippet'
+            
+        Returns:
+            dict with 'tag' (str), 'confidence' (float 0-1), 'reason' (str)
+        """
+        subject = email_data.get('subject', '')
+        sender = email_data.get('sender', '')
+        body = email_data.get('body', '') or email_data.get('snippet', '')
+        
+        email_text = f"Subject: {subject}\nFrom: {sender}\n\n{self._truncate_text(body, self.max_input_chars)}"
+        
         messages = [
             {
                 "role": "system",
-                "content": "Bạn là trợ lý giáo viên. Tóm tắt cực ngắn, rõ ý, đúng nội dung email."
+                "content": (
+                    "Classify this email into ONE category from: education, business, ads, notification, personal, social, other\n"
+                    "Return JSON: {\"tag\": \"category\", \"confidence\": 0.0-1.0, \"reason\": \"brief reason\"}\n"
+                    "Categories:\n"
+                    "- education: courses, tutorials, learning materials, school/university\n"
+                    "- business: work, meetings, professional communication, invoices\n"
+                    "- ads: marketing, promotions, newsletters, unsolicted ads\n"
+                    "- notification: system alerts, confirmations, OTP, status updates\n"
+                    "- personal: from friends/family, informal communication\n"
+                    "- social: social media, communities, group messages\n"
+                    "- other: everything else\n"
+                    "Return ONLY valid JSON, no other text."
+                )
+            },
+            {
+                "role": "user",
+                "content": email_text
+            }
+        ]
+        
+        try:
+            response = self.generate_response(messages, max_tokens=100, task='analyze', user_id=user_id)
+            response_clean = response.strip()
+            if '```json' in response_clean:
+                response_clean = response_clean.split('```json', 1)[1].split('```', 1)[0].strip()
+            elif '```' in response_clean:
+                response_clean = response_clean.split('```', 1)[1].split('```', 1)[0].strip()
+            
+            result = json.loads(response_clean)
+            return {
+                'tag': result.get('tag', 'other'),
+                'confidence': float(result.get('confidence', 0.5)),
+                'reason': result.get('reason', '')
+            }
+        except Exception as e:
+            logger.warning(f"Email classification failed: {e}")
+            return {'tag': 'other', 'confidence': 0.0, 'reason': 'Classification failed'}
+    
+    def summarize_email_short(self, email_data, user_id=None):
+        """Create a short summary (1-2 sentences) of email content
+        
+        Args:
+            email_data: dict with keys 'subject', 'sender', 'body', 'snippet'
+            
+        Returns:
+            str: Brief summary
+        """
+        subject = email_data.get('subject', '')
+        body = email_data.get('body', '') or email_data.get('snippet', '')
+        
+        email_text = f"Subject: {subject}\n\n{self._truncate_text(body, self.max_input_chars)}"
+        
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Summarize this email in 1-2 SHORT sentences. Focus on:\n"
+                    "1. Main point or purpose\n"
+                    "2. Key action items (if any)\n"
+                    "3. Urgency level (if implied)\n"
+                    "Remove: greetings, signatures, unnecessary details, spam content\n"
+                    "Be concise and clear for busy professionals."
+                )
+            },
+            {
+                "role": "user",
+                "content": email_text
+            }
+        ]
+        
+        try:
+            summary = self.generate_response(messages, max_tokens=120, task='summary', user_id=user_id)
+            return summary.strip()
+        except Exception as e:
+            logger.warning(f"Email summarization failed: {e}")
+            return email_data.get('snippet', '')[:200]
+
+    def summarize_email_report(self, emails, report_date=None, user_id=None):
+        """Summarize multiple emails with intelligent filtering and high-quality summaries."""
+        if not emails:
+            return []
+
+        # Filter out purely promotional/redundant emails before processing
+        filtered_emails = []
+        for email in emails:
+            subject = (email.get('subject', '') or '').lower()
+            body = (email.get('body', '') or '').lower()
+            
+            # Skip obvious promotions, newsletters, automated notifications
+            skip_keywords = [
+                'unsubscribe', 'promotional', 'khuyến mãi', 'đơn hàng', 'shipping',
+                'marketing', 'newsletter', 'subscription', 'confirm your', 'verify your'
+            ]
+            
+            if any(kw in subject or kw in body[:200] for kw in skip_keywords):
+                # Check if it's important despite being promotional
+                important_keywords = ['urgent', 'cần sự chú ý', 'gấp', 'important', 'action required']
+                if not any(kw in subject for kw in important_keywords):
+                    continue
+            
+            filtered_emails.append(email)
+        
+        # Use original list if all filtered, prevent empty result
+        if not filtered_emails:
+            filtered_emails = emails[:15]  # Process top 15 if all filtered
+
+        compact_items = []
+        for idx, email in enumerate(filtered_emails, start=1):
+            subject = email.get('subject', '').strip()
+            snippet = (email.get('snippet', '') or '').strip()
+            body = (email.get('body', '') or '').strip()
+            
+            # Build a concise representation
+            content = subject
+            if snippet:
+                content += f"\n{snippet}"
+            elif body:
+                content += f"\n{body[:300]}"
+            
+            compact_text = self._truncate_text(content, 380)
+            compact_items.append(
+                f"[{idx}] Từ: {email.get('sender', 'Unknown')}\n{compact_text}"
+            )
+
+        prompt = (
+            "Tóm tắt TỪng email thành ĐỨC 1 CÂU TỐ NGẮN. Yêu cầu:\n"
+            "1. Nội dung chính + ý nghĩa rõ ràng\n"
+            "2. Hành động cần thực hiện (nếu có)\n"
+            "3. Mức độ ưu tiên (nếu cần)\n"
+            "4. BỎ toàn bộ dư thừa, quảng cáo, signature\n"
+            "5. Nếu là lịch họp/cuộc họp → đặt is_meeting=true\n\n"
+            "Trả về JSON array có cấu trúc:\n"
+            "[\n"
+            '  {"index": 1, "summary": "...", "is_meeting": false, ...}\n'
+            "]\n\n"
+            "Chi tiết mỗi object: index (số), summary (chuỗi), is_meeting (bool), "
+            "meeting_note (nếu meeting), schedule_title, suggested_start_time, suggested_end_time, suggested_description.\n"
+            "Tất cả các trường văn bản (summary, meeting_note, schedule_title, suggested_description) phải là "
+            "văn bản thuần, KHÔNG dùng thẻ HTML (như <b>, <i>, <br>) và KHÔNG dùng ký hiệu Markdown (**, __, #).\n"
+            "CHỈ TRẢ VỀ JSON, KHÔNG GIẢI THÍCH THÊM.\n\n"
+            + "\n\n".join(compact_items)
+        )
+
+        max_tokens = min(800, max(240, len(filtered_emails) * 80))
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Bạn là trợ lý giáo viên chuyên nghiệp. Tóm tắt email CHÍNH XÁC, NGẮN GỌN, "
+                    "loại bỏ hết dư thừa. Nội dung phải rõ ý, hữu ích cho giáo viên. "
+                    "Trả về JSON hợp lệ, không giải thích thêm."
+                )
             },
             {
                 "role": "user",
@@ -798,22 +1012,22 @@ class AIService:
                 if not isinstance(item, dict):
                     continue
                 idx = item.get('index')
-                summary = str(item.get('summary', '')).strip()
-                if isinstance(idx, int):
-                    inferred = self._infer_meeting_signals(emails[idx - 1], report_date=report_date) if 1 <= idx <= len(emails) else {}
+                summary = strip_markup(str(item.get('summary', '')).strip())
+                if isinstance(idx, int) and summary:
+                    inferred = self._infer_meeting_signals(filtered_emails[idx - 1], report_date=report_date) if 1 <= idx <= len(filtered_emails) else {}
                     index_to_item[idx] = {
                         'summary': summary,
                         'is_meeting': bool(item.get('is_meeting', inferred.get('is_meeting', False))),
-                        'meeting_note': str(item.get('meeting_note', inferred.get('meeting_note', ''))).strip(),
-                        'schedule_title': str(item.get('schedule_title', inferred.get('schedule_title', ''))).strip(),
+                        'meeting_note': strip_markup(str(item.get('meeting_note', inferred.get('meeting_note', ''))).strip()),
+                        'schedule_title': strip_markup(str(item.get('schedule_title', inferred.get('schedule_title', ''))).strip()),
                         'suggested_start_time': item.get('suggested_start_time') or inferred.get('suggested_start_time'),
                         'suggested_end_time': item.get('suggested_end_time') or inferred.get('suggested_end_time'),
-                        'suggested_description': str(item.get('suggested_description', inferred.get('suggested_description', ''))).strip(),
+                        'suggested_description': strip_markup(str(item.get('suggested_description', inferred.get('suggested_description', ''))).strip()),
                     }
 
             rows = []
-            for idx, email in enumerate(emails, start=1):
-                fallback_summary = self._truncate_text(email.get('snippet', '') or email.get('body', ''), 180)
+            for idx, email in enumerate(filtered_emails, start=1):
+                fallback_summary = self._truncate_text(email.get('snippet', '') or email.get('body', ''), 140)
                 inferred = self._infer_meeting_signals(email, report_date=report_date)
                 item = index_to_item.get(idx, {})
                 rows.append({

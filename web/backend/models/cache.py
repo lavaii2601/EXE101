@@ -10,14 +10,18 @@ from config import Config
 
 class Cache:
     """Cache model for storing temporary data (emails, calendar events, schedules)"""
-    
+
     # Cache TTL in seconds (5 minutes)
     DEFAULT_TTL = 300
-    
+
+    _initialized_dbs = set()
+
     @staticmethod
     def init_db(db_path=None):
         """Initialize cache table"""
         db_path = db_path or Config.DATABASE_PATH
+        if db_path in Cache._initialized_dbs:
+            return
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
@@ -38,10 +42,11 @@ class Cache:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_cache_key ON cache(key)')
         except sqlite3.OperationalError:
             pass
-        
+
         conn.commit()
         conn.close()
-    
+        Cache._initialized_dbs.add(db_path)
+
     @staticmethod
     def set(key, value, ttl=DEFAULT_TTL, db_path=None):
         """Store data in cache"""
@@ -84,6 +89,38 @@ class Cache:
             except:
                 return result['value']
         return None
+
+    @staticmethod
+    def get_many(keys, db_path=None):
+        """Get multiple non-expired cache entries in one database query."""
+        keys = [key for key in (keys or []) if key]
+        if not keys:
+            return {}
+
+        db_path = db_path or Config.DATABASE_PATH
+        Cache.init_db(db_path=db_path)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        placeholders = ','.join(['?'] * len(keys))
+        cursor.execute(
+            f'''
+                SELECT key, value FROM cache
+                WHERE key IN ({placeholders})
+                  AND expires_at > CURRENT_TIMESTAMP
+            ''',
+            keys
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        result = {}
+        for row in rows:
+            try:
+                result[row['key']] = json.loads(row['value'])
+            except Exception:
+                result[row['key']] = row['value']
+        return result
     
     @staticmethod
     def delete(key, db_path=None):

@@ -4,13 +4,17 @@ import logging
 import pickle
 import json
 import base64
+import re
 import requests
+import unicodedata
 from flask import Blueprint, request, jsonify, redirect, url_for, session
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from google_auth_oauthlib.flow import Flow
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 from googleapiclient.discovery import build
 from services.gmail_service import GmailService
 from services.mistral_service import MistralService
@@ -22,6 +26,7 @@ from models.cache import Cache
 from config import Config
 from config import GMAIL_CLIENT_ID_KEYS, GMAIL_CLIENT_SECRET_KEYS, GMAIL_CREDENTIALS_JSON_KEYS
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
+from utils.security import issue_mobile_token
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -33,19 +38,121 @@ email_bp = Blueprint('email', __name__, url_prefix='/api/email')
 mistral_service = MistralService()
 ai_service = AIService()
 
-# Simple in-memory cache for email lists (5 minute TTL)
+# Simple in-memory cache for email lists (10 minute TTL for optimal performance)
 _email_cache = {}
+EMAIL_SCAN_DEFAULT = 70
+EMAIL_SCAN_MAX = 70
+EMAIL_LIST_CACHE_TTL = 1800
+EMAIL_BODY_CACHE_TTL = 86400
+EMAIL_SUMMARY_CACHE_TTL = 86400
 
-def _get_cache_key(user_id, filter_type):
+def _get_cache_key(user_id, filter_type, include_read=False, scan_limit=EMAIL_SCAN_DEFAULT):
     """Generate cache key"""
-    return f"{user_id}:{filter_type}"
+    read_scope = 'with_read' if include_read else 'unread'
+    return f"{user_id}:emails:list:{filter_type}:{read_scope}:{scan_limit}"
+
+
+def _email_body_cache_key(user_id, email_id):
+    return f"{user_id}:email:body:{email_id}"
+
+
+def _email_summary_cache_key(user_id, email_id):
+    return f"{user_id}:email:summary:{email_id}"
+
+
+def _clamp_scan_limit(raw_value):
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        value = EMAIL_SCAN_DEFAULT
+    return max(1, min(value, EMAIL_SCAN_MAX))
+
+
+def _compact_preview(text, max_chars=220):
+    value = re.sub(r'\s+', ' ', (text or '').strip())
+    if len(value) <= max_chars:
+        return value
+    return value[:max_chars].rstrip() + '...'
+
+
+def _classify_email_lightweight(email):
+    text = ' '.join([
+        email.get('subject', '') or '',
+        email.get('sender', '') or '',
+        email.get('snippet', '') or ''
+    ]).lower()
+
+    rules = [
+        ('meeting', ['meeting', 'hop', 'họp', 'lich hen', 'lịch hẹn', 'appointment', 'schedule', 'calendar', 'zoom', 'meet', 'teams']),
+        ('education', ['school', 'class', 'student', 'teacher', 'course', 'lesson', 'assignment', 'giao duc', 'giáo dục', 'hoc sinh', 'học sinh']),
+        ('finance', ['invoice', 'payment', 'receipt', 'bank', 'billing', 'hoa don', 'hóa đơn', 'thanh toan', 'thanh toán']),
+        ('promotion', ['sale', 'discount', 'promotion', 'newsletter', 'unsubscribe', 'coupon', 'marketing', 'khuyến mãi']),
+        ('work', ['task', 'project', 'deadline', 'report', 'proposal', 'contract', 'cong viec', 'công việc']),
+        ('personal', ['family', 'friend', 'personal'])
+    ]
+
+    for tag, keywords in rules:
+        if any(keyword in text for keyword in keywords):
+            return tag
+    return 'other'
+
+
+def _matches_filter(email, filter_type):
+    if filter_type == 'all':
+        return True
+    tag = email.get('tag') or _classify_email_lightweight(email)
+    aliases = {
+        'work': {'work', 'business'},
+        'promotion': {'promotion', 'ads'},
+        'meeting': {'meeting'}
+    }
+    return tag == filter_type or tag in aliases.get(filter_type, set())
+
+
+def _normalize_search_text(value):
+    text = unicodedata.normalize('NFKD', str(value or '').lower())
+    return ''.join(char for char in text if not unicodedata.combining(char))
+
+
+def _matches_search(email, keyword):
+    normalized_keyword = _normalize_search_text(keyword).strip()
+    if not normalized_keyword:
+        return True
+    searchable = ' '.join([
+        email.get('sender', ''),
+        email.get('subject', ''),
+        email.get('snippet', ''),
+        email.get('summary', ''),
+        email.get('tag', '')
+    ])
+    return normalized_keyword in _normalize_search_text(searchable)
+
+
+def _hydrate_email_for_list(email, user_id, cached_entries=None):
+    email = dict(email or {})
+    email['tag'] = email.get('tag') or _classify_email_lightweight(email)
+    email['tag_confidence'] = email.get('tag_confidence', 0.65 if email['tag'] != 'other' else 0.0)
+    cached_entries = cached_entries or {}
+
+    summary_key = _email_summary_cache_key(user_id, email.get('id', ''))
+    body_key = _email_body_cache_key(user_id, email.get('id', ''))
+    cached_summary = cached_entries.get(summary_key)
+    if isinstance(cached_summary, dict) and cached_summary.get('summary'):
+        email['summary'] = cached_summary.get('summary')
+        email['summary_type'] = 'ai_cached'
+    else:
+        email['summary'] = _compact_preview(email.get('snippet', ''), max_chars=180)
+        email['summary_type'] = 'preview'
+
+    email['body_cached'] = bool(cached_entries.get(body_key))
+    return email
 
 def _are_emails_cached(cache_key):
-    """Check if cache is still valid"""
+    """Check if cache is still valid (10 minute TTL for better performance)"""
     if cache_key not in _email_cache:
         return False
     cached_time, _, _ = _email_cache[cache_key]
-    return datetime.now() - cached_time < timedelta(minutes=5)
+    return datetime.now() - cached_time < timedelta(minutes=10)
 
 def _get_cached_emails(cache_key):
     """Get cached emails if valid"""
@@ -64,6 +171,16 @@ def _clear_all_cache(user_id):
     for key in keys_to_delete:
         del _email_cache[key]
     logger.info(f"Cleared {len(keys_to_delete)} cache entries for user {user_id}")
+
+
+def _clear_email_list_cache(user_id):
+    """Invalidate list caches while preserving full bodies and AI summaries."""
+    _clear_all_cache(user_id)
+    try:
+        db_path = get_user_db_path(user_id)
+        Cache.clear_pattern(f"{user_id}:emails:list:%", db_path=db_path)
+    except Exception as e:
+        logger.warning(f"Failed to clear DB email list cache for {user_id}: {e}")
 
 
 def _fetch_google_userinfo(creds):
@@ -163,29 +280,28 @@ def _clear_oauth_state(user_id):
 
 
 def _get_redirect_uri():
-    """Return configured redirect URI or build from request."""
-    configured = (getattr(Config, 'GMAIL_REDIRECT_URI', None) or '').strip()
-    if configured:
-        # Prevent localhost redirect leak when running on Vercel
-        if not (os.getenv('VERCEL') and 'localhost' in configured.lower()):
-            return configured
-
-    # Prefer forwarded host/proto from reverse proxy (Vercel)
-    forwarded_host = request.headers.get('x-forwarded-host', '').strip()
-    forwarded_proto = request.headers.get('x-forwarded-proto', '').strip() or 'https'
-    if forwarded_host:
-        return f"{forwarded_proto}://{forwarded_host}/api/email/oauth2callback"
-
-    # Fallback to Flask-generated URL
-    return url_for('email.oauth2callback', _external=True)
+    """Return the redirect URI registered in Google Console for this client."""
+    return "http://127.0.0.1:5000/api/email/oauth2callback"
 
 
-def _build_oauth_flow(state=None):
+def _build_oauth_flow(state=None, native=False):
     """Create OAuth flow from env vars (preferred) or credentials file."""
-    redirect_uri = _get_redirect_uri()
+    redirect_uri = _get_redirect_uri() if not native else ""
+
+    # Android requests its server auth code for the web client bundled with
+    # the app. During local development, use the matching downloaded Google
+    # credentials instead of an unrelated/stale client left in web/.env.
+    if native and os.path.exists(Config.GMAIL_CREDENTIALS_FILE):
+        return Flow.from_client_secrets_file(
+            Config.GMAIL_CREDENTIALS_FILE,
+            scopes=GmailService.SCOPES,
+            state=state,
+            redirect_uri=redirect_uri
+        )
 
     raw_credentials_json = (Config.GMAIL_CREDENTIALS_JSON or '').strip()
     if raw_credentials_json:
+        # ... (giữ nguyên logic xử lý candidates)
         candidates = [raw_credentials_json]
 
         # Remove wrapping quotes if env was pasted as a quoted JSON string
@@ -305,71 +421,92 @@ def get_unread_emails():
         }), 401
 
     try:
-        max_results = request.args.get('max_results', 10, type=int)
+        scan_limit = _clamp_scan_limit(request.args.get('max_results', EMAIL_SCAN_DEFAULT))
         page = request.args.get('page', 1, type=int)
         filter_type = request.args.get('filter', 'education', type=str).strip().lower()
+        search = request.args.get('search', '', type=str).strip()
         include_read = request.args.get('include_read', 'false', type=str).lower() == 'true'
+        db_path = get_user_db_path(user_id)
         
-        cache_key = _get_cache_key(user_id, filter_type)
+        cache_key = _get_cache_key(user_id, filter_type, include_read=include_read, scan_limit=scan_limit)
+        db_cache_key = cache_key
         
-        # Try to get from cache first (only for unread emails)
-        cached_emails, cached_total = _get_cached_emails(cache_key) if not include_read else (None, None)
+        # Try in-memory cache first, then DB cache.
+        cached_emails, cached_total = _get_cached_emails(cache_key)
         if cached_emails is not None:
             filtered_emails = cached_emails
             total_raw = cached_total
             cache_hit = True
         else:
-            # Fetch from Gmail with lazy body loading
-            fetch_count = max_results if filter_type == 'all' else min(max_results * 4, 80)
-            raw_emails = service.get_emails(max_results=fetch_count, query='is:unread', include_read=include_read)
-            
-            logger.info(f"Fetched {len(raw_emails)} raw emails from Gmail")
-            
-            # Bypass AI classification for now - just return all emails
-            # TODO: Fix Mistral service if needed
-            if filter_type == 'all' or len(raw_emails) == 0:
-                filtered_emails = raw_emails
+            cached_db = Cache.get(db_cache_key, db_path=db_path)
+            if isinstance(cached_db, dict) and cached_db.get('emails') is not None:
+                filtered_emails = cached_db.get('emails') or []
+                total_raw = cached_db.get('total', len(filtered_emails))
+                _cache_emails(cache_key, filtered_emails, total_raw)
+                cache_hit = True
             else:
-                try:
-                    filtered_emails = mistral_service.batch_classify_emails(raw_emails, filter_type=filter_type)
-                    logger.info(f"AI filtered to {len(filtered_emails)} emails")
-                except Exception as e:
-                    logger.warning(f"AI classification failed, returning all: {e}")
-                    filtered_emails = raw_emails
-            
-            total_raw = len(raw_emails)
-            
-            # Cache the results (both in-memory and database)
-            _cache_emails(cache_key, filtered_emails, total_raw)
-            
-            # Also save to database cache
-            db_path = get_user_db_path(user_id)
-            db_cache_key = f"{user_id}:emails:{filter_type}"
-            Cache.set(db_cache_key, {
-                'emails': filtered_emails,
-                'total': total_raw,
-                'filter': filter_type,
-                'timestamp': datetime.now().isoformat()
-            }, ttl=300, db_path=db_path)  # 5 minute TTL
-            
-            cache_hit = False
+                raw_emails = service.get_emails(
+                    max_results=scan_limit,
+                    query='is:unread',
+                    include_read=include_read
+                )
+                logger.info(f"Fetched {len(raw_emails)} raw email metadata records from Gmail")
+
+                hydrated = []
+                for email in raw_emails:
+                    email = dict(email or {})
+                    email['tag'] = _classify_email_lightweight(email)
+                    email['tag_confidence'] = 0.65 if email['tag'] != 'other' else 0.0
+                    email['summary'] = _compact_preview(email.get('snippet', ''), max_chars=180)
+                    email['summary_type'] = 'preview'
+                    hydrated.append(email)
+
+                filtered_emails = [email for email in hydrated if _matches_filter(email, filter_type)]
+                total_raw = len(raw_emails)
+
+                _cache_emails(cache_key, filtered_emails, total_raw)
+                Cache.set(db_cache_key, {
+                    'emails': filtered_emails,
+                    'total': total_raw,
+                    'filter': filter_type,
+                    'include_read': include_read,
+                    'scan_limit': scan_limit,
+                    'timestamp': datetime.now().isoformat()
+                }, ttl=EMAIL_LIST_CACHE_TTL, db_path=db_path)
+                cache_hit = False
         
+        if search:
+            filtered_emails = [email for email in filtered_emails if _matches_search(email, search)]
+
         # Calculate pagination
         total_emails = len(filtered_emails)
-        total_pages = (total_emails + max_results - 1) // max_results
+        per_page = scan_limit
+        total_pages = (total_emails + per_page - 1) // per_page
         page = max(1, min(page, total_pages)) if total_pages > 0 else 1
         
         # Get page emails
-        offset = (page - 1) * max_results
-        page_emails = filtered_emails[offset:offset + max_results]
-        
+        offset = (page - 1) * per_page
+        selected_emails = filtered_emails[offset:offset + per_page]
+        detail_cache_keys = []
+        for email in selected_emails:
+            email_id = email.get('id', '')
+            detail_cache_keys.append(_email_summary_cache_key(user_id, email_id))
+            detail_cache_keys.append(_email_body_cache_key(user_id, email_id))
+        cached_entries = Cache.get_many(detail_cache_keys, db_path=db_path)
+        page_emails = [
+            _hydrate_email_for_list(email, user_id, cached_entries=cached_entries)
+            for email in selected_emails
+        ]
+
         return jsonify({
             'success': True,
             'filter': filter_type,
+            'search': search,
             'emails': page_emails,
             'total_filtered': total_raw,
             'matched_count': total_emails,
             'cache_hit': cache_hit,
+            'scan_limit': scan_limit,
             'debug': {
                 'raw_email_count': total_raw,
                 'filtered_email_count': total_emails,
@@ -378,7 +515,7 @@ def get_unread_emails():
             'pagination': {
                 'current_page': page,
                 'total_pages': total_pages,
-                'per_page': max_results,
+                'per_page': per_page,
                 'total_items': total_emails
             }
         })
@@ -391,20 +528,104 @@ def get_unread_emails():
 def get_email_body(email_id):
     """Get full email body on-demand (lazy loading for performance)"""
     user_id = get_current_user_id(request, session=session)
+    db_path = get_user_db_path(user_id)
     service = _load_gmail_service(user_id)
     if not service:
         return jsonify({'error': 'not_authenticated'}), 401
 
     try:
-        email_data = service.get_email_details(email_id, lazy=False)
-        if email_data:
+        cached = Cache.get(_email_body_cache_key(user_id, email_id), db_path=db_path)
+        if isinstance(cached, dict) and cached.get('body'):
             return jsonify({
                 'success': True,
-                'body': email_data.get('body', '')
+                'body': cached.get('body', ''),
+                'email': cached,
+                'cache_hit': True
+            })
+
+        email_data = service.get_email_details(email_id, lazy=False)
+        if email_data:
+            Cache.set(
+                _email_body_cache_key(user_id, email_id),
+                email_data,
+                ttl=EMAIL_BODY_CACHE_TTL,
+                db_path=db_path
+            )
+            return jsonify({
+                'success': True,
+                'body': email_data.get('body', ''),
+                'email': email_data,
+                'cache_hit': False
             })
         return jsonify({'error': 'Email not found'}), 404
     except Exception as e:
         logger.error(f"Error getting email body: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@email_bp.route('/summary/<email_id>', methods=['GET', 'POST'])
+def summarize_email_detail(email_id):
+    """Generate or return cached polished AI summary for one email."""
+    user_id = get_current_user_id(request, session=session)
+    db_path = get_user_db_path(user_id)
+    service = _load_gmail_service(user_id)
+    if not service:
+        return jsonify({'error': 'not_authenticated'}), 401
+
+    try:
+        summary_key = _email_summary_cache_key(user_id, email_id)
+        cached_summary = Cache.get(summary_key, db_path=db_path)
+        if isinstance(cached_summary, dict) and cached_summary.get('summary'):
+            return jsonify({
+                'success': True,
+                'summary': cached_summary.get('summary', ''),
+                'email': cached_summary.get('email', {}),
+                'cache_hit': True
+            })
+
+        email_data = Cache.get(_email_body_cache_key(user_id, email_id), db_path=db_path)
+        if not isinstance(email_data, dict) or not email_data.get('body'):
+            email_data = service.get_email_details(email_id, lazy=False)
+            if not email_data:
+                return jsonify({'error': 'Email not found'}), 404
+            Cache.set(
+                _email_body_cache_key(user_id, email_id),
+                email_data,
+                ttl=EMAIL_BODY_CACHE_TTL,
+                db_path=db_path
+            )
+
+        summary = ai_service.summarize_email_polished(email_data, user_id=user_id)
+        payload = {
+            'summary': summary,
+            'email': {
+                'id': email_data.get('id'),
+                'subject': email_data.get('subject'),
+                'sender': email_data.get('sender'),
+                'date': email_data.get('date')
+            },
+            'generated_at': datetime.now().isoformat()
+        }
+        Cache.set(summary_key, payload, ttl=EMAIL_SUMMARY_CACHE_TTL, db_path=db_path)
+
+        try:
+            History.create(
+                f"Tom tat AI email: {email_data.get('subject', '')}",
+                summary,
+                action_type='email_summary',
+                db_path=db_path
+            )
+        except Exception:
+            pass
+
+        return jsonify({
+            'success': True,
+            'summary': summary,
+            'email': payload['email'],
+            'cache_hit': False
+        })
+    except Exception as e:
+        logger.error(f"Error summarizing email: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
@@ -420,7 +641,7 @@ def mark_email_as_read(email_id):
         success = service.mark_as_read(email_id)
         if success:
             # Clear cache to force refresh
-            _clear_all_cache(user_id)
+            _clear_email_list_cache(user_id)
             return jsonify({'success': True, 'message': 'Đã đánh dấu đã đọc'})
         return jsonify({'error': 'Failed to mark as read'}), 500
     except Exception as e:
@@ -440,7 +661,7 @@ def mark_email_as_unread(email_id):
         success = service.mark_as_unread(email_id)
         if success:
             # Clear cache to force refresh
-            _clear_all_cache(user_id)
+            _clear_email_list_cache(user_id)
             return jsonify({'success': True, 'message': 'Đã đánh dấu chưa đọc'})
         return jsonify({'error': 'Failed to mark as unread'}), 500
     except Exception as e:
@@ -530,7 +751,7 @@ def gmail_logout():
 
 @email_bp.route('/summarize-by-date', methods=['POST'])
 def summarize_emails_by_date():
-    """Summarize emails received on a specific date and return tabular report."""
+    """Summarize emails received on a specific date and return tabular report with caching."""
     user_id = get_current_user_id(request, session=session)
     db_path = get_user_db_path(user_id)
     service = _load_gmail_service(user_id)
@@ -555,15 +776,27 @@ def summarize_emails_by_date():
             })
 
         # Try to read cached report first
+        cache_key = f"email_report::{user_id}::{date_str}"
+        rows = None
         try:
             from models.cache import Cache
-            cached = Cache.get(f"email_report::{user_id}::{date_str}", db_path=db_path)
+            cached = Cache.get(cache_key, db_path=db_path)
             if cached:
+                logger.info(f"Using cached summary for {date_str}")
                 rows = cached
-            else:
-                rows = ai_service.summarize_email_report(emails, report_date=date_str, user_id=user_id)
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Cache read error: {e}")
+
+        # Generate summary if not cached
+        if not rows:
             rows = ai_service.summarize_email_report(emails, report_date=date_str, user_id=user_id)
+            # Cache the results for future use (24 hour TTL)
+            try:
+                from models.cache import Cache
+                Cache.set(cache_key, rows, db_path=db_path, ttl=86400)
+                logger.info(f"Cached summary for {date_str}")
+            except Exception as e:
+                logger.debug(f"Cache write error: {e}")
 
         History.create(
             f"Báo cáo tóm tắt email theo ngày {date_str}",
@@ -583,6 +816,87 @@ def summarize_emails_by_date():
 
 
 # OAuth flow endpoints
+
+
+@email_bp.route('/google-auth', methods=['POST'])
+def google_auth_native():
+    """Authenticate user from Android using Server Auth Code to get full Gmail access"""
+    data = request.get_json()
+    auth_code = data.get('server_auth_code')
+    email_hint = data.get('email')
+
+    if not auth_code:
+        return jsonify({'success': False, 'error': 'Missing server_auth_code'}), 400
+
+    try:
+        # Build the flow to exchange the code for tokens.
+        # For native Android exchange, redirect_uri must be empty.
+        flow = _build_oauth_flow(native=True)
+        flow.fetch_token(code=auth_code)
+        creds = flow.credentials
+
+        # Identify Gmail account email from profile
+        gmail_service_api = build('gmail', 'v1', credentials=creds)
+        profile = gmail_service_api.users().getProfile(userId='me').execute()
+        gmail_email = profile.get('emailAddress', email_hint or '')
+
+        # Fetch richer account profile for UI
+        userinfo = _fetch_google_userinfo(creds)
+        gmail_name = userinfo.get('name', 'Teacher')
+        gmail_picture = userinfo.get('picture', '')
+
+        user_id = gmail_email or 'default'
+
+        # Save token to file (Crucial for _load_gmail_service)
+        token_file = get_user_token_file(user_id)
+        with open(token_file, 'wb') as token:
+            pickle.dump(creds, token)
+
+        # Update User in Database
+        db_path = get_user_db_path(user_id)
+        User.get_or_create(user_id, name=gmail_name, email=gmail_email)
+        User.update(
+            user_id,
+            gmail_email=gmail_email,
+            gmail_name=gmail_name,
+            gmail_picture=gmail_picture,
+            gmail_connected=1,
+            gmail_connected_at=datetime.now().isoformat(),
+            avatar_url=gmail_picture,
+            name=gmail_name,
+            email=gmail_email
+        )
+
+        # Initialize user-specific components
+        try:
+            Schedule.init_db(db_path=db_path)
+            History.init_db(db_path=db_path)
+        except Exception:
+            pass
+
+        # Set session
+        session['user_id'] = user_id
+        session['gmail_user_email'] = gmail_email
+        session.modified = True
+
+        logger.info(f"Native Google Auth & Token exchange successful for: {user_id}")
+        return jsonify({
+            'success': True,
+            'user_id': user_id,
+            'email': gmail_email,
+            'access_token': issue_mobile_token(user_id),
+            'message': 'Đăng nhập và cấp quyền thành công'
+        })
+
+    except Exception as e:
+        logger.error(f"Native Auth/Exchange error: {e}", exc_info=True)
+        error_message = str(e)
+        if 'unauthorized_client' in error_message.lower():
+            error_message = (
+                'Google OAuth client mismatch. The Android app and backend '
+                'must use the same Web OAuth client ID.'
+            )
+        return jsonify({'success': False, 'error': error_message}), 500
 
 
 @email_bp.route('/auth', methods=['GET'])
@@ -800,12 +1114,15 @@ def clear_cache():
     
     try:
         db_path = get_user_db_path(user_id)
-        # Clear in-memory cache
-        _clear_all_cache(user_id)
-        # Clear database cache for email caches and AI caches
-        Cache.clear_pattern(f"{user_id}:*", db_path=db_path)
-        # ai cache keys are stored as: ai::{user_id}::{hash}
-        Cache.clear_pattern(f"ai::{user_id}:%", db_path=db_path)
+        data = request.get_json(silent=True) or {}
+        scope = (data.get('scope') or request.args.get('scope') or 'list').strip().lower()
+
+        if scope == 'all':
+            _clear_all_cache(user_id)
+            Cache.clear_pattern(f"{user_id}:*", db_path=db_path)
+            Cache.clear_pattern(f"ai::{user_id}:%", db_path=db_path)
+        else:
+            _clear_email_list_cache(user_id)
         
         logger.info(f"Cache cleared for user: {user_id}")
         return jsonify({
