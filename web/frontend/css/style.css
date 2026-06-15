@@ -70,7 +70,7 @@ body.workspace-ready .workspace-app {
 
 .auth-gate {
     position: fixed;
-    z-index: 5000;
+    z-index: 900;
     inset: 0;
     display: grid;
     place-items: center;
@@ -82,6 +82,13 @@ body.workspace-ready .workspace-app {
         linear-gradient(145deg, #141a42, #23235d 48%, #181632);
     color: #f7f7ff;
     transition: opacity 220ms ease, visibility 220ms ease;
+}
+
+.auth-gate.is-mode-stage .auth-card,
+.auth-gate.is-mode-stage .auth-orb {
+    opacity: .24;
+    filter: blur(3px);
+    pointer-events: none;
 }
 
 .auth-gate.is-hidden {

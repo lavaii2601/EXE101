@@ -633,8 +633,11 @@ async function initApp() {
                     loadUserProfile().then(() => {
                         if (userModeRequired) {
                             pendingPageAfterMode = 'emails';
-                        } else if (currentPage === 'emails') {
-                            setTimeout(() => loadEmails(), 300);
+                        } else {
+                            showWorkspace();
+                            if (currentPage === 'emails') {
+                                setTimeout(() => loadEmails(), 300);
+                            }
                         }
                     });
                 }
@@ -688,6 +691,7 @@ function showAuthGate(message = '', loading = false) {
     const label = button?.querySelector('.auth-button-label');
     document.body.classList.remove('workspace-ready');
     gate?.classList.remove('is-hidden');
+    gate?.classList.remove('is-mode-stage');
     gate?.classList.toggle('is-loading', loading);
     if (status) status.textContent = message;
     if (button) button.disabled = loading;
@@ -702,15 +706,15 @@ function showAuthGate(message = '', loading = false) {
 function showWorkspace() {
     const gate = document.getElementById('authGate');
     gate?.classList.add('is-hidden');
-    gate?.classList.remove('is-loading');
+    gate?.classList.remove('is-loading', 'is-mode-stage');
     document.body.classList.add('workspace-ready');
     document.getElementById('workspaceApp')?.setAttribute('aria-hidden', 'false');
 }
 
 function showModeSelectionStage() {
     const gate = document.getElementById('authGate');
-    gate?.classList.add('is-hidden');
-    gate?.classList.remove('is-loading');
+    gate?.classList.remove('is-hidden', 'is-loading');
+    gate?.classList.add('is-mode-stage');
     document.body.classList.remove('workspace-ready');
     document.getElementById('workspaceApp')?.setAttribute('aria-hidden', 'true');
 }

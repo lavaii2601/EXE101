@@ -702,6 +702,7 @@ def gmail_auth_status():
     """Return whether Gmail is currently authenticated."""
     user_id = get_current_user_id(request, session=session)
     token_file = get_user_token_file(user_id)
+    authenticated = user_id != 'default' and os.path.exists(token_file)
     connected_at = None
     if os.path.exists(token_file):
         try:
@@ -716,7 +717,7 @@ def gmail_auth_status():
         'gmail_name': session.get('gmail_user_name'),
         'gmail_picture': session.get('gmail_user_picture'),
         'connected_at': connected_at,
-        'authenticated': os.path.exists(token_file)
+        'authenticated': authenticated
     })
 
 
@@ -743,6 +744,7 @@ def gmail_logout():
             except Exception as revoke_err:
                 print(f"Token revoke skipped: {revoke_err}")
 
+        User.update(user_id, gmail_connected=0)
         _clear_oauth_state(user_id)
         return jsonify({'success': True, 'message': 'Đã đăng xuất Gmail'})
     except Exception as e:
