@@ -1951,17 +1951,29 @@ async function clearConversation() {
 
 // EMAIL FUNCTIONS
 async function gmailLogin() {
+    showAuthGate(ui('Đang chuyển đến Google...', 'Redirecting to Google...'), true);
     try {
-        const response = await apiFetch(`${API_BASE}/email/auth_url`);
+        const response = await fetch(`${API_BASE}/email/auth_url`, {
+            credentials: 'include',
+            headers: { Accept: 'application/json' }
+        });
         const data = await response.json();
 
         if (!response.ok || !data.auth_url) {
+            showAuthGate(ui(
+                'Không thể bắt đầu đăng nhập. Vui lòng thử lại.',
+                'Unable to start sign-in. Please try again.'
+            ));
             alert(ui('Lỗi: ', 'Error: ') + (data.error || ui('OAuth chưa được cấu hình', 'OAuth is not configured')));
             return;
         }
 
         window.location.href = data.auth_url;
     } catch (err) {
+        showAuthGate(ui(
+            'Không thể kết nối đến máy chủ. Vui lòng thử lại.',
+            'Unable to reach the server. Please try again.'
+        ));
         alert(ui('Lỗi: ', 'Error: ') + err.message);
     }
 }
