@@ -38,9 +38,9 @@ export default function ScheduleScreen() {
       nextWeekStart.setDate(nextWeekStart.getDate() + 7);
 
       const [data, currentWeek, nextWeek] = await Promise.all([
-        apiGet('/schedule/unified?max_results=50'),
-        apiGet(`/schedule/week?start=${formatDateForApi(currentWeekStart)}`),
-        apiGet(`/schedule/week?start=${formatDateForApi(nextWeekStart)}`),
+        apiGet('/schedule/unified?max_results=50&live=0'),
+        apiGet(`/schedule/week?start=${formatDateForApi(currentWeekStart)}&sync=0`),
+        apiGet(`/schedule/week?start=${formatDateForApi(nextWeekStart)}&sync=0`),
       ]);
 
       setSchedules(data.items || []);

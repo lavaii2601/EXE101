@@ -1,13 +1,25 @@
 .env
+.venv/
 data/
 *.pickle
 *.log
+*.pid
+web/backend-local.pid
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .gradle/
 **/build/
 mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/android/
 app/local.properties
+app/.gradle/
+app/build/
+app/app/build/
 
 # IDE
 .idea/

@@ -11,7 +11,6 @@ Yêu cầu:
 ```powershell
 git clone https://github.com/lavaii2601/EXE101.git
 cd EXE101
-cd testing-local-deploy-version
 ```
 
 2) Tạo virtualenv và cài dependencies
@@ -28,9 +27,9 @@ pip install -r requirements.txt
 Copy file mẫu và chỉnh giá trị thực tế (không commit file `.env` chứa secret).
 
 ```powershell
-Copy-Item .env.example .env
+Copy-Item web/.env.example web/.env -ErrorAction SilentlyContinue
 # Mở .env và thêm giá trị của bạn, ví dụ GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, OPENROUTER_API_KEY, v.v.
-notepad .env
+notepad web/.env
 ```
 
 Mẫu `.env.example` (ví dụ):

@@ -1,6 +1,8 @@
 import os
 import sys
 import logging
+import threading
+import time
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 
@@ -8,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.schedule_service import ScheduleService
 from services.calendar_service import CalendarService
+from models.cache import Cache
 from models.schedule import Schedule
 from models.history import History
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
@@ -16,6 +19,23 @@ from utils.user_context import get_current_user_id, get_user_db_path, get_user_t
 logger = logging.getLogger(__name__)
 
 schedule_bp = Blueprint('schedule', __name__, url_prefix='/api/schedule')
+_week_sync_lock = threading.Lock()
+_week_sync_inflight = set()
+_week_sync_recent = {}
+_WEEK_SYNC_TTL_SECONDS = 90
+_SCHEDULE_CACHE_TTL_SECONDS = 15
+
+
+def _schedule_cache_key(user_id, name, *parts):
+    safe_parts = [str(part).replace('%', '').replace(':', '-') for part in parts if part is not None]
+    return 'schedule:' + ':'.join([user_id, name, *safe_parts])
+
+
+def _clear_schedule_cache(db_path):
+    try:
+        Cache.clear_pattern('schedule:%', db_path=db_path)
+    except Exception:
+        logger.debug("Could not clear schedule cache", exc_info=True)
 
 
 def _parse_duration_minutes(raw_value):
@@ -95,6 +115,7 @@ def _sync_schedule_to_calendar(user_id, schedule_id, schedule_payload, db_path):
         )
         if new_event_id:
             Schedule.update(schedule_id, calendar_event_id=new_event_id, db_path=db_path)
+            _clear_schedule_cache(db_path)
             logger.info(f"Schedule {schedule_id} synced to Google Calendar: {new_event_id}")
             return new_event_id
     except Exception as e:
@@ -172,6 +193,7 @@ def create_schedule():
                                 )
                                 if event_id:
                                     Schedule.update(schedule_id, calendar_event_id=event_id, db_path=db_path)
+                                    _clear_schedule_cache(db_path)
                 except Exception:
                     pass
             Thread(target=_bg, daemon=True).start()
@@ -187,7 +209,8 @@ def create_schedule():
             related_id=schedule_id,
             db_path=db_path
         )
-        
+        _clear_schedule_cache(db_path)
+
         return jsonify({
             'success': True,
             'schedule_id': schedule_id,
@@ -246,6 +269,62 @@ def _unified_schedule_item(schedule):
     }
 
 
+def _sync_google_week_events(user_id, db_path, monday, week_end):
+    calendar_service = _load_calendar_service(user_id)
+    if not calendar_service:
+        return
+
+    local_tz = datetime.now().astimezone().tzinfo
+    time_min = monday.replace(tzinfo=local_tz).isoformat()
+    time_max = week_end.replace(tzinfo=local_tz).isoformat()
+    gcal_events = calendar_service.get_events(max_results=100, time_min=time_min, time_max=time_max)
+    for event in gcal_events:
+        event_id = event.get('id')
+        if not event_id:
+            continue
+        if Schedule.get_by_calendar_event_id(event_id, db_path=db_path):
+            continue
+        Schedule.create(
+            title=event.get('title') or 'Untitled',
+            description=event.get('description') or '',
+            start_time=event.get('start'),
+            end_time=event.get('end'),
+            attendees=','.join(event.get('attendees') or []),
+            email_body='',
+            location=event.get('location') or '',
+            calendar_event_id=event_id,
+            db_path=db_path
+        )
+    _clear_schedule_cache(db_path)
+
+
+def _start_week_sync(user_id, db_path, monday, week_end):
+    if not _load_calendar_service(user_id):
+        return False
+
+    key = (user_id, monday.date().isoformat())
+    now = time.monotonic()
+    with _week_sync_lock:
+        last_sync = _week_sync_recent.get(key, 0)
+        if key in _week_sync_inflight or now - last_sync < _WEEK_SYNC_TTL_SECONDS:
+            return False
+        _week_sync_inflight.add(key)
+
+    def _worker():
+        try:
+            _sync_google_week_events(user_id, db_path, monday, week_end)
+            with _week_sync_lock:
+                _week_sync_recent[key] = time.monotonic()
+        except Exception as e:
+            logger.warning(f"Failed to sync Google Calendar events for week: {e}")
+        finally:
+            with _week_sync_lock:
+                _week_sync_inflight.discard(key)
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return True
+
+
 @schedule_bp.route('/unified', methods=['GET'])
 def get_unified_schedules():
     """Merge upcoming local schedules and Google Calendar events into one timeline."""
@@ -254,6 +333,11 @@ def get_unified_schedules():
         db_path = get_user_db_path(user_id)
         now = datetime.now()
         max_results = min(max(request.args.get('max_results', 50, type=int), 1), 200)
+        live_google = request.args.get('live', '0') == '1'
+        cache_key = _schedule_cache_key(user_id, 'unified', max_results, int(live_google))
+        cached = Cache.get(cache_key, db_path=db_path)
+        if cached:
+            return jsonify(cached)
 
         local_schedules = []
         for schedule in Schedule.get_all(limit=200, db_path=db_path):
@@ -275,6 +359,7 @@ def get_unified_schedules():
         calendar_service = _load_calendar_service(user_id)
         if calendar_service:
             calendar_connected = True
+        if calendar_service and live_google:
             try:
                 time_max = (datetime.utcnow() + timedelta(days=90)).isoformat() + 'Z'
                 for event in calendar_service.get_events(
@@ -312,12 +397,15 @@ def get_unified_schedules():
         local_schedules.sort(
             key=lambda item: _parse_dt(item.get('start_time')) or datetime.max
         )
-        return jsonify({
+        payload = {
             'success': True,
             'items': local_schedules,
             'count': len(local_schedules),
             'calendar_connected': calendar_connected,
-        })
+            'live_google': live_google,
+        }
+        Cache.set(cache_key, payload, ttl=_SCHEDULE_CACHE_TTL_SECONDS, db_path=db_path)
+        return jsonify(payload)
     except Exception as e:
         logger.error(f"Error building unified schedule: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
@@ -325,7 +413,7 @@ def get_unified_schedules():
 
 @schedule_bp.route('/week', methods=['GET'])
 def get_week_schedules():
-    """Get schedules for a Mon-Sun week, importing any new Google Calendar events first."""
+    """Get schedules for a Mon-Sun week and refresh Google Calendar in the background."""
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
 
@@ -337,33 +425,15 @@ def get_week_schedules():
     monday = (ref_date - timedelta(days=ref_date.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
     week_end = monday + timedelta(days=7)
 
-    # Sync events from Google Calendar into the local schedule table
-    calendar_service = _load_calendar_service(user_id)
-    if calendar_service:
-        try:
-            local_tz = datetime.now().astimezone().tzinfo
-            time_min = monday.replace(tzinfo=local_tz).isoformat()
-            time_max = week_end.replace(tzinfo=local_tz).isoformat()
-            gcal_events = calendar_service.get_events(max_results=100, time_min=time_min, time_max=time_max)
-            for event in gcal_events:
-                event_id = event.get('id')
-                if not event_id:
-                    continue
-                if Schedule.get_by_calendar_event_id(event_id, db_path=db_path):
-                    continue
-                Schedule.create(
-                    title=event.get('title') or 'Untitled',
-                    description=event.get('description') or '',
-                    start_time=event.get('start'),
-                    end_time=event.get('end'),
-                    attendees=','.join(event.get('attendees') or []),
-                    email_body='',
-                    location=event.get('location') or '',
-                    calendar_event_id=event_id,
-                    db_path=db_path
-                )
-        except Exception as e:
-            logger.warning(f"Failed to sync Google Calendar events for week: {e}")
+    sync_requested = request.args.get('sync', '1') != '0'
+    cache_key = _schedule_cache_key(user_id, 'week', monday.date().isoformat(), int(sync_requested))
+    cached = Cache.get(cache_key, db_path=db_path)
+    if cached:
+        if sync_requested:
+            _start_week_sync(user_id, db_path, monday, week_end)
+        return jsonify(cached)
+
+    sync_started = _start_week_sync(user_id, db_path, monday, week_end) if sync_requested else False
 
     # Build the Mon-Sun grid from local schedules
     all_schedules = Schedule.get_all(limit=200, db_path=db_path)
@@ -379,12 +449,15 @@ def get_week_schedules():
     for day_schedules in days:
         day_schedules.sort(key=lambda s: s.get('start_time') or '')
 
-    return jsonify({
+    payload = {
         'success': True,
         'week_start': monday.date().isoformat(),
         'week_end': (monday + timedelta(days=6)).date().isoformat(),
-        'days': days
-    })
+        'days': days,
+        'calendar_sync_pending': sync_started
+    }
+    Cache.set(cache_key, payload, ttl=_SCHEDULE_CACHE_TTL_SECONDS, db_path=db_path)
+    return jsonify(payload)
 
 
 @schedule_bp.route('/upcoming', methods=['GET'])
@@ -414,6 +487,7 @@ def update_status(schedule_id):
         user_id = get_current_user_id(request)
         db_path = get_user_db_path(user_id)
         Schedule.update_status(schedule_id, status, db_path=db_path)
+        _clear_schedule_cache(db_path)
         History.create(
             f"Cập nhật trạng thái lịch hẹn",
             f"Trạng thái: {status}",
@@ -459,6 +533,7 @@ def update_schedule(schedule_id):
             update_data['end_time'] = _compute_end_time(update_data.get('start_time'), None, duration_minutes)
 
         Schedule.update(schedule_id, db_path=db_path, **update_data)
+        _clear_schedule_cache(db_path)
         
         # Try to update Google Calendar event, or create one if it does not exist yet.
         updated_schedule = Schedule.get_by_id(schedule_id, db_path=db_path)
@@ -506,6 +581,7 @@ def delete_schedule(schedule_id):
         
         # Delete from local database
         Schedule.delete(schedule_id, db_path=db_path)
+        _clear_schedule_cache(db_path)
         
         History.create(
             f"Xóa lịch hẹn: {schedule.get('title', '')}",
