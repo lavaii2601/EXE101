@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.ai_service import AIService
 from services.gmail_service import GmailService
+from services.intent_orchestrator import IntentOrchestrator
 from services.schedule_service import ScheduleService
 from models.history import History
 from models.schedule import Schedule
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 chat_bp = Blueprint('chat', __name__, url_prefix='/api/chat')
 ai_service = AIService()
+intent_orchestrator = IntentOrchestrator()
 
 
 def _normalize_intent_text(value):
@@ -452,6 +454,111 @@ def send_message():
     History.init_db(db_path=db_path)
     Schedule.init_db(db_path=db_path)
 
+    intent_result = intent_orchestrator.detect(user_message)
+    refresh_targets = list(intent_result.get('refresh_targets') or [])
+
+    if intent_result.get('intent') == 'email.latest_summary':
+        try:
+            requested_count = int((intent_result.get('entities') or {}).get('count') or _latest_email_count(user_message))
+            response, source_emails = _summarize_latest_emails(user_id, requested_count)
+            source_email = source_emails[0]
+            History.create(user_message, response, action_type='chat', db_path=db_path)
+            return jsonify({
+                'success': True,
+                'response': response,
+                'provider': ai_service.last_provider_used,
+                'demo_mode': ai_service.last_provider_used == 'demo',
+                'schedule_created': None,
+                'schedule_suggestion': None,
+                'workspace_sources': ['email'],
+                'intent': intent_result,
+                'refresh_targets': refresh_targets,
+                'email_source': {
+                    'id': source_email.get('id'),
+                    'sender': source_email.get('sender'),
+                    'subject': source_email.get('subject'),
+                    'date': source_email.get('date')
+                },
+                'email_sources': [{
+                    'id': email.get('id'),
+                    'sender': email.get('sender'),
+                    'subject': email.get('subject'),
+                    'date': email.get('date')
+                } for email in source_emails]
+            })
+        except Exception as e:
+            logger.exception("Failed to summarize latest Gmail messages for user %s", user_id)
+            response = f"Khong the lay email gan nhat tu Gmail: {e}"
+            History.create(user_message, response, action_type='chat', db_path=db_path)
+            return jsonify({
+                'success': True,
+                'response': response,
+                'provider': None,
+                'demo_mode': False,
+                'schedule_created': None,
+                'schedule_suggestion': None,
+                'intent': intent_result,
+                'refresh_targets': refresh_targets
+            })
+
+    client_confirm = bool(data.get('confirmed_schedule'))
+    schedule_override = data.get('schedule_override') or {}
+    if intent_result.get('intent') == 'schedule.create' and (client_confirm or schedule_override):
+        schedule_created = None
+        response = "Minh chua tao duoc lich vi thieu ngay/gio bat dau."
+        try:
+            schedule_created = intent_orchestrator.create_schedule_from_intent(
+                intent_result,
+                schedule_override,
+                db_path
+            )
+            if schedule_created:
+                response = f"Da tao lich: {schedule_created.get('title')} luc {schedule_created.get('start_time')}."
+                History.create(
+                    f"Tao lich hen: {schedule_created.get('title')}",
+                    "Lich hen duoc tao tu xac nhan cua nguoi dung",
+                    action_type='schedule_created',
+                    related_id=schedule_created.get('id'),
+                    db_path=db_path
+                )
+        except Exception as e:
+            logger.exception("Failed to create schedule through intent orchestrator")
+            response = f"Khong the tao lich: {e}"
+
+        History.create(user_message, response, action_type='chat', db_path=db_path)
+        return jsonify({
+            'success': True,
+            'response': response,
+            'provider': None,
+            'demo_mode': False,
+            'schedule_created': schedule_created,
+            'schedule_suggestion': None if schedule_created else (intent_result.get('entities') or {}).get('schedule'),
+            'workspace_sources': ['calendar'],
+            'intent': intent_result,
+            'refresh_targets': ['schedule', 'history']
+        })
+
+    direct_result = intent_orchestrator.execute_direct(intent_result, user_id, db_path)
+    if direct_result and intent_result.get('intent') in {'settings.update_mode', 'history.list', 'schedule.create'}:
+        response = direct_result.get('response') or ''
+        History.create(
+            user_message,
+            response,
+            action_type=direct_result.get('action_type') or 'chat',
+            db_path=db_path
+        )
+        return jsonify({
+            'success': True,
+            'response': response,
+            'provider': None,
+            'demo_mode': False,
+            'schedule_created': None,
+            'schedule_suggestion': direct_result.get('schedule_suggestion'),
+            'workspace_sources': direct_result.get('workspace_sources') or [],
+            'intent': intent_result,
+            'refresh_targets': direct_result.get('refresh_targets') or refresh_targets
+        })
+
     if _is_latest_email_summary_request(user_message):
         try:
             requested_count = _latest_email_count(user_message)
@@ -466,6 +573,8 @@ def send_message():
                 'schedule_created': None,
                 'schedule_suggestion': None,
                 'workspace_sources': ['email'],
+                'intent': intent_result,
+                'refresh_targets': refresh_targets,
                 'email_source': {
                     'id': source_email.get('id'),
                     'sender': source_email.get('sender'),
@@ -489,7 +598,9 @@ def send_message():
                 'provider': None,
                 'demo_mode': False,
                 'schedule_created': None,
-                'schedule_suggestion': None
+                'schedule_suggestion': None,
+                'intent': intent_result,
+                'refresh_targets': refresh_targets
             })
 
     # Build messages for AI with recent chat context for smarter responses
@@ -556,9 +667,6 @@ def send_message():
     schedule_created = None
 
     # Check if client asked to confirm/create the schedule now
-    client_confirm = bool(data.get('confirmed_schedule'))
-    schedule_override = data.get('schedule_override') or {}
-
     if schedule_info:
         if client_confirm or schedule_override:
             # Use override values from client when provided, otherwise use detected info
@@ -648,7 +756,9 @@ def send_message():
         'demo_mode': ai_service.last_provider_used == 'demo',
         'schedule_created': schedule_created,
         'schedule_suggestion': schedule_suggestion,
-        'workspace_sources': sorted(workspace_sources)
+        'workspace_sources': sorted(workspace_sources),
+        'intent': intent_result,
+        'refresh_targets': sorted(set(refresh_targets))
     })
 
 @chat_bp.route('/summarize-email', methods=['POST'])

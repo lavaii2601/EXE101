@@ -832,6 +832,8 @@ function setupWorkspaceShell() {
     renderQuickActions(currentPage);
 }
 
+let quickScheduleSummaryRequestId = 0;
+
 const QUICK_ACTIONS = {
     chat: {
         icon: 'AI',
@@ -911,6 +913,16 @@ function renderQuickActions(page) {
     list.querySelectorAll('[data-quick-action]').forEach((button) => {
         button.addEventListener('click', () => runQuickAction(button.dataset.quickAction));
     });
+
+    document.getElementById('quickScheduleSummary')?.remove();
+    if (page === 'schedule') {
+        const summary = document.createElement('div');
+        summary.id = 'quickScheduleSummary';
+        summary.className = 'quick-schedule-summary';
+        summary.innerHTML = `<div class="quick-schedule-loading">${ui('Đang tổng hợp lịch...', 'Loading schedule summary...')}</div>`;
+        list.insertAdjacentElement('afterend', summary);
+        loadQuickScheduleSummary(summary);
+    }
 }
 
 async function runQuickAction(action) {
@@ -925,6 +937,153 @@ async function runQuickAction(action) {
     if (action === 'refresh-history') return loadActivityHistory();
     if (action === 'change-mode') return openUserModeModal(false);
     if (action === 'refresh-settings') return loadSettingsPage();
+}
+
+async function refreshWorkspaceTargets(targets = []) {
+    const uniqueTargets = Array.from(new Set(Array.isArray(targets) ? targets : []));
+    if (!uniqueTargets.length) return;
+
+    if (uniqueTargets.includes('schedule')) {
+        try { await loadSchedules(); } catch (e) { /* ignore refresh errors */ }
+        try { await loadWeekSchedule(); } catch (e) { /* ignore refresh errors */ }
+        try { await refreshQuickScheduleSummary(); } catch (e) { /* ignore refresh errors */ }
+    }
+    if (uniqueTargets.includes('email')) {
+        try { await loadEmails(currentEmailPage || 1); } catch (e) { /* ignore refresh errors */ }
+    }
+    if (uniqueTargets.includes('history')) {
+        try { await loadActivityHistory(); } catch (e) { /* ignore refresh errors */ }
+    }
+    if (uniqueTargets.includes('settings')) {
+        try { await loadSettingsPage(); } catch (e) { /* ignore refresh errors */ }
+    }
+}
+
+function formatDateForApi(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function formatQuickScheduleDate(date) {
+    return currentLanguage === 'en'
+        ? date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+        : date.toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' });
+}
+
+function formatQuickScheduleTime(schedule) {
+    const start = new Date(schedule.start_time);
+    if (Number.isNaN(start.getTime())) return ui('Chưa rõ giờ', 'Time unknown');
+    const startText = start.toLocaleTimeString(currentLanguage === 'en' ? 'en-US' : 'vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+    if (!schedule.end_time) return startText;
+    const end = new Date(schedule.end_time);
+    if (Number.isNaN(end.getTime())) return startText;
+    const endText = end.toLocaleTimeString(currentLanguage === 'en' ? 'en-US' : 'vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+    return `${startText} - ${endText}`;
+}
+
+function flattenWeekSchedules(days) {
+    return (days || [])
+        .flatMap((dayEvents) => Array.isArray(dayEvents) ? dayEvents : [])
+        .filter((schedule) => schedule && schedule.start_time)
+        .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+}
+
+function renderQuickScheduleWeek(title, schedules) {
+    const preview = schedules.slice(0, 4);
+    const countText = schedules.length === 1
+        ? ui('1 lịch hẹn', '1 event')
+        : ui(`${schedules.length} lịch hẹn`, `${schedules.length} events`);
+
+    if (!schedules.length) {
+        return `
+            <section class="quick-schedule-week is-empty">
+                <div class="quick-schedule-week-head">
+                    <strong>${escapeHtml(title)}</strong>
+                    <span>${escapeHtml(countText)}</span>
+                </div>
+                <p>${ui('Chưa có lịch hẹn trong tuần này.', 'No events scheduled for this week.')}</p>
+            </section>
+        `;
+    }
+
+    return `
+        <section class="quick-schedule-week">
+            <div class="quick-schedule-week-head">
+                <strong>${escapeHtml(title)}</strong>
+                <span>${escapeHtml(countText)}</span>
+            </div>
+            <div class="quick-schedule-items">
+                ${preview.map((schedule) => {
+                    const start = new Date(schedule.start_time);
+                    const dateText = Number.isNaN(start.getTime()) ? '' : formatQuickScheduleDate(start);
+                    return `
+                        <div class="quick-schedule-item">
+                            <div class="quick-schedule-item-time">${escapeHtml(dateText)}${dateText ? ' · ' : ''}${escapeHtml(formatQuickScheduleTime(schedule))}</div>
+                            <div class="quick-schedule-item-title">${escapeHtml(schedule.title || ui('Sự kiện', 'Event'))}</div>
+                            ${schedule.location ? `<div class="quick-schedule-item-meta">${escapeHtml(schedule.location)}</div>` : ''}
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+            ${schedules.length > preview.length ? `<div class="quick-schedule-more">${ui(`+${schedules.length - preview.length} lịch hẹn khác`, `+${schedules.length - preview.length} more`)}</div>` : ''}
+        </section>
+    `;
+}
+
+async function loadQuickScheduleSummary(container) {
+    const requestId = ++quickScheduleSummaryRequestId;
+    const thisWeekStart = getMonday(new Date());
+    const nextWeekStart = new Date(thisWeekStart);
+    nextWeekStart.setDate(nextWeekStart.getDate() + 7);
+
+    try {
+        const [thisWeekResponse, nextWeekResponse] = await Promise.all([
+            apiFetch(`${API_BASE}/schedule/week?start=${formatDateForApi(thisWeekStart)}`),
+            apiFetch(`${API_BASE}/schedule/week?start=${formatDateForApi(nextWeekStart)}`)
+        ]);
+        const [thisWeekData, nextWeekData] = await Promise.all([
+            thisWeekResponse.json(),
+            nextWeekResponse.json()
+        ]);
+
+        if (requestId !== quickScheduleSummaryRequestId || !container.isConnected) return;
+        if (!thisWeekData.success || !nextWeekData.success) {
+            throw new Error(ui('Không thể tải lịch', 'Unable to load schedule'));
+        }
+
+        const thisWeekSchedules = flattenWeekSchedules(thisWeekData.days);
+        const nextWeekSchedules = flattenWeekSchedules(nextWeekData.days);
+        const total = thisWeekSchedules.length + nextWeekSchedules.length;
+
+        container.innerHTML = `
+            <div class="quick-schedule-summary-head">
+                <strong>${ui('Tổng hợp lịch hẹn', 'Schedule summary')}</strong>
+                <span>${ui(`${total} sự kiện`, `${total} events`)}</span>
+            </div>
+            ${renderQuickScheduleWeek(ui('Tuần hiện tại', 'This week'), thisWeekSchedules)}
+            ${renderQuickScheduleWeek(ui('Tuần tới', 'Next week'), nextWeekSchedules)}
+        `;
+    } catch (error) {
+        if (requestId !== quickScheduleSummaryRequestId || !container.isConnected) return;
+        container.innerHTML = `
+            <div class="quick-schedule-loading is-error">
+                ${escapeHtml(error.message || ui('Không thể tổng hợp lịch.', 'Unable to summarize schedule.'))}
+            </div>
+        `;
+    }
+}
+
+function refreshQuickScheduleSummary() {
+    const container = document.getElementById('quickScheduleSummary');
+    if (currentPage === 'schedule' && container) {
+        container.innerHTML = `<div class="quick-schedule-loading">${ui('Đang tổng hợp lịch...', 'Loading schedule summary...')}</div>`;
+        loadQuickScheduleSummary(container);
+    }
 }
 
 // Ensure only the active page is visible. This fixes cases where multiple
@@ -1603,6 +1762,7 @@ function sendMessage() {
 
 async function sendMessageConfirmed(message, opts = {}) {
     const confirmed = !!opts.confirmedSchedule;
+    const override = opts.scheduleOverride || null;
     console.log(`📨 Sending message: ${message.substring(0, 50)}...`);
     addMessage(message, 'user');
     userInput.value = '';
@@ -1619,7 +1779,12 @@ async function sendMessageConfirmed(message, opts = {}) {
         const response = await apiFetch(`${API_BASE}/chat/message`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message, mode: currentUserMode, confirmed_schedule: confirmed })
+            body: JSON.stringify({
+                message,
+                mode: currentUserMode,
+                confirmed_schedule: confirmed,
+                schedule_override: override
+            })
         });
 
         console.log(`⚙️ Response status: ${response.status}`);
@@ -1656,6 +1821,8 @@ async function sendMessageConfirmed(message, opts = {}) {
             if (data.demo_mode) {
                 showNotification(ui('⚠️ Chế độ demo - Tất cả nhà cung cấp AI đang tạm nghỉ', '⚠️ Demo mode - All AI providers are cooling down'), 'info');
             }
+
+            await refreshWorkspaceTargets(data.refresh_targets);
 
             // Handle schedule results from server
             if (data.schedule_created) {
@@ -1705,8 +1872,7 @@ async function sendMessageConfirmed(message, opts = {}) {
                         const j = await resp.json();
                         if (resp.ok && j.success) {
                             showNotification(`${ui('✅ Đã tạo lịch', '✅ Event created')}: ${j.calendar_event_id ? ui('đã đồng bộ Google Calendar', 'synced with Google Calendar') : suggested.title}`, 'success');
-                            try { await loadSchedules(); } catch (e) { /* ignore */ }
-                            try { await loadWeekSchedule(); } catch (e) { /* ignore */ }
+                            await refreshWorkspaceTargets(['schedule', 'history']);
                             suggestionDiv.remove();
                         } else {
                             showNotification(ui('❌ Không thể tạo lịch: ', '❌ Could not create event: ') + (j.error || resp.statusText || ui('lỗi', 'error')), 'error');
@@ -3044,6 +3210,7 @@ async function markScheduleComplete(scheduleId) {
             showNotification(ui('✓ Đã đánh dấu hoàn thành', '✓ Marked as completed'), 'success');
             await loadSchedules();
             await loadWeekSchedule();
+            refreshQuickScheduleSummary();
         } else {
             showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể cập nhật trạng thái', 'Unable to update status')), 'error');
         }
@@ -3067,6 +3234,7 @@ async function markScheduleIncomplete(scheduleId) {
             showNotification(ui('↩️ Đã cập nhật trạng thái', '↩️ Status updated'), 'success');
             await loadSchedules();
             await loadWeekSchedule();
+            refreshQuickScheduleSummary();
         } else {
             showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể cập nhật trạng thái', 'Unable to update status')), 'error');
         }
@@ -3127,6 +3295,8 @@ async function handleEditScheduleSubmit(e) {
             await loadSchedules();
             await loadCalendarEvents();
             await loadWeekSchedule();
+            refreshQuickScheduleSummary();
+            refreshQuickScheduleSummary();
         } else {
             showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể cập nhật lịch hẹn', 'Unable to update appointment')), 'error');
         }
@@ -3170,6 +3340,7 @@ async function deleteSchedule(scheduleId) {
             await loadSchedules();
             await loadCalendarEvents();
             await loadWeekSchedule();
+            refreshQuickScheduleSummary();
         } else {
             showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể xóa lịch hẹn', 'Unable to delete appointment')), 'error');
         }
@@ -3220,6 +3391,7 @@ async function handleScheduleSubmit(e) {
             // refresh calendar events too
             await loadCalendarEvents();
             await loadWeekSchedule();
+            refreshQuickScheduleSummary();
 
             // If calendar_event_id not present, poll for status in background
             if (!data.calendar_event_id && sid) {
@@ -3232,6 +3404,7 @@ async function handleScheduleSubmit(e) {
                     loadSchedules();
                     loadCalendarEvents();
                     loadWeekSchedule();
+                    refreshQuickScheduleSummary();
                 }).catch(err => {
                     console.warn('Poll schedule sync error', err);
                 });

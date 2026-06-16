@@ -25,6 +25,7 @@ export default function ScheduleScreen() {
 
   const [mode, setMode] = useState('list');
   const [schedules, setSchedules] = useState([]);
+  const [weekSummary, setWeekSummary] = useState({ current: [], next: [] });
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(false);
@@ -32,9 +33,22 @@ export default function ScheduleScreen() {
   const loadSchedules = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiGet('/schedule/unified?max_results=50');
+      const currentWeekStart = getMonday(new Date());
+      const nextWeekStart = new Date(currentWeekStart);
+      nextWeekStart.setDate(nextWeekStart.getDate() + 7);
+
+      const [data, currentWeek, nextWeek] = await Promise.all([
+        apiGet('/schedule/unified?max_results=50'),
+        apiGet(`/schedule/week?start=${formatDateForApi(currentWeekStart)}`),
+        apiGet(`/schedule/week?start=${formatDateForApi(nextWeekStart)}`),
+      ]);
+
       setSchedules(data.items || []);
       setCalendarConnected(Boolean(data.calendar_connected));
+      setWeekSummary({
+        current: flattenWeekSchedules(currentWeek.days),
+        next: flattenWeekSchedules(nextWeek.days),
+      });
     } catch (error) {
       Alert.alert('Loi tai lich', error.message);
     } finally {
@@ -102,41 +116,79 @@ export default function ScheduleScreen() {
   };
 
   const renderList = () => (
-    schedules.length === 0 ? (
-      <EmptyState title="Chua co lich sap toi" detail="Tao lich moi hoac dang nhap Gmail de dong bo Google Calendar." />
-    ) : (
-      schedules.map((schedule) => (
-        <Card key={schedule.id}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.title}>{schedule.title}</Text>
-            <Text style={[
-              styles.source,
-              schedule.source === 'synced' ? styles.sourceSynced : styles.sourceDefault,
-            ]}>
-              {sourceLabel(schedule.source)}
+    <>
+      <Card style={styles.summaryCard}>
+        <View style={styles.summaryHeader}>
+          <View>
+            <Text style={styles.summaryKicker}>Tong hop lich hen</Text>
+            <Text style={styles.summaryTitle}>Tuan hien tai va tuan toi</Text>
+          </View>
+          <Text style={styles.summaryTotal}>{weekSummary.current.length + weekSummary.next.length}</Text>
+        </View>
+        <View style={styles.weekGrid}>
+          {renderWeekSummary('Tuan hien tai', weekSummary.current)}
+          {renderWeekSummary('Tuan toi', weekSummary.next)}
+        </View>
+      </Card>
+
+      {schedules.length === 0 ? (
+        <EmptyState title="Chua co lich sap toi" detail="Tao lich moi hoac dang nhap Gmail de dong bo Google Calendar." />
+      ) : (
+        schedules.map((schedule) => (
+          <Card key={schedule.id}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.title}>{schedule.title}</Text>
+              <Text style={[
+                styles.source,
+                schedule.source === 'synced' ? styles.sourceSynced : styles.sourceDefault,
+              ]}>
+                {sourceLabel(schedule.source)}
+              </Text>
+            </View>
+            <Text style={styles.time}>
+              {formatDate(schedule.start_time)}
+              {schedule.end_time ? ` - ${formatDate(schedule.end_time)}` : ''}
             </Text>
+            {schedule.description ? <Text style={styles.description}>{schedule.description}</Text> : null}
+            {schedule.location   ? <Text style={styles.meta}>Dia diem: {schedule.location}</Text>  : null}
+            {schedule.attendees  ? <Text style={styles.meta}>Tham du: {schedule.attendees}</Text>   : null}
+            <View style={styles.actions}>
+              {schedule.local_id ? (
+                <>
+                  <Button title="Hoan tat" variant="secondary" onPress={() => updateStatus(schedule, 'completed')} />
+                  <Button title="Huy" variant="secondary" onPress={() => updateStatus(schedule, 'cancelled')} />
+                  <Button title="Xoa" variant="danger" onPress={() => deleteSchedule(schedule)} />
+                </>
+              ) : (
+                <Button title="Xoa khoi Google" variant="danger" onPress={() => deleteEvent(schedule)} />
+              )}
+            </View>
+          </Card>
+        ))
+      )}
+    </>
+  );
+
+  const renderWeekSummary = (title, items) => (
+    <View style={styles.weekSummary}>
+      <View style={styles.weekSummaryHeader}>
+        <Text style={styles.weekTitle}>{title}</Text>
+        <Text style={styles.weekCount}>{items.length} lich</Text>
+      </View>
+      {items.length === 0 ? (
+        <Text style={styles.weekEmpty}>Chua co lich hen.</Text>
+      ) : (
+        items.slice(0, 3).map((item) => (
+          <View key={`${item.id}-${item.start_time}`} style={styles.weekItem}>
+            <Text style={styles.weekItemTime}>{formatShortDate(item.start_time)}</Text>
+            <Text style={styles.weekItemTitle} numberOfLines={2}>{item.title || 'Su kien'}</Text>
           </View>
-          <Text style={styles.time}>
-            {formatDate(schedule.start_time)}
-            {schedule.end_time ? ` - ${formatDate(schedule.end_time)}` : ''}
-          </Text>
-          {schedule.description ? <Text style={styles.description}>{schedule.description}</Text> : null}
-          {schedule.location   ? <Text style={styles.meta}>Dia diem: {schedule.location}</Text>  : null}
-          {schedule.attendees  ? <Text style={styles.meta}>Tham du: {schedule.attendees}</Text>   : null}
-          <View style={styles.actions}>
-            {schedule.local_id ? (
-              <>
-                <Button title="Hoan tat" variant="secondary" onPress={() => updateStatus(schedule, 'completed')} />
-                <Button title="Huy" variant="secondary" onPress={() => updateStatus(schedule, 'cancelled')} />
-                <Button title="Xoa" variant="danger" onPress={() => deleteSchedule(schedule)} />
-              </>
-            ) : (
-              <Button title="Xoa khoi Google" variant="danger" onPress={() => deleteEvent(schedule)} />
-            )}
-          </View>
-        </Card>
-      ))
-    )
+        ))
+      )}
+      {items.length > 3 ? (
+        <Text style={styles.weekMore}>+{items.length - 3} lich khac</Text>
+      ) : null}
+    </View>
   );
 
   const renderCreate = () => (
@@ -169,6 +221,26 @@ function splitAttendees(value) {
   return (value || '').split(',').map((item) => item.trim()).filter(Boolean);
 }
 
+function getMonday(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function formatDateForApi(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function flattenWeekSchedules(days) {
+  return (days || [])
+    .flatMap((dayEvents) => Array.isArray(dayEvents) ? dayEvents : [])
+    .filter((schedule) => schedule && schedule.start_time)
+    .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+}
+
 function sourceLabel(source) {
   if (source === 'synced') return 'Da dong bo';
   if (source === 'google') return 'Google';
@@ -183,6 +255,19 @@ function formatDate(value) {
   return date.toLocaleString('vi-VN');
 }
 
+function formatShortDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString('vi-VN', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 function makeStyles(colors) {
   return StyleSheet.create({
     title: { color: colors.text, fontWeight: '800', fontSize: 16, lineHeight: 22 },
@@ -194,5 +279,37 @@ function makeStyles(colors) {
     description: { marginTop: 8,  color: colors.textMuted, lineHeight: 20 },
     meta:        { marginTop: 6,  color: colors.textMuted },
     actions:     { marginTop: 12, flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+    summaryCard: { gap: 12 },
+    summaryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+    summaryKicker: { color: colors.textMuted, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+    summaryTitle: { marginTop: 3, color: colors.text, fontSize: 16, fontWeight: '800' },
+    summaryTotal: {
+      minWidth: 42,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      overflow: 'hidden',
+      borderRadius: 12,
+      backgroundColor: `${colors.primary}14`,
+      color: colors.primary,
+      textAlign: 'center',
+      fontWeight: '900',
+      fontSize: 18,
+    },
+    weekGrid: { gap: 10 },
+    weekSummary: {
+      padding: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 14,
+      backgroundColor: colors.panelSoft,
+    },
+    weekSummaryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+    weekTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },
+    weekCount: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
+    weekEmpty: { marginTop: 8, color: colors.textMuted, fontSize: 13 },
+    weekItem: { marginTop: 10, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: colors.primary },
+    weekItemTime: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
+    weekItemTitle: { marginTop: 2, color: colors.text, fontSize: 13, fontWeight: '800', lineHeight: 18 },
+    weekMore: { marginTop: 10, color: colors.textMuted, fontSize: 12, fontWeight: '700' },
   });
 }
