@@ -2,12 +2,14 @@ package com.exe101.teacherbot;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.Html;
 import android.text.TextUtils;
@@ -35,6 +37,7 @@ import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.tasks.Task;
 import androidx.security.crypto.EncryptedSharedPreferences;
 import androidx.security.crypto.MasterKey;
+import androidx.core.content.FileProvider;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -44,6 +47,7 @@ import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 import java.net.URLEncoder;
+import java.io.File;
 
 public class MainActivity extends Activity {
     private static final int BG = Color.rgb(14, 14, 18);
@@ -1084,6 +1088,7 @@ public class MainActivity extends Activity {
             emailList.removeAllViews();
             JSONArray emails = data.optJSONArray("emails");
             emailList.addView(inboxSummaryCard(data, emails, includeRead));
+            addMeetingSuggestions(emailList, data.optJSONArray("meeting_suggestions"));
             if (emails == null || emails.length() == 0) {
                 addMuted(emailList, emailSearch.isEmpty()
                         ? tr("Không có email hoặc chưa đăng nhập Gmail.", "No email found or Gmail is not connected.")
@@ -1203,6 +1208,77 @@ public class MainActivity extends Activity {
         return summary;
     }
 
+    private void addMeetingSuggestions(LinearLayout parent, JSONArray suggestions) {
+        if (suggestions == null || suggestions.length() == 0) return;
+
+        TextView heading = label(
+                tr("GỢI Ý ĐẶT LỊCH TỪ EMAIL", "CALENDAR SUGGESTIONS FROM EMAIL"),
+                12,
+                Typeface.BOLD,
+                WARNING
+        );
+        heading.setLetterSpacing(0.08f);
+        heading.setPadding(0, dp(14), 0, dp(10));
+        parent.addView(heading);
+
+        for (int i = 0; i < suggestions.length(); i++) {
+            JSONObject suggestion = suggestions.optJSONObject(i);
+            if (suggestion == null) continue;
+
+            LinearLayout card = card();
+            card.setBackground(round(Color.rgb(43, 34, 20), Color.rgb(122, 86, 26)));
+            card.addView(label(
+                    suggestion.optString("title", suggestion.optString("subject", tr("Lịch hẹn từ email", "Appointment from email"))),
+                    16,
+                    Typeface.BOLD,
+                    TEXT
+            ));
+            card.addView(label(
+                    tr("Từ: ", "From: ") + suggestion.optString("sender", tr("Không xác định", "Unknown")),
+                    12,
+                    Typeface.NORMAL,
+                    MUTED
+            ));
+            String start = suggestion.optString("start_time", "").trim();
+            card.addView(label(
+                    start.isEmpty()
+                            ? tr("Chưa xác định thời gian", "Time not detected")
+                            : tr("Thời gian: ", "Time: ") + start,
+                    13,
+                    Typeface.BOLD,
+                    start.isEmpty() ? WARNING : SUCCESS
+            ));
+            String snippet = suggestion.optString("snippet", "").trim();
+            if (!snippet.isEmpty()) {
+                TextView preview = label(snippet, 13, Typeface.NORMAL, MUTED);
+                preview.setMaxLines(3);
+                preview.setEllipsize(TextUtils.TruncateAt.END);
+                preview.setPadding(0, dp(6), 0, 0);
+                card.addView(preview);
+            }
+
+            LinearLayout actions = rowWrap();
+            Button create = primaryButton(tr("Tạo lịch", "Create event"));
+            create.setOnClickListener(v -> showScheduleCreate(suggestion));
+            Button dismiss = secondaryButton(tr("Bỏ qua", "Dismiss"));
+            dismiss.setOnClickListener(v -> runApi(() -> {
+                JSONObject payload = new JSONObject();
+                payload.put("status", "dismissed");
+                return api.patch(
+                        "/email/meeting-suggestions/" + suggestion.optInt("id") + "/status",
+                        payload
+                );
+            }, data -> {
+                toast(tr("Đã bỏ qua gợi ý", "Suggestion dismissed"));
+                loadEmails(emailIncludeRead);
+            }));
+            actions.addView(create);
+            actions.addView(dismiss);
+            card.addView(horizontal(actions));
+            parent.addView(card);
+        }
+    }
+
     private boolean isUrgentEmail(JSONObject email) {
         String value = (
                 email.optString("subject", "") + " " +
@@ -1261,9 +1337,48 @@ public class MainActivity extends Activity {
     private void openFullEmail(JSONObject email) {
         runApi(() -> api.get("/email/get-email-body/" + email.optString("id")), data -> {
             String body = data.optString("body", email.optString("snippet", ""));
+            JSONObject fullEmail = data.optJSONObject("email");
+            JSONArray attachments = fullEmail == null ? null : fullEmail.optJSONArray("attachments");
+
+            LinearLayout detail = new LinearLayout(this);
+            detail.setOrientation(LinearLayout.VERTICAL);
+            detail.setPadding(dp(20), dp(4), dp(20), dp(8));
+            TextView bodyView = label(body, 14, Typeface.NORMAL, TEXT);
+            bodyView.setTextIsSelectable(true);
+            bodyView.setLineSpacing(dp(2), 1.05f);
+            detail.addView(bodyView);
+
+            if (attachments != null && attachments.length() > 0) {
+                TextView attachmentHeading = label(
+                        tr("FILE ĐÍNH KÈM", "ATTACHMENTS") + " · " + attachments.length(),
+                        12,
+                        Typeface.BOLD,
+                        ACCENT
+                );
+                attachmentHeading.setLetterSpacing(0.08f);
+                attachmentHeading.setPadding(0, dp(18), 0, dp(8));
+                detail.addView(attachmentHeading);
+                for (int i = 0; i < attachments.length(); i++) {
+                    JSONObject attachment = attachments.optJSONObject(i);
+                    if (attachment == null) continue;
+                    Button fileButton = secondaryButton(
+                            attachment.optString("filename", tr("File đính kèm", "Attachment"))
+                                    + " · " + formatFileSize(attachment.optLong("size", 0))
+                    );
+                    fileButton.setAllCaps(false);
+                    fileButton.setOnClickListener(v -> downloadAndOpenAttachment(
+                            email.optString("id"),
+                            attachment
+                    ));
+                    detail.addView(fileButton);
+                }
+            }
+
+            ScrollView scroll = new ScrollView(this);
+            scroll.addView(detail);
             AlertDialog dialog = new AlertDialog.Builder(this)
                     .setTitle(email.optString("subject", "Email"))
-                    .setMessage(body)
+                    .setView(scroll)
                     .setNegativeButton(tr("Đóng", "Close"), null)
                     .setPositiveButton(tr("Tóm tắt AI", "AI summary"), null)
                     .create();
@@ -1273,6 +1388,69 @@ public class MainActivity extends Activity {
             }));
             dialog.show();
         });
+    }
+
+    private void downloadAndOpenAttachment(String emailId, JSONObject attachment) {
+        String attachmentId = attachment.optString("id", "");
+        if (emailId.isEmpty() || attachmentId.isEmpty()) return;
+        String filename = safeFilename(attachment.optString("filename", "attachment"));
+        String mimeType = attachment.optString("mime_type", "application/octet-stream");
+        toast(tr("Đang tải file...", "Downloading file..."));
+
+        new Thread(() -> {
+            try {
+                File directory = new File(getCacheDir(), "attachments");
+                File destination = new File(directory, filename);
+                ApiClient.DownloadResult result = api.download(
+                        "/email/attachment/" + Uri.encode(emailId) + "/" + Uri.encode(attachmentId),
+                        destination
+                );
+                runOnUiThread(() -> openDownloadedAttachment(
+                        result.file,
+                        mimeType.isEmpty() ? result.mimeType : mimeType
+                ));
+            } catch (Exception error) {
+                runOnUiThread(() -> alert(
+                        tr("Không tải được file", "Unable to download attachment"),
+                        error.getMessage()
+                ));
+            }
+        }).start();
+    }
+
+    private void openDownloadedAttachment(File file, String mimeType) {
+        Uri uri = FileProvider.getUriForFile(
+                this,
+                BuildConfig.APPLICATION_ID + ".fileprovider",
+                file
+        );
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(uri, mimeType == null || mimeType.isEmpty()
+                ? "application/octet-stream"
+                : mimeType);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            startActivity(intent);
+        } catch (ActivityNotFoundException error) {
+            alert(
+                    tr("Không có ứng dụng mở file", "No app can open this file"),
+                    tr("File đã được tải nhưng thiết bị chưa có ứng dụng phù hợp.", "The file was downloaded, but no compatible app is installed.")
+            );
+        }
+    }
+
+    private String safeFilename(String value) {
+        String safe = value == null ? "attachment" : value.trim();
+        safe = safe.replaceAll("[\\\\/:*?\"<>|\\r\\n]+", "_");
+        return safe.isEmpty() ? "attachment" : safe;
+    }
+
+    private String formatFileSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        double size = bytes / 1024.0;
+        if (size < 1024) return String.format(Locale.US, size >= 10 ? "%.0f KB" : "%.1f KB", size);
+        size /= 1024.0;
+        return String.format(Locale.US, size >= 10 ? "%.0f MB" : "%.1f MB", size);
     }
 
     private void openEmailSummary(JSONObject email) {
@@ -1553,6 +1731,10 @@ public class MainActivity extends Activity {
     }
 
     private void showScheduleCreate() {
+        showScheduleCreate(null);
+    }
+
+    private void showScheduleCreate(JSONObject meetingSuggestion) {
         setActiveTab("schedule");
         content.removeAllViews();
         content.addView(titleRow(tr("Tạo lịch", "Create event")));
@@ -1568,6 +1750,20 @@ public class MainActivity extends Activity {
         duration.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
         EditText location = input(tr("Địa điểm", "Location"), false);
         EditText attendees = input("email1@example.com, email2@example.com", false);
+        if (meetingSuggestion != null) {
+            title.setText(meetingSuggestion.optString(
+                    "title",
+                    meetingSuggestion.optString("subject", tr("Lịch hẹn từ email", "Appointment from email"))
+            ));
+            desc.setText(meetingSuggestion.optString(
+                    "description",
+                    meetingSuggestion.optString("snippet", "")
+            ));
+            start.setText(meetingSuggestion.optString("start_time", ""));
+            end.setText(meetingSuggestion.optString("end_time", ""));
+            location.setText(meetingSuggestion.optString("location", ""));
+            attendees.setText(meetingSuggestion.optString("attendees", ""));
+        }
         form.addView(fieldLabel(tr("Tiêu đề", "Title")));
         form.addView(title);
         form.addView(fieldLabel(tr("Mô tả", "Description")));
@@ -1594,8 +1790,23 @@ public class MainActivity extends Activity {
             payload.put("attendees", attendeesArray(attendees.getText().toString()));
             return api.post("/schedule/create", payload);
         }, data -> {
-            toast(tr("Đã tạo lịch", "Event created"));
-            showScheduleList();
+            if (meetingSuggestion == null) {
+                toast(tr("Đã tạo lịch", "Event created"));
+                showScheduleList();
+                return;
+            }
+            runApi(() -> {
+                JSONObject status = new JSONObject();
+                status.put("status", "created");
+                status.put("schedule_id", data.optInt("schedule_id"));
+                return api.patch(
+                        "/email/meeting-suggestions/" + meetingSuggestion.optInt("id") + "/status",
+                        status
+                );
+            }, ignored -> {
+                toast(tr("Đã tạo lịch từ email", "Event created from email"));
+                showScheduleList();
+            });
         }));
         form.addView(create);
         body.addView(form);
@@ -1811,7 +2022,9 @@ public class MainActivity extends Activity {
 
         String decoded = raw.trim();
         for (int i = 0; i < 2; i++) {
-            CharSequence parsed = Html.fromHtml(decoded, Html.FROM_HTML_MODE_LEGACY);
+            CharSequence parsed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+                    ? Html.fromHtml(decoded, Html.FROM_HTML_MODE_LEGACY)
+                    : Html.fromHtml(decoded);
             String next = parsed.toString();
             if (next.equals(decoded)) break;
             decoded = next;

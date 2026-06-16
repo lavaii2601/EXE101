@@ -14,12 +14,18 @@ for _stream in (sys.stdout, sys.stderr):
 # Add backend directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Allow insecure OAuth transport for local development (HTTP)
-# Must be set before importing google oauth flow modules
-if os.getenv("DEBUG", "true").lower() in ("1", "true", "yes", "on"):
+from config import Config
+
+# OAuthlib requires HTTPS except for explicitly allowed local development.
+# Set this after Config loads web/.env, but before importing OAuth routes.
+_gmail_redirect_uri = (Config.GMAIL_REDIRECT_URI or '').lower()
+_local_oauth_redirect = (
+    _gmail_redirect_uri.startswith('http://127.0.0.1')
+    or _gmail_redirect_uri.startswith('http://localhost')
+)
+if Config.DEBUG or _local_oauth_redirect:
     os.environ.setdefault('OAUTHLIB_INSECURE_TRANSPORT', '1')
 
-from config import Config
 from models.schedule import Schedule
 from models.history import History
 from models.user import User

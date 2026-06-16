@@ -3,11 +3,13 @@ import os
 import sys
 import logging
 import re
+import unicodedata
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.ai_service import AIService
+from services.gmail_service import GmailService
 from services.schedule_service import ScheduleService
 from models.history import History
 from models.schedule import Schedule
@@ -20,6 +22,286 @@ logger = logging.getLogger(__name__)
 
 chat_bp = Blueprint('chat', __name__, url_prefix='/api/chat')
 ai_service = AIService()
+
+
+def _normalize_intent_text(value):
+    value = unicodedata.normalize('NFD', str(value or '').lower())
+    value = ''.join(char for char in value if unicodedata.category(char) != 'Mn')
+    return value.replace('đ', 'd')
+
+
+def _is_latest_email_summary_request(message):
+    normalized = _normalize_intent_text(message)
+    has_email = any(term in normalized for term in (
+        'email', 'e-mail', 'gmail', 'mail', 'thu moi', 'hop thu'
+    ))
+    has_latest = any(term in normalized for term in (
+        'moi nhat', 'gan nhat', 'vua nhan', 'moi nhan',
+        'latest', 'newest', 'most recent'
+    ))
+    has_summary = any(term in normalized for term in (
+        'tom tat', 'noi dung', 'noi gi', 'co gi', 'doc ',
+        'summary', 'summarize', 'what does'
+    ))
+    return has_email and has_latest and has_summary
+
+
+def _latest_email_count(message):
+    normalized = _normalize_intent_text(message)
+    match = re.search(
+        r'\b(\d{1,2})\s*(?:email|e-mail|mail|thu)\b',
+        normalized
+    )
+    if match:
+        return max(1, min(int(match.group(1)), 5))
+
+    number_words = {
+        'mot': 1,
+        'hai': 2,
+        'ba': 3,
+        'bon': 4,
+        'tu': 4,
+        'nam': 5,
+    }
+    for word, count in number_words.items():
+        if re.search(rf'\b{word}\s+(?:email|e-mail|mail|thu)\b', normalized):
+            return count
+    return 1
+
+
+def _summarize_latest_emails(user_id, count=1):
+    token_file = get_user_token_file(user_id)
+    if not token_file or not os.path.exists(token_file):
+        raise RuntimeError('Gmail chưa được kết nối cho tài khoản này.')
+
+    service = GmailService(token_file=token_file)
+    count = max(1, min(int(count or 1), 5))
+    latest = service.get_emails(
+        max_results=count,
+        query='in:inbox',
+        include_read=True
+    )
+    if not latest:
+        raise RuntimeError('Không tìm thấy email nào trong hộp thư đến.')
+
+    emails = []
+    sections = []
+    for index, metadata in enumerate(latest[:count], start=1):
+        email_id = metadata.get('id')
+        email = service.get_email_details(email_id, lazy=False) if email_id else None
+        if not email:
+            logger.warning("Could not load full Gmail message %s", email_id)
+            continue
+
+        summary = ai_service.summarize_email_polished(email, user_id=user_id)
+        emails.append(email)
+        sections.append(
+            f"{index}. {email.get('subject') or '(Không có tiêu đề)'}\n"
+            f"Người gửi: {email.get('sender') or 'Không xác định'}\n"
+            f"Thời gian: {email.get('date') or 'Không xác định'}\n\n"
+            f"{summary}"
+        )
+
+    if not emails:
+        raise RuntimeError('Không thể tải nội dung đầy đủ của các email gần nhất.')
+
+    heading = "EMAIL MỚI NHẤT" if len(emails) == 1 else f"{len(emails)} EMAIL GẦN NHẤT"
+    return f"{heading}\n\n" + "\n\n--------------------\n\n".join(sections), emails
+
+
+def _intent_sources(message):
+    normalized = _normalize_intent_text(message)
+    overview = any(term in normalized for term in (
+        'tong quan', 'hom nay co gi', 'can lam gi', 'viec cua toi',
+        'dashboard', 'overview', 'today overview'
+    ))
+    history_requested = overview or any(term in normalized for term in (
+        'lich su', 'hoat dong', 'da lam gi', 'history', 'activity'
+    ))
+    sources = set()
+    if overview or any(term in normalized for term in (
+        'email', 'e-mail', 'gmail', 'hop thu', 'thu moi', 'thu chua doc'
+    )):
+        sources.add('email')
+    if overview or (
+        not history_requested
+        and any(term in normalized for term in (
+        'lich', 'calendar', 'cuoc hop', 'su kien', 'appointment', 'meeting'
+        ))
+    ):
+        sources.add('calendar')
+    if history_requested:
+        sources.add('history')
+    if overview or any(term in normalized for term in (
+        'ho so', 'tai khoan', 'che do', 'cai dat', 'profile', 'account', 'settings', 'mode'
+    )):
+        sources.add('profile')
+    return sources
+
+
+def _format_email_context(user_id):
+    token_file = get_user_token_file(user_id)
+    if not token_file or not os.path.exists(token_file):
+        return "EMAIL\nGmail chưa được kết nối."
+
+    emails = GmailService(token_file=token_file).get_emails(
+        max_results=5,
+        query='in:inbox',
+        include_read=True
+    )
+    if not emails:
+        return "EMAIL\nKhông có email trong hộp thư đến."
+
+    lines = ["EMAIL GẦN ĐÂY"]
+    for index, email in enumerate(emails, start=1):
+        snippet = re.sub(r'\s+', ' ', email.get('snippet', '') or '').strip()
+        lines.extend([
+            f"{index}. Người gửi: {email.get('sender') or 'Không xác định'}",
+            f"   Tiêu đề: {email.get('subject') or '(Không có tiêu đề)'}",
+            f"   Thời gian: {email.get('date') or 'Không xác định'}",
+            f"   Trạng thái: {'Chưa đọc' if email.get('is_unread') else 'Đã đọc'}",
+            f"   Xem trước: {snippet[:320] or 'Không có nội dung xem trước'}",
+        ])
+    return "\n".join(lines)
+
+
+def _calendar_window(message):
+    normalized = _normalize_intent_text(message)
+    now = datetime.now().astimezone()
+    monday = (now - timedelta(days=now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+
+    if 'tuan truoc' in normalized or 'last week' in normalized:
+        return monday - timedelta(days=7), monday, 'TUẦN TRƯỚC'
+    if 'tuan nay' in normalized or 'this week' in normalized:
+        return monday, monday + timedelta(days=7), 'TUẦN NÀY'
+    if 'tuan sau' in normalized or 'next week' in normalized:
+        return monday + timedelta(days=7), monday + timedelta(days=14), 'TUẦN SAU'
+    if 'hom qua' in normalized or 'yesterday' in normalized:
+        start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        return start, start + timedelta(days=1), 'HÔM QUA'
+    if 'hom nay' in normalized or 'today' in normalized:
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return start, start + timedelta(days=1), 'HÔM NAY'
+
+    return now, now + timedelta(days=30), 'SẮP TỚI'
+
+
+def _parse_schedule_datetime(value):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=datetime.now().astimezone().tzinfo)
+        return parsed.astimezone()
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_calendar_context(message, user_id, db_path):
+    window_start, window_end, window_label = _calendar_window(message)
+    lines = [
+        f"LỊCH VÀ SỰ KIỆN {window_label}",
+        f"Khoảng thời gian: {window_start.date().isoformat()} đến {(window_end - timedelta(days=1)).date().isoformat()}",
+    ]
+    token_file = get_user_token_file(user_id)
+    google_events = []
+    if token_file and os.path.exists(token_file):
+        google_events = CalendarService(token_file=token_file).get_events(
+            max_results=50,
+            time_min=window_start.isoformat(),
+            time_max=window_end.isoformat()
+        )
+
+    local_schedules = []
+    for schedule in Schedule.get_all(limit=100, db_path=db_path):
+        start_time = _parse_schedule_datetime(schedule.get('start_time'))
+        if start_time and window_start <= start_time < window_end:
+            local_schedules.append(schedule)
+    local_schedules.sort(
+        key=lambda item: _parse_schedule_datetime(item.get('start_time')) or window_end
+    )
+
+    if not google_events and not local_schedules:
+        return "\n".join(lines + [f"Không có lịch hoặc sự kiện trong {window_label.lower()}."])
+
+    seen = set()
+    item_index = 1
+    for event in google_events:
+        fingerprint = (
+            str(event.get('title') or '').strip().lower(),
+            str(event.get('start') or '').strip()
+        )
+        seen.add(fingerprint)
+        lines.extend([
+            f"{item_index}. {event.get('title') or '(Không có tiêu đề)'}",
+            f"   Bắt đầu: {event.get('start') or 'Không xác định'}",
+            f"   Kết thúc: {event.get('end') or 'Không xác định'}",
+            f"   Địa điểm: {event.get('location') or 'Không có'}",
+        ])
+        item_index += 1
+
+    for schedule in local_schedules:
+        fingerprint = (
+            str(schedule.get('title') or '').strip().lower(),
+            str(schedule.get('start_time') or '').strip()
+        )
+        if fingerprint in seen:
+            continue
+        lines.extend([
+            f"{item_index}. {schedule.get('title') or '(Không có tiêu đề)'}",
+            f"   Bắt đầu: {schedule.get('start_time') or 'Không xác định'}",
+            f"   Kết thúc: {schedule.get('end_time') or 'Không xác định'}",
+            f"   Trạng thái: {schedule.get('status') or 'pending'}",
+        ])
+        item_index += 1
+    return "\n".join(lines)
+
+
+def _format_history_context(db_path):
+    records = History.get_recent(limit=10, db_path=db_path)
+    if not records:
+        return "LỊCH SỬ HOẠT ĐỘNG\nChưa có hoạt động nào."
+
+    lines = ["LỊCH SỬ HOẠT ĐỘNG GẦN ĐÂY"]
+    for index, record in enumerate(records, start=1):
+        request_text = re.sub(r'\s+', ' ', record.get('user_message', '') or '').strip()
+        result_text = re.sub(r'\s+', ' ', record.get('assistant_response', '') or '').strip()
+        lines.extend([
+            f"{index}. Loại: {record.get('action_type') or 'activity'}",
+            f"   Thời gian: {record.get('created_at') or 'Không xác định'}",
+            f"   Nội dung: {request_text[:240] or 'Không có'}",
+            f"   Kết quả: {result_text[:320] or 'Không có'}",
+        ])
+    return "\n".join(lines)
+
+
+def _format_profile_context(user_id):
+    user = User.get(user_id) or {}
+    return "\n".join([
+        "HỒ SƠ VÀ CÀI ĐẶT",
+        f"Tên: {user.get('name') or user.get('gmail_name') or 'Chưa thiết lập'}",
+        f"Email: {user.get('gmail_email') or user.get('email') or 'Chưa thiết lập'}",
+        f"Chế độ làm việc: {user.get('user_mode') or 'Chưa chọn'}",
+        f"Gmail đã kết nối: {'Có' if user.get('gmail_connected') else 'Không'}",
+    ])
+
+
+def _build_workspace_context(message, user_id, db_path):
+    sources = _intent_sources(message)
+    context_parts = []
+    if 'email' in sources:
+        context_parts.append(_format_email_context(user_id))
+    if 'calendar' in sources:
+        context_parts.append(_format_calendar_context(message, user_id, db_path))
+    if 'history' in sources:
+        context_parts.append(_format_history_context(db_path))
+    if 'profile' in sources:
+        context_parts.append(_format_profile_context(user_id))
+    return sources, "\n\n".join(context_parts)
+
 
 def extract_schedule_from_response(response, user_message):
     """
@@ -170,6 +452,46 @@ def send_message():
     History.init_db(db_path=db_path)
     Schedule.init_db(db_path=db_path)
 
+    if _is_latest_email_summary_request(user_message):
+        try:
+            requested_count = _latest_email_count(user_message)
+            response, source_emails = _summarize_latest_emails(user_id, requested_count)
+            source_email = source_emails[0]
+            History.create(user_message, response, action_type='chat', db_path=db_path)
+            return jsonify({
+                'success': True,
+                'response': response,
+                'provider': ai_service.last_provider_used,
+                'demo_mode': ai_service.last_provider_used == 'demo',
+                'schedule_created': None,
+                'schedule_suggestion': None,
+                'workspace_sources': ['email'],
+                'email_source': {
+                    'id': source_email.get('id'),
+                    'sender': source_email.get('sender'),
+                    'subject': source_email.get('subject'),
+                    'date': source_email.get('date')
+                },
+                'email_sources': [{
+                    'id': email.get('id'),
+                    'sender': email.get('sender'),
+                    'subject': email.get('subject'),
+                    'date': email.get('date')
+                } for email in source_emails]
+            })
+        except Exception as e:
+            logger.exception("Failed to summarize latest Gmail messages for user %s", user_id)
+            response = f"Không thể lấy email gần nhất từ Gmail: {e}"
+            History.create(user_message, response, action_type='chat', db_path=db_path)
+            return jsonify({
+                'success': True,
+                'response': response,
+                'provider': None,
+                'demo_mode': False,
+                'schedule_created': None,
+                'schedule_suggestion': None
+            })
+
     # Build messages for AI with recent chat context for smarter responses
     messages = [{
         "role": "system",
@@ -182,17 +504,41 @@ def send_message():
         )
     }]
 
-    recent_history = History.get_recent(limit=8, db_path=db_path)
-    for record in reversed(recent_history):
-        if record.get('action_type') != 'chat':
-            continue
+    workspace_sources = set()
+    workspace_context = ''
+    try:
+        workspace_sources, workspace_context = _build_workspace_context(
+            user_message,
+            user_id,
+            db_path
+        )
+    except Exception as e:
+        logger.exception("Failed to build workspace context for user %s", user_id)
 
-        prev_user = (record.get('user_message') or '').strip()
-        prev_assistant = (record.get('assistant_response') or '').strip()
-        if prev_user:
-            messages.append({"role": "user", "content": prev_user})
-        if prev_assistant:
-            messages.append({"role": "assistant", "content": prev_assistant})
+    if not workspace_sources:
+        recent_history = History.get_recent(limit=8, db_path=db_path)
+        for record in reversed(recent_history):
+            if record.get('action_type') != 'chat':
+                continue
+
+            prev_user = (record.get('user_message') or '').strip()
+            prev_assistant = (record.get('assistant_response') or '').strip()
+            if prev_user:
+                messages.append({"role": "user", "content": prev_user})
+            if prev_assistant:
+                messages.append({"role": "assistant", "content": prev_assistant})
+
+    if workspace_context:
+        messages.append({
+            "role": "user",
+            "preserve_context": True,
+            "content": (
+                "DỮ LIỆU WORKSPACE THỰC TẾ\n"
+                "Chỉ dùng dữ liệu dưới đây để trả lời câu hỏi tiếp theo. "
+                "Không bịa thêm dữ liệu không có trong context.\n\n"
+                + workspace_context
+            )
+        })
 
     messages.append({
         "role": "user",
@@ -301,7 +647,8 @@ def send_message():
         'provider': ai_service.last_provider_used,
         'demo_mode': ai_service.last_provider_used == 'demo',
         'schedule_created': schedule_created,
-        'schedule_suggestion': schedule_suggestion
+        'schedule_suggestion': schedule_suggestion,
+        'workspace_sources': sorted(workspace_sources)
     })
 
 @chat_bp.route('/summarize-email', methods=['POST'])

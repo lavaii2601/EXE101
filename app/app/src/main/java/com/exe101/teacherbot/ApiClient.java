@@ -3,6 +3,8 @@ package com.exe101.teacherbot;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -93,6 +95,51 @@ public class ApiClient {
         return request("DELETE", path, null);
     }
 
+    public DownloadResult download(String path, File destination) throws Exception {
+        URL url = new URL(baseUrl + path);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setRequestMethod("GET");
+        connection.setInstanceFollowRedirects(false);
+        connection.setConnectTimeout(12000);
+        connection.setReadTimeout(60000);
+        connection.setRequestProperty("Accept", "*/*");
+        if (!accessToken.isEmpty()) {
+            connection.setRequestProperty("Authorization", "Bearer " + accessToken);
+        }
+
+        int status = connection.getResponseCode();
+        if (status >= 400) {
+            String text = readAll(connection.getErrorStream());
+            connection.disconnect();
+            try {
+                JSONObject data = text.isEmpty() ? new JSONObject() : new JSONObject(text);
+                throw new IOException(data.optString("error", data.optString("message", "HTTP " + status)));
+            } catch (org.json.JSONException ignored) {
+                throw new IOException(text.isEmpty() ? "HTTP " + status : text);
+            }
+        }
+
+        File parent = destination.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            connection.disconnect();
+            throw new IOException("Could not create attachment directory");
+        }
+        String contentType = connection.getContentType();
+        try (
+                InputStream input = connection.getInputStream();
+                FileOutputStream output = new FileOutputStream(destination)
+        ) {
+            byte[] buffer = new byte[16 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                output.write(buffer, 0, read);
+            }
+        } finally {
+            connection.disconnect();
+        }
+        return new DownloadResult(destination, contentType);
+    }
+
     private JSONObject request(String method, String path, JSONObject body) throws Exception {
         URL url = new URL(baseUrl + path);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
@@ -139,5 +186,17 @@ public class ApiClient {
             }
         }
         return builder.toString();
+    }
+
+    public static class DownloadResult {
+        public final File file;
+        public final String mimeType;
+
+        DownloadResult(File file, String mimeType) {
+            this.file = file;
+            this.mimeType = mimeType == null || mimeType.trim().isEmpty()
+                    ? "application/octet-stream"
+                    : mimeType.split(";")[0].trim();
+        }
     }
 }

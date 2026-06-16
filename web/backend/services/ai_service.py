@@ -330,7 +330,8 @@ class AIService:
 
             normalized.append({
                 'role': role,
-                'content': str(content)
+                'content': str(content),
+                'preserve_context': bool(msg.get('preserve_context'))
             })
 
         return normalized
@@ -437,6 +438,12 @@ class AIService:
 
         for msg in recent_non_system:
             content = msg.get('content', '')
+            if msg.get('preserve_context'):
+                optimized.append({
+                    'role': msg.get('role', 'user'),
+                    'content': self._truncate_text(content, self.max_input_chars)
+                })
+                continue
             # Keep assistant responses shorter
             if msg.get('role') == 'assistant':
                 content = self._truncate_text(content, per_message_limit // 2)
@@ -1075,7 +1082,9 @@ class AIService:
                 else:
                     raise
             except Exception:
-                rows = []
+                pass
+
+            rows = []
             for email in emails:
                 fallback_summary = self._truncate_text(email.get('snippet', '') or email.get('body', ''), 180)
                 inferred = self._infer_meeting_signals(email, report_date=report_date)

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FlowMate - Không gian làm việc thông minh</title>
-    <link rel="stylesheet" href="/css/style.css?v=20260615-6">
+    <link rel="stylesheet" href="/css/style.css?v=20260615-12">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -69,7 +69,7 @@
             </div>
             
             <nav class="sidebar-nav">
-                <button class="nav-btn" data-page="chat">
+                <button class="nav-btn active" data-page="chat">
                     <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H6l-4 2 1.4-4.2A9 9 0 1 1 21 12Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg></span>
                     <span class="nav-label" data-i18n="nav.chat">Chat</span>
                 </button>
@@ -77,7 +77,7 @@
                     <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span>
                     <span class="nav-label" data-i18n="nav.email">Email</span>
                 </button>
-                <button class="nav-btn active" data-page="schedule">
+                <button class="nav-btn" data-page="schedule">
                     <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg></span>
                     <span class="nav-label" data-i18n="nav.calendar">Lịch</span>
                 </button>
@@ -119,7 +119,7 @@
                 </div>
             </header>
             <!-- Chat Page -->
-            <section id="chat-page" class="page">
+            <section id="chat-page" class="page active">
                 <div class="chat-container">
                     <div class="chat-messages" id="chatMessages"></div>
                     <div class="chat-input-area">
@@ -134,7 +134,7 @@
             <section id="emails-page" class="page">
                 <div class="section-header">
                     <h2 data-i18n="email.title">Quản lý Email</h2>
-                    <div style="display:flex; gap:8px; align-items:center;">
+                    <div class="email-toolbar">
                         <span id="gmailAccountBadge" class="gmail-account-badge">Chưa đăng nhập Gmail</span>
                         <div id="gmailProfileCard" class="gmail-profile-card" style="display:none;">
                             <img id="gmailAvatar" class="gmail-avatar" alt="avatar" src="">
@@ -153,8 +153,8 @@
                             <option value="personal">Cá nhân</option>
                             <option value="other">Khác</option>
                         </select>
-                        <label style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; background: #f5f5f5; border-radius: 4px; cursor: pointer;">
-                            <input type="checkbox" id="includeReadCheckbox" checked style="cursor: pointer;">
+                        <label class="email-include-read">
+                            <input type="checkbox" id="includeReadCheckbox" checked>
                             <span style="font-size: 14px;" data-i18n="email.includeRead">Giữ email đã đọc</span>
                         </label>
                         <button id="refreshEmailsBtn" class="btn-secondary" data-i18n="common.refresh">Làm mới</button>
@@ -226,7 +226,7 @@
             </section>
             
             <!-- Schedule Page (merged with Google Calendar) -->
-            <section id="schedule-page" class="page active">
+            <section id="schedule-page" class="page">
                 <div class="section-header">
                     <h2>Lịch</h2>
                     <div style="display:flex; gap:8px; align-items:center;">
@@ -256,6 +256,16 @@
                             </table>
                         </div>
                     </div>
+                    <section id="emailMeetingSuggestions" class="meeting-suggestions-section" hidden>
+                        <div class="meeting-suggestions-header">
+                            <div>
+                                <span>GỢI Ý TỪ EMAIL</span>
+                                <h3>Cuộc họp và lịch hẹn được phát hiện</h3>
+                            </div>
+                            <span id="meetingSuggestionCount" class="meeting-suggestion-count">0</span>
+                        </div>
+                        <div id="meetingSuggestionsList" class="meeting-suggestions-list"></div>
+                    </section>
                     <div id="schedulesList" class="schedules-list unified-schedules-list" style="margin-top:16px;"></div>
                 </div>
             </section>
@@ -553,6 +563,6 @@
         </div>
     </div>
     
-    <script src="/js/app.js?v=20260615-6"></script>
+    <script src="/js/app.js?v=20260615-12"></script>
 </body>
 </html>

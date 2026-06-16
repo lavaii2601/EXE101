@@ -7,7 +7,8 @@ import base64
 import re
 import requests
 import unicodedata
-from flask import Blueprint, request, jsonify, redirect, url_for, session
+from io import BytesIO
+from flask import Blueprint, request, jsonify, redirect, url_for, session, send_file
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,6 +24,7 @@ from models.history import History
 from models.schedule import Schedule
 from models.user import User
 from models.cache import Cache
+from models.meeting_suggestion import MeetingSuggestion
 from config import Config
 from config import GMAIL_CLIENT_ID_KEYS, GMAIL_CLIENT_SECRET_KEYS, GMAIL_CREDENTIALS_JSON_KEYS
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
@@ -146,6 +148,148 @@ def _hydrate_email_for_list(email, user_id, cached_entries=None):
 
     email['body_cached'] = bool(cached_entries.get(body_key))
     return email
+
+
+def _extract_meeting_suggestion(email):
+    subject = str(email.get('subject', '') or '').strip()
+    sender = str(email.get('sender', '') or '').strip()
+    snippet = str(email.get('snippet', '') or '').strip()
+    body = str(email.get('body', '') or '').strip()
+    text = ' '.join([subject, snippet, body])
+    normalized = _normalize_search_text(text)
+
+    direct_terms = [
+        'cuoc hop', 'cuoc hen', 'hop luc', 'lich hen', 'hen gap', 'gap mat',
+        'meeting', 'appointment',
+        'google meet', 'zoom', 'microsoft teams', 'book slot', 'booked',
+    ]
+    schedule_terms = ['schedule', 'calendar', 'dat lich', 'xep lich', 'time slot']
+    time_signal = bool(re.search(r'(?<!\d)(?:[01]?\d|2[0-3])[:h]\d{2}(?!\d)', normalized))
+    date_signal = bool(re.search(
+        r'(?<!\d)(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})(?!\d)',
+        normalized
+    ))
+    is_meeting = (
+        any(term in normalized for term in direct_terms)
+        or (any(term in normalized for term in schedule_terms) and (time_signal or date_signal))
+    )
+    if not is_meeting:
+        return None
+
+    meeting_date = None
+    date_match = re.search(
+        r'(?<!\d)(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?!\d)',
+        normalized
+    )
+    iso_date_match = re.search(
+        r'(?<!\d)(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?!\d)',
+        normalized
+    )
+    text_date_match = re.search(
+        r'(?<!\d)(\d{1,2})\s+thang\s+(\d{1,2})\s*,?\s*(\d{4})(?!\d)',
+        normalized
+    )
+    try:
+        if date_match:
+            day, month, year = map(int, date_match.groups())
+            if year < 100:
+                year += 2000
+            meeting_date = datetime(year, month, day).date()
+        elif iso_date_match:
+            year, month, day = map(int, iso_date_match.groups())
+            meeting_date = datetime(year, month, day).date()
+        elif text_date_match:
+            day, month, year = map(int, text_date_match.groups())
+            meeting_date = datetime(year, month, day).date()
+    except ValueError:
+        meeting_date = None
+
+    start_time = None
+    end_time = None
+    time_matches = re.findall(
+        r'(?<!\d)((?:[01]?\d|2[0-3]))[:h](\d{2})(?!\d)',
+        normalized
+    )
+    if meeting_date and time_matches:
+        start_hour, start_minute = map(int, time_matches[0])
+        start_dt = datetime.combine(
+            meeting_date,
+            datetime.strptime(f'{start_hour:02d}:{start_minute:02d}', '%H:%M').time()
+        )
+        start_time = start_dt.isoformat()
+        if len(time_matches) > 1:
+            end_hour, end_minute = map(int, time_matches[1])
+            end_dt = datetime.combine(
+                meeting_date,
+                datetime.strptime(f'{end_hour:02d}:{end_minute:02d}', '%H:%M').time()
+            )
+            if end_dt > start_dt:
+                end_time = end_dt.isoformat()
+        if not end_time:
+            end_time = (start_dt + timedelta(hours=1)).isoformat()
+
+    email_addresses = re.findall(r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}', text)
+    attendees = ','.join(dict.fromkeys(email_addresses))
+    description = _compact_preview(
+        f"Nguồn email từ {sender}\n{snippet or body}",
+        max_chars=700
+    )
+    return {
+        'sender': sender,
+        'subject': subject,
+        'email_date': email.get('date', ''),
+        'snippet': snippet,
+        'title': subject or 'Lịch hẹn từ email',
+        'description': description,
+        'start_time': start_time,
+        'end_time': end_time,
+        'location': '',
+        'attendees': attendees,
+    }
+
+
+def _meeting_suggestion_exists_in_schedule(suggestion, db_path):
+    suggested_start = suggestion.get('start_time')
+    if not suggested_start:
+        return False
+    try:
+        suggested_dt = datetime.fromisoformat(suggested_start)
+    except (TypeError, ValueError):
+        return False
+
+    subject = _normalize_search_text(suggestion.get('subject', ''))
+    for schedule in Schedule.get_all(limit=200, db_path=db_path):
+        try:
+            schedule_dt = datetime.fromisoformat(
+                str(schedule.get('start_time') or '').replace('Z', '+00:00')
+            )
+            if schedule_dt.tzinfo is not None:
+                schedule_dt = schedule_dt.replace(tzinfo=None)
+        except (TypeError, ValueError):
+            continue
+        if abs((schedule_dt - suggested_dt).total_seconds()) > 300:
+            continue
+        title = _normalize_search_text(schedule.get('title', ''))
+        if title and (title in subject or subject in title):
+            return True
+    return False
+
+
+def _store_meeting_suggestions(emails, db_path):
+    detected = []
+    for email in emails:
+        email_id = email.get('id')
+        if not email_id:
+            continue
+        suggestion = _extract_meeting_suggestion(email)
+        if not suggestion:
+            continue
+        if _meeting_suggestion_exists_in_schedule(suggestion, db_path):
+            MeetingSuggestion.dismiss_email(email_id, db_path=db_path)
+            continue
+        suggestion_id = MeetingSuggestion.upsert(email_id, suggestion, db_path=db_path)
+        detected.append({'id': suggestion_id, 'email_id': email_id, **suggestion})
+    return detected
 
 def _are_emails_cached(cache_key):
     """Check if cache is still valid (10 minute TTL for better performance)"""
@@ -281,6 +425,22 @@ def _clear_oauth_state(user_id):
 
 def _get_redirect_uri():
     """Return the redirect URI registered in Google Console for this client."""
+    configured_uri = (Config.GMAIL_REDIRECT_URI or '').strip()
+    if configured_uri:
+        return configured_uri
+
+    forwarded_proto = request.headers.get('x-forwarded-proto', '').split(',')[0].strip()
+    forwarded_host = request.headers.get('x-forwarded-host', '').split(',')[0].strip()
+    scheme = forwarded_proto or request.scheme
+    host = forwarded_host or request.host
+
+    if os.getenv('VERCEL'):
+        scheme = 'https'
+        host = host or os.getenv('VERCEL_URL', '')
+
+    if scheme and host:
+        return f"{scheme}://{host}/api/email/oauth2callback"
+
     return "http://127.0.0.1:5000/api/email/oauth2callback"
 
 
@@ -461,6 +621,7 @@ def get_unread_emails():
                     email['summary_type'] = 'preview'
                     hydrated.append(email)
 
+                _store_meeting_suggestions(hydrated, db_path)
                 filtered_emails = [email for email in hydrated if _matches_filter(email, filter_type)]
                 total_raw = len(raw_emails)
 
@@ -497,6 +658,7 @@ def get_unread_emails():
             _hydrate_email_for_list(email, user_id, cached_entries=cached_entries)
             for email in selected_emails
         ]
+        _store_meeting_suggestions(page_emails, db_path)
 
         return jsonify({
             'success': True,
@@ -517,11 +679,67 @@ def get_unread_emails():
                 'total_pages': total_pages,
                 'per_page': per_page,
                 'total_items': total_emails
-            }
+            },
+            'meeting_suggestions': MeetingSuggestion.get_pending(db_path=db_path)
         })
     except Exception as e:
         logger.error(f"Error in get_unread_emails: {str(e)}", exc_info=True)
         return jsonify({'error': str(e), 'error_type': type(e).__name__}), 500
+
+
+@email_bp.route('/meeting-suggestions', methods=['GET'])
+def get_meeting_suggestions():
+    user_id = get_current_user_id(request, session=session)
+    db_path = get_user_db_path(user_id)
+    suggestions = MeetingSuggestion.get_pending(db_path=db_path)
+    return jsonify({
+        'success': True,
+        'suggestions': suggestions,
+        'count': len(suggestions),
+    })
+
+
+@email_bp.route('/meeting-suggestions/scan', methods=['POST'])
+def scan_meeting_suggestions():
+    user_id = get_current_user_id(request, session=session)
+    db_path = get_user_db_path(user_id)
+    service = _load_gmail_service(user_id)
+    if not service:
+        return jsonify({'error': 'not_authenticated'}), 401
+
+    emails = service.get_emails(
+        max_results=20,
+        query='in:inbox',
+        include_read=True,
+    )
+    detected = _store_meeting_suggestions(emails, db_path)
+    pending = MeetingSuggestion.get_pending(db_path=db_path)
+    return jsonify({
+        'success': True,
+        'scanned': len(emails),
+        'detected': len(detected),
+        'suggestions': pending,
+        'count': len(pending),
+    })
+
+
+@email_bp.route('/meeting-suggestions/<int:suggestion_id>/status', methods=['PATCH'])
+def update_meeting_suggestion_status(suggestion_id):
+    user_id = get_current_user_id(request, session=session)
+    db_path = get_user_db_path(user_id)
+    data = request.get_json() or {}
+    status = str(data.get('status') or '').strip().lower()
+    if status not in {'dismissed', 'created'}:
+        return jsonify({'error': 'Invalid suggestion status'}), 400
+    updated = MeetingSuggestion.update_status(
+        suggestion_id,
+        status,
+        schedule_id=data.get('schedule_id'),
+        db_path=db_path,
+    )
+    if not updated:
+        return jsonify({'error': 'Suggestion not found'}), 404
+    return jsonify({'success': True, 'status': status})
 
 
 @email_bp.route('/get-email-body/<email_id>', methods=['GET'])
@@ -535,7 +753,11 @@ def get_email_body(email_id):
 
     try:
         cached = Cache.get(_email_body_cache_key(user_id, email_id), db_path=db_path)
-        if isinstance(cached, dict) and cached.get('body'):
+        if (
+            isinstance(cached, dict)
+            and cached.get('body')
+            and 'attachments' in cached
+        ):
             return jsonify({
                 'success': True,
                 'body': cached.get('body', ''),
@@ -545,6 +767,7 @@ def get_email_body(email_id):
 
         email_data = service.get_email_details(email_id, lazy=False)
         if email_data:
+            _store_meeting_suggestions([email_data], db_path)
             Cache.set(
                 _email_body_cache_key(user_id, email_id),
                 email_data,
@@ -561,6 +784,41 @@ def get_email_body(email_id):
     except Exception as e:
         logger.error(f"Error getting email body: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+
+@email_bp.route('/attachment/<email_id>/<path:attachment_id>', methods=['GET'])
+def get_email_attachment(email_id, attachment_id):
+    """Download an attachment, or preview a small set of browser-safe formats."""
+    user_id = get_current_user_id(request, session=session)
+    service = _load_gmail_service(user_id)
+    if not service:
+        return jsonify({'error': 'not_authenticated'}), 401
+
+    attachment = service.get_attachment(email_id, attachment_id)
+    if not attachment:
+        return jsonify({'error': 'Attachment not found'}), 404
+
+    filename = str(attachment.get('filename') or 'attachment')
+    filename = os.path.basename(filename.replace('\\', '/')).replace('\r', '').replace('\n', '')
+    mime_type = str(attachment.get('mime_type') or 'application/octet-stream').lower()
+    preview_types = {
+        'application/pdf',
+        'image/gif',
+        'image/jpeg',
+        'image/png',
+        'image/webp',
+        'text/plain',
+    }
+    preview = request.args.get('preview') == '1' and mime_type in preview_types
+    response = send_file(
+        BytesIO(attachment.get('data') or b''),
+        mimetype=mime_type,
+        as_attachment=not preview,
+        download_name=filename,
+        max_age=0,
+    )
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response
 
 
 @email_bp.route('/summary/<email_id>', methods=['GET', 'POST'])
@@ -588,6 +846,7 @@ def summarize_email_detail(email_id):
             email_data = service.get_email_details(email_id, lazy=False)
             if not email_data:
                 return jsonify({'error': 'Email not found'}), 404
+            _store_meeting_suggestions([email_data], db_path)
             Cache.set(
                 _email_body_cache_key(user_id, email_id),
                 email_data,
@@ -694,6 +953,7 @@ def send_email_reply():
         else:
             return jsonify({'error': 'Failed to send email'}), 500
     except Exception as e:
+        logger.exception("Failed to send email to %s", to_email)
         return jsonify({'error': str(e)}), 500
 
 
@@ -800,9 +1060,22 @@ def summarize_emails_by_date():
             except Exception as e:
                 logger.debug(f"Cache write error: {e}")
 
+        report_details = []
+        for index, row in enumerate(rows, start=1):
+            detail = [
+                f"{index}. {row.get('subject') or '(Không có tiêu đề)'}",
+                f"Người gửi: {row.get('sender') or 'Không xác định'}",
+                f"Tóm tắt: {row.get('summary') or 'Không có tóm tắt'}",
+            ]
+            if row.get('is_meeting'):
+                detail.append(
+                    f"Gợi ý lịch: {row.get('meeting_note') or row.get('schedule_title') or 'Có nội dung liên quan đến lịch hẹn'}"
+                )
+            report_details.append("\n".join(detail))
+
         History.create(
             f"Báo cáo tóm tắt email theo ngày {date_str}",
-            f"Tổng {len(rows)} email đã được tóm tắt",
+            f"Tổng {len(rows)} email đã được tóm tắt\n\n" + "\n\n".join(report_details),
             action_type='email_daily_summary',
             db_path=db_path
         )
@@ -814,6 +1087,7 @@ def summarize_emails_by_date():
             'rows': rows
         })
     except Exception as e:
+        logger.exception("Failed to summarize emails for date %s", date_str)
         return jsonify({'error': str(e)}), 500
 
 

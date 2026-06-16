@@ -860,6 +860,95 @@ select:focus {
     font-size: 22px;
 }
 
+#emails-page .section-header {
+    align-items: flex-start;
+}
+
+#emails-page .section-header h2 {
+    flex: 0 0 auto;
+    padding-top: 8px;
+}
+
+.email-toolbar {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 0;
+    gap: 8px;
+}
+
+.email-toolbar .gmail-profile-card {
+    min-width: 0;
+    max-width: 260px;
+}
+
+.email-toolbar .gmail-profile-info {
+    min-width: 0;
+}
+
+.email-toolbar .gmail-name,
+.email-toolbar .gmail-email {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.email-include-read {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel-soft);
+    color: var(--text);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.email-include-read input {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+
+.email-toolbar > button,
+.email-toolbar > label {
+    flex: 0 0 auto;
+}
+
+@media (max-width: 1180px) {
+    #emails-page .section-header {
+        flex-direction: column;
+    }
+
+    #emails-page .section-header h2 {
+        padding-top: 0;
+    }
+
+    .email-toolbar {
+        width: 100%;
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 620px) {
+    .email-toolbar .gmail-profile-card {
+        flex: 1 1 100%;
+        max-width: none;
+    }
+
+    .email-toolbar > button {
+        flex: 1 1 auto;
+    }
+}
+
 .tabs {
     display: flex;
     flex-wrap: wrap;
@@ -965,11 +1054,93 @@ select:focus {
 .schedule-item,
 .calendar-event,
 .history-item {
-    padding: 10px 12px; /* compact padding */
+    padding: 16px 18px;
     border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+    font-size: 14px;
+}
+
+.history-item-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.history-item-title {
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.history-item-time {
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.history-related-id {
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: var(--panel-soft);
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.history-detail-block {
+    margin-top: 13px;
+}
+
+.history-detail-block > span {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.history-detail-block > div {
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.history-detail-block p {
+    margin: 0 0 10px;
+}
+
+.history-detail-result {
+    padding: 12px 14px;
+    border-left: 3px solid var(--primary);
     border-radius: 8px;
     background: var(--panel-soft);
-    font-size: 14px;
+}
+
+.history-item.is-collapsed .history-detail-block > div {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 5;
+}
+
+.history-toggle {
+    margin-top: 12px;
+}
+
+.workspace-source-badge {
+    margin-left: 6px;
+    padding: 2px 8px;
+    border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--primary) 10%, var(--panel));
+    color: var(--primary);
+    font-size: 11px;
+    font-weight: 700;
 }
 
 .btn-danger {
@@ -1268,6 +1439,96 @@ select:focus {
     gap: 12px;
 }
 
+.meeting-suggestions-section {
+    margin-top: 16px;
+    padding: 16px;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: 14px;
+    background: color-mix(in srgb, #f59e0b 7%, var(--panel));
+}
+
+.meeting-suggestions-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.meeting-suggestions-header span {
+    color: #b45309;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+.meeting-suggestions-header h3 {
+    margin: 4px 0 0;
+    color: var(--text);
+    font-size: 16px;
+}
+
+.meeting-suggestion-count {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    border-radius: 50%;
+    background: #f59e0b;
+    color: #fff !important;
+}
+
+.meeting-suggestions-list {
+    display: grid;
+    gap: 10px;
+}
+
+.meeting-suggestion-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 16px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+}
+
+.meeting-suggestion-title {
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 750;
+}
+
+.meeting-suggestion-source,
+.meeting-suggestion-time,
+.meeting-suggestion-card p {
+    margin-top: 5px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.meeting-suggestion-card p {
+    margin-bottom: 0;
+}
+
+.meeting-suggestion-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+@media (max-width: 720px) {
+    .meeting-suggestion-card {
+        grid-template-columns: 1fr;
+    }
+
+    .meeting-suggestion-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
 .unified-schedules-list .unified-schedule-item {
     max-width: none;
     display: grid;
@@ -1524,6 +1785,7 @@ select:focus {
 }
 
 .gmail-name {
+    color: var(--text);
     font-weight: 700;
 }
 
@@ -1720,6 +1982,92 @@ select:focus {
     font-style: italic;
 }
 
+.email-attachments {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+}
+
+.email-attachments-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.email-attachments-heading span {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.email-attachment-list {
+    display: grid;
+    gap: 10px;
+}
+
+.email-attachment-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #fafbfc;
+}
+
+.email-attachment-icon {
+    display: grid;
+    flex: 0 0 42px;
+    height: 42px;
+    place-items: center;
+    border-radius: 9px;
+    background: #eeecff;
+    color: var(--primary);
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.email-attachment-info {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.email-attachment-info strong {
+    overflow: hidden;
+    color: var(--text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.email-attachment-info span {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.email-attachment-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.email-attachment-action {
+    padding: 7px 10px;
+    border: 1px solid var(--primary);
+    border-radius: 8px;
+    background: var(--primary);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.email-attachment-action.secondary {
+    background: transparent;
+    color: var(--primary);
+}
+
 .email-detail-modal-content .modal-actions {
     display: flex;
     flex: 0 0 auto;
@@ -1745,6 +2093,20 @@ select:focus {
     .email-detail-meta div {
         grid-template-columns: 1fr;
         gap: 2px;
+    }
+
+    .email-attachment-item {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .email-attachment-info {
+        flex: 1 1 calc(100% - 56px);
+    }
+
+    .email-attachment-actions {
+        width: 100%;
+        margin-left: 54px;
     }
 
     .email-detail-modal-content .modal-actions {
@@ -2849,4 +3211,313 @@ body {
         position: static;
         margin-bottom: 12px;
     }
+}
+
+/* Cohesive dark workspace theme */
+body.dark-theme {
+    color-scheme: dark;
+    --bg: #0c101a;
+    --panel: #171c2a;
+    --panel-soft: #1d2434;
+    --text: #edf1fb;
+    --text-secondary: #a6afc3;
+    --border: #30394d;
+    --primary: #7468f2;
+    --primary-dark: #5d50dc;
+    --shadow: 0 16px 34px rgba(2, 6, 18, 0.34);
+}
+
+body.dark-theme,
+body.dark-theme .container.workspace-app {
+    background: var(--bg);
+}
+
+body.dark-theme .sidebar,
+body.dark-theme .workspace-app > .sidebar {
+    border-color: var(--border);
+    background: #111624;
+    color: var(--text);
+}
+
+body.dark-theme .brand-copy strong {
+    color: #a99fff;
+}
+
+body.dark-theme .brand-copy small,
+body.dark-theme .nav-btn {
+    color: #aeb7ca;
+}
+
+body.dark-theme .nav-btn:hover {
+    background: rgba(116, 104, 242, 0.13);
+    color: #f2f4ff;
+}
+
+body.dark-theme .nav-btn.active {
+    background: rgba(116, 104, 242, 0.2);
+    color: #bcb4ff;
+}
+
+body.dark-theme .nav-btn.active::before {
+    background: #8478ff;
+}
+
+body.dark-theme .main-content,
+body.dark-theme .workspace-header,
+body.dark-theme .assistant-panel {
+    border-color: var(--border);
+    background: #101522;
+}
+
+body.dark-theme .workspace-header,
+body.dark-theme .assistant-header {
+    border-bottom-color: var(--border);
+}
+
+body.dark-theme .workspace-heading strong,
+body.dark-theme .assistant-title strong,
+body.dark-theme .quick-context strong {
+    color: var(--text);
+}
+
+body.dark-theme .workspace-mode-status {
+    border-color: #39435a;
+    background: #181e2d;
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+}
+
+body.dark-theme .workspace-mode-status > span,
+body.dark-theme .quick-action-icon {
+    background: rgba(116, 104, 242, 0.18);
+    color: #b9b1ff;
+}
+
+body.dark-theme .workspace-action {
+    color: #aeb7ca;
+}
+
+body.dark-theme .page,
+body.dark-theme .tab-content,
+body.dark-theme #schedule-page #upcoming-tab {
+    background: #101522;
+}
+
+body.dark-theme .section-header,
+body.dark-theme #schedule-page .section-header {
+    border-color: var(--border);
+    background: #121827;
+}
+
+body.dark-theme .gmail-profile-card,
+body.dark-theme .email-include-read {
+    border-color: #39435a;
+    background: #1b2232;
+    color: var(--text);
+}
+
+body.dark-theme .gmail-name {
+    color: #f3f5fb;
+}
+
+body.dark-theme .gmail-email {
+    color: #aeb7ca;
+}
+
+body.dark-theme .settings-page-header {
+    border-color: #343d55;
+    background:
+        radial-gradient(circle at 92% 10%, rgba(116, 104, 242, 0.14), transparent 34%),
+        linear-gradient(135deg, #1c2233, #151a28);
+    box-shadow: 0 14px 30px rgba(2, 6, 18, 0.22);
+}
+
+body.dark-theme .settings-page-header h2,
+body.dark-theme .settings-card strong,
+body.dark-theme .settings-row strong {
+    color: var(--text);
+}
+
+body.dark-theme .settings-save-state {
+    background: rgba(45, 212, 191, 0.12);
+    color: #72dfcf;
+}
+
+body.dark-theme .settings-card {
+    border-color: #30394d;
+    background: #171c2a;
+    box-shadow: 0 14px 30px rgba(2, 6, 18, 0.24);
+}
+
+body.dark-theme .settings-mode-card {
+    background:
+        radial-gradient(circle at 100% 0%, rgba(116, 104, 242, 0.13), transparent 40%),
+        #171c2a;
+}
+
+body.dark-theme .settings-mode-profile {
+    border-color: rgba(132, 120, 255, 0.28);
+    background: rgba(116, 104, 242, 0.09);
+}
+
+body.dark-theme .settings-mode-active {
+    background: rgba(52, 211, 153, 0.13);
+    color: #76e0b2;
+}
+
+body.dark-theme .settings-mode-change,
+body.dark-theme .btn-secondary,
+body.dark-theme .week-nav .btn-secondary {
+    border-color: #3a445c;
+    background: #202738;
+    color: #dfe5f4;
+}
+
+body.dark-theme .settings-mode-change:hover,
+body.dark-theme .btn-secondary:hover,
+body.dark-theme .week-nav .btn-secondary:hover {
+    border-color: #5f57ad;
+    background: #292f45;
+    color: #fff;
+}
+
+body.dark-theme input,
+body.dark-theme textarea,
+body.dark-theme select {
+    border-color: #39435a;
+    background: #121827;
+    color: var(--text);
+}
+
+body.dark-theme input::placeholder,
+body.dark-theme textarea::placeholder {
+    color: #778198;
+}
+
+body.dark-theme input:focus,
+body.dark-theme textarea:focus,
+body.dark-theme select:focus {
+    border-color: #7c70f3;
+    outline: 2px solid rgba(116, 104, 242, 0.17);
+}
+
+body.dark-theme .assistant-panel {
+    background: #111624;
+}
+
+body.dark-theme .quick-context {
+    border-color: rgba(132, 120, 255, 0.3);
+    background: rgba(116, 104, 242, 0.1);
+}
+
+body.dark-theme .quick-action-button {
+    border-color: #30394d;
+    background: #171d2c;
+    color: var(--text);
+}
+
+body.dark-theme .quick-action-button:hover {
+    border-color: #6259b5;
+    background: #20263a;
+}
+
+body.dark-theme .quick-action-arrow {
+    color: #929cb2;
+}
+
+body.dark-theme .quick-tip {
+    border: 1px solid #293247;
+    background: #191f2e;
+}
+
+body.dark-theme .quick-tip strong {
+    color: #c7cee0;
+}
+
+body.dark-theme .week-table-wrapper,
+body.dark-theme .week-table th,
+body.dark-theme .week-table td {
+    border-color: var(--border);
+}
+
+body.dark-theme .week-table th {
+    background: #171d2b;
+    color: var(--text);
+}
+
+body.dark-theme .week-table td {
+    background: #131927;
+}
+
+body.dark-theme .week-table th:nth-last-child(-n + 2),
+body.dark-theme .week-table td:nth-last-child(-n + 2) {
+    background: #161b2a;
+}
+
+body.dark-theme .week-table th.is-today,
+body.dark-theme .week-table td.is-today {
+    background: rgba(116, 104, 242, 0.13);
+}
+
+body.dark-theme .week-table th .week-day-date {
+    color: var(--text);
+}
+
+body.dark-theme .email-item,
+body.dark-theme .schedule-item,
+body.dark-theme .calendar-event,
+body.dark-theme .history-item,
+body.dark-theme .meeting-suggestion-card {
+    border-color: #30394d;
+    background: #171d2b;
+    box-shadow: 0 8px 20px rgba(2, 6, 18, 0.18);
+}
+
+body.dark-theme .meeting-suggestions-section {
+    border-color: rgba(245, 158, 11, 0.28);
+    background: rgba(245, 158, 11, 0.055);
+}
+
+body.dark-theme .modal-content,
+body.dark-theme .email-detail-modal-content {
+    border: 1px solid var(--border);
+    background: #171c2a;
+    color: var(--text);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
+}
+
+body.dark-theme .email-detail-modal-content .modal-actions {
+    border-color: var(--border);
+    background: #141927;
+}
+
+body.dark-theme .email-attachment-item {
+    border-color: #30394d;
+    background: #1a2131;
+}
+
+body.dark-theme .email-attachment-icon {
+    background: rgba(116, 104, 242, 0.16);
+}
+
+body.dark-theme .message.assistant .message-content {
+    border-color: #30394d;
+    background: #1a2131;
+    color: var(--text);
+}
+
+body.dark-theme .chat-input-area,
+body.dark-theme .chat-container {
+    border-color: var(--border);
+    background: #101522;
+}
+
+body.dark-theme ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: #3d465d;
+    background-clip: padding-box;
+}
+
+body.dark-theme ::-webkit-scrollbar-track {
+    background: transparent;
 }

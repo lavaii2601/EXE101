@@ -27,7 +27,7 @@ let emailSearchInput;
 let emailSearchTimer;
 
 // State
-let currentPage = 'schedule';
+let currentPage = 'chat';
 let currentEmailPage = 1;
 let currentWeekStart = getMonday(new Date());
 let currentDetailEmail = null;
@@ -632,7 +632,7 @@ async function initApp() {
                     refreshAuthButtons();
                     loadUserProfile().then(() => {
                         if (userModeRequired) {
-                            pendingPageAfterMode = 'emails';
+                            pendingPageAfterMode = 'chat';
                         } else {
                             showWorkspace();
                             if (currentPage === 'emails') {
@@ -671,6 +671,9 @@ async function initApp() {
         }
     }
     await refreshAuthButtons();
+    scanMeetingSuggestions().catch(error => {
+        console.warn('Background meeting suggestion scan failed:', error);
+    });
     checkRuntimeConfig();
     
     // Auto-load emails if user is on emails page and authenticated
@@ -998,14 +1001,14 @@ async function checkOAuthCallback() {
 
             showNotification(ui('✅ Gmail đã kết nối thành công!', '✅ Gmail connected successfully!'), 'success');
             if (userModeRequired) {
-                pendingPageAfterMode = 'emails';
+                pendingPageAfterMode = 'chat';
                 return;
             }
 
             showWorkspace();
-            const emailNavBtn = document.querySelector('[data-page="emails"]');
-            if (emailNavBtn) {
-                await handlePageChange(emailNavBtn);
+            const chatNavBtn = document.querySelector('[data-page="chat"]');
+            if (chatNavBtn) {
+                await handlePageChange(chatNavBtn);
             }
         } catch (error) {
             console.error('OAuth completion refresh failed:', error);
@@ -1635,8 +1638,20 @@ async function sendMessageConfirmed(message, opts = {}) {
                 `<span class="provider-badge" style="font-size: 11px; padding: 2px 8px; background: ${data.demo_mode ? '#FF9800' : '#4CAF50'}; color: white; border-radius: 10px; margin-left: 8px;">
                     ${data.demo_mode ? '🎭 Demo' : '🤖 ' + data.provider.toUpperCase()}
                 </span>` : '';
+            const sourceLabels = {
+                email: ui('Email', 'Email'),
+                calendar: ui('Lịch', 'Calendar'),
+                history: ui('Lịch sử', 'History'),
+                profile: ui('Hồ sơ', 'Profile')
+            };
+            const workspaceSources = Array.isArray(data.workspace_sources)
+                ? data.workspace_sources.filter(source => sourceLabels[source])
+                : [];
+            const sourceBadge = workspaceSources.length
+                ? `<span class="provider-badge workspace-source-badge">${workspaceSources.map(source => sourceLabels[source]).join(' + ')}</span>`
+                : '';
 
-            addMessage(data.response, 'assistant', providerBadge);
+            addMessage(data.response, 'assistant', providerBadge + sourceBadge);
 
             if (data.demo_mode) {
                 showNotification(ui('⚠️ Chế độ demo - Tất cả nhà cung cấp AI đang tạm nghỉ', '⚠️ Demo mode - All AI providers are cooling down'), 'info');
@@ -2063,6 +2078,8 @@ async function gmailLogin() {
 
 // Client-side email cache for fallback pagination
 let emailsCache = [];
+const notifiedMeetingSuggestionIds = new Set();
+let lastMeetingSuggestionScanAt = 0;
 
 async function toggleEmailReadStatus(emailId, isUnread) {
     try {
@@ -2157,6 +2174,8 @@ async function loadEmails(page = 1) {
             `;
             return;
         }
+
+        notifyMeetingSuggestions(data.meeting_suggestions || []);
         
         if (!data.emails || data.emails.length === 0) {
             console.warn('⚠️ No emails found');
@@ -2486,6 +2505,43 @@ function buildEmailDetailMarkup(email, bodyHtml, isLoading = false) {
                 <div>${formatEmailText(email.summary)}</div>
            </div>`
         : '';
+    const attachments = Array.isArray(email.attachments) ? email.attachments : [];
+    const previewTypes = new Set([
+        'application/pdf',
+        'image/gif',
+        'image/jpeg',
+        'image/png',
+        'image/webp',
+        'text/plain'
+    ]);
+    const attachmentsHTML = attachments.length
+        ? `<section class="email-attachments" aria-label="${ui('File đính kèm', 'Attachments')}">
+                <div class="email-attachments-heading">
+                    <strong>${ui('File đính kèm', 'Attachments')}</strong>
+                    <span>${attachments.length} ${ui('file', 'file(s)')}</span>
+                </div>
+                <div class="email-attachment-list">
+                    ${attachments.map((attachment) => {
+                        const mimeType = String(attachment.mime_type || 'application/octet-stream').toLowerCase();
+                        const baseUrl = `${API_BASE}/email/attachment/${encodeURIComponent(email.id)}/${encodeURIComponent(attachment.id)}`;
+                        const previewButton = previewTypes.has(mimeType)
+                            ? `<a class="email-attachment-action secondary" href="${baseUrl}?preview=1" target="_blank" rel="noopener">${ui('Xem', 'Preview')}</a>`
+                            : '';
+                        return `<article class="email-attachment-item">
+                            <div class="email-attachment-icon" aria-hidden="true">FILE</div>
+                            <div class="email-attachment-info">
+                                <strong title="${escapeHtml(attachment.filename || ui('File đính kèm', 'Attachment'))}">${escapeHtml(attachment.filename || ui('File đính kèm', 'Attachment'))}</strong>
+                                <span>${escapeHtml(mimeType)} · ${formatFileSize(attachment.size)}</span>
+                            </div>
+                            <div class="email-attachment-actions">
+                                ${previewButton}
+                                <a class="email-attachment-action" href="${baseUrl}" download>${ui('Tải xuống', 'Download')}</a>
+                            </div>
+                        </article>`;
+                    }).join('')}
+                </div>
+           </section>`
+        : '';
 
     return `
         <div class="email-detail-header">
@@ -2501,7 +2557,21 @@ function buildEmailDetailMarkup(email, bodyHtml, isLoading = false) {
             <div><span>${ui('Ngày', 'Date')}</span><strong>${escapeHtml(email.date || ui('Không xác định', 'Unknown'))}</strong></div>
         </div>
         <div class="email-detail-body${isLoading ? ' email-detail-loading' : ''}">${bodyHtml}</div>
+        ${isLoading ? '' : attachmentsHTML}
     `;
+}
+
+function formatFileSize(value) {
+    const bytes = Number(value) || 0;
+    if (bytes < 1024) return `${bytes} B`;
+    const units = ['KB', 'MB', 'GB'];
+    let size = bytes / 1024;
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex += 1;
+    }
+    return `${size >= 10 ? size.toFixed(0) : size.toFixed(1)} ${units[unitIndex]}`;
 }
 
 async function showFormattedEmailDetail(email) {
@@ -2513,13 +2583,17 @@ async function showFormattedEmailDetail(email) {
     emailDetailModal.classList.add('show');
     emailDetailModal.querySelector('.email-detail-close')?.focus();
 
-    if (!email.body) {
+    if (!email.body || !Array.isArray(email.attachments)) {
         try {
             const response = await apiFetch(`${API_BASE}/email/get-email-body/${email.id}`);
             const data = await response.json();
             email.body = data.success ? data.body : ui('Không thể tải nội dung.', 'Unable to load content.');
+            email.attachments = data.success && Array.isArray(data.email?.attachments)
+                ? data.email.attachments
+                : [];
         } catch (error) {
             email.body = `Lỗi: ${error.message}`;
+            email.attachments = [];
         }
     }
 
@@ -2569,13 +2643,17 @@ async function showEmailDetail(email) {
     if (emailDetailModal) emailDetailModal.classList.add('show');
     
     // Lazy load body
-    if (!email.body) {
+    if (!email.body || !Array.isArray(email.attachments)) {
         try {
             const response = await apiFetch(`${API_BASE}/email/get-email-body/${email.id}`);
             const data = await response.json();
             email.body = data.success ? data.body : ui('Không thể tải nội dung', 'Unable to load content');
+            email.attachments = data.success && Array.isArray(data.email?.attachments)
+                ? data.email.attachments
+                : [];
         } catch (error) {
             email.body = ui('Lỗi: ', 'Error: ') + error.message;
+            email.attachments = [];
         }
     }
     
@@ -2587,7 +2665,7 @@ async function showEmailDetail(email) {
             <strong>${ui('Từ', 'From')}:</strong> ${escapeHtml(email.sender)}<br>
             <strong>${ui('Ngày', 'Date')}:</strong> ${escapeHtml(email.date)}
         </div>
-        <div class="email-detail-body">${escapeHtml(email.body)}</div>
+        <div class="email-detail-body">${formatEmailText(email.body)}</div>
     `;
 }
 
@@ -2699,13 +2777,17 @@ async function loadWeekSchedule() {
     }
 }
 
-function openNewScheduleModal() {
+function openNewScheduleModal(preserveSuggestion = false) {
     const modal = document.getElementById('newScheduleModal');
+    const form = document.getElementById('scheduleForm');
+    if (!preserveSuggestion && form) delete form.dataset.meetingSuggestionId;
     if (modal) modal.classList.add('show');
 }
 
 function closeNewScheduleModal() {
     const modal = document.getElementById('newScheduleModal');
+    const form = document.getElementById('scheduleForm');
+    if (form) delete form.dataset.meetingSuggestionId;
     if (modal) modal.classList.remove('show');
 }
 
@@ -2715,6 +2797,11 @@ async function loadSchedules() {
     if (!schedulesList) return;
 
     schedulesList.innerHTML = `<p class="schedule-empty-state">${ui('Đang tải lịch tổng hợp...', 'Loading calendar...')}</p>`;
+    scanMeetingSuggestions()
+        .catch(error => console.warn('Meeting suggestion scan error:', error))
+        .finally(() => loadMeetingSuggestions().catch(error => {
+            console.error('Meeting suggestion load error:', error);
+        }));
 
     try {
         const response = await apiFetch(`${API_BASE}/schedule/unified?max_results=100`);
@@ -2797,6 +2884,129 @@ async function loadSchedules() {
     } catch (error) {
         schedulesList.innerHTML = `<p class="schedule-empty-state">${ui('Lỗi', 'Error')}: ${escapeHtml(error.message)}</p>`;
     }
+}
+
+function notifyMeetingSuggestions(suggestions) {
+    const fresh = (suggestions || []).filter(item => {
+        const id = String(item.id || '');
+        if (!id || notifiedMeetingSuggestionIds.has(id)) return false;
+        notifiedMeetingSuggestionIds.add(id);
+        return true;
+    });
+    if (!fresh.length) return;
+
+    showNotification(
+        ui(
+            `📅 Phát hiện ${fresh.length} email liên quan đến cuộc họp. Xem gợi ý trong tab Lịch.`,
+            `📅 Found ${fresh.length} meeting-related email. Review suggestions in Calendar.`
+        ),
+        'info'
+    );
+}
+
+async function scanMeetingSuggestions(force = false) {
+    const now = Date.now();
+    if (!force && now - lastMeetingSuggestionScanAt < 5 * 60 * 1000) return [];
+    lastMeetingSuggestionScanAt = now;
+
+    const response = await apiFetch(`${API_BASE}/email/meeting-suggestions/scan`, {
+        method: 'POST'
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        if (data.error === 'not_authenticated') return [];
+        throw new Error(data.error || ui('Không thể quét email', 'Unable to scan email'));
+    }
+    const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+    notifyMeetingSuggestions(suggestions);
+    return suggestions;
+}
+
+async function updateMeetingSuggestionStatus(suggestionId, status, scheduleId = null) {
+    const response = await apiFetch(`${API_BASE}/email/meeting-suggestions/${suggestionId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, schedule_id: scheduleId })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        throw new Error(data.error || ui('Không thể cập nhật gợi ý', 'Unable to update suggestion'));
+    }
+}
+
+function openMeetingSuggestion(suggestion) {
+    const form = document.getElementById('scheduleForm');
+    if (!form) return;
+
+    document.getElementById('scheduleTitle').value = suggestion.title || suggestion.subject || ui('Lịch hẹn từ email', 'Appointment from email');
+    document.getElementById('scheduleDesc').value = suggestion.description || suggestion.snippet || '';
+    document.getElementById('scheduleStartTime').value = toDatetimeLocal(suggestion.start_time);
+    const endInput = document.getElementById('scheduleEndTime');
+    if (endInput) endInput.value = toDatetimeLocal(suggestion.end_time);
+    const locationInput = document.getElementById('scheduleLocation');
+    if (locationInput) locationInput.value = suggestion.location || '';
+    document.getElementById('scheduleAttendees').value = suggestion.attendees || '';
+    form.dataset.meetingSuggestionId = suggestion.id;
+    openNewScheduleModal(true);
+
+    if (!suggestion.start_time) {
+        showNotification(
+            ui('Email chưa có ngày giờ rõ ràng. Vui lòng chọn thời gian trước khi tạo lịch.', 'The email has no clear date and time. Select one before creating the event.'),
+            'info'
+        );
+    }
+}
+
+async function loadMeetingSuggestions() {
+    const section = document.getElementById('emailMeetingSuggestions');
+    const list = document.getElementById('meetingSuggestionsList');
+    const count = document.getElementById('meetingSuggestionCount');
+    if (!section || !list || !count) return;
+
+    const response = await apiFetch(`${API_BASE}/email/meeting-suggestions`);
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        throw new Error(data.error || ui('Không thể tải gợi ý lịch', 'Unable to load calendar suggestions'));
+    }
+
+    const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+    section.hidden = suggestions.length === 0;
+    count.textContent = String(suggestions.length);
+    list.innerHTML = '';
+    notifyMeetingSuggestions(suggestions);
+
+    suggestions.forEach(suggestion => {
+        const card = document.createElement('article');
+        card.className = 'meeting-suggestion-card';
+        const start = suggestion.start_time
+            ? new Date(suggestion.start_time).toLocaleString(currentLanguage === 'en' ? 'en-US' : 'vi-VN')
+            : ui('Chưa xác định thời gian', 'Time not detected');
+        card.innerHTML = `
+            <div class="meeting-suggestion-main">
+                <div class="meeting-suggestion-title">${escapeHtml(suggestion.title || suggestion.subject || ui('Lịch hẹn từ email', 'Appointment from email'))}</div>
+                <div class="meeting-suggestion-source">${ui('Từ', 'From')}: ${escapeHtml(suggestion.sender || ui('Không xác định', 'Unknown'))}</div>
+                <div class="meeting-suggestion-time">${escapeHtml(start)}</div>
+                ${suggestion.snippet ? `<p>${escapeHtml(suggestion.snippet)}</p>` : ''}
+            </div>
+            <div class="meeting-suggestion-actions">
+                <button type="button" class="btn-primary meeting-suggestion-create">${ui('Tạo lịch', 'Create event')}</button>
+                <button type="button" class="btn-secondary meeting-suggestion-dismiss">${ui('Bỏ qua', 'Dismiss')}</button>
+            </div>
+        `;
+        card.querySelector('.meeting-suggestion-create').addEventListener('click', () => {
+            openMeetingSuggestion(suggestion);
+        });
+        card.querySelector('.meeting-suggestion-dismiss').addEventListener('click', async () => {
+            try {
+                await updateMeetingSuggestionStatus(suggestion.id, 'dismissed');
+                await loadMeetingSuggestions();
+                showNotification(ui('Đã bỏ qua gợi ý lịch hẹn', 'Appointment suggestion dismissed'), 'info');
+            } catch (error) {
+                showNotification(`${ui('Lỗi', 'Error')}: ${error.message}`, 'error');
+            }
+        });
+        list.appendChild(card);
+    });
 }
 
 function plainTextFromHtml(value) {
@@ -2990,6 +3200,15 @@ async function handleScheduleSubmit(e) {
         const data = await response.json();
         if (data.success) {
             const sid = data.schedule_id;
+            const meetingSuggestionId = scheduleForm.dataset.meetingSuggestionId;
+            if (meetingSuggestionId) {
+                try {
+                    await updateMeetingSuggestionStatus(meetingSuggestionId, 'created', sid);
+                } catch (error) {
+                    console.warn('Unable to mark meeting suggestion as created:', error);
+                }
+                delete scheduleForm.dataset.meetingSuggestionId;
+            }
             if (data.calendar_event_id) {
                 showNotification(ui('✅ Lịch hẹn đã được tạo và đồng bộ Google Calendar', '✅ Appointment created and synced with Google Calendar'), 'success');
             } else {
@@ -3206,12 +3425,49 @@ async function loadActivityHistory() {
             data.history.forEach(record => {
                 const historyDiv = document.createElement('div');
                 historyDiv.className = 'history-item';
-                const date = new Date(record.created_at).toLocaleString('vi-VN');
+                const date = new Date(record.created_at).toLocaleString(
+                    currentLanguage === 'en' ? 'en-US' : 'vi-VN',
+                    { dateStyle: 'medium', timeStyle: 'medium' }
+                );
+                const userMessage = String(record.user_message || '').trim();
+                const assistantResponse = String(record.assistant_response || '').trim();
+                const relatedId = String(record.related_id || '').trim();
                 historyDiv.innerHTML = `
-                    <div style="font-weight: 600;">${getActionLabel(record.action_type)}</div>
-                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">${date}</div>
-                    <div style="font-size: 13px; margin-top: 8px; color: var(--text-secondary);">${escapeHtml(record.user_message.substring(0, 100))}...</div>
+                    <div class="history-item-header">
+                        <div>
+                            <div class="history-item-title">${getActionLabel(record.action_type)}</div>
+                            <div class="history-item-time">${escapeHtml(date)}</div>
+                        </div>
+                        ${relatedId ? `<span class="history-related-id">ID: ${escapeHtml(relatedId)}</span>` : ''}
+                    </div>
+                    ${userMessage ? `
+                        <div class="history-detail-block">
+                            <span>${getHistoryInputLabel(record.action_type)}</span>
+                            <div>${formatEmailText(userMessage)}</div>
+                        </div>
+                    ` : ''}
+                    ${assistantResponse ? `
+                        <div class="history-detail-block history-detail-result">
+                            <span>${getHistoryResultLabel(record.action_type)}</span>
+                            <div>${formatEmailText(assistantResponse)}</div>
+                        </div>
+                    ` : ''}
                 `;
+                const contentLength = userMessage.length + assistantResponse.length;
+                if (contentLength > 700) {
+                    historyDiv.classList.add('is-collapsed');
+                    const toggle = document.createElement('button');
+                    toggle.type = 'button';
+                    toggle.className = 'history-toggle btn-secondary';
+                    toggle.textContent = ui('Xem đầy đủ', 'Show details');
+                    toggle.addEventListener('click', () => {
+                        const collapsed = historyDiv.classList.toggle('is-collapsed');
+                        toggle.textContent = collapsed
+                            ? ui('Xem đầy đủ', 'Show details')
+                            : ui('Thu gọn', 'Collapse');
+                    });
+                    historyDiv.appendChild(toggle);
+                }
                 historyList.appendChild(historyDiv);
             });
         } else {
@@ -3226,9 +3482,39 @@ function getActionLabel(actionType) {
     const labels = {
         'chat': '💬 Chat',
         'email_summary': ui('📧 Tóm tắt', '📧 Summary'),
-        'schedule_created': ui('📅 Tạo lịch', '📅 Event created')
+        'email_daily_summary': ui('📊 Báo cáo email theo ngày', '📊 Daily email report'),
+        'email_reply': ui('✍️ Soạn trả lời email', '✍️ Email reply drafted'),
+        'email_sent': ui('📤 Đã gửi email', '📤 Email sent'),
+        'schedule_created': ui('📅 Tạo lịch', '📅 Event created'),
+        'schedule_updated': ui('📝 Cập nhật lịch', '📝 Event updated'),
+        'schedule_deleted': ui('🗑️ Xóa lịch', '🗑️ Event deleted'),
+        'calendar_event_created': ui('📅 Tạo sự kiện Google Calendar', '📅 Google Calendar event created'),
+        'calendar_event_updated': ui('📝 Cập nhật Google Calendar', '📝 Google Calendar event updated'),
+        'calendar_event_deleted': ui('🗑️ Xóa sự kiện Google Calendar', '🗑️ Google Calendar event deleted')
     };
-    return labels[actionType] || actionType;
+    return labels[actionType] || ui('📌 Hoạt động', '📌 Activity');
+}
+
+function getHistoryInputLabel(actionType) {
+    const labels = {
+        chat: ui('Tin nhắn của bạn', 'Your message'),
+        email_summary: ui('Email được tóm tắt', 'Summarized email'),
+        email_daily_summary: ui('Yêu cầu báo cáo', 'Report request'),
+        email_reply: ui('Yêu cầu soạn thư', 'Draft request'),
+        email_sent: ui('Thông tin gửi', 'Send details')
+    };
+    return labels[actionType] || ui('Nội dung thực hiện', 'Action details');
+}
+
+function getHistoryResultLabel(actionType) {
+    const labels = {
+        chat: ui('Phản hồi của FlowMate', 'FlowMate response'),
+        email_summary: ui('Bản tóm tắt chi tiết', 'Detailed summary'),
+        email_daily_summary: ui('Kết quả báo cáo', 'Report result'),
+        email_reply: ui('Nội dung thư đề xuất', 'Suggested reply'),
+        email_sent: ui('Nội dung email', 'Email content')
+    };
+    return labels[actionType] || ui('Kết quả', 'Result');
 }
 
 // MODAL
@@ -3364,7 +3650,23 @@ function escapeHtml(text) {
 }
 
 function formatEmailText(text) {
-    const escaped = escapeHtml(text).replace(/\r\n?/g, '\n');
+    const tagTokens = {
+        '\u0001EMAIL_BOLD_OPEN\u0001': '<strong>',
+        '\u0001EMAIL_BOLD_CLOSE\u0001': '</strong>'
+    };
+    const normalized = String(text == null ? '' : text)
+        .replace(/\r\n?/g, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<(?:b|strong)\s*>/gi, '\u0001EMAIL_BOLD_OPEN\u0001')
+        .replace(/<\/(?:b|strong)\s*>/gi, '\u0001EMAIL_BOLD_CLOSE\u0001')
+        .replace(/\u00a0/g, ' ')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    let escaped = escapeHtml(normalized);
+    Object.entries(tagTokens).forEach(([token, html]) => {
+        escaped = escaped.split(token).join(html);
+    });
     const linked = escaped.replace(
         /(https?:\/\/[^\s<]+)/gi,
         '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'

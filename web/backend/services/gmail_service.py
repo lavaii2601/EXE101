@@ -218,6 +218,7 @@ class GmailService:
             date = header_value('Date', '')
             snippet = message.get('snippet', '') or ''
             body = "" if lazy else self._get_email_body(payload)
+            attachments = [] if lazy else self._get_attachments(payload)
             label_ids = message.get('labelIds', []) or []
 
             return {
@@ -227,6 +228,7 @@ class GmailService:
                 'sender': sender,
                 'date': date,
                 'body': body,
+                'attachments': attachments,
                 'snippet': snippet,
                 'is_unread': 'UNREAD' in label_ids
             }
@@ -280,6 +282,59 @@ class GmailService:
         except Exception as e:
             print(f"Error extracting email body: {str(e)}")
             return f"Error reading email: {str(e)[:100]}"
+
+    def _get_attachments(self, payload):
+        """Return downloadable attachment metadata from a Gmail MIME payload."""
+        attachments = []
+
+        def walk(part):
+            body = part.get('body', {}) or {}
+            attachment_id = body.get('attachmentId')
+            filename = str(part.get('filename') or '').strip()
+            if attachment_id and filename:
+                attachments.append({
+                    'id': attachment_id,
+                    'filename': filename,
+                    'mime_type': part.get('mimeType') or 'application/octet-stream',
+                    'size': int(body.get('size') or 0),
+                })
+
+            for child in part.get('parts', []) or []:
+                walk(child)
+
+        walk(payload or {})
+        return attachments
+
+    def get_attachment(self, message_id, attachment_id):
+        """Fetch one attachment after verifying it belongs to the message."""
+        try:
+            message = self.service.users().messages().get(
+                userId='me',
+                id=message_id,
+                format='full'
+            ).execute()
+            attachment = next(
+                (
+                    item for item in self._get_attachments(message.get('payload', {}) or {})
+                    if item.get('id') == attachment_id
+                ),
+                None
+            )
+            if not attachment:
+                return None
+
+            result = self.service.users().messages().attachments().get(
+                userId='me',
+                messageId=message_id,
+                id=attachment_id
+            ).execute()
+            encoded = result.get('data') or ''
+            padding = '=' * (-len(encoded) % 4)
+            attachment['data'] = base64.urlsafe_b64decode(encoded + padding)
+            return attachment
+        except Exception as e:
+            logger.warning(f"Error downloading Gmail attachment {message_id}: {e}")
+            return None
 
     @staticmethod
     def _html_to_text(value):
