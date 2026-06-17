@@ -66,6 +66,8 @@ public class MainActivity extends Activity {
     private static final int WARNING = Color.rgb(251, 191, 36);
     private static final int DANGER = Color.rgb(248, 113, 113);
     private static final int RC_SIGN_IN = 9001;
+    private static final int EMAIL_SCAN_FAST_LIMIT = 25;
+    private static final int EMAIL_SCAN_DEEP_LIMIT = 50;
 
     private ApiClient api;
     private GoogleSignInClient mGoogleSignInClient;
@@ -939,7 +941,7 @@ public class MainActivity extends Activity {
     }
 
     private void addBubble(String text, boolean user) {
-        TextView bubble = label(text, 15, Typeface.NORMAL, user ? Color.WHITE : TEXT);
+        TextView bubble = label(user ? text : cleanAssistantMessage(text), 15, Typeface.NORMAL, user ? Color.WHITE : TEXT);
         bubble.setPadding(dp(12), dp(10), dp(12), dp(10));
         bubble.setBackground(round(user ? PRIMARY : PANEL_RAISED, user ? PRIMARY : BORDER));
         LinearLayout row = new LinearLayout(this);
@@ -947,6 +949,28 @@ public class MainActivity extends Activity {
         row.setPadding(0, dp(5), 0, dp(5));
         row.addView(bubble, new LinearLayout.LayoutParams(-2, -2));
         chatList.addView(row);
+    }
+
+    private String cleanAssistantMessage(String text) {
+        if (text == null) return "";
+        String cleaned = text
+                .replace("**", "")
+                .replace("Next Action:", tr("Việc nên làm:", "Suggested action:"))
+                .replace("Next action:", tr("Việc nên làm:", "Suggested action:"))
+                .replace("Low Priority", tr("Ưu tiên thấp", "Low priority"))
+                .replace("Medium Priority", tr("Ưu tiên vừa", "Medium priority"))
+                .replace("High Priority", tr("Ưu tiên cao", "High priority"))
+                .replace("Email mới nhất:", tr("Email mới nhất:", "Latest email:"))
+                .replace("Người gửi:", tr("Người gửi:", "Sender:"))
+                .replace("Tiêu đề:", tr("Tiêu đề:", "Subject:"))
+                .replace("Thời gian:", tr("Thời gian:", "Time:"))
+                .replace("Trạng thái:", tr("Trạng thái:", "Status:"))
+                .replace("Phân loại:", tr("Mức ưu tiên:", "Priority:"))
+                .replace("Chưa đọc", tr("Chưa đọc", "Unread"))
+                .replace("Đã đọc", tr("Đã đọc", "Read"));
+        cleaned = cleaned.replace(" - ", "\n- ");
+        cleaned = cleaned.replace("\n\n\n", "\n\n");
+        return cleaned.trim();
     }
 
     private void addScheduleSuggestion(JSONObject suggestion) {
@@ -1067,9 +1091,10 @@ public class MainActivity extends Activity {
         if (emailList == null) return;
         emailIncludeRead = includeRead;
         emailList.removeAllViews();
-        addMuted(emailList, tr("Đang quét tối đa 70 email...", "Scanning up to 70 emails..."));
+        int scanLimit = shouldUseDeepEmailScan() ? EMAIL_SCAN_DEEP_LIMIT : EMAIL_SCAN_FAST_LIMIT;
+        addMuted(emailList, tr("Đang tải email mới nhất...", "Loading latest emails..."));
         runApi(() -> api.get(
-                "/email/get-unread?max_results=70&page=1&filter=" + emailFilter
+                "/email/get-unread?max_results=" + scanLimit + "&page=1&fresh=1&filter=" + emailFilter
                         + "&include_read=" + includeRead
                         + "&search=" + URLEncoder.encode(emailSearch, "UTF-8")
         ), data -> {
@@ -1115,7 +1140,7 @@ public class MainActivity extends Activity {
         TextView subject = label(email.optString("subject", tr("(Không tiêu đề)", "(No subject)")), 15, Typeface.BOLD, TEXT);
         subject.setPadding(0, dp(5), 0, dp(3));
         card.addView(subject);
-        TextView preview = label(email.optString("summary", email.optString("snippet", "")), 14, Typeface.NORMAL, MUTED);
+        TextView preview = label(emailPreview(email), 14, Typeface.NORMAL, MUTED);
         preview.setMaxLines(3);
         preview.setEllipsize(TextUtils.TruncateAt.END);
         card.addView(preview);
@@ -1278,6 +1303,29 @@ public class MainActivity extends Activity {
                 || value.contains("action required")
                 || value.contains("due today")
                 || value.contains("eod");
+    }
+
+    private boolean shouldUseDeepEmailScan() {
+        return !emailSearch.trim().isEmpty() || !"all".equals(emailFilter);
+    }
+
+    private String emailPreview(JSONObject email) {
+        String preview = email.optString("summary", "");
+        if (preview.isEmpty()) preview = email.optString("snippet", "");
+        preview = cleanEmailText(preview).replace("**", "").trim();
+        if (preview.length() > 180) preview = preview.substring(0, 177).trim() + "...";
+        return preview;
+    }
+
+    private String cleanEmailText(String raw) {
+        if (raw == null) return "";
+        return raw
+                .replace('\u00a0', ' ')
+                .replaceAll("<[^>]+>", " ")
+                .replaceAll("&nbsp;", " ")
+                .replaceAll("&amp;", "&")
+                .replaceAll("[ \\t\\r\\n]+", " ")
+                .trim();
     }
 
     private String friendlyTag(String tag) {

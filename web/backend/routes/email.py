@@ -617,6 +617,7 @@ def get_unread_emails():
         filter_type = request.args.get('filter', 'education', type=str).strip().lower()
         search = request.args.get('search', '', type=str).strip()
         include_read = request.args.get('include_read', 'false', type=str).lower() == 'true'
+        fresh = request.args.get('fresh', 'false', type=str).lower() in {'1', 'true', 'yes'}
         db_path = get_user_db_path(user_id)
         
         cache_key = _get_cache_key(user_id, filter_type, include_read=include_read, scan_limit=scan_limit)
@@ -624,13 +625,14 @@ def get_unread_emails():
         
         # Try in-memory cache first, then DB cache.
         suggestions_scanned = False
-        cached_emails, cached_total = _get_cached_emails(cache_key)
+        cache_hit = False
+        cached_emails, cached_total = (None, None) if fresh else _get_cached_emails(cache_key)
         if cached_emails is not None:
             filtered_emails = cached_emails
             total_raw = cached_total
             cache_hit = True
         else:
-            cached_db = Cache.get(db_cache_key, db_path=db_path)
+            cached_db = None if fresh else Cache.get(db_cache_key, db_path=db_path)
             if isinstance(cached_db, dict) and cached_db.get('emails') is not None:
                 filtered_emails = cached_db.get('emails') or []
                 total_raw = cached_db.get('total', len(filtered_emails))
@@ -702,6 +704,7 @@ def get_unread_emails():
             'total_filtered': total_raw,
             'matched_count': total_emails,
             'cache_hit': cache_hit,
+            'fresh': fresh,
             'scan_limit': scan_limit,
             'debug': {
                 'raw_email_count': total_raw,
