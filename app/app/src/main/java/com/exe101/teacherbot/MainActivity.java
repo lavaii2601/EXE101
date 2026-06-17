@@ -88,7 +88,13 @@ public class MainActivity extends Activity {
         prefs = securePreferences();
         selectedRole = prefs.getString("role", "");
         appLanguage = prefs.getString("language", "vi");
-        api = new ApiClient(prefs.getString("baseUrl", "http://10.0.2.2:5000/api"));
+        String configuredBaseUrl = prefs.getString("baseUrl", "").trim();
+        String defaultBaseUrl = getString(R.string.backend_base_url);
+        if (configuredBaseUrl.isEmpty() || isLegacyLocalBackend(configuredBaseUrl)) {
+            configuredBaseUrl = defaultBaseUrl;
+            prefs.edit().putString("baseUrl", configuredBaseUrl).apply();
+        }
+        api = new ApiClient(configuredBaseUrl);
         api.setAccessToken(prefs.getString("accessToken", ""));
 
         GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
@@ -301,11 +307,11 @@ public class MainActivity extends Activity {
     }
 
     private void showBackendUrlDialog() {
-        EditText backendInput = input("http://10.0.2.2:5000/api", false);
+        EditText backendInput = input(getString(R.string.backend_base_url), false);
         backendInput.setText(api.getBaseUrl());
         new AlertDialog.Builder(this)
                 .setTitle("Backend API")
-                .setMessage(tr("Dùng 10.0.2.2 cho Android emulator, hoặc IP máy tính khi dùng điện thoại thật.", "Use 10.0.2.2 for the Android emulator, or your computer's IP address on a physical phone."))
+                .setMessage(tr("Mặc định dùng backend Railway. Có thể đổi tạm sang local khi phát triển.", "Railway backend is used by default. You can temporarily switch to local for development."))
                 .setView(backendInput)
                 .setNegativeButton(tr("Hủy", "Cancel"), null)
                 .setPositiveButton(tr("Lưu", "Save"), (dialog, which) -> {
@@ -319,6 +325,13 @@ public class MainActivity extends Activity {
 
     private String tr(String vietnamese, String english) {
         return "en".equals(appLanguage) ? english : vietnamese;
+    }
+
+    private boolean isLegacyLocalBackend(String value) {
+        String lower = value == null ? "" : value.toLowerCase(Locale.US);
+        return lower.contains("10.0.2.2")
+                || lower.contains("127.0.0.1")
+                || lower.contains("localhost");
     }
 
     private void setAppLanguage(String language) {

@@ -12,7 +12,7 @@ read your local file.
 DEBUG=false
 SECRET_KEY=change-this-to-a-long-random-value
 SESSION_COOKIE_SECURE=true
-ALLOWED_ORIGINS=https://your-app.up.railway.app
+ALLOWED_ORIGINS=https://exe101.up.railway.app
 
 GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
@@ -29,7 +29,7 @@ After changing variables, redeploy the Railway service.
 To verify the deployed service can see the variables, open:
 
 ```text
-https://your-app.up.railway.app/api/email/oauth-config-check
+https://exe101.up.railway.app/api/email/oauth-config-check
 ```
 
 The response should show `has_client_id: true` and `has_client_secret: true`,
@@ -60,5 +60,5 @@ GEMINI_API_KEY=
 In Google Cloud OAuth Client, add:
 
 ```text
-https://your-app.up.railway.app/api/email/oauth2callback
+https://exe101.up.railway.app/api/email/oauth2callback
 ```

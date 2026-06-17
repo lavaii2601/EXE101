@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 
 public class ApiClient {
     private static final int MAX_RESPONSE_CHARS = 2_000_000;
+    public static final String DEFAULT_BASE_URL = "https://exe101.up.railway.app/api";
     private String baseUrl;
     private String accessToken = "";
 
@@ -24,7 +25,7 @@ public class ApiClient {
 
     public void setBaseUrl(String value) {
         String next = value == null || value.trim().isEmpty()
-                ? "http://10.0.2.2:5000/api"
+                ? DEFAULT_BASE_URL
                 : value.trim();
         while (next.endsWith("/")) {
             next = next.substring(0, next.length() - 1);

@@ -13,9 +13,10 @@ Cấu trúc thư mục
 - `mobile/` — ứng dụng Expo/React Native (FlowMate AI), cũng gọi API của `web/backend`.
 
 Liên kết web <-> app
-- `app` và `mobile` gọi backend qua URL cấu hình sẵn cho máy ảo Android: `http://10.0.2.2:5000/api`
-  (mặc định trong `app/app/src/main/java/com/exe101/teacherbot/ApiClient.java` và `mobile/src/api/config.js`).
-- Trên thiết bị thật, đổi URL này thành `http://<IP-máy-chạy-backend>:5000/api`.
+- `app` và `mobile` mặc định gọi backend Railway: `https://exe101.up.railway.app/api`
+  (cấu hình trong `app/app/src/main/res/values/strings.xml` và `mobile/src/api/config.js`).
+- Khi phát triển local, có thể đổi tạm trong Settings của app Android native hoặc đặt
+  `EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:5000/api` cho Expo.
 
 Nhanh: cài và chạy (development)
 
@@ -73,7 +74,7 @@ Google OAuth (tóm tắt nhanh)
 3. OAuth consent screen: đặt tên app, thêm scope cơ bản, thêm test users nếu cần
 4. Tạo OAuth Client ID (Web app) — thêm `http://127.0.0.1:5000` và `http://localhost:5000` vào Authorized origins.
 5. Thêm redirect URI local: `http://127.0.0.1:5000/api/email/oauth2callback` và `http://localhost:5000/api/email/oauth2callback`.
-6. Khi deploy Vercel, thêm redirect URI production dạng `https://<domain-vercel-cua-ban>/api/email/oauth2callback`.
+6. Khi deploy Railway, thêm redirect URI production: `https://exe101.up.railway.app/api/email/oauth2callback`.
 7. Trên Vercel Project Settings -> Environment Variables, set `GMAIL_CLIENT_ID` và `GMAIL_CLIENT_SECRET`, hoặc set `GMAIL_CREDENTIALS_JSON` bằng toàn bộ nội dung JSON OAuth client. Deploy lại sau khi set biến.
 8. Lưu client ID/secret an toàn (không commit lên git)
 
