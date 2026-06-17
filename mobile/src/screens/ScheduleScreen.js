@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Modal, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import EmptyState from '../components/EmptyState';
 import Field from '../components/Field';
 import Screen from '../components/Screen';
 import SegmentedControl from '../components/SegmentedControl';
-import { apiDelete, apiGet, apiPatch, apiPost } from '../api/client';
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 
 const modes = [
@@ -28,6 +28,8 @@ export default function ScheduleScreen() {
   const [weekSummary, setWeekSummary] = useState({ current: [], next: [] });
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [form, setForm] = useState(initialForm);
+  const [editingSchedule, setEditingSchedule] = useState(null);
+  const [editForm, setEditForm] = useState(initialForm);
   const [loading, setLoading] = useState(false);
 
   const loadSchedules = useCallback(async () => {
@@ -59,6 +61,7 @@ export default function ScheduleScreen() {
   useEffect(() => { loadSchedules(); }, [loadSchedules]);
 
   const setField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const setEditField = (key, value) => setEditForm((current) => ({ ...current, [key]: value }));
 
   const createSchedule = async () => {
     if (!form.title || !form.start_time) {
@@ -94,6 +97,46 @@ export default function ScheduleScreen() {
       await loadSchedules();
     } catch (error) {
       Alert.alert('Khong cap nhat duoc lich', error.message);
+    }
+  };
+
+  const openEditSchedule = (schedule) => {
+    setEditingSchedule(schedule);
+    setEditForm({
+      title: schedule.title || '',
+      description: schedule.description || '',
+      start_time: normalizeDateTime(schedule.start_time),
+      end_time: normalizeDateTime(schedule.end_time),
+      duration_minutes: String(durationMinutes(schedule.start_time, schedule.end_time) || 60),
+      location: schedule.location || '',
+      attendees: Array.isArray(schedule.attendees) ? schedule.attendees.join(', ') : (schedule.attendees || ''),
+    });
+  };
+
+  const updateSchedule = async () => {
+    if (!editingSchedule?.local_id || !editForm.title || !editForm.start_time) {
+      Alert.alert('Thieu thong tin', 'Vui long nhap tieu de va thoi gian bat dau.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await apiPut(`/schedule/${editingSchedule.local_id}`, {
+        title: editForm.title,
+        description: editForm.description,
+        start_time: editForm.start_time,
+        end_time: editForm.end_time,
+        duration_minutes: editForm.duration_minutes ? Number(editForm.duration_minutes) : 60,
+        location: editForm.location,
+        attendees: splitAttendees(editForm.attendees),
+      });
+      setEditingSchedule(null);
+      setEditForm(initialForm);
+      await loadSchedules();
+      Alert.alert('Da cap nhat lich');
+    } catch (error) {
+      Alert.alert('Khong cap nhat duoc lich', error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -156,6 +199,7 @@ export default function ScheduleScreen() {
               {schedule.local_id ? (
                 <>
                   <Button title="Hoan tat" variant="secondary" onPress={() => updateStatus(schedule, 'completed')} />
+                  <Button title="Sua" variant="secondary" onPress={() => openEditSchedule(schedule)} />
                   <Button title="Huy" variant="secondary" onPress={() => updateStatus(schedule, 'cancelled')} />
                   <Button title="Xoa" variant="danger" onPress={() => deleteSchedule(schedule)} />
                 </>
@@ -205,15 +249,31 @@ export default function ScheduleScreen() {
   );
 
   return (
-    <Screen
-      title="Lich"
-      refreshing={loading}
-      onRefresh={loadSchedules}
-      actions={<Button title={calendarConnected ? 'Da ket noi Google' : 'Ket noi Google'} variant="secondary" onPress={() => Linking.openURL('https://calendar.google.com')} />}
-    >
-      <SegmentedControl options={modes} value={mode} onChange={setMode} />
-      {mode === 'create' ? renderCreate() : renderList()}
-    </Screen>
+    <>
+      <Screen
+        title="Lich"
+        refreshing={loading}
+        onRefresh={loadSchedules}
+        actions={<Button title={calendarConnected ? 'Da ket noi Google' : 'Ket noi Google'} variant="secondary" onPress={() => Linking.openURL('https://calendar.google.com')} />}
+      >
+        <SegmentedControl options={modes} value={mode} onChange={setMode} />
+        {mode === 'create' ? renderCreate() : renderList()}
+      </Screen>
+      <Modal visible={!!editingSchedule} animationType="slide" onRequestClose={() => setEditingSchedule(null)}>
+        <Screen title="Sua lich hen" actions={<Button title="Dong" variant="secondary" onPress={() => setEditingSchedule(null)} />}>
+          <Card>
+            <Field label="Tieu de"          value={editForm.title}            onChangeText={(v) => setEditField('title', v)}            placeholder="Hop phu huynh" />
+            <Field label="Mo ta"             value={editForm.description}      onChangeText={(v) => setEditField('description', v)}      placeholder="Noi dung lich hen" multiline />
+            <Field label="Bat dau"           value={editForm.start_time}       onChangeText={(v) => setEditField('start_time', v)}       placeholder="2026-06-05T09:00:00" />
+            <Field label="Ket thuc"          value={editForm.end_time}         onChangeText={(v) => setEditField('end_time', v)}         placeholder="2026-06-05T10:00:00" />
+            <Field label="Thoi luong phut"   value={editForm.duration_minutes} onChangeText={(v) => setEditField('duration_minutes', v)} placeholder="60" keyboardType="number-pad" />
+            <Field label="Dia diem"          value={editForm.location}         onChangeText={(v) => setEditField('location', v)}         placeholder="Phong hop / online" />
+            <Field label="Nguoi tham du"     value={editForm.attendees}        onChangeText={(v) => setEditField('attendees', v)}        placeholder="a@example.com, b@example.com" />
+            <Button title="Luu thay doi" onPress={updateSchedule} loading={loading} />
+          </Card>
+        </Screen>
+      </Modal>
+    </>
   );
 }
 
@@ -266,6 +326,29 @@ function formatShortDate(value) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function normalizeDateTime(value) {
+  if (!value) return '';
+  const raw = typeof value === 'string' ? value : value.dateTime || value.date || '';
+  if (!raw) return '';
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}:00`;
+}
+
+function durationMinutes(startValue, endValue) {
+  if (!startValue || !endValue) return null;
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  const diff = Math.round((end.getTime() - start.getTime()) / 60000);
+  return diff > 0 ? diff : null;
 }
 
 function makeStyles(colors) {

@@ -3435,6 +3435,8 @@ async function openEditSchedule(scheduleId) {
         if (editDurationInput) {
             editDurationInput.value = getDurationMinutes(schedule.start_time, schedule.end_time) || 60;
         }
+        const editLocationInput = document.getElementById('editScheduleLocation');
+        if (editLocationInput) editLocationInput.value = schedule.location || '';
         document.getElementById('editScheduleAttendees').value = Array.isArray(schedule.attendees)
             ? schedule.attendees.join(', ')
             : (schedule.attendees || '');
@@ -3455,6 +3457,7 @@ async function handleEditScheduleSubmit(e) {
     const description = document.getElementById('editScheduleDesc').value.trim();
     const start_time = document.getElementById('editScheduleTime').value;
     const duration_minutes = parseInt(document.getElementById('editScheduleDuration')?.value || '60', 10);
+    const location = document.getElementById('editScheduleLocation')?.value.trim() || '';
     const attendees_str = document.getElementById('editScheduleAttendees').value.trim();
     const attendees = attendees_str ? attendees_str.split(',').map(e => e.trim()) : [];
 
@@ -3477,6 +3480,7 @@ async function handleEditScheduleSubmit(e) {
                 description,
                 start_time,
                 duration_minutes: Number.isFinite(duration_minutes) && duration_minutes > 0 ? duration_minutes : 60,
+                location,
                 attendees
             })
         });

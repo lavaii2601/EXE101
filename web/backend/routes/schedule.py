@@ -562,6 +562,8 @@ def update_schedule(schedule_id):
         update_data['start_time'] = data.get('start_time', '').strip()
     if 'end_time' in data:
         update_data['end_time'] = data.get('end_time', '').strip() or None
+    if 'location' in data:
+        update_data['location'] = data.get('location', '').strip()
     duration_minutes = _parse_duration_minutes(data.get('duration_minutes'))
     if 'attendees' in data:
         attendees = data.get('attendees', [])
