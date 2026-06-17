@@ -586,13 +586,16 @@ async function initApp() {
         }
 
         // Calendar buttons
-        const refreshCalendarBtn = document.getElementById('refreshCalendarBtn');
-        if (refreshCalendarBtn) {
-            refreshCalendarBtn.addEventListener('click', () => {
-                console.log('🔄 Refreshing calendar events');
-                loadCalendarEvents();
-            });
-        }
+    const refreshCalendarBtn = document.getElementById('refreshCalendarBtn');
+    if (refreshCalendarBtn) {
+        refreshCalendarBtn.addEventListener('click', () => {
+            console.log('🔄 Refreshing calendar events');
+            invalidateScheduleCaches();
+            loadWeekSchedule({ sync: true }).catch(err => console.warn('Week sync refresh error:', err));
+            scheduleMeetingSuggestionRefresh({ scan: true, delay: 0 });
+            loadCalendarEvents();
+        });
+    }
 
         const openCalendarBtn = document.getElementById('openCalendarBtn');
         if (openCalendarBtn) {
@@ -671,9 +674,6 @@ async function initApp() {
         }
     }
     await refreshAuthButtons();
-    scanMeetingSuggestions().catch(error => {
-        console.warn('Background meeting suggestion scan failed:', error);
-    });
     checkRuntimeConfig();
     
     // Auto-load emails if user is on emails page and authenticated
@@ -1361,13 +1361,16 @@ function setupEventListeners() {
     const calendarEventForm = document.getElementById('calendarEventForm');
     if (calendarEventForm) calendarEventForm.addEventListener('submit', handleCalendarEventSubmit);
     
-    const refreshCalendarBtn = document.getElementById('refreshCalendarBtn');
-    if (refreshCalendarBtn) {
-        refreshCalendarBtn.addEventListener('click', () => {
-            console.log('🔄 Refreshing calendar events');
-            loadCalendarEvents();
-        });
-    }
+        const refreshCalendarBtn = document.getElementById('refreshCalendarBtn');
+        if (refreshCalendarBtn) {
+            refreshCalendarBtn.addEventListener('click', () => {
+                console.log('🔄 Refreshing calendar events');
+                invalidateScheduleCaches();
+                loadWeekSchedule({ sync: true }).catch(err => console.warn('Week sync refresh error:', err));
+                scheduleMeetingSuggestionRefresh({ scan: true, delay: 0 });
+                loadCalendarEvents();
+            });
+        }
     
     const openCalendarBtn = document.getElementById('openCalendarBtn');
     if (openCalendarBtn) {
@@ -2941,7 +2944,7 @@ async function loadWeekSchedule(options = {}) {
     tableBody.innerHTML = `<tr><td colspan="6" class="week-loading">${ui('Đang tải...', 'Loading...')}</td></tr>`;
 
     try {
-        const syncFlag = options.skipSyncRefresh ? 0 : 1;
+        const syncFlag = options.sync ? 1 : 0;
         const data = await fetchJsonCached(
             `schedule:week:${weekStartStr}:${syncFlag}`,
             `${API_BASE}/schedule/week?start=${weekStartStr}&sync=${syncFlag}`,
@@ -2990,10 +2993,10 @@ async function loadWeekSchedule(options = {}) {
             tableBody.appendChild(row);
         }
 
-        if (data.calendar_sync_pending && !options.skipSyncRefresh) {
+        if (data.calendar_sync_pending && options.sync) {
             window.setTimeout(() => {
                 invalidateScheduleCaches();
-                loadWeekSchedule({ skipSyncRefresh: true }).catch(err => console.warn('Week schedule refresh error:', err));
+                loadWeekSchedule().catch(err => console.warn('Week schedule refresh error:', err));
                 refreshQuickScheduleSummary();
             }, 1800);
         }
@@ -3109,7 +3112,7 @@ async function loadSchedules() {
     } catch (error) {
         schedulesList.innerHTML = `<p class="schedule-empty-state">${ui('Lỗi', 'Error')}: ${escapeHtml(error.message)}</p>`;
     } finally {
-        scheduleMeetingSuggestionRefresh();
+        scheduleMeetingSuggestionRefresh({ scan: false });
     }
 }
 
@@ -3149,18 +3152,23 @@ async function scanMeetingSuggestions(force = false) {
     return suggestions;
 }
 
-function scheduleMeetingSuggestionRefresh() {
+function scheduleMeetingSuggestionRefresh(options = {}) {
     if (meetingSuggestionRefreshTimer) return;
+    const scan = !!options.scan;
+    const delay = Number.isFinite(options.delay) ? options.delay : 1500;
     meetingSuggestionRefreshTimer = window.setTimeout(() => {
         meetingSuggestionRefreshTimer = null;
-        loadMeetingSuggestions()
-            .catch(error => console.warn('Meeting suggestion load error:', error))
-            .finally(() => {
-                scanMeetingSuggestions()
-                    .then(() => loadMeetingSuggestions())
-                    .catch(error => console.warn('Meeting suggestion scan error:', error));
-            });
-    }, 1500);
+        const loadExisting = () => loadMeetingSuggestions()
+            .catch(error => console.warn('Meeting suggestion load error:', error));
+        if (!scan) {
+            loadExisting();
+            return;
+        }
+        loadExisting()
+            .finally(() => scanMeetingSuggestions(true)
+                .then(() => loadMeetingSuggestions())
+                .catch(error => console.warn('Meeting suggestion scan error:', error)));
+    }, delay);
 }
 
 async function updateMeetingSuggestionStatus(suggestionId, status, scheduleId = null) {
