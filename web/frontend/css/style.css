@@ -1775,6 +1775,12 @@ select:focus {
     font-size: 14px;
 }
 
+.form-group input[readonly] {
+    background: var(--surface);
+    color: var(--text-secondary);
+    cursor: default;
+}
+
 .gmail-profile-card {
     align-items: center;
     gap: 10px;

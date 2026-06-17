@@ -157,6 +157,7 @@ const STATIC_ENGLISH_TEXT = {
     'Mô tả': 'Description',
     'Ngày giờ bắt đầu': 'Start date and time',
     'Ngày giờ kết thúc': 'End date and time',
+    'Ngày giờ kết thúc (tự tính)': 'End date and time (auto)',
     'Thời lượng (phút)': 'Duration (minutes)',
     'Địa điểm': 'Location',
     'Người tham dự (email, cách nhau bằng dấu phẩy)': 'Attendees (comma-separated emails)',
@@ -391,6 +392,7 @@ async function initApp() {
         // New schedule form submit
         if (scheduleForm) {
             scheduleForm.addEventListener('submit', handleScheduleSubmit);
+            bindScheduleTimeLogic();
         }
 
         // Edit schedule form submit
@@ -3021,6 +3023,7 @@ function openNewScheduleModal(preserveSuggestion = false) {
     const modal = document.getElementById('newScheduleModal');
     const form = document.getElementById('scheduleForm');
     if (!preserveSuggestion && form) delete form.dataset.meetingSuggestionId;
+    updateScheduleEndFromDuration();
     if (modal) modal.classList.add('show');
 }
 
@@ -3029,6 +3032,39 @@ function closeNewScheduleModal() {
     const form = document.getElementById('scheduleForm');
     if (form) delete form.dataset.meetingSuggestionId;
     if (modal) modal.classList.remove('show');
+}
+
+function addMinutesToDatetimeLocal(value, minutes) {
+    if (!value || !Number.isFinite(minutes) || minutes <= 0) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    date.setMinutes(date.getMinutes() + minutes);
+    return toDatetimeLocal(date);
+}
+
+function updateScheduleEndFromDuration() {
+    const startInput = document.getElementById('scheduleStartTime');
+    const durationInput = document.getElementById('scheduleDuration');
+    const endInput = document.getElementById('scheduleEndTime');
+    if (!startInput || !durationInput || !endInput) return;
+
+    const duration = parseInt(durationInput.value || '60', 10);
+    endInput.value = addMinutesToDatetimeLocal(
+        startInput.value,
+        Number.isFinite(duration) && duration > 0 ? duration : 60
+    );
+}
+
+function bindScheduleTimeLogic() {
+    const form = document.getElementById('scheduleForm');
+    if (!form || form.dataset.timeLogicBound === 'true') return;
+
+    const startInput = document.getElementById('scheduleStartTime');
+    const durationInput = document.getElementById('scheduleDuration');
+    if (startInput) startInput.addEventListener('change', updateScheduleEndFromDuration);
+    if (durationInput) durationInput.addEventListener('input', updateScheduleEndFromDuration);
+
+    form.dataset.timeLogicBound = 'true';
 }
 
 function openEditScheduleModal() {
@@ -3233,6 +3269,11 @@ function openMeetingSuggestion(suggestion) {
     document.getElementById('scheduleStartTime').value = toDatetimeLocal(suggestion.start_time);
     const endInput = document.getElementById('scheduleEndTime');
     if (endInput) endInput.value = toDatetimeLocal(suggestion.end_time);
+    const durationInput = document.getElementById('scheduleDuration');
+    if (durationInput) {
+        durationInput.value = getDurationMinutes(suggestion.start_time, suggestion.end_time) || 60;
+    }
+    updateScheduleEndFromDuration();
     const locationInput = document.getElementById('scheduleLocation');
     if (locationInput) locationInput.value = suggestion.location || '';
     document.getElementById('scheduleAttendees').value = suggestion.attendees || '';
@@ -3505,11 +3546,19 @@ async function handleScheduleSubmit(e) {
     const title = document.getElementById('scheduleTitle').value.trim();
     const description = document.getElementById('scheduleDesc').value.trim();
     const start_time = document.getElementById('scheduleStartTime').value;
-    const end_time = document.getElementById('scheduleEndTime') ? document.getElementById('scheduleEndTime').value : '';
-    const duration_minutes = parseInt(document.getElementById('scheduleDuration')?.value || '60', 10);
+    const rawDuration = parseInt(document.getElementById('scheduleDuration')?.value || '60', 10);
+    const duration_minutes = Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : 60;
+    const end_time = addMinutesToDatetimeLocal(start_time, duration_minutes);
     const location = document.getElementById('scheduleLocation') ? document.getElementById('scheduleLocation').value.trim() : '';
     const attendees_str = document.getElementById('scheduleAttendees').value.trim();
     const attendees = attendees_str ? attendees_str.split(',').map(e => e.trim()) : [];
+
+    if (!title || !start_time) {
+        showNotification(ui('Vui lòng nhập tiêu đề và ngày giờ bắt đầu', 'Please enter title and start date/time'), 'warning');
+        return;
+    }
+
+    updateScheduleEndFromDuration();
     
     try {
         const response = await apiFetch(`${API_BASE}/schedule/create`, {
