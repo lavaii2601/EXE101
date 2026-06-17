@@ -7,6 +7,7 @@ import base64
 import re
 import requests
 import unicodedata
+from threading import Lock
 from io import BytesIO
 from flask import Blueprint, request, jsonify, redirect, url_for, session, send_file
 from datetime import datetime, timedelta
@@ -47,6 +48,90 @@ EMAIL_SCAN_MAX = 150
 EMAIL_LIST_CACHE_TTL = 1800
 EMAIL_BODY_CACHE_TTL = 86400
 EMAIL_SUMMARY_CACHE_TTL = 86400
+OAUTH_STATE_TTL_SECONDS = 1800
+_oauth_state_lock = Lock()
+
+
+def _oauth_state_file():
+    os.makedirs(Config.DATA_DIR, exist_ok=True)
+    return os.path.join(Config.DATA_DIR, 'oauth_states.json')
+
+
+def _read_oauth_states():
+    path = _oauth_state_file()
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, 'r', encoding='utf-8') as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_oauth_states(data):
+    path = _oauth_state_file()
+    with open(path, 'w', encoding='utf-8') as handle:
+        json.dump(data, handle)
+
+
+def _store_oauth_code_verifier(state, code_verifier):
+    if not state or not code_verifier:
+        return
+    now = datetime.utcnow().timestamp()
+    with _oauth_state_lock:
+        data = _read_oauth_states()
+        data = {
+            key: value for key, value in data.items()
+            if isinstance(value, dict)
+            and now - float(value.get('created_at') or 0) <= OAUTH_STATE_TTL_SECONDS
+        }
+        data[state] = {
+            'code_verifier': code_verifier,
+            'created_at': now,
+        }
+        _write_oauth_states(data)
+
+
+def _pop_oauth_code_verifier(state):
+    if not state:
+        return None
+    now = datetime.utcnow().timestamp()
+    with _oauth_state_lock:
+        data = _read_oauth_states()
+        record = data.pop(state, None)
+        data = {
+            key: value for key, value in data.items()
+            if isinstance(value, dict)
+            and now - float(value.get('created_at') or 0) <= OAUTH_STATE_TTL_SECONDS
+        }
+        _write_oauth_states(data)
+    if not isinstance(record, dict):
+        return None
+    if now - float(record.get('created_at') or 0) > OAUTH_STATE_TTL_SECONDS:
+        return None
+    return record.get('code_verifier')
+
+
+def _get_flow_code_verifier(flow):
+    code_verifier = getattr(flow, 'code_verifier', None)
+    if not code_verifier and hasattr(flow, '_client'):
+        code_verifier = getattr(flow._client, 'code_verifier', None)
+    return code_verifier
+
+
+def _set_flow_code_verifier(flow, code_verifier):
+    if not code_verifier:
+        return
+    try:
+        setattr(flow, 'code_verifier', code_verifier)
+    except Exception:
+        pass
+    if hasattr(flow, '_client'):
+        try:
+            setattr(flow._client, 'code_verifier', code_verifier)
+        except Exception:
+            pass
 
 def _get_cache_key(user_id, filter_type, include_read=False, scan_limit=EMAIL_SCAN_DEFAULT):
     """Generate cache key"""
@@ -1228,11 +1313,11 @@ def gmail_auth():
     session['oauth_state'] = state
     # try to capture code_verifier used for PKCE (name may differ by implementation)
     try:
-        code_verifier = getattr(flow, 'code_verifier', None)
-        if not code_verifier and hasattr(flow, '_client'):
-            code_verifier = getattr(flow._client, 'code_verifier', None)
+        code_verifier = _get_flow_code_verifier(flow)
         if code_verifier:
             session['oauth_code_verifier'] = code_verifier
+            _store_oauth_code_verifier(state, code_verifier)
+        session.modified = True
     except Exception:
         pass
     return redirect(auth_url)
@@ -1256,23 +1341,17 @@ def oauth2callback():
         return jsonify({'error': str(e)}), 503
 
     # restore PKCE code_verifier from session if present
-    code_verifier = session.get('oauth_code_verifier')
+    code_verifier = session.get('oauth_code_verifier') or _pop_oauth_code_verifier(state)
     try:
-        if code_verifier:
-            try:
-                setattr(flow, 'code_verifier', code_verifier)
-            except Exception:
-                pass
-            if hasattr(flow, '_client'):
-                try:
-                    setattr(flow._client, 'code_verifier', code_verifier)
-                except Exception:
-                    pass
+        _set_flow_code_verifier(flow, code_verifier)
     except Exception:
         pass
 
     try:
-        flow.fetch_token(authorization_response=request.url)
+        fetch_kwargs = {'authorization_response': request.url}
+        if code_verifier:
+            fetch_kwargs['code_verifier'] = code_verifier
+        flow.fetch_token(**fetch_kwargs)
         creds = flow.credentials
     except Exception as e:
         logger.error(f"Failed to fetch token: {e}")
@@ -1406,11 +1485,11 @@ def gmail_auth_url():
     session['oauth_state'] = state
     # store PKCE verifier as well so callback can exchange token
     try:
-        code_verifier = getattr(flow, 'code_verifier', None)
-        if not code_verifier and hasattr(flow, '_client'):
-            code_verifier = getattr(flow._client, 'code_verifier', None)
+        code_verifier = _get_flow_code_verifier(flow)
         if code_verifier:
             session['oauth_code_verifier'] = code_verifier
+            _store_oauth_code_verifier(state, code_verifier)
+        session.modified = True
     except Exception:
         pass
     return jsonify({'auth_url': auth_url})
