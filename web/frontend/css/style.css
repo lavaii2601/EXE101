@@ -600,6 +600,64 @@ button {
     gap: 8px;
 }
 
+.sidebar-new-chat-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 54px;
+    padding: 10px 14px;
+    border: 1px solid rgba(99, 102, 241, 0.24);
+    border-radius: 8px;
+    background: linear-gradient(135deg, #4338ca, #2563eb);
+    color: #ffffff;
+    text-align: left;
+    box-shadow: 0 12px 26px rgba(37, 99, 235, 0.22);
+    cursor: pointer;
+}
+
+.sidebar-new-chat-btn .icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.18);
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.sidebar-new-chat-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.sidebar-new-chat-copy strong,
+.sidebar-new-chat-copy small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidebar-new-chat-copy strong {
+    font-size: 15px;
+    font-weight: 800;
+}
+
+.sidebar-new-chat-copy small {
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 12px;
+}
+
+.sidebar-new-chat-btn:hover,
+.sidebar-new-chat-btn:focus-visible {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 30px rgba(37, 99, 235, 0.28);
+}
+
 .nav-btn {
     display: flex;
     align-items: center;
@@ -648,6 +706,7 @@ button {
 .container.sidebar-collapsed .user-mode-picker > label,
 .container.sidebar-collapsed .user-mode-current > span:nth-child(2),
 .container.sidebar-collapsed .user-mode-chevron,
+.container.sidebar-collapsed .sidebar-new-chat-copy,
 .container.sidebar-collapsed .nav-btn > span:not(.icon),
 .container.sidebar-collapsed .sidebar-footer-label {
     display: none;
@@ -673,6 +732,12 @@ button {
     justify-content: center;
     min-height: 48px;
     padding: 12px;
+}
+
+.container.sidebar-collapsed .sidebar-new-chat-btn {
+    justify-content: center;
+    min-height: 48px;
+    padding: 10px;
 }
 
 .container.sidebar-collapsed .nav-btn .icon {
@@ -3984,6 +4049,11 @@ body.dark-theme .daily-report-badge.is-meeting {
         min-height: 48px;
         justify-content: flex-start;
         padding: 12px 14px;
+    }
+
+    .sidebar-new-chat-btn {
+        min-height: 52px;
+        padding: 10px 14px;
     }
 
     .sidebar .nav-label {

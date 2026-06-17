@@ -6,6 +6,7 @@ let chatMessages;
 let userInput;
 let sendBtn;
 let newChatBtn;
+let newChatSidebarBtn;
 let navBtns;
 let tabBtns;
 let emailDetailModal;
@@ -62,6 +63,8 @@ const I18N = {
         'nav.calendar': 'Lịch',
         'nav.history': 'Lịch sử',
         'nav.settings': 'Cài đặt',
+        'chat.new': 'Chat mới',
+        'chat.newHint': 'Bắt đầu hội thoại sạch',
         'common.clear': 'Xóa',
         'common.refresh': 'Làm mới',
         'email.title': 'Quản lý Email',
@@ -94,6 +97,8 @@ const I18N = {
         'nav.calendar': 'Calendar',
         'nav.history': 'Activity',
         'nav.settings': 'Settings',
+        'chat.new': 'New chat',
+        'chat.newHint': 'Start a clean conversation',
         'common.clear': 'Clear',
         'common.refresh': 'Refresh',
         'email.title': 'Email Management',
@@ -353,6 +358,7 @@ async function initApp() {
     userInput = document.getElementById('userInput');
     sendBtn = document.getElementById('sendBtn');
     newChatBtn = document.getElementById('newChatBtn');
+    newChatSidebarBtn = document.getElementById('newChatSidebarBtn');
     navBtns = document.querySelectorAll('[data-page]');
     tabBtns = document.querySelectorAll('[data-tab]');
     emailDetailModal = document.getElementById('emailDetailModal');
@@ -388,6 +394,9 @@ async function initApp() {
         }
         if (newChatBtn) {
             newChatBtn.addEventListener('click', startNewChat);
+        }
+        if (newChatSidebarBtn) {
+            newChatSidebarBtn.addEventListener('click', startNewChat);
         }
         
         // Enter key in input
@@ -879,6 +888,7 @@ const QUICK_ACTIONS = {
         description: 'Trò chuyện với FlowMate cho yêu cầu cần phân tích hoặc xử lý nhiều bước.',
         tip: 'Các thao tác ngắn đã được tách sang panel này để Chat tập trung vào hội thoại.',
         actions: [
+            { icon: '+', label: 'Chat mới', detail: 'Bắt đầu hội thoại sạch', action: 'new-chat' },
             { icon: '✉', label: 'Mở hộp thư', detail: 'Xem và xử lý email', action: 'open-email' },
             { icon: '▣', label: 'Mở lịch tuần', detail: 'Kiểm tra lịch và cuộc họp', action: 'open-calendar' }
         ]
@@ -965,6 +975,7 @@ function renderQuickActions(page) {
 
 async function runQuickAction(action) {
     const pageButton = (page) => document.querySelector(`.sidebar-nav [data-page="${page}"]`);
+    if (action === 'new-chat') return startNewChat();
     if (action === 'open-email') return handlePageChange(pageButton('emails'));
     if (action === 'open-calendar') return handlePageChange(pageButton('schedule'));
     if (action === 'refresh-email') return document.getElementById('refreshEmailsBtn')?.click();
@@ -1475,6 +1486,7 @@ async function gmailLogout() {
 
 // PAGE MANAGEMENT (CRITICAL FIX)
 async function handlePageChange(btn) {
+    if (!btn) return;
     if (!isAuthenticated) {
         showAuthGate(ui(
             'Vui lòng đăng nhập để tiếp tục.',
@@ -2196,14 +2208,24 @@ async function loadChatHistory() {
     }
 }
 
-function startNewChat() {
+async function startNewChat() {
     activeChatSessionId = createChatSessionId();
     persistChatSessionId();
+    const chatButton = document.querySelector('.sidebar-nav [data-page="chat"]');
+    if (currentPage !== 'chat' && chatButton) {
+        await handlePageChange(chatButton);
+    }
     if (chatMessages) chatMessages.innerHTML = '';
     if (userInput) {
         userInput.value = '';
         userInput.focus();
     }
+    document.querySelector('.sidebar')?.classList.remove('open');
+    document.getElementById('sidebarOverlay')?.classList.remove('show');
+    const menuToggle = document.getElementById('menuToggle');
+    menuToggle?.setAttribute('aria-expanded', 'false');
+    const menuIcon = menuToggle?.querySelector('.menu-toggle-icon');
+    if (menuIcon && window.innerWidth <= 860) menuIcon.textContent = '☰';
     showNotification(ui('Đã bắt đầu chat mới', 'Started a new chat'), 'success');
 }
 
