@@ -398,6 +398,7 @@ async function initApp() {
         if (editScheduleForm) {
             editScheduleForm.addEventListener('submit', handleEditScheduleSubmit);
         }
+        bindEditScheduleModal();
 
         // Create event button (opens the new-schedule popup)
         const createEventBtn = document.getElementById('createEventBtn');
@@ -1278,10 +1279,8 @@ function showNotification(message, type = 'info') {
 function setupEventListeners() {
     console.log('📋 Setting up event listeners');
 
-    const editModal = document.getElementById('editScheduleModal');
-    const closeBtn = editModal ? editModal.querySelector('.close[data-modal="editScheduleModal"]') : null;
-        if (closeBtn) closeBtn.addEventListener('click', () => editModal.style.display = 'none');
-    }
+    bindEditScheduleModal();
+}
 
     // Clear history
     if (clearBtn) {
@@ -3018,6 +3017,35 @@ function closeNewScheduleModal() {
     if (modal) modal.classList.remove('show');
 }
 
+function openEditScheduleModal() {
+    const modal = document.getElementById('editScheduleModal');
+    if (!modal) return;
+    modal.style.display = '';
+    modal.classList.add('show');
+}
+
+function closeEditScheduleModal() {
+    const modal = document.getElementById('editScheduleModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+    modal.style.display = '';
+}
+
+function bindEditScheduleModal() {
+    const modal = document.getElementById('editScheduleModal');
+    if (!modal || modal.dataset.bound === 'true') return;
+
+    modal.querySelectorAll('.close[data-modal="editScheduleModal"], [data-close-edit-schedule]').forEach((el) => {
+        el.addEventListener('click', closeEditScheduleModal);
+    });
+
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) closeEditScheduleModal();
+    });
+
+    modal.dataset.bound = 'true';
+}
+
 // SCHEDULE FUNCTIONS
 async function loadSchedules() {
     const schedulesList = document.getElementById('schedulesList');
@@ -3326,16 +3354,25 @@ async function markScheduleIncomplete(scheduleId) {
 }
 
 async function openEditSchedule(scheduleId) {
+    if (!scheduleId || String(scheduleId).startsWith('google:')) {
+        showNotification(ui('Chỉ có thể sửa lịch được tạo trong FlowMate. Sự kiện Google Calendar cần sửa trên Google Calendar.', 'Only FlowMate appointments can be edited here. Edit Google Calendar-only events in Google Calendar.'), 'info');
+        return;
+    }
+
     try {
-        const response = await apiFetch(`${API_BASE}/schedule/list`);
+        const response = await apiFetch(`${API_BASE}/schedule/${encodeURIComponent(scheduleId)}`);
         const data = await response.json();
         
-        if (!data.success) throw new Error(ui('Lỗi lấy dữ liệu', 'Unable to load data'));
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || ui('Lỗi lấy dữ liệu', 'Unable to load data'));
+        }
         
-        const schedule = data.schedules.find(s => s.id === scheduleId);
+        const schedule = data.schedule;
         if (!schedule) throw new Error(ui('Lịch hẹn không tìm thấy', 'Appointment not found'));
         
         const editForm = document.getElementById('editScheduleForm');
+        if (!editForm) throw new Error(ui('Không tìm thấy form chỉnh sửa', 'Edit form not found'));
+
         document.getElementById('editScheduleTitle').value = schedule.title;
         document.getElementById('editScheduleDesc').value = schedule.description || '';
         document.getElementById('editScheduleTime').value = toDatetimeLocal(schedule.start_time);
@@ -3343,10 +3380,12 @@ async function openEditSchedule(scheduleId) {
         if (editDurationInput) {
             editDurationInput.value = getDurationMinutes(schedule.start_time, schedule.end_time) || 60;
         }
-        document.getElementById('editScheduleAttendees').value = schedule.attendees || '';
-        editForm.dataset.scheduleId = scheduleId;
+        document.getElementById('editScheduleAttendees').value = Array.isArray(schedule.attendees)
+            ? schedule.attendees.join(', ')
+            : (schedule.attendees || '');
+        editForm.dataset.scheduleId = String(schedule.id || scheduleId);
         
-        document.getElementById('editScheduleModal').style.display = 'block';
+        openEditScheduleModal();
     } catch (error) {
         showNotification(ui('❌ Lỗi: ', '❌ Error: ') + error.message, 'error');
     }
@@ -3355,25 +3394,42 @@ async function openEditSchedule(scheduleId) {
 async function handleEditScheduleSubmit(e) {
     e.preventDefault();
     
-    const scheduleId = document.getElementById('editScheduleForm').dataset.scheduleId;
+    const editForm = document.getElementById('editScheduleForm');
+    const scheduleId = editForm?.dataset.scheduleId;
     const title = document.getElementById('editScheduleTitle').value.trim();
     const description = document.getElementById('editScheduleDesc').value.trim();
     const start_time = document.getElementById('editScheduleTime').value;
     const duration_minutes = parseInt(document.getElementById('editScheduleDuration')?.value || '60', 10);
     const attendees_str = document.getElementById('editScheduleAttendees').value.trim();
     const attendees = attendees_str ? attendees_str.split(',').map(e => e.trim()) : [];
+
+    if (!scheduleId) {
+        showNotification(ui('❌ Không tìm thấy lịch cần cập nhật', '❌ Appointment ID is missing'), 'error');
+        return;
+    }
+
+    if (!title || !start_time) {
+        showNotification(ui('Vui lòng nhập tiêu đề và ngày giờ', 'Please enter title and date/time'), 'warning');
+        return;
+    }
     
     try {
         const response = await apiFetch(`${API_BASE}/schedule/${scheduleId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, description, start_time, duration_minutes, attendees })
+            body: JSON.stringify({
+                title,
+                description,
+                start_time,
+                duration_minutes: Number.isFinite(duration_minutes) && duration_minutes > 0 ? duration_minutes : 60,
+                attendees
+            })
         });
         
         const data = await response.json();
-        if (data.success) {
+        if (response.ok && data.success) {
             showNotification(ui('✓ Đã cập nhật lịch hẹn', '✓ Appointment updated'), 'success');
-            document.getElementById('editScheduleModal').style.display = 'none';
+            closeEditScheduleModal();
             await loadSchedules();
             await loadWeekSchedule();
             refreshQuickScheduleSummary();

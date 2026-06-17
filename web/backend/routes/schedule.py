@@ -481,6 +481,21 @@ def get_upcoming():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+@schedule_bp.route('/<int:schedule_id>', methods=['GET'])
+def get_schedule(schedule_id):
+    """Get one schedule by ID."""
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+    schedule = Schedule.get_by_id(schedule_id, db_path=db_path)
+    if not schedule:
+        return jsonify({'error': 'Schedule not found'}), 404
+    return jsonify({
+        'success': True,
+        'schedule': schedule
+    })
+
+
 @schedule_bp.route('/<int:schedule_id>/update-status', methods=['PATCH', 'POST'])
 def update_status(schedule_id):
     """Update schedule status"""

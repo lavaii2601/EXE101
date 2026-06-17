@@ -1800,13 +1800,14 @@ select:focus {
     display: none;
     position: fixed;
     inset: 0;
-    z-index: 1000;
+    z-index: 1400;
     padding: 30px;
     background: rgba(15, 23, 42, 0.5);
+    overflow: auto;
 }
 
 .modal.show {
-    display: grid;
+    display: grid !important;
     place-items: center;
 }
 
