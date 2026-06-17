@@ -263,8 +263,12 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
     user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     title TEXT,
     mode user_mode,
+    retention_days SMALLINT NOT NULL DEFAULT 90,
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '90 days'),
+    archived_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chat_sessions_retention_days_check CHECK (retention_days BETWEEN 30 AND 93)
 );
 
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -280,6 +284,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     workspace_sources TEXT[] NOT NULL DEFAULT '{}',
     schedule_id BIGINT REFERENCES schedules(id) ON DELETE SET NULL,
     metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '90 days'),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT chat_messages_role_check CHECK (role IN ('system', 'user', 'assistant', 'tool'))
 );
@@ -292,6 +297,7 @@ CREATE TABLE IF NOT EXISTS history (
     action_type activity_type NOT NULL DEFAULT 'chat',
     related_type TEXT,
     related_id TEXT,
+    chat_session_id UUID REFERENCES chat_sessions(id) ON DELETE SET NULL,
     metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -339,6 +345,48 @@ CREATE TABLE IF NOT EXISTS sync_jobs (
     CONSTRAINT sync_jobs_status_check CHECK (status IN ('pending', 'running', 'success', 'failed', 'skipped'))
 );
 
+-- Idempotent upgrades for databases that already had these tables before
+-- chat retention columns were added. CREATE TABLE IF NOT EXISTS does not
+-- add missing columns to existing tables.
+ALTER TABLE chat_sessions
+    ADD COLUMN IF NOT EXISTS retention_days SMALLINT NOT NULL DEFAULT 90,
+    ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '90 days'),
+    ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chat_sessions_retention_days_check'
+    ) THEN
+        ALTER TABLE chat_sessions
+            ADD CONSTRAINT chat_sessions_retention_days_check
+            CHECK (retention_days BETWEEN 30 AND 93);
+    END IF;
+END;
+$$;
+
+ALTER TABLE chat_messages
+    ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '90 days');
+
+ALTER TABLE history
+    ADD COLUMN IF NOT EXISTS chat_session_id UUID REFERENCES chat_sessions(id) ON DELETE SET NULL;
+
+UPDATE chat_sessions
+SET retention_days = 90
+WHERE retention_days IS NULL;
+
+UPDATE chat_sessions
+SET expires_at = created_at + (retention_days || ' days')::INTERVAL
+WHERE expires_at IS NULL;
+
+UPDATE chat_messages message
+SET expires_at = session.expires_at
+FROM chat_sessions session
+WHERE message.session_id = session.id
+  AND message.expires_at IS NULL;
+
 CREATE INDEX IF NOT EXISTS idx_users_gmail_email ON users (gmail_email);
 CREATE INDEX IF NOT EXISTS idx_users_mode ON users (user_mode);
 
@@ -365,11 +413,14 @@ CREATE INDEX IF NOT EXISTS idx_meeting_suggestions_user_status ON meeting_sugges
 CREATE INDEX IF NOT EXISTS idx_meeting_suggestions_schedule ON meeting_suggestions (schedule_id);
 
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_updated ON chat_sessions (user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_expires ON chat_sessions (user_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created ON chat_messages (session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_user_created ON chat_messages (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_expires ON chat_messages (expires_at);
 
 CREATE INDEX IF NOT EXISTS idx_history_user_created ON history (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_history_user_action ON history (user_id, action_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_history_chat_session ON history (chat_session_id);
 
 CREATE INDEX IF NOT EXISTS idx_cache_user_key ON cache (user_id, key);
 CREATE INDEX IF NOT EXISTS idx_cache_namespace ON cache (namespace, expires_at);
@@ -433,6 +484,25 @@ DROP TRIGGER IF EXISTS trg_chat_sessions_updated_at ON chat_sessions;
 CREATE TRIGGER trg_chat_sessions_updated_at
 BEFORE UPDATE ON chat_sessions
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE OR REPLACE FUNCTION cleanup_expired_chat_messages()
+RETURNS BIGINT AS $$
+DECLARE
+    deleted_count BIGINT;
+BEGIN
+    DELETE FROM chat_messages
+    WHERE expires_at <= NOW();
+
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+
+    UPDATE chat_sessions
+    SET archived_at = COALESCE(archived_at, NOW())
+    WHERE expires_at <= NOW()
+      AND archived_at IS NULL;
+
+    RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_cache_updated_at ON cache;
 CREATE TRIGGER trg_cache_updated_at
