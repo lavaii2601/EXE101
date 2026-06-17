@@ -24,18 +24,20 @@ export default function ScheduleScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [mode, setMode] = useState('list');
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => getMonday(new Date()));
   const [schedules, setSchedules] = useState([]);
   const [weekSummary, setWeekSummary] = useState({ current: [], next: [] });
+  const [meetingSuggestions, setMeetingSuggestions] = useState([]);
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [editForm, setEditForm] = useState(initialForm);
   const [loading, setLoading] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
   const loadSchedules = useCallback(async () => {
     setLoading(true);
     try {
-      const currentWeekStart = getMonday(new Date());
       const nextWeekStart = new Date(currentWeekStart);
       nextWeekStart.setDate(nextWeekStart.getDate() + 7);
 
@@ -56,9 +58,22 @@ export default function ScheduleScreen() {
     } finally {
       setLoading(false);
     }
+  }, [currentWeekStart]);
+
+  const loadMeetingSuggestions = useCallback(async () => {
+    setSuggestionsLoading(true);
+    try {
+      const data = await apiGet('/email/meeting-suggestions');
+      setMeetingSuggestions(data.suggestions || []);
+    } catch (error) {
+      if (error.status !== 401) Alert.alert('Loi tai goi y lich', error.message);
+    } finally {
+      setSuggestionsLoading(false);
+    }
   }, []);
 
   useEffect(() => { loadSchedules(); }, [loadSchedules]);
+  useEffect(() => { loadMeetingSuggestions(); }, [loadMeetingSuggestions]);
 
   const setField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const setEditField = (key, value) => setEditForm((current) => ({ ...current, [key]: value }));
@@ -97,6 +112,64 @@ export default function ScheduleScreen() {
       await loadSchedules();
     } catch (error) {
       Alert.alert('Khong cap nhat duoc lich', error.message);
+    }
+  };
+
+  const scanMeetingSuggestions = async () => {
+    setSuggestionsLoading(true);
+    try {
+      const data = await apiPost('/email/meeting-suggestions/scan');
+      setMeetingSuggestions(data.suggestions || []);
+      Alert.alert('Da quet email', `Tim thay ${data.count || 0} goi y lich dang cho.`);
+    } catch (error) {
+      Alert.alert('Khong quet duoc email', error.message);
+    } finally {
+      setSuggestionsLoading(false);
+    }
+  };
+
+  const updateMeetingSuggestionStatus = async (suggestionId, status, scheduleId = null) => {
+    await apiPatch(`/email/meeting-suggestions/${suggestionId}/status`, {
+      status,
+      schedule_id: scheduleId,
+    });
+    await loadMeetingSuggestions();
+  };
+
+  const createScheduleFromSuggestion = async (suggestion) => {
+    if (!suggestion.start_time) {
+      setForm({
+        title: suggestion.title || suggestion.subject || 'Lich hen tu email',
+        description: suggestion.description || suggestion.snippet || '',
+        start_time: '',
+        end_time: '',
+        duration_minutes: '60',
+        location: suggestion.location || '',
+        attendees: suggestion.attendees || '',
+      });
+      setMode('create');
+      Alert.alert('Can bo sung thoi gian', 'Goi y nay chua co gio bat dau, hay nhap thoi gian de tao lich.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await apiPost('/schedule/create', {
+        title: suggestion.title || suggestion.subject || 'Lich hen tu email',
+        description: suggestion.description || suggestion.snippet || '',
+        start_time: normalizeDateTime(suggestion.start_time),
+        end_time: normalizeDateTime(suggestion.end_time) || addMinutesIso(suggestion.start_time, 60),
+        duration_minutes: durationMinutes(suggestion.start_time, suggestion.end_time) || 60,
+        location: suggestion.location || '',
+        attendees: splitAttendees(suggestion.attendees || ''),
+      });
+      await updateMeetingSuggestionStatus(suggestion.id, 'created', data.schedule_id);
+      await loadSchedules();
+      Alert.alert('Da tao lich tu email');
+    } catch (error) {
+      Alert.alert('Khong tao duoc lich', error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -158,20 +231,63 @@ export default function ScheduleScreen() {
     }
   };
 
+  const shiftWeek = (direction) => {
+    setCurrentWeekStart((current) => {
+      const next = new Date(current);
+      next.setDate(next.getDate() + direction * 7);
+      return getMonday(next);
+    });
+  };
+
   const renderList = () => (
     <>
       <Card style={styles.summaryCard}>
         <View style={styles.summaryHeader}>
           <View>
             <Text style={styles.summaryKicker}>Tong hop lich hen</Text>
-            <Text style={styles.summaryTitle}>Tuan hien tai va tuan toi</Text>
+            <Text style={styles.summaryTitle}>{formatWeekRange(currentWeekStart)}</Text>
           </View>
           <Text style={styles.summaryTotal}>{weekSummary.current.length + weekSummary.next.length}</Text>
         </View>
-        <View style={styles.weekGrid}>
-          {renderWeekSummary('Tuan hien tai', weekSummary.current)}
-          {renderWeekSummary('Tuan toi', weekSummary.next)}
+        <View style={styles.weekNav}>
+          <Button title="Tuan truoc" variant="secondary" onPress={() => shiftWeek(-1)} />
+          <Button title="Tuan nay" variant="secondary" onPress={() => setCurrentWeekStart(getMonday(new Date()))} />
+          <Button title="Tuan sau" variant="secondary" onPress={() => shiftWeek(1)} />
         </View>
+        <View style={styles.weekGrid}>
+          {renderWeekSummary('Tuan dang xem', weekSummary.current)}
+          {renderWeekSummary('Tuan ke tiep', weekSummary.next)}
+        </View>
+      </Card>
+
+      <Card style={styles.suggestionCard}>
+        <View style={styles.summaryHeader}>
+          <View>
+            <Text style={styles.summaryKicker}>Goi y tu email</Text>
+            <Text style={styles.summaryTitle}>Cuoc hop va lich hen phat hien</Text>
+          </View>
+          <Text style={styles.summaryTotal}>{meetingSuggestions.length}</Text>
+        </View>
+        <View style={styles.weekNav}>
+          <Button title="Quet email" variant="secondary" onPress={scanMeetingSuggestions} loading={suggestionsLoading} />
+          <Button title="Lam moi" variant="secondary" onPress={loadMeetingSuggestions} loading={suggestionsLoading} />
+        </View>
+        {meetingSuggestions.length === 0 ? (
+          <Text style={styles.weekEmpty}>Chua co goi y lich moi.</Text>
+        ) : (
+          meetingSuggestions.map((suggestion) => (
+            <View key={suggestion.id} style={styles.suggestionItem}>
+              <Text style={styles.weekItemTitle}>{suggestion.title || suggestion.subject || 'Lich hen tu email'}</Text>
+              <Text style={styles.weekItemTime}>Tu: {suggestion.sender || 'Khong xac dinh'}</Text>
+              <Text style={styles.previewText} numberOfLines={3}>{suggestion.snippet || suggestion.description || ''}</Text>
+              <Text style={styles.weekItemTime}>{suggestion.start_time ? formatShortDate(suggestion.start_time) : 'Chua xac dinh thoi gian'}</Text>
+              <View style={styles.actions}>
+                <Button title="Tao lich" onPress={() => createScheduleFromSuggestion(suggestion)} />
+                <Button title="Bo qua" variant="secondary" onPress={() => updateMeetingSuggestionStatus(suggestion.id, 'dismissed')} />
+              </View>
+            </View>
+          ))
+        )}
       </Card>
 
       {schedules.length === 0 ? (
@@ -328,6 +444,20 @@ function formatShortDate(value) {
   });
 }
 
+function formatWeekRange(startValue) {
+  const start = getMonday(startValue);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  return `${start.toLocaleDateString('vi-VN')} - ${end.toLocaleDateString('vi-VN')}`;
+}
+
+function addMinutesIso(value, minutes) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setMinutes(date.getMinutes() + minutes);
+  return normalizeDateTime(date);
+}
+
 function normalizeDateTime(value) {
   if (!value) return '';
   const raw = typeof value === 'string' ? value : value.dateTime || value.date || '';
@@ -363,6 +493,7 @@ function makeStyles(colors) {
     meta:        { marginTop: 6,  color: colors.textMuted },
     actions:     { marginTop: 12, flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
     summaryCard: { gap: 12 },
+    suggestionCard: { gap: 12 },
     summaryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
     summaryKicker: { color: colors.textMuted, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
     summaryTitle: { marginTop: 3, color: colors.text, fontSize: 16, fontWeight: '800' },
@@ -378,6 +509,7 @@ function makeStyles(colors) {
       fontWeight: '900',
       fontSize: 18,
     },
+    weekNav: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
     weekGrid: { gap: 10 },
     weekSummary: {
       padding: 12,
@@ -394,5 +526,11 @@ function makeStyles(colors) {
     weekItemTime: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
     weekItemTitle: { marginTop: 2, color: colors.text, fontSize: 13, fontWeight: '800', lineHeight: 18 },
     weekMore: { marginTop: 10, color: colors.textMuted, fontSize: 12, fontWeight: '700' },
+    suggestionItem: {
+      paddingTop: 12,
+      borderTopColor: colors.border,
+      borderTopWidth: 1,
+    },
+    previewText: { marginTop: 7, color: colors.textMuted, lineHeight: 19 },
   });
 }
