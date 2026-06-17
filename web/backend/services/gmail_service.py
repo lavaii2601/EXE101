@@ -73,7 +73,7 @@ class GmailService:
         """Get emails from inbox with lazy body loading"""
         try:
             try:
-                max_results = max(1, min(int(max_results), 70))
+                max_results = max(1, min(int(max_results), 150))
             except Exception:
                 max_results = 10
 

@@ -68,6 +68,8 @@ public class MainActivity extends Activity {
     private static final int RC_SIGN_IN = 9001;
     private static final int EMAIL_SCAN_FAST_LIMIT = 25;
     private static final int EMAIL_SCAN_DEEP_LIMIT = 50;
+    private static final int EMAIL_SCAN_STEP = 25;
+    private static final int EMAIL_SCAN_MAX_LIMIT = 150;
 
     private ApiClient api;
     private GoogleSignInClient mGoogleSignInClient;
@@ -79,6 +81,7 @@ public class MainActivity extends Activity {
     private String activeTab = "chat";
     private String emailFilter = "all";
     private String emailSearch = "";
+    private int emailScanLimit = EMAIL_SCAN_FAST_LIMIT;
     private boolean emailIncludeRead = true;
     private String selectedRole = "";
     private String selectedScheduleDate = "";
@@ -346,6 +349,7 @@ public class MainActivity extends Activity {
         }
         popup.setOnMenuItemClickListener(item -> {
             emailFilter = values[item.getItemId()];
+            resetEmailScanLimit();
             showEmailInbox();
             return true;
         });
@@ -785,6 +789,7 @@ public class MainActivity extends Activity {
     private void openRoleFeature(String action) {
         if ("education".equals(action) || "work".equals(action) || "finance".equals(action)) {
             emailFilter = action;
+            resetEmailScanLimit();
             showEmailInbox();
         } else if ("schedule".equals(action)) {
             showScheduleList();
@@ -1043,6 +1048,7 @@ public class MainActivity extends Activity {
         Button searchButton = primaryButton(tr("Tìm", "Search"));
         View.OnClickListener runSearch = v -> {
             emailSearch = search.getText().toString().trim();
+            resetEmailScanLimit();
             loadEmails(emailIncludeRead);
         };
         searchButton.setOnClickListener(runSearch);
@@ -1076,6 +1082,7 @@ public class MainActivity extends Activity {
         includeRead.setChecked(emailIncludeRead);
         includeRead.setOnCheckedChangeListener((buttonView, checked) -> {
             emailIncludeRead = checked;
+            resetEmailScanLimit();
             loadEmails(checked);
         });
         filters.addView(includeRead);
@@ -1091,7 +1098,9 @@ public class MainActivity extends Activity {
         if (emailList == null) return;
         emailIncludeRead = includeRead;
         emailList.removeAllViews();
-        int scanLimit = shouldUseDeepEmailScan() ? EMAIL_SCAN_DEEP_LIMIT : EMAIL_SCAN_FAST_LIMIT;
+        int scanLimit = Math.max(emailScanLimit, initialEmailScanLimit());
+        scanLimit = Math.min(scanLimit, EMAIL_SCAN_MAX_LIMIT);
+        emailScanLimit = scanLimit;
         addMuted(emailList, tr("Đang tải email mới nhất...", "Loading latest emails..."));
         runApi(() -> api.get(
                 "/email/get-unread?max_results=" + scanLimit + "&page=1&fresh=1&filter=" + emailFilter
@@ -1116,7 +1125,31 @@ public class MainActivity extends Activity {
                 JSONObject email = emails.optJSONObject(i);
                 if (email != null) emailList.addView(emailCard(email));
             }
+            addLoadMoreEmails(data, emails);
         });
+    }
+
+    private void addLoadMoreEmails(JSONObject data, JSONArray emails) {
+        JSONObject debug = data.optJSONObject("debug");
+        int rawCount = debug == null ? (emails == null ? 0 : emails.length()) : debug.optInt("raw_email_count", 0);
+        int currentLimit = data.optInt("scan_limit", emailScanLimit);
+        boolean gmailMayHaveMore = rawCount >= currentLimit;
+        if (!gmailMayHaveMore || currentLimit >= EMAIL_SCAN_MAX_LIMIT) return;
+
+        LinearLayout loadMoreCard = card();
+        loadMoreCard.addView(label(
+                tr("Đang hiển thị email gần nhất trong ", "Showing latest emails from ") + currentLimit + tr(" thư đã kiểm tra.", " checked messages."),
+                13,
+                Typeface.NORMAL,
+                MUTED
+        ));
+        Button loadMore = secondaryButton(tr("Xem thêm email cũ hơn", "Load older emails"));
+        loadMore.setOnClickListener(v -> {
+            emailScanLimit = Math.min(EMAIL_SCAN_MAX_LIMIT, currentLimit + EMAIL_SCAN_STEP);
+            loadEmails(emailIncludeRead);
+        });
+        loadMoreCard.addView(loadMore);
+        emailList.addView(loadMoreCard);
     }
 
     private View emailCard(JSONObject email) {
@@ -1202,21 +1235,24 @@ public class MainActivity extends Activity {
 
         LinearLayout summary = card();
         summary.setBackground(round(Color.rgb(31, 27, 48), PRIMARY_DARK));
-        TextView title = label("✦ AI SUMMARY · TODAY", 11, Typeface.BOLD, ACCENT);
+        TextView title = label(tr("✦ TÓM TẮT EMAIL", "✦ EMAIL SUMMARY"), 11, Typeface.BOLD, ACCENT);
         title.setLetterSpacing(0.08f);
         summary.addView(title);
-        String message = "Scanned " + scanned + " messages. " + matched + " match the current filter";
-        if (urgent > 0) message += ", and " + urgent + " may need action";
+        String message = tr("Đã kiểm tra ", "Checked ") + scanned
+                + tr(" email gần nhất. Có ", " latest emails. ")
+                + matched
+                + tr(" email phù hợp bộ lọc hiện tại", " match the current filter");
+        if (urgent > 0) message += tr(", trong đó ", ", including ") + urgent + tr(" email cần chú ý", " needing attention");
         message += ".";
         TextView detail = label(message, 14, Typeface.NORMAL, MUTED);
         detail.setPadding(0, dp(7), 0, dp(8));
         summary.addView(detail);
 
         LinearLayout stats = rowWrap();
-        stats.addView(statPill(String.valueOf(scanned), "scanned"));
-        stats.addView(statPill(String.valueOf(matched), "important"));
-        stats.addView(statPill(String.valueOf(urgent), "urgent"));
-        if (meetings > 0) stats.addView(statPill(String.valueOf(meetings), "meetings"));
+        stats.addView(statPill(String.valueOf(scanned), tr("đã kiểm tra", "scanned")));
+        stats.addView(statPill(String.valueOf(matched), tr("phù hợp", "matched")));
+        stats.addView(statPill(String.valueOf(urgent), tr("cần chú ý", "urgent")));
+        if (meetings > 0) stats.addView(statPill(String.valueOf(meetings), tr("lịch họp", "meetings")));
         summary.addView(horizontal(stats));
         return summary;
     }
@@ -1307,6 +1343,14 @@ public class MainActivity extends Activity {
 
     private boolean shouldUseDeepEmailScan() {
         return !emailSearch.trim().isEmpty() || !"all".equals(emailFilter);
+    }
+
+    private int initialEmailScanLimit() {
+        return shouldUseDeepEmailScan() ? EMAIL_SCAN_DEEP_LIMIT : EMAIL_SCAN_FAST_LIMIT;
+    }
+
+    private void resetEmailScanLimit() {
+        emailScanLimit = initialEmailScanLimit();
     }
 
     private String emailPreview(JSONObject email) {

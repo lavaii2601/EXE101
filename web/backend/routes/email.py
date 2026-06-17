@@ -42,8 +42,8 @@ ai_service = AIService()
 
 # Simple in-memory cache for email lists (10 minute TTL for optimal performance)
 _email_cache = {}
-EMAIL_SCAN_DEFAULT = 70
-EMAIL_SCAN_MAX = 70
+EMAIL_SCAN_DEFAULT = 25
+EMAIL_SCAN_MAX = 150
 EMAIL_LIST_CACHE_TTL = 1800
 EMAIL_BODY_CACHE_TTL = 86400
 EMAIL_SUMMARY_CACHE_TTL = 86400
