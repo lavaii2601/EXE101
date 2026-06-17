@@ -253,3 +253,22 @@ class CalendarService:
                 return True
             logger.error(f"Error deleting calendar event: {str(e)}")
             return False
+
+    def event_exists(self, event_id):
+        """Return True/False if an event exists, or None when Google cannot be checked."""
+        try:
+            if not self.service:
+                logger.warning("Calendar service not initialized")
+                return None
+
+            self.service.events().get(
+                calendarId='primary',
+                eventId=event_id
+            ).execute()
+            return True
+        except Exception as e:
+            status = getattr(getattr(e, 'resp', None), 'status', None)
+            if status in (404, 410):
+                return False
+            logger.warning(f"Could not verify calendar event {event_id}: {e}")
+            return None

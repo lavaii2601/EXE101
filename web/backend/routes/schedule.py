@@ -284,7 +284,9 @@ def _sync_google_week_events(user_id, db_path, monday, week_end):
     local_tz = datetime.now().astimezone().tzinfo
     time_min = monday.replace(tzinfo=local_tz).isoformat()
     time_max = week_end.replace(tzinfo=local_tz).isoformat()
-    gcal_events = calendar_service.get_events(max_results=100, time_min=time_min, time_max=time_max)
+    gcal_events = calendar_service.get_events(max_results=250, time_min=time_min, time_max=time_max)
+    live_google_ids = {event.get('id') for event in gcal_events if event.get('id')}
+
     for event in gcal_events:
         event_id = event.get('id')
         if not event_id:
@@ -302,6 +304,21 @@ def _sync_google_week_events(user_id, db_path, monday, week_end):
             calendar_event_id=event_id,
             db_path=db_path
         )
+
+    for schedule in Schedule.get_all(limit=300, db_path=db_path):
+        calendar_event_id = schedule.get('calendar_event_id')
+        if not calendar_event_id or calendar_event_id in live_google_ids:
+            continue
+
+        start_dt = _parse_dt(schedule.get('start_time'))
+        if not start_dt or not (monday <= start_dt < week_end):
+            continue
+
+        exists = calendar_service.event_exists(calendar_event_id)
+        if exists is False:
+            Schedule.delete(schedule.get('id'), db_path=db_path)
+            logger.info(f"Removed local schedule for deleted Google event: {calendar_event_id}")
+
     _clear_schedule_cache(db_path)
 
 
