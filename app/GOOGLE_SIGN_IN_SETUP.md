@@ -10,7 +10,7 @@ In the Google Cloud project that owns the Web OAuth client configured in
 - Android client ID: `307526067911-70k2adf2t48fi2bcdubd4hd6g4mnkodd.apps.googleusercontent.com`
 - Google Cloud project: `exe101-498801`
 - Package name: `com.exe101.teacherbot`
-- SHA-1: `69:8C:F1:A4:A6:5D:38:A9:D6:54:4C:39:DE:8B:AE:87:B0:8E:93:20`
+- SHA-1: `10:97:50:B9:23:0E:FA:91:6E:A7:7F:FE:37:2D:3E:7B:61:E4:F1:1A`
 
 Do not use the Android client ID in `requestServerAuthCode`. That method must
 use the Web client ID because the Flask backend exchanges the returned code.
@@ -35,7 +35,7 @@ After saving the client:
 To print the SHA-1 again:
 
 ```powershell
-cd D:\clone\EXE101\mobile\android
+cd D:\git\EXE101\app
 $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
 .\gradlew.bat signingReport
 ```

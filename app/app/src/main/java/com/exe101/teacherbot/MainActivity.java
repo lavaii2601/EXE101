@@ -2482,7 +2482,7 @@ public class MainActivity extends Activity {
                         "Verify this Android OAuth client in Google Cloud:\n" +
                         getString(R.string.google_android_client_id) + "\n\n" +
                         "Package name:\ncom.exe101.teacherbot\n\n" +
-                        "Debug SHA-1:\n69:8C:F1:A4:A6:5D:38:A9:D6:54:4C:39:DE:8B:AE:87:B0:8E:93:20\n\n" +
+                        "Debug SHA-1:\n10:97:50:B9:23:0E:FA:91:6E:A7:7F:FE:37:2D:3E:7B:61:E4:F1:1A\n\n" +
                         "Then wait a few minutes, uninstall FlowMate AI, and run it again from Android Studio."
                 );
             } else {
