@@ -1375,41 +1375,6 @@ function setupEventListeners() {
         }
     });
 
-    // Responsive menu toggle (mobile)
-    const menuToggle = document.getElementById('menuToggle');
-    const sidebar = document.querySelector('.sidebar');
-    let overlay = document.getElementById('sidebarOverlay');
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'sidebarOverlay';
-        overlay.className = 'overlay';
-        document.body.appendChild(overlay);
-    }
-
-    function openSidebar() {
-        if (sidebar) sidebar.classList.add('open');
-        overlay.classList.add('show');
-    }
-    function closeSidebar() {
-        if (sidebar) sidebar.classList.remove('open');
-        overlay.classList.remove('show');
-    }
-
-    if (menuToggle) {
-        menuToggle.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (sidebar && sidebar.classList.contains('open')) closeSidebar(); else openSidebar();
-        });
-    }
-
-    overlay.addEventListener('click', closeSidebar);
-
-    // Close sidebar when navigating to a page on mobile
-    navBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            if (window.innerWidth <= 860) closeSidebar();
-        });
-    });
 }
 
 async function refreshAuthButtons() {
