@@ -1977,6 +1977,158 @@ select:focus {
     overflow-wrap: anywhere;
 }
 
+.daily-report {
+    padding: 20px;
+    color: #243044;
+}
+
+.daily-report-header {
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border: 1px solid #d9e4d8;
+    border-radius: 8px;
+    background: #eef7ed;
+}
+
+.daily-report-header strong {
+    color: #315b3a;
+    font-weight: 700;
+}
+
+.daily-report-header span {
+    display: inline-block;
+    margin-top: 4px;
+    color: #5d6b7d;
+    font-size: 14px;
+}
+
+.daily-report-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    border: 1px solid #dbe3ee;
+    border-radius: 8px;
+    background: #fbfcfe;
+    box-shadow: 0 8px 20px rgba(33, 43, 64, 0.08);
+}
+
+.daily-report-table th,
+.daily-report-table td {
+    padding: 12px;
+    border-bottom: 1px solid #e3e8f0;
+    text-align: left;
+    vertical-align: top;
+}
+
+.daily-report-table th {
+    background: #334155;
+    color: #f8fafc;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.daily-report-table tbody tr:nth-child(even) {
+    background: #f6f8fb;
+}
+
+.daily-report-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.daily-report-index {
+    width: 60px;
+    text-align: center !important;
+}
+
+.daily-report-sender {
+    width: 30%;
+}
+
+.daily-report-sender-name {
+    color: #1f2937;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.daily-report-subject {
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.daily-report-summary {
+    line-height: 1.45;
+    color: #263244;
+}
+
+.daily-report-note {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-left: 4px solid #d99a2b;
+    border-radius: 6px;
+    background: #fff8e8;
+    color: #755a28;
+    font-size: 13px;
+}
+
+.daily-report-action-cell {
+    width: 210px;
+    min-width: 180px;
+}
+
+.daily-report-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.daily-report-badge.is-meeting {
+    background: #fff3d6;
+    color: #8a4b0f;
+}
+
+.daily-report-badge.is-neutral {
+    background: #eef2f7;
+    color: #536174;
+}
+
+.daily-report-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+.daily-report-action {
+    min-width: 48px;
+    padding: 6px 12px;
+    border: 0;
+    border-radius: 6px;
+    color: #ffffff;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
+}
+
+.daily-report-action-primary {
+    background: #2f8f46;
+}
+
+.daily-report-action-secondary {
+    background: #77808d;
+}
+
+.daily-report-action:hover {
+    filter: brightness(0.96);
+}
+
 .email-detail-loading {
     color: var(--text-secondary);
     font-style: italic;
@@ -3645,4 +3797,61 @@ body.dark-theme ::-webkit-scrollbar-thumb {
 
 body.dark-theme ::-webkit-scrollbar-track {
     background: transparent;
+}
+
+body.dark-theme .daily-report {
+    color: var(--text);
+}
+
+body.dark-theme .daily-report-header {
+    border-color: #2f4a39;
+    background: #18251d;
+}
+
+body.dark-theme .daily-report-header strong {
+    color: #b8e0bf;
+}
+
+body.dark-theme .daily-report-header span,
+body.dark-theme .daily-report-subject {
+    color: var(--text-secondary);
+}
+
+body.dark-theme .daily-report-table {
+    border-color: #30303e;
+    background: #171720;
+    box-shadow: none;
+}
+
+body.dark-theme .daily-report-table th {
+    background: #252b36;
+    color: #f0f0f8;
+}
+
+body.dark-theme .daily-report-table td {
+    border-bottom-color: #30303e;
+}
+
+body.dark-theme .daily-report-table tbody tr:nth-child(even) {
+    background: #1d1d27;
+}
+
+body.dark-theme .daily-report-sender-name,
+body.dark-theme .daily-report-summary {
+    color: var(--text);
+}
+
+body.dark-theme .daily-report-note {
+    background: #2a2417;
+    color: #e0c780;
+}
+
+body.dark-theme .daily-report-badge.is-neutral {
+    background: #282c36;
+    color: #bec6d4;
+}
+
+body.dark-theme .daily-report-badge.is-meeting {
+    background: #352818;
+    color: #f0c37d;
 }

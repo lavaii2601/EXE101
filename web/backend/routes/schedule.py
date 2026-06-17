@@ -72,6 +72,13 @@ def _load_calendar_service(user_id):
     return None
 
 
+def _has_calendar_token(user_id):
+    """Fast connectivity check without constructing a Google API client."""
+    if not user_id or user_id == 'default':
+        return False
+    return os.path.exists(get_user_token_file(user_id))
+
+
 def _normalize_attendees(attendees_value):
     if not attendees_value:
         return []
@@ -299,7 +306,7 @@ def _sync_google_week_events(user_id, db_path, monday, week_end):
 
 
 def _start_week_sync(user_id, db_path, monday, week_end):
-    if not _load_calendar_service(user_id):
+    if not _has_calendar_token(user_id):
         return False
 
     key = (user_id, monday.date().isoformat())
@@ -355,12 +362,12 @@ def get_unified_schedules():
             for item in local_schedules
         }
 
-        calendar_connected = False
-        calendar_service = _load_calendar_service(user_id)
-        if calendar_service:
-            calendar_connected = True
-        if calendar_service and live_google:
+        calendar_connected = _has_calendar_token(user_id)
+        if calendar_connected and live_google:
             try:
+                calendar_service = _load_calendar_service(user_id)
+                if not calendar_service:
+                    raise RuntimeError("Google Calendar service is not available")
                 time_max = (datetime.utcnow() + timedelta(days=90)).isoformat() + 'Z'
                 for event in calendar_service.get_events(
                     max_results=max_results,

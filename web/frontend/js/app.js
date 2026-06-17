@@ -2290,6 +2290,7 @@ async function gmailLogin() {
 let emailsCache = [];
 const notifiedMeetingSuggestionIds = new Set();
 let lastMeetingSuggestionScanAt = 0;
+let meetingSuggestionRefreshTimer = null;
 
 async function toggleEmailReadStatus(emailId, isUnread) {
     try {
@@ -3022,11 +3023,6 @@ async function loadSchedules() {
     const requestId = ++scheduleListRequestId;
 
     schedulesList.innerHTML = `<p class="schedule-empty-state">${ui('Đang tải lịch tổng hợp...', 'Loading calendar...')}</p>`;
-    scanMeetingSuggestions()
-        .catch(error => console.warn('Meeting suggestion scan error:', error))
-        .finally(() => loadMeetingSuggestions().catch(error => {
-            console.error('Meeting suggestion load error:', error);
-        }));
 
     try {
         const data = await fetchJsonCached(
@@ -3112,6 +3108,8 @@ async function loadSchedules() {
         }
     } catch (error) {
         schedulesList.innerHTML = `<p class="schedule-empty-state">${ui('Lỗi', 'Error')}: ${escapeHtml(error.message)}</p>`;
+    } finally {
+        scheduleMeetingSuggestionRefresh();
     }
 }
 
@@ -3149,6 +3147,20 @@ async function scanMeetingSuggestions(force = false) {
     const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
     notifyMeetingSuggestions(suggestions);
     return suggestions;
+}
+
+function scheduleMeetingSuggestionRefresh() {
+    if (meetingSuggestionRefreshTimer) return;
+    meetingSuggestionRefreshTimer = window.setTimeout(() => {
+        meetingSuggestionRefreshTimer = null;
+        loadMeetingSuggestions()
+            .catch(error => console.warn('Meeting suggestion load error:', error))
+            .finally(() => {
+                scanMeetingSuggestions()
+                    .then(() => loadMeetingSuggestions())
+                    .catch(error => console.warn('Meeting suggestion scan error:', error));
+            });
+    }, 1500);
 }
 
 async function updateMeetingSuggestionStatus(suggestionId, status, scheduleId = null) {
@@ -4030,26 +4042,26 @@ async function generateDailyReport() {
             const meetingNote = isMeeting && row.meeting_note ? row.meeting_note : '';
             const actionButtons = isMeeting
                 ? `
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-                        <button class="report-schedule-yes" data-report-index="${i}" style="padding:6px 12px;border:none;border-radius:6px;background:#4CAF50;color:white;cursor:pointer;">Yes</button>
-                        <button class="report-schedule-no" data-report-index="${i}" style="padding:6px 12px;border:none;border-radius:6px;background:#9E9E9E;color:white;cursor:pointer;">No</button>
+                    <div class="daily-report-actions">
+                        <button class="report-schedule-yes daily-report-action daily-report-action-primary" data-report-index="${i}">Yes</button>
+                        <button class="report-schedule-no daily-report-action daily-report-action-secondary" data-report-index="${i}">No</button>
                     </div>
                 `
                 : '';
 
             return `
                 <tr>
-                    <td style="padding: 12px 8px; border-bottom: 1px solid #e0e0e0; text-align: center; vertical-align: top;">${i + 1}</td>
-                    <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; vertical-align: top;">
-                        <div style="font-weight:600;">${escapeHtml(row.sender || 'N/A')}</div>
-                        <div style="font-size:12px;color:#666;margin-top:4px;">${escapeHtml(row.subject || '')}</div>
+                    <td class="daily-report-index">${i + 1}</td>
+                    <td class="daily-report-sender">
+                        <div class="daily-report-sender-name">${escapeHtml(row.sender || 'N/A')}</div>
+                        <div class="daily-report-subject">${escapeHtml(row.subject || '')}</div>
                     </td>
-                    <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; vertical-align: top;">
+                    <td class="daily-report-summary">
                         <div>${escapeHtml(row.summary || ui('Không có tóm tắt', 'No summary available'))}</div>
-                        ${meetingNote ? `<div style="margin-top:8px;padding:8px 10px;background:#FFF8E1;border-left:4px solid #FFB300;border-radius:6px;font-size:13px;color:#8D6E63;">${escapeHtml(meetingNote)}</div>` : ''}
+                        ${meetingNote ? `<div class="daily-report-note">${escapeHtml(meetingNote)}</div>` : ''}
                     </td>
-                    <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; vertical-align: top; min-width: 180px;">
-                        <span style="display:inline-block;padding:4px 8px;border-radius:999px;background:${isMeeting ? '#FFF3E0' : '#F5F5F5'};color:${isMeeting ? '#E65100' : '#666'};font-size:12px;font-weight:600;">${isMeeting ? ui('📅 Gợi ý tạo lịch', '📅 Event suggested') : ui('Không phải cuộc họp', 'Not a meeting')}</span>
+                    <td class="daily-report-action-cell">
+                        <span class="daily-report-badge ${isMeeting ? 'is-meeting' : 'is-neutral'}">${isMeeting ? ui('Gợi ý tạo lịch', 'Event suggested') : ui('Không phải cuộc họp', 'Not a meeting')}</span>
                         ${actionButtons}
                     </td>
                 </tr>
@@ -4057,18 +4069,18 @@ async function generateDailyReport() {
         }).join('');
 
         container.innerHTML = `
-            <div style="padding: 20px;">
-                <div style="margin-bottom: 16px; padding: 12px; background: #E8F5E9; border-radius: 8px;">
-                    <strong style="color: #2E7D32;">${ui('📧 Báo cáo email ngày', '📧 Email report for')} ${escapeHtml(data.date)}</strong><br>
-                    <span style="color: #666; font-size: 14px;">${ui('Tổng', 'Total')}: ${data.total_emails} email</span>
+            <div class="daily-report">
+                <div class="daily-report-header">
+                    <strong>${ui('Báo cáo email ngày', 'Email report for')} ${escapeHtml(data.date)}</strong><br>
+                    <span>${ui('Tổng', 'Total')}: ${data.total_emails} email</span>
                 </div>
-                <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <table class="daily-report-table">
                     <thead>
-                        <tr style="background: #4F46E5; color: white;">
-                            <th style="padding: 12px 8px; text-align: center; width: 60px;">#</th>
-                            <th style="padding: 12px; text-align: left; width: 30%;">${ui('Người gửi', 'Sender')}</th>
-                            <th style="padding: 12px; text-align: left;">${ui('Nội dung tóm tắt', 'Summary')}</th>
-                            <th style="padding: 12px; text-align: left; width: 210px;">${ui('Chú thích / Hành động', 'Notes / Actions')}</th>
+                        <tr>
+                            <th class="daily-report-index">#</th>
+                            <th>${ui('Người gửi', 'Sender')}</th>
+                            <th>${ui('Nội dung tóm tắt', 'Summary')}</th>
+                            <th class="daily-report-action-cell">${ui('Chú thích / Hành động', 'Notes / Actions')}</th>
                         </tr>
                     </thead>
                     <tbody>

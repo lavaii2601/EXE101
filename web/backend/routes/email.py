@@ -1052,7 +1052,7 @@ def summarize_emails_by_date():
             })
 
         # Try to read cached report first
-        cache_key = f"email_report::{user_id}::{date_str}"
+        cache_key = f"email_report:v2:{user_id}::{date_str}"
         rows = None
         try:
             from models.cache import Cache
