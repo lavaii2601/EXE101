@@ -793,6 +793,128 @@ button {
     box-shadow: var(--shadow);
 }
 
+.chat-shell {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    gap: 12px;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+}
+
+.chat-history-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+}
+
+.chat-history-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.chat-history-header strong {
+    display: block;
+    color: var(--text);
+    font-size: 15px;
+}
+
+.chat-history-header small {
+    display: block;
+    margin-top: 2px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.chat-history-header .btn-primary {
+    min-height: 34px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.chat-retention-control {
+    display: grid;
+    gap: 6px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.chat-retention-control select {
+    min-height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel-soft);
+    color: var(--text);
+}
+
+.chat-sessions-list {
+    display: grid;
+    gap: 6px;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.chat-session-item {
+    display: grid;
+    gap: 4px;
+    width: 100%;
+    padding: 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.chat-session-item:hover,
+.chat-session-item.active {
+    border-color: rgba(67, 56, 202, 0.22);
+    background: rgba(67, 56, 202, 0.09);
+}
+
+.chat-session-item-title,
+.chat-session-item-preview,
+.chat-session-item-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-session-item-title {
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.chat-session-item-preview {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.chat-session-item-meta,
+.chat-session-empty {
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.chat-session-empty {
+    padding: 12px 4px;
+    text-align: center;
+}
+
 .chat-container {
     display: flex;
     flex-direction: column;
@@ -4064,6 +4186,42 @@ body.dark-theme .daily-report-badge.is-meeting {
         min-height: 0;
         height: calc(100dvh - var(--mobile-header-height));
         padding: 0;
+    }
+
+    .chat-shell {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 0;
+        height: 100%;
+    }
+
+    .chat-history-panel {
+        max-height: 180px;
+        border-width: 0 0 1px;
+        border-radius: 0;
+    }
+
+    .chat-history-header {
+        padding: 9px 12px;
+    }
+
+    .chat-retention-control {
+        grid-template-columns: 1fr 120px;
+        align-items: center;
+        padding: 8px 12px;
+    }
+
+    .chat-sessions-list {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 8px 12px 10px;
+    }
+
+    .chat-session-item {
+        flex: 0 0 min(72vw, 250px);
+        min-height: 72px;
     }
 
     #emails-page.page.active,

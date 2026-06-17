@@ -4,7 +4,6 @@ import sys
 import logging
 import re
 import unicodedata
-import uuid
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,7 +15,6 @@ from services.schedule_service import ScheduleService
 from models.history import History
 from models.schedule import Schedule
 from models.user import User
-from models import postgres_db as pg
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from services.calendar_service import CalendarService
 
@@ -28,31 +26,14 @@ ai_service = AIService()
 intent_orchestrator = IntentOrchestrator()
 
 
-def _normalize_chat_session_id(value):
-    try:
-        return str(uuid.UUID(str(value or '').strip()))
-    except (TypeError, ValueError):
-        return str(uuid.uuid4())
-
-
 def _ensure_chat_session(user_id, session_id, mode='worker', title=None):
-    session_id = _normalize_chat_session_id(session_id)
-    if pg.enabled():
-        pg.ensure_user(user_id)
-        safe_mode = mode if mode in {
-            'student', 'worker', 'freelancer', 'creator', 'business', 'mentor', 'teacher'
-        } else 'worker'
-        with pg.connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO chat_sessions (id, user_id, title, mode)
-                VALUES (%s, %s, %s, %s::user_mode)
-                ON CONFLICT (id) DO UPDATE
-                SET updated_at = NOW()
-                """,
-                (session_id, user_id, title or 'Chat', safe_mode),
-            )
-    return session_id
+    return History.ensure_chat_session(
+        user_id=user_id,
+        session_id=session_id,
+        title=title,
+        mode=mode,
+        db_path=get_user_db_path(user_id),
+    )
 
 
 def _normalize_intent_text(value):
@@ -925,7 +906,13 @@ def get_history():
     limit = request.args.get('limit', 20, type=int)
     chat_session_id = request.args.get('session_id') or request.args.get('chat_session_id')
     if chat_session_id:
-        chat_session_id = _ensure_chat_session(user_id, chat_session_id)
+        if not History.chat_session_available(user_id, chat_session_id, db_path=db_path):
+            return jsonify({
+                'success': True,
+                'session_id': None,
+                'expired': True,
+                'history': []
+            })
     history = History.get_recent(limit=limit, db_path=db_path, chat_session_id=chat_session_id)
     
     return jsonify({
@@ -933,6 +920,43 @@ def get_history():
         'session_id': chat_session_id,
         'history': history
     })
+
+
+@chat_bp.route('/sessions', methods=['GET'])
+def get_chat_sessions():
+    """List saved chat sessions that are still within retention."""
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+    limit = request.args.get('limit', 30, type=int)
+    sessions = History.list_chat_sessions(user_id=user_id, limit=limit, db_path=db_path)
+    return jsonify({
+        'success': True,
+        'sessions': sessions,
+        'retention': {
+            'min_days': 30,
+            'max_days': 93,
+            'default_days': 90,
+        }
+    })
+
+
+@chat_bp.route('/sessions/<session_id>', methods=['PATCH'])
+def update_chat_session(session_id):
+    """Update chat session metadata such as title or retention period."""
+    data = request.get_json(silent=True) or {}
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+    updated = History.update_chat_session(
+        user_id=user_id,
+        session_id=session_id,
+        title=data.get('title') if 'title' in data else None,
+        retention_days=data.get('retention_days') if 'retention_days' in data else None,
+        db_path=db_path,
+    )
+    if not updated:
+        return jsonify({'success': False, 'error': 'chat_session_not_found'}), 404
+    return jsonify({'success': True})
+
 
 @chat_bp.route('/providers', methods=['GET'])
 def get_ai_providers():

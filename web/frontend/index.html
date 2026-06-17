@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FlowMate - Không gian làm việc thông minh</title>
-    <link rel="stylesheet" href="/css/style.css?v=20260617-08">
+    <link rel="stylesheet" href="/css/style.css?v=20260617-09">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -127,17 +127,39 @@
             </header>
             <!-- Chat Page -->
             <section id="chat-page" class="page active">
-                <div class="chat-container">
-                    <div class="chat-session-bar">
-                        <strong id="chatSessionTitle">Chat hiện tại</strong>
-                        <button id="newChatBtn" type="button" class="btn-secondary">Chat mới</button>
+                <div class="chat-shell">
+                    <aside class="chat-history-panel" aria-label="Đoạn chat cũ">
+                        <div class="chat-history-header">
+                            <div>
+                                <strong data-i18n="chat.sessions">Đoạn chat</strong>
+                                <small data-i18n="chat.retentionHint">Lưu 1-3 tháng</small>
+                            </div>
+                            <button id="newChatPanelBtn" type="button" class="btn-primary" data-i18n="chat.new">Chat mới</button>
+                        </div>
+                        <label class="chat-retention-control">
+                            <span data-i18n="chat.saveCurrent">Lưu chat hiện tại</span>
+                            <select id="chatRetentionSelect">
+                                <option value="30" data-i18n="chat.oneMonth">1 tháng</option>
+                                <option value="60" data-i18n="chat.twoMonths">2 tháng</option>
+                                <option value="90" selected data-i18n="chat.threeMonths">3 tháng</option>
+                            </select>
+                        </label>
+                        <div id="chatSessionsList" class="chat-sessions-list">
+                            <div class="chat-session-empty" data-i18n="chat.noSaved">Chưa có đoạn chat cũ.</div>
+                        </div>
+                    </aside>
+                    <div class="chat-container">
+                        <div class="chat-session-bar">
+                            <strong id="chatSessionTitle">Chat hiện tại</strong>
+                            <button id="newChatBtn" type="button" class="btn-secondary">Chat mới</button>
+                        </div>
+                        <div class="chat-messages" id="chatMessages"></div>
+                        <div class="chat-input-area">
+                            <textarea id="userInput" placeholder="Nhập tin nhắn của bạn..." rows="3"></textarea>
+                            <button id="sendBtn" class="btn-primary">Gửi</button>
+                        </div>
+                        <div id="providerStatus" class="provider-status-bar"></div>
                     </div>
-                    <div class="chat-messages" id="chatMessages"></div>
-                    <div class="chat-input-area">
-                        <textarea id="userInput" placeholder="Nhập tin nhắn của bạn..." rows="3"></textarea>
-                        <button id="sendBtn" class="btn-primary">Gửi</button>
-                    </div>
-                    <div id="providerStatus" class="provider-status-bar"></div>
                 </div>
             </section>
             
@@ -579,6 +601,6 @@
         </div>
     </div>
     
-    <script src="/js/app.js?v=20260617-03"></script>
+    <script src="/js/app.js?v=20260617-04"></script>
 </body>
 </html>

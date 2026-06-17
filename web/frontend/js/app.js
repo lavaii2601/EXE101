@@ -7,6 +7,9 @@ let userInput;
 let sendBtn;
 let newChatBtn;
 let newChatSidebarBtn;
+let newChatPanelBtn;
+let chatSessionsList;
+let chatRetentionSelect;
 let navBtns;
 let tabBtns;
 let emailDetailModal;
@@ -40,6 +43,7 @@ let pendingPageAfterMode = '';
 let isAuthenticated = false;
 let currentLanguage = localStorage.getItem('flowmate-language') === 'en' ? 'en' : 'vi';
 let activeChatSessionId = localStorage.getItem('flowmate-active-chat-session') || createChatSessionId();
+let activeChatSessionTitle = localStorage.getItem('flowmate-active-chat-title') || '';
 
 function createChatSessionId() {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -56,6 +60,14 @@ function persistChatSessionId() {
     localStorage.setItem('flowmate-active-chat-session', activeChatSessionId);
 }
 
+function persistChatSessionTitle() {
+    if (activeChatSessionTitle) {
+        localStorage.setItem('flowmate-active-chat-title', activeChatSessionTitle);
+    } else {
+        localStorage.removeItem('flowmate-active-chat-title');
+    }
+}
+
 const I18N = {
     vi: {
         'nav.chat': 'Chat',
@@ -65,6 +77,13 @@ const I18N = {
         'nav.settings': 'Cài đặt',
         'chat.new': 'Chat mới',
         'chat.newHint': 'Bắt đầu hội thoại sạch',
+        'chat.sessions': 'Đoạn chat',
+        'chat.retentionHint': 'Lưu 1-3 tháng',
+        'chat.saveCurrent': 'Lưu chat hiện tại',
+        'chat.oneMonth': '1 tháng',
+        'chat.twoMonths': '2 tháng',
+        'chat.threeMonths': '3 tháng',
+        'chat.noSaved': 'Chưa có đoạn chat cũ.',
         'common.clear': 'Xóa',
         'common.refresh': 'Làm mới',
         'email.title': 'Quản lý Email',
@@ -99,6 +118,13 @@ const I18N = {
         'nav.settings': 'Settings',
         'chat.new': 'New chat',
         'chat.newHint': 'Start a clean conversation',
+        'chat.sessions': 'Chats',
+        'chat.retentionHint': 'Saved for 1-3 months',
+        'chat.saveCurrent': 'Save current chat',
+        'chat.oneMonth': '1 month',
+        'chat.twoMonths': '2 months',
+        'chat.threeMonths': '3 months',
+        'chat.noSaved': 'No saved chats yet.',
         'common.clear': 'Clear',
         'common.refresh': 'Refresh',
         'email.title': 'Email Management',
@@ -359,6 +385,9 @@ async function initApp() {
     sendBtn = document.getElementById('sendBtn');
     newChatBtn = document.getElementById('newChatBtn');
     newChatSidebarBtn = document.getElementById('newChatSidebarBtn');
+    newChatPanelBtn = document.getElementById('newChatPanelBtn');
+    chatSessionsList = document.getElementById('chatSessionsList');
+    chatRetentionSelect = document.getElementById('chatRetentionSelect');
     navBtns = document.querySelectorAll('[data-page]');
     tabBtns = document.querySelectorAll('[data-tab]');
     emailDetailModal = document.getElementById('emailDetailModal');
@@ -397,6 +426,12 @@ async function initApp() {
         }
         if (newChatSidebarBtn) {
             newChatSidebarBtn.addEventListener('click', startNewChat);
+        }
+        if (newChatPanelBtn) {
+            newChatPanelBtn.addEventListener('click', startNewChat);
+        }
+        if (chatRetentionSelect) {
+            chatRetentionSelect.addEventListener('change', updateChatRetention);
         }
         
         // Enter key in input
@@ -678,6 +713,8 @@ async function initApp() {
     await loadUserProfile();
     if (!userModeRequired) {
         showWorkspace();
+        updateChatSessionTitle();
+        await loadChatSessions();
         await loadChatHistory();
         const activeNavButton = document.querySelector('.sidebar-nav .nav-btn.active');
         if (activeNavButton) {
@@ -1530,7 +1567,10 @@ async function handlePageChange(btn) {
     renderQuickActions(page);
     
     // Load page data
-    if (page === 'emails') {
+    if (page === 'chat') {
+        loadChatSessions().catch(err => console.error('Chat sessions load error:', err));
+        loadChatHistory().catch(err => console.error('Chat history load error:', err));
+    } else if (page === 'emails') {
         // Check Gmail auth status first to avoid 401 errors
         try {
             const authResp = await apiFetch(`${API_BASE}/email/auth-status`);
@@ -1804,6 +1844,11 @@ async function sendMessageConfirmed(message, opts = {}) {
             activeChatSessionId = data.session_id;
             persistChatSessionId();
         }
+        if (!activeChatSessionTitle) {
+            activeChatSessionTitle = message.slice(0, 80);
+            persistChatSessionTitle();
+            updateChatSessionTitle();
+        }
 
         loadingDiv.remove();
 
@@ -1826,6 +1871,7 @@ async function sendMessageConfirmed(message, opts = {}) {
                 : '';
 
             addMessage(data.response, 'assistant', providerBadge + sourceBadge);
+            loadChatSessions().catch(() => {});
 
             if (data.demo_mode) {
                 showNotification(ui('⚠️ Chế độ demo - Tất cả nhà cung cấp AI đang tạm nghỉ', '⚠️ Demo mode - All AI providers are cooling down'), 'info');
@@ -2191,26 +2237,137 @@ async function loadChatHistory() {
         persistChatSessionId();
         const response = await apiFetch(`${API_BASE}/chat/history?limit=20&session_id=${encodeURIComponent(activeChatSessionId)}`);
         const data = await response.json();
+        if (data.expired) {
+            activeChatSessionId = createChatSessionId();
+            activeChatSessionTitle = '';
+            persistChatSessionId();
+            persistChatSessionTitle();
+            if (chatMessages) chatMessages.innerHTML = '';
+            updateChatSessionTitle();
+            await loadChatSessions();
+            return;
+        }
         if (data.session_id) {
             activeChatSessionId = data.session_id;
             persistChatSessionId();
         }
-        
+        if (chatMessages) chatMessages.innerHTML = '';
         if (data.success && data.history.length > 0) {
-            chatMessages.innerHTML = '';
             data.history.reverse().forEach(record => {
                 addMessage(record.user_message, 'user');
                 addMessage(record.assistant_response, 'assistant');
             });
         }
+        updateChatSessionTitle();
     } catch (error) {
         console.error('Error loading chat history:', error);
     }
 }
 
+function formatChatSessionTime(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleDateString(currentLanguage === 'en' ? 'en-US' : 'vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit'
+    });
+}
+
+function updateChatSessionTitle() {
+    const titleEl = document.getElementById('chatSessionTitle');
+    const title = activeChatSessionTitle || ui('Chat hiện tại', 'Current chat');
+    if (titleEl) titleEl.textContent = title;
+    document.querySelectorAll('.chat-session-item').forEach((item) => {
+        item.classList.toggle('active', item.dataset.sessionId === activeChatSessionId);
+    });
+}
+
+function renderChatSessions(sessions = []) {
+    if (!chatSessionsList) return;
+    if (!sessions.length) {
+        chatSessionsList.innerHTML = `<div class="chat-session-empty">${ui('Chưa có đoạn chat cũ.', 'No saved chats yet.')}</div>`;
+        updateChatSessionTitle();
+        return;
+    }
+
+    chatSessionsList.innerHTML = sessions.map((session) => {
+        const title = escapeHtml(session.title || ui('Chat', 'Chat'));
+        const lastMessage = escapeHtml(session.last_message || ui('Chưa có tin nhắn', 'No messages yet'));
+        const time = escapeHtml(formatChatSessionTime(session.last_message_at || session.updated_at || session.created_at));
+        const count = Number(session.message_count || 0);
+        return `
+            <button type="button" class="chat-session-item ${session.id === activeChatSessionId ? 'active' : ''}" data-session-id="${escapeHtml(session.id)}" data-retention="${Number(session.retention_days || 90)}">
+                <span class="chat-session-item-title">${title}</span>
+                <span class="chat-session-item-preview">${lastMessage}</span>
+                <span class="chat-session-item-meta">${time}${time ? ' · ' : ''}${count} ${ui('tin', 'msgs')}</span>
+            </button>
+        `;
+    }).join('');
+
+    chatSessionsList.querySelectorAll('.chat-session-item').forEach((button) => {
+        const session = sessions.find((item) => item.id === button.dataset.sessionId);
+        button.addEventListener('click', () => openChatSession(button.dataset.sessionId, session?.title || '', button.dataset.retention));
+    });
+    updateChatSessionTitle();
+}
+
+async function loadChatSessions() {
+    try {
+        const response = await apiFetch(`${API_BASE}/chat/sessions?limit=40`);
+        const data = await response.json();
+        if (!data.success) return;
+        const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+        const active = sessions.find((session) => session.id === activeChatSessionId);
+        if (active) {
+            activeChatSessionTitle = active.title || '';
+            persistChatSessionTitle();
+            if (chatRetentionSelect) chatRetentionSelect.value = String(active.retention_days || 90);
+        }
+        renderChatSessions(sessions);
+    } catch (error) {
+        console.error('Error loading chat sessions:', error);
+    }
+}
+
+async function openChatSession(sessionId, title = '', retentionDays = 90) {
+    if (!sessionId) return;
+    activeChatSessionId = sessionId;
+    activeChatSessionTitle = title || ui('Chat hiện tại', 'Current chat');
+    persistChatSessionId();
+    persistChatSessionTitle();
+    if (chatRetentionSelect) chatRetentionSelect.value = String(retentionDays || 90);
+    const chatButton = document.querySelector('.sidebar-nav [data-page="chat"]');
+    if (currentPage !== 'chat' && chatButton) {
+        await handlePageChange(chatButton);
+    }
+    await loadChatHistory();
+    updateChatSessionTitle();
+    if (userInput) userInput.focus();
+}
+
+async function updateChatRetention() {
+    if (!chatRetentionSelect || !activeChatSessionId) return;
+    try {
+        await apiFetch(`${API_BASE}/chat/sessions/${encodeURIComponent(activeChatSessionId)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ retention_days: Number(chatRetentionSelect.value || 90) })
+        });
+        await loadChatSessions();
+        showNotification(ui('Đã cập nhật thời hạn lưu chat', 'Chat retention updated'), 'success');
+    } catch (error) {
+        showNotification(ui('Không thể cập nhật thời hạn lưu chat', 'Unable to update chat retention'), 'error');
+    }
+}
+
 async function startNewChat() {
     activeChatSessionId = createChatSessionId();
+    activeChatSessionTitle = '';
     persistChatSessionId();
+    persistChatSessionTitle();
+    if (chatRetentionSelect) chatRetentionSelect.value = '90';
     const chatButton = document.querySelector('.sidebar-nav [data-page="chat"]');
     if (currentPage !== 'chat' && chatButton) {
         await handlePageChange(chatButton);
@@ -2226,6 +2383,8 @@ async function startNewChat() {
     menuToggle?.setAttribute('aria-expanded', 'false');
     const menuIcon = menuToggle?.querySelector('.menu-toggle-icon');
     if (menuIcon && window.innerWidth <= 860) menuIcon.textContent = '☰';
+    updateChatSessionTitle();
+    await loadChatSessions();
     showNotification(ui('Đã bắt đầu chat mới', 'Started a new chat'), 'success');
 }
 
