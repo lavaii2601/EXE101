@@ -3882,7 +3882,7 @@ body.dark-theme .daily-report-badge.is-meeting {
         overflow: hidden;
         background: var(--panel);
         --mobile-header-height: 64px;
-        --mobile-nav-height: 74px;
+        --mobile-nav-height: 62px;
     }
 
     .workspace-app > .main-content,
@@ -4025,7 +4025,7 @@ body.dark-theme .daily-report-badge.is-meeting {
     #schedule-page .section-header > div {
         display: flex !important;
         width: 100%;
-        gap: 8px;
+        gap: 6px;
         overflow-x: auto;
         padding-bottom: 2px;
         flex-wrap: nowrap;
@@ -4044,11 +4044,32 @@ body.dark-theme .daily-report-badge.is-meeting {
         flex: 0 0 auto;
     }
 
+    .email-toolbar .gmail-profile-card {
+        display: none !important;
+    }
+
     .gmail-account-badge {
-        max-width: 180px;
+        max-width: 150px;
+        min-height: 36px;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--panel-soft);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    .email-toolbar .btn-primary,
+    .email-toolbar .btn-secondary,
+    .email-include-read,
+    #schedule-page .section-header .btn-primary,
+    #schedule-page .section-header .btn-secondary,
+    .calendar-status {
+        min-height: 36px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        font-size: 13px;
     }
 
     .email-include-read span {
@@ -4089,6 +4110,10 @@ body.dark-theme .daily-report-badge.is-meeting {
         padding: 12px;
     }
 
+    #emails-page.page.active .tab-content {
+        background: var(--panel-soft);
+    }
+
     .email-search-bar,
     .report-controls,
     .week-nav {
@@ -4100,6 +4125,19 @@ body.dark-theme .daily-report-badge.is-meeting {
         scrollbar-width: none;
     }
 
+    .email-search-bar {
+        width: 100%;
+        margin: 0 0 12px;
+        padding: 8px;
+        border-radius: 12px;
+        box-shadow: none;
+        background: var(--panel);
+    }
+
+    .email-search-icon {
+        font-size: 17px;
+    }
+
     .email-search-bar::-webkit-scrollbar,
     .report-controls::-webkit-scrollbar,
     .week-nav::-webkit-scrollbar {
@@ -4107,7 +4145,20 @@ body.dark-theme .daily-report-badge.is-meeting {
     }
 
     .email-search-bar input {
-        min-width: 220px;
+        min-width: 0;
+        width: 100%;
+        font-size: 14px;
+    }
+
+    .email-filter-btn {
+        min-height: 38px;
+        width: 44px;
+        justify-content: center;
+        padding: 8px;
+    }
+
+    .email-filter-btn #emailFilterLabel {
+        display: none;
     }
 
     .email-filter-control,
@@ -4129,25 +4180,81 @@ body.dark-theme .daily-report-badge.is-meeting {
 
     .compose-form,
     .settings-grid {
-        display: grid;
-        grid-template-columns: 1fr;
+        display: flex;
+        flex-direction: column;
         gap: 12px;
     }
 
-    .settings-card {
-        padding: 14px;
+    .settings-grid {
+        align-content: start;
+        background: var(--panel-soft);
     }
 
-    .settings-row,
-    .settings-mode-profile {
+    .settings-card {
+        flex: 0 0 auto;
+        width: 100%;
+        min-height: auto;
+        padding: 14px;
+        overflow: visible;
+        border-radius: 12px;
+    }
+
+    .settings-mode-card {
+        overflow: visible;
+    }
+
+    .settings-section-label {
+        display: block;
+        margin-bottom: 12px;
+        line-height: 1.2;
+    }
+
+    .settings-row {
         align-items: flex-start;
         flex-direction: column;
+        gap: 10px;
+        padding: 12px 0;
+    }
+
+    .settings-mode-profile {
+        display: flex;
+        align-items: flex-start;
+        flex-direction: row;
+        gap: 10px;
+        margin: 10px 0;
+        padding: 10px;
+        border-radius: 10px;
+    }
+
+    .settings-mode-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+    }
+
+    .settings-mode-heading strong {
+        font-size: 14px;
+    }
+
+    .settings-mode-active {
+        font-size: 9px;
     }
 
     .settings-row > button,
     .settings-mode-change,
     .language-segmented {
         width: 100%;
+    }
+
+    .language-segmented {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .language-segmented button {
+        min-height: 40px;
+        padding: 8px 10px;
+        font-size: 14px;
     }
 
     .week-table-wrapper {
@@ -4266,7 +4373,7 @@ body.dark-theme .daily-report-badge.is-meeting {
         display: grid;
         grid-template-columns: repeat(5, minmax(0, 1fr));
         min-height: var(--mobile-nav-height);
-        padding: 7px 8px calc(7px + env(safe-area-inset-bottom));
+        padding: 5px 8px calc(5px + env(safe-area-inset-bottom));
         border-top: 1px solid var(--border);
         background: rgba(255, 255, 255, 0.96);
         box-shadow: 0 -12px 28px rgba(15, 23, 42, 0.08);
@@ -4276,10 +4383,9 @@ body.dark-theme .daily-report-badge.is-meeting {
     .mobile-nav-btn {
         display: grid;
         place-items: center;
-        gap: 3px;
         min-width: 0;
-        min-height: 54px;
-        padding: 5px 2px;
+        min-height: 46px;
+        padding: 4px 2px;
         border-radius: 8px;
         background: transparent;
         color: var(--text-secondary);
@@ -4289,17 +4395,16 @@ body.dark-theme .daily-report-badge.is-meeting {
     }
 
     .mobile-nav-icon {
-        display: grid;
-        place-items: center;
-        width: 24px;
-        height: 24px;
-        font-size: 17px;
-        line-height: 1;
+        display: none;
     }
 
     .mobile-nav-btn.active {
         background: rgba(37, 99, 235, 0.1);
         color: var(--primary);
+    }
+
+    .sidebar.open ~ .mobile-bottom-nav {
+        display: none;
     }
 }
 
@@ -4307,7 +4412,7 @@ body.dark-theme .daily-report-badge.is-meeting {
     .container.workspace-app,
     .container.workspace-app.sidebar-collapsed {
         --mobile-header-height: 60px;
-        --mobile-nav-height: 70px;
+        --mobile-nav-height: 58px;
     }
 
     .workspace-header {
