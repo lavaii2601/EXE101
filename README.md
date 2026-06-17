@@ -32,7 +32,7 @@ pip install -r requirements.txt
 ```
 
 2) Cấu hình
-- Chỉnh `web/backend/config.py` hoặc đặt biến môi trường như `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `OPENROUTER_API_KEY`,... tùy bạn dùng dịch vụ nào (đọc từ `web/.env`).
+- Đặt biến môi trường trong `web/.env` như `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_CREDENTIALS_JSON`, `OPENROUTER_API_KEY`,... tùy bạn dùng dịch vụ nào. Không commit file chứa secret lên Git.
 
 3) Chạy ứng dụng
 
@@ -71,6 +71,9 @@ Google OAuth (tóm tắt nhanh)
 1. Tạo project trên https://console.cloud.google.com/
 2. Bật API: Gmail API, Google Calendar API, (People API nếu cần)
 3. OAuth consent screen: đặt tên app, thêm scope cơ bản, thêm test users nếu cần
-4. Tạo OAuth Client ID (Web app) — thêm `http://127.0.0.1:5000` vào Authorized origins và `http://127.0.0.1:5000/oauth2callback` vào redirect URI
-5. Lưu client ID/secret an toàn (không commit lên git)
+4. Tạo OAuth Client ID (Web app) — thêm `http://127.0.0.1:5000` và `http://localhost:5000` vào Authorized origins.
+5. Thêm redirect URI local: `http://127.0.0.1:5000/api/email/oauth2callback` và `http://localhost:5000/api/email/oauth2callback`.
+6. Khi deploy Vercel, thêm redirect URI production dạng `https://<domain-vercel-cua-ban>/api/email/oauth2callback`.
+7. Trên Vercel Project Settings -> Environment Variables, set `GMAIL_CLIENT_ID` và `GMAIL_CLIENT_SECRET`, hoặc set `GMAIL_CREDENTIALS_JSON` bằng toàn bộ nội dung JSON OAuth client. Deploy lại sau khi set biến.
+8. Lưu client ID/secret an toàn (không commit lên git)
 

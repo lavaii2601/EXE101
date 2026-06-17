@@ -68,6 +68,7 @@ OPENAI_API_KEY=
 MISTRAL_API_KEY=
 GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
+GMAIL_CREDENTIALS_JSON=
 GMAIL_REDIRECT_URI=http://127.0.0.1:5000/api/email/oauth2callback
 "@ | Set-Content -LiteralPath $EnvPath -Encoding UTF8
 }
