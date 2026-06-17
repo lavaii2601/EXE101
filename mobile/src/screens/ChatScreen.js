@@ -15,11 +15,16 @@ function mapHistoryItem(item) {
   ];
 }
 
+function createSessionId() {
+  return `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export default function ChatScreen({ userMode = 'worker' }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [messages, setMessages] = useState([]);
+  const [sessionId, setSessionId] = useState(() => createSessionId());
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -44,6 +49,13 @@ export default function ChatScreen({ userMode = 'worker' }) {
     loadHistory();
   }, [loadHistory]);
 
+  const startNewChat = () => {
+    setSessionId(createSessionId());
+    setMessages([]);
+    setSuggestion(null);
+    setInput('');
+  };
+
   const sendMessage = async () => {
     const text = input.trim();
     if (!text || loading) return;
@@ -55,7 +67,11 @@ export default function ChatScreen({ userMode = 'worker' }) {
     setSuggestion(null);
 
     try {
-      const data = await apiPost('/chat/message', { message: text, mode: userMode });
+      const data = await apiPost('/chat/message', {
+        message: text,
+        mode: userMode,
+        session_id: sessionId,
+      });
       const assistantMessage = {
         id: `a-${Date.now()}`,
         role: 'assistant',
@@ -101,6 +117,7 @@ export default function ChatScreen({ userMode = 'worker' }) {
       await apiPost('/chat/clear');
       setMessages([]);
       setSuggestion(null);
+      setSessionId(createSessionId());
     } catch (error) {
       Alert.alert('Khong xoa duoc lich su', error.message);
     }
@@ -117,7 +134,10 @@ export default function ChatScreen({ userMode = 'worker' }) {
           <Text style={styles.kicker}>{mode.shortLabel.toUpperCase()} MODE</Text>
           <Text style={styles.title}>FlowMate AI</Text>
         </View>
-        <Button title="Xoa" variant="secondary" onPress={clearChat} />
+        <View style={styles.headerActions}>
+          <Button title="Chat moi" variant="secondary" onPress={startNewChat} />
+          <Button title="Xoa" variant="secondary" onPress={clearChat} />
+        </View>
       </View>
       <ModeBrief
         userMode={userMode}
@@ -200,7 +220,9 @@ function makeStyles(colors) {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      gap: 10,
     },
+    headerActions: { flexDirection: 'row', gap: 8 },
     kicker: { color: colors.accentText, fontSize: 10, fontWeight: '900', letterSpacing: 1 },
     title: { marginTop: 3, fontSize: 22, fontWeight: '800', color: colors.text },
     list:  { padding: 16, gap: 10 },

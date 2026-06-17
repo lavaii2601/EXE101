@@ -46,6 +46,7 @@ import java.util.Calendar;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
 import java.net.URLEncoder;
 import java.io.File;
 
@@ -86,6 +87,7 @@ public class MainActivity extends Activity {
     private String selectedRole = "";
     private String selectedScheduleDate = "";
     private String appLanguage = "vi";
+    private String activeChatSessionId = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -880,13 +882,27 @@ public class MainActivity extends Activity {
         content.setBackgroundColor(BG);
         setActiveTab("chat");
         content.removeAllViews();
+        if (activeChatSessionId.isEmpty()) activeChatSessionId = newChatSessionId();
         LinearLayout top = titleRow("Assistant");
         Button mode = secondaryButton(roleTitle(selectedRole));
         mode.setOnClickListener(v -> showRoleSelection());
         top.addView(mode);
+        Button newChat = secondaryButton(tr("Chat mới", "New chat"));
+        newChat.setOnClickListener(v -> {
+            activeChatSessionId = newChatSessionId();
+            if (chatList != null) {
+                resetChatSurface();
+                addMuted(chatList, tr(
+                        "Đã bắt đầu chat mới. Lịch sử hoạt động cũ vẫn được giữ.",
+                        "Started a new chat. Previous activity remains available."
+                ));
+            }
+        });
+        top.addView(newChat);
         Button clear = secondaryButton("Clear");
         clear.setOnClickListener(v -> runApi(() -> api.post("/chat/clear", new JSONObject()), data -> {
-            chatList.removeAllViews();
+            activeChatSessionId = newChatSessionId();
+            resetChatSurface();
             toast(tr("Đã xóa lịch sử chat", "Chat history cleared"));
         }));
         top.addView(clear);
@@ -896,8 +912,7 @@ public class MainActivity extends Activity {
         chatList = new LinearLayout(this);
         chatList.setOrientation(LinearLayout.VERTICAL);
         chatList.setPadding(dp(16), dp(8), dp(16), dp(12));
-        addRoleWelcome(chatList);
-        addRoleFeatures(chatList);
+        resetChatSurface();
         scroll.addView(chatList);
         content.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
@@ -918,6 +933,7 @@ public class MainActivity extends Activity {
                 JSONObject body = new JSONObject();
                 body.put("message", message);
                 body.put("mode", selectedRole);
+                body.put("session_id", activeChatSessionId);
                 return api.post("/chat/message", body);
             }, data -> {
                 addBubble(data.optString("response", tr("Không có phản hồi.", "No response received.")), false);
@@ -1128,6 +1144,17 @@ public class MainActivity extends Activity {
             }
             addLoadMoreEmails(data, emails);
         });
+    }
+
+    private String newChatSessionId() {
+        return "android-" + UUID.randomUUID().toString();
+    }
+
+    private void resetChatSurface() {
+        if (chatList == null) return;
+        chatList.removeAllViews();
+        addRoleWelcome(chatList);
+        addRoleFeatures(chatList);
     }
 
     private void addLoadMoreEmails(JSONObject data, JSONArray emails) {
