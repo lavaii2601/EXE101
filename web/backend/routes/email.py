@@ -426,17 +426,28 @@ def _clear_oauth_state(user_id):
 def _get_redirect_uri():
     """Return the redirect URI registered in Google Console for this client."""
     configured_uri = (Config.GMAIL_REDIRECT_URI or '').strip()
+    deployed = bool(
+        os.getenv('VERCEL')
+        or os.getenv('RAILWAY_ENVIRONMENT')
+        or os.getenv('RAILWAY_PROJECT_ID')
+    )
     if configured_uri:
-        return configured_uri
+        configured_lower = configured_uri.lower()
+        is_local_uri = (
+            configured_lower.startswith('http://127.0.0.1')
+            or configured_lower.startswith('http://localhost')
+        )
+        if not (deployed and is_local_uri):
+            return configured_uri
 
     forwarded_proto = request.headers.get('x-forwarded-proto', '').split(',')[0].strip()
     forwarded_host = request.headers.get('x-forwarded-host', '').split(',')[0].strip()
     scheme = forwarded_proto or request.scheme
     host = forwarded_host or request.host
 
-    if os.getenv('VERCEL'):
+    if deployed:
         scheme = 'https'
-        host = host or os.getenv('VERCEL_URL', '')
+        host = host or os.getenv('VERCEL_URL', '') or os.getenv('RAILWAY_PUBLIC_DOMAIN', '')
 
     if scheme and host:
         return f"{scheme}://{host}/api/email/oauth2callback"
