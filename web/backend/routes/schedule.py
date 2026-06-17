@@ -596,10 +596,17 @@ def delete_schedule(schedule_id):
             calendar_service = _load_calendar_service(user_id)
             if calendar_service:
                 try:
-                    calendar_service.delete_event(event_id=calendar_event_id)
+                    deleted_from_calendar = calendar_service.delete_event(event_id=calendar_event_id)
+                    if not deleted_from_calendar:
+                        return jsonify({
+                            'error': 'Không thể xóa sự kiện trên Google Calendar. Vui lòng thử lại sau.'
+                        }), 502
                     logger.info(f"Calendar event deleted: {calendar_event_id}")
                 except Exception as e:
                     logger.warning(f"Failed to delete Google Calendar event: {e}")
+                    return jsonify({
+                        'error': 'Không thể xóa sự kiện trên Google Calendar. Vui lòng thử lại sau.'
+                    }), 502
         
         # Delete from local database
         Schedule.delete(schedule_id, db_path=db_path)

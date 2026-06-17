@@ -3473,6 +3473,7 @@ async function deleteSchedule(scheduleId) {
         const data = await response.json();
         if (data.success) {
             showNotification(ui('🗑️ Đã xóa', '🗑️ Deleted'), 'success');
+            invalidateScheduleCaches();
             await loadSchedules();
             await loadWeekSchedule();
             refreshQuickScheduleSummary();
@@ -3709,8 +3710,10 @@ async function deleteCalendarEvent(eventId) {
         const data = await response.json();
         if (data.success) {
             showNotification(ui('🗑️ Đã xóa sự kiện', '🗑️ Event deleted'), 'success');
+            invalidateScheduleCaches();
             await loadSchedules();
             await loadWeekSchedule();
+            refreshQuickScheduleSummary();
         } else {
             showNotification(`${ui('❌ Lỗi', '❌ Error')}: ${data.error || ui('Không thể xóa sự kiện', 'Unable to delete event')}`, 'error');
         }

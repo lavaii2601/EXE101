@@ -247,5 +247,9 @@ class CalendarService:
             logger.info(f"Event {event_id} deleted successfully")
             return True
         except Exception as e:
+            status = getattr(getattr(e, 'resp', None), 'status', None)
+            if status in (404, 410):
+                logger.info(f"Event {event_id} already deleted or gone")
+                return True
             logger.error(f"Error deleting calendar event: {str(e)}")
             return False
