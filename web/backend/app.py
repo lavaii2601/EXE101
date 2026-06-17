@@ -29,6 +29,7 @@ if Config.DEBUG or _local_oauth_redirect:
 from models.schedule import Schedule
 from models.history import History
 from models.user import User
+from models import postgres_db as pg
 from routes.chat import chat_bp
 from routes.email import email_bp
 from routes.schedule import schedule_bp
@@ -121,6 +122,8 @@ app.register_blueprint(bg_bp)
 os.makedirs(os.path.dirname(Config.DATABASE_PATH), exist_ok=True)
 
 # Initialize databases
+if pg.enabled():
+    pg.initialize_schema()
 Schedule.init_db()
 History.init_db()
 User.init_db()
@@ -161,6 +164,10 @@ def get_status():
 
     return jsonify({
         'gmail_configured': gmail_from_env or gmail_from_json or gmail_from_file,
+        'database': {
+            'backend': 'postgres' if pg.enabled() else 'sqlite',
+            'shared': pg.enabled()
+        },
         'gmail_methods': {
             'env_vars': gmail_from_env,
             'json_env': gmail_from_json,

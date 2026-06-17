@@ -14,6 +14,9 @@ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+ALTER TYPE user_mode ADD VALUE IF NOT EXISTS 'business';
+ALTER TYPE user_mode ADD VALUE IF NOT EXISTS 'creator';
+
 DO $$
 BEGIN
     CREATE TYPE schedule_status AS ENUM ('pending', 'completed', 'cancelled', 'dismissed');

@@ -22,6 +22,33 @@ def enabled():
     return bool(database_url())
 
 
+def schema_path():
+    here = os.path.abspath(__file__)
+    candidates = [
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(here)))), "database", "postgres_schema.sql"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(here))), "database", "postgres_schema.sql"),
+        os.path.join(os.getcwd(), "database", "postgres_schema.sql"),
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return candidates[0]
+
+
+def initialize_schema():
+    """Create the shared PostgreSQL schema when DATABASE_URL is configured."""
+    if not enabled():
+        return False
+    path = schema_path()
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"PostgreSQL schema not found: {path}")
+    with open(path, encoding="utf-8") as schema_file:
+        schema_sql = schema_file.read()
+    with connection() as conn:
+        conn.execute(schema_sql)
+    return True
+
+
 @contextmanager
 def connection():
     if psycopg is None:

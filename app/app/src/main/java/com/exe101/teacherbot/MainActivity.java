@@ -1101,9 +1101,10 @@ public class MainActivity extends Activity {
         int scanLimit = Math.max(emailScanLimit, initialEmailScanLimit());
         scanLimit = Math.min(scanLimit, EMAIL_SCAN_MAX_LIMIT);
         emailScanLimit = scanLimit;
+        final int requestScanLimit = scanLimit;
         addMuted(emailList, tr("Đang tải email mới nhất...", "Loading latest emails..."));
         runApi(() -> api.get(
-                "/email/get-unread?max_results=" + scanLimit + "&page=1&fresh=1&filter=" + emailFilter
+                "/email/get-unread?max_results=" + requestScanLimit + "&page=1&fresh=1&filter=" + emailFilter
                         + "&include_read=" + includeRead
                         + "&search=" + URLEncoder.encode(emailSearch, "UTF-8")
         ), data -> {
