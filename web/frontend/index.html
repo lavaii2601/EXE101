@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FlowMate - Không gian làm việc thông minh</title>
-    <link rel="stylesheet" href="/css/style.css?v=20260617-06">
+    <link rel="stylesheet" href="/css/style.css?v=20260617-07">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -121,6 +121,10 @@
             <!-- Chat Page -->
             <section id="chat-page" class="page active">
                 <div class="chat-container">
+                    <div class="chat-session-bar">
+                        <strong id="chatSessionTitle">Chat hiện tại</strong>
+                        <button id="newChatBtn" type="button" class="btn-secondary">Chat mới</button>
+                    </div>
                     <div class="chat-messages" id="chatMessages"></div>
                     <div class="chat-input-area">
                         <textarea id="userInput" placeholder="Nhập tin nhắn của bạn..." rows="3"></textarea>
@@ -568,6 +572,6 @@
         </div>
     </div>
     
-    <script src="/js/app.js?v=20260617-01"></script>
+    <script src="/js/app.js?v=20260617-02"></script>
 </body>
 </html>

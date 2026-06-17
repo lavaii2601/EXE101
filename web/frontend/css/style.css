@@ -741,6 +741,32 @@ button {
     height: 100%;
     max-height: none;
 }
+
+.chat-session-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    flex: 0 0 auto;
+}
+
+.chat-session-bar strong {
+    overflow: hidden;
+    color: var(--text);
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-session-bar .btn-secondary {
+    min-height: 34px;
+    padding: 7px 10px;
+    font-size: 13px;
+}
+
 .chat-messages {
     padding: 16px; /* slightly smaller padding */
     overflow-y: auto;
@@ -4290,6 +4316,10 @@ body.dark-theme .daily-report-badge.is-meeting {
         border-radius: 0;
         box-shadow: none;
         background: var(--panel);
+    }
+
+    .chat-session-bar {
+        padding: 8px 10px;
     }
 
     .chat-messages {

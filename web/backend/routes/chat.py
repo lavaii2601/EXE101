@@ -4,6 +4,7 @@ import sys
 import logging
 import re
 import unicodedata
+import uuid
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,6 +16,7 @@ from services.schedule_service import ScheduleService
 from models.history import History
 from models.schedule import Schedule
 from models.user import User
+from models import postgres_db as pg
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from services.calendar_service import CalendarService
 
@@ -24,6 +26,33 @@ logger = logging.getLogger(__name__)
 chat_bp = Blueprint('chat', __name__, url_prefix='/api/chat')
 ai_service = AIService()
 intent_orchestrator = IntentOrchestrator()
+
+
+def _normalize_chat_session_id(value):
+    try:
+        return str(uuid.UUID(str(value or '').strip()))
+    except (TypeError, ValueError):
+        return str(uuid.uuid4())
+
+
+def _ensure_chat_session(user_id, session_id, mode='worker', title=None):
+    session_id = _normalize_chat_session_id(session_id)
+    if pg.enabled():
+        pg.ensure_user(user_id)
+        safe_mode = mode if mode in {
+            'student', 'worker', 'freelancer', 'creator', 'business', 'mentor', 'teacher'
+        } else 'worker'
+        with pg.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO chat_sessions (id, user_id, title, mode)
+                VALUES (%s, %s, %s, %s::user_mode)
+                ON CONFLICT (id) DO UPDATE
+                SET updated_at = NOW()
+                """,
+                (session_id, user_id, title or 'Chat', safe_mode),
+            )
+    return session_id
 
 
 def _normalize_intent_text(value):
@@ -514,6 +543,22 @@ def send_message():
     db_path = get_user_db_path(user_id)
     History.init_db(db_path=db_path)
     Schedule.init_db(db_path=db_path)
+    chat_session_id = _ensure_chat_session(
+        user_id,
+        data.get('session_id') or data.get('chat_session_id'),
+        mode=mode,
+        title=user_message[:80]
+    )
+
+    def save_chat_history(user_text, assistant_text, action_type='chat', related_id=None):
+        return History.create(
+            user_text,
+            assistant_text,
+            action_type=action_type,
+            related_id=related_id,
+            db_path=db_path,
+            chat_session_id=chat_session_id if action_type == 'chat' else None,
+        )
 
     intent_result = intent_orchestrator.detect(user_message)
     refresh_targets = list(intent_result.get('refresh_targets') or [])
@@ -523,9 +568,10 @@ def send_message():
             requested_count = int((intent_result.get('entities') or {}).get('count') or _latest_email_count(user_message))
             response, source_emails = _summarize_latest_emails(user_id, requested_count)
             source_email = source_emails[0]
-            History.create(user_message, response, action_type='chat', db_path=db_path)
+            save_chat_history(user_message, response)
             return jsonify({
                 'success': True,
+                'session_id': chat_session_id,
                 'response': response,
                 'provider': ai_service.last_provider_used,
                 'demo_mode': ai_service.last_provider_used == 'demo',
@@ -552,9 +598,10 @@ def send_message():
         except Exception as e:
             logger.exception("Failed to summarize latest Gmail messages for user %s", user_id)
             response = f"Khong the lay email gan nhat tu Gmail: {e}"
-            History.create(user_message, response, action_type='chat', db_path=db_path)
+            save_chat_history(user_message, response)
             return jsonify({
                 'success': True,
+                'session_id': chat_session_id,
                 'response': response,
                 'provider': None,
                 'demo_mode': False,
@@ -590,9 +637,10 @@ def send_message():
             logger.exception("Failed to create schedule through intent orchestrator")
             response = f"Khong the tao lich: {e}"
 
-        History.create(user_message, response, action_type='chat', db_path=db_path)
+        save_chat_history(user_message, response)
         return jsonify({
             'success': True,
+            'session_id': chat_session_id,
             'response': response,
             'provider': None,
             'demo_mode': False,
@@ -607,9 +655,10 @@ def send_message():
 
     if intent_result.get('intent') == 'schedule.list':
         response = _direct_schedule_list_response(user_message, user_id, db_path)
-        History.create(user_message, response, action_type='chat', db_path=db_path)
+        save_chat_history(user_message, response)
         return jsonify({
             'success': True,
+            'session_id': chat_session_id,
             'response': response,
             'provider': None,
             'demo_mode': False,
@@ -624,9 +673,10 @@ def send_message():
 
     if intent_result.get('intent') == 'email.search':
         response = _direct_email_search_response(user_message, user_id)
-        History.create(user_message, response, action_type='chat', db_path=db_path)
+        save_chat_history(user_message, response)
         return jsonify({
             'success': True,
+            'session_id': chat_session_id,
             'response': response,
             'provider': None,
             'demo_mode': False,
@@ -642,14 +692,10 @@ def send_message():
     direct_result = intent_orchestrator.execute_direct(intent_result, user_id, db_path)
     if direct_result and intent_result.get('intent') in {'settings.update_mode', 'history.list', 'schedule.create'}:
         response = direct_result.get('response') or ''
-        History.create(
-            user_message,
-            response,
-            action_type=direct_result.get('action_type') or 'chat',
-            db_path=db_path
-        )
+        save_chat_history(user_message, response, action_type=direct_result.get('action_type') or 'chat')
         return jsonify({
             'success': True,
+            'session_id': chat_session_id,
             'response': response,
             'provider': None,
             'demo_mode': False,
@@ -688,7 +734,7 @@ def send_message():
         logger.exception("Failed to build workspace context for user %s", user_id)
 
     if not workspace_sources:
-        recent_history = History.get_recent(limit=8, db_path=db_path)
+        recent_history = History.get_recent(limit=8, db_path=db_path, chat_session_id=chat_session_id)
         for record in reversed(recent_history):
             if record.get('action_type') != 'chat':
                 continue
@@ -722,7 +768,7 @@ def send_message():
     response = ai_service.generate_response(messages, task=task, user_id=user_id)
     
     # Save to history
-    History.create(user_message, response, action_type='chat', db_path=db_path)
+    save_chat_history(user_message, response)
     
     # Auto-detect schedule suggestion from AI response
     schedule_info = extract_schedule_from_response(response, user_message)
@@ -813,6 +859,7 @@ def send_message():
 
     return jsonify({
         'success': True,
+        'session_id': chat_session_id,
         'response': response,
         'provider': ai_service.last_provider_used,
         'demo_mode': ai_service.last_provider_used == 'demo',
@@ -876,10 +923,14 @@ def get_history():
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
     limit = request.args.get('limit', 20, type=int)
-    history = History.get_recent(limit=limit, db_path=db_path)
+    chat_session_id = request.args.get('session_id') or request.args.get('chat_session_id')
+    if chat_session_id:
+        chat_session_id = _ensure_chat_session(user_id, chat_session_id)
+    history = History.get_recent(limit=limit, db_path=db_path, chat_session_id=chat_session_id)
     
     return jsonify({
         'success': True,
+        'session_id': chat_session_id,
         'history': history
     })
 
@@ -894,14 +945,19 @@ def get_ai_providers():
 @chat_bp.route('/clear', methods=['POST'])
 def clear_conversation():
     """Clear conversation history"""
+    data = request.get_json(silent=True) or {}
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
+    chat_session_id = data.get('session_id') or data.get('chat_session_id')
+    if chat_session_id:
+        chat_session_id = _ensure_chat_session(user_id, chat_session_id)
     
     # Delete only chat messages, preserve email and schedule history
-    deleted_count = History.clear_all(action_type='chat', db_path=db_path)
+    deleted_count = History.clear_all(action_type='chat', db_path=db_path, chat_session_id=chat_session_id)
     
     return jsonify({
         'success': True,
+        'session_id': chat_session_id,
         'message': f'Đã xóa {deleted_count} tin nhắn',
         'deleted_count': deleted_count
     })
@@ -919,3 +975,4 @@ def clear_all_history():
         'message': f'Đã xóa {deleted_count} bản ghi lịch sử',
         'deleted_count': deleted_count
     })
+

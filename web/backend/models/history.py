@@ -39,7 +39,7 @@ class History:
         History._initialized_dbs.add(db_path)
 
     @staticmethod
-    def create(user_message, assistant_response, action_type="chat", related_id=None, db_path=None):
+    def create(user_message, assistant_response, action_type="chat", related_id=None, db_path=None, chat_session_id=None):
         if pg.enabled():
             user_id = pg.user_id_from_db_path(db_path)
             pg.ensure_user(user_id)
@@ -48,12 +48,12 @@ class History:
                     """
                     INSERT INTO history (
                         user_id, user_message, assistant_response,
-                        action_type, related_id, created_at
+                        action_type, related_id, chat_session_id, created_at
                     )
-                    VALUES (%s, %s, %s, %s::activity_type, %s, %s)
+                    VALUES (%s, %s, %s, %s::activity_type, %s, %s, %s)
                     RETURNING id
                     """,
-                    (user_id, user_message, assistant_response, action_type, related_id, datetime.now()),
+                    (user_id, user_message, assistant_response, action_type, related_id, chat_session_id, datetime.now()),
                 ).fetchone()
                 return row['id']
 
@@ -61,29 +61,45 @@ class History:
         History.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+        try:
+            cursor.execute("ALTER TABLE history ADD COLUMN chat_session_id TEXT")
+        except sqlite3.OperationalError:
+            pass
         cursor.execute("""
-            INSERT INTO history (user_message, assistant_response, action_type, related_id, created_at)
-            VALUES (?, ?, ?, ?, ?)
-        """, (user_message, assistant_response, action_type, related_id, datetime.now().isoformat()))
+            INSERT INTO history (user_message, assistant_response, action_type, related_id, chat_session_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (user_message, assistant_response, action_type, related_id, chat_session_id, datetime.now().isoformat()))
         conn.commit()
         rowid = cursor.lastrowid
         conn.close()
         return rowid
 
     @staticmethod
-    def get_recent(limit=10, db_path=None):
+    def get_recent(limit=10, db_path=None, chat_session_id=None):
         if pg.enabled():
             user_id = pg.user_id_from_db_path(db_path)
             with pg.connection() as conn:
-                rows = conn.execute(
-                    """
-                    SELECT * FROM history
-                    WHERE user_id = %s
-                    ORDER BY created_at DESC
-                    LIMIT %s
-                    """,
-                    (user_id, limit),
-                ).fetchall()
+                if chat_session_id:
+                    rows = conn.execute(
+                        """
+                        SELECT * FROM history
+                        WHERE user_id = %s
+                          AND chat_session_id = %s
+                        ORDER BY created_at DESC
+                        LIMIT %s
+                        """,
+                        (user_id, chat_session_id, limit),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        """
+                        SELECT * FROM history
+                        WHERE user_id = %s
+                        ORDER BY created_at DESC
+                        LIMIT %s
+                        """,
+                        (user_id, limit),
+                    ).fetchall()
                 return pg.normalize_rows(rows)
 
         db_path = db_path or Config.DATABASE_PATH
@@ -91,17 +107,32 @@ class History:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM history ORDER BY created_at DESC LIMIT ?", (limit,))
+        try:
+            cursor.execute("ALTER TABLE history ADD COLUMN chat_session_id TEXT")
+        except sqlite3.OperationalError:
+            pass
+        if chat_session_id:
+            cursor.execute(
+                "SELECT * FROM history WHERE chat_session_id = ? ORDER BY created_at DESC LIMIT ?",
+                (chat_session_id, limit),
+            )
+        else:
+            cursor.execute("SELECT * FROM history ORDER BY created_at DESC LIMIT ?", (limit,))
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
 
     @staticmethod
-    def clear_all(action_type=None, db_path=None):
+    def clear_all(action_type=None, db_path=None, chat_session_id=None):
         if pg.enabled():
             user_id = pg.user_id_from_db_path(db_path)
             with pg.connection() as conn:
-                if action_type:
+                if chat_session_id:
+                    cur = conn.execute(
+                        "DELETE FROM history WHERE user_id = %s AND action_type = %s AND chat_session_id = %s",
+                        (user_id, action_type or 'chat', chat_session_id),
+                    )
+                elif action_type:
                     cur = conn.execute(
                         "DELETE FROM history WHERE user_id = %s AND action_type = %s",
                         (user_id, action_type),
@@ -117,7 +148,16 @@ class History:
         History.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        if action_type:
+        try:
+            cursor.execute("ALTER TABLE history ADD COLUMN chat_session_id TEXT")
+        except sqlite3.OperationalError:
+            pass
+        if chat_session_id:
+            cursor.execute(
+                "DELETE FROM history WHERE action_type = ? AND chat_session_id = ?",
+                (action_type or 'chat', chat_session_id),
+            )
+        elif action_type:
             cursor.execute("DELETE FROM history WHERE action_type = ?", (action_type,))
         else:
             cursor.execute("DELETE FROM history")

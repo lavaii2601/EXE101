@@ -5,6 +5,7 @@ const API_BASE = '/api';
 let chatMessages;
 let userInput;
 let sendBtn;
+let newChatBtn;
 let navBtns;
 let tabBtns;
 let emailDetailModal;
@@ -37,6 +38,22 @@ let userModeRequired = false;
 let pendingPageAfterMode = '';
 let isAuthenticated = false;
 let currentLanguage = localStorage.getItem('flowmate-language') === 'en' ? 'en' : 'vi';
+let activeChatSessionId = localStorage.getItem('flowmate-active-chat-session') || createChatSessionId();
+
+function createChatSessionId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+        const value = Math.random() * 16 | 0;
+        const next = char === 'x' ? value : (value & 0x3 | 0x8);
+        return next.toString(16);
+    });
+}
+
+function persistChatSessionId() {
+    localStorage.setItem('flowmate-active-chat-session', activeChatSessionId);
+}
 
 const I18N = {
     vi: {
@@ -335,6 +352,7 @@ async function initApp() {
     chatMessages = document.getElementById('chatMessages');
     userInput = document.getElementById('userInput');
     sendBtn = document.getElementById('sendBtn');
+    newChatBtn = document.getElementById('newChatBtn');
     navBtns = document.querySelectorAll('[data-page]');
     tabBtns = document.querySelectorAll('[data-tab]');
     emailDetailModal = document.getElementById('emailDetailModal');
@@ -367,6 +385,9 @@ async function initApp() {
         // Send message button
         if (sendBtn) {
             sendBtn.addEventListener('click', () => sendMessage());
+        }
+        if (newChatBtn) {
+            newChatBtn.addEventListener('click', startNewChat);
         }
         
         // Enter key in input
@@ -1752,6 +1773,7 @@ async function sendMessageConfirmed(message, opts = {}) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 message,
+                session_id: activeChatSessionId,
                 mode: currentUserMode,
                 confirmed_schedule: confirmed,
                 schedule_override: override
@@ -1766,6 +1788,10 @@ async function sendMessageConfirmed(message, opts = {}) {
 
         const data = await response.json();
         console.log('✅ Response received:', data);
+        if (data.session_id) {
+            activeChatSessionId = data.session_id;
+            persistChatSessionId();
+        }
 
         loadingDiv.remove();
 
@@ -2150,8 +2176,13 @@ async function loadUserProfile() {
 
 async function loadChatHistory() {
     try {
-        const response = await apiFetch(`${API_BASE}/chat/history?limit=20`);
+        persistChatSessionId();
+        const response = await apiFetch(`${API_BASE}/chat/history?limit=20&session_id=${encodeURIComponent(activeChatSessionId)}`);
         const data = await response.json();
+        if (data.session_id) {
+            activeChatSessionId = data.session_id;
+            persistChatSessionId();
+        }
         
         if (data.success && data.history.length > 0) {
             chatMessages.innerHTML = '';
@@ -2165,13 +2196,25 @@ async function loadChatHistory() {
     }
 }
 
+function startNewChat() {
+    activeChatSessionId = createChatSessionId();
+    persistChatSessionId();
+    if (chatMessages) chatMessages.innerHTML = '';
+    if (userInput) {
+        userInput.value = '';
+        userInput.focus();
+    }
+    showNotification(ui('Đã bắt đầu chat mới', 'Started a new chat'), 'success');
+}
+
 async function clearConversation() {
     if (!confirm(ui('Bạn có chắc chắn muốn làm mới cuộc trò chuyện?', 'Are you sure you want to clear this conversation?'))) return;
     
     try {
         const response = await apiFetch(`${API_BASE}/chat/clear`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: activeChatSessionId })
         });
         
         const data = await response.json();

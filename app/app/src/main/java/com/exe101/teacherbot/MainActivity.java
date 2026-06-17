@@ -1147,7 +1147,7 @@ public class MainActivity extends Activity {
     }
 
     private String newChatSessionId() {
-        return "android-" + UUID.randomUUID().toString();
+        return UUID.randomUUID().toString();
     }
 
     private void resetChatSurface() {

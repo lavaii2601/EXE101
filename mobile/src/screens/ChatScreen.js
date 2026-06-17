@@ -16,7 +16,14 @@ function mapHistoryItem(item) {
 }
 
 function createSessionId() {
-  return `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  if (global.crypto && typeof global.crypto.randomUUID === 'function') {
+    return global.crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const value = Math.random() * 16 | 0;
+    const next = char === 'x' ? value : (value & 0x3 | 0x8);
+    return next.toString(16);
+  });
 }
 
 export default function ChatScreen({ userMode = 'worker' }) {
