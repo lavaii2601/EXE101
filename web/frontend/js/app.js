@@ -603,29 +603,7 @@ async function initApp() {
         }
 
         // Weekly schedule table navigation
-        const prevWeekBtn = document.getElementById('prevWeekBtn');
-        if (prevWeekBtn) {
-            prevWeekBtn.addEventListener('click', () => {
-                currentWeekStart.setDate(currentWeekStart.getDate() - 7);
-                loadWeekSchedule();
-            });
-        }
-
-        const nextWeekBtn = document.getElementById('nextWeekBtn');
-        if (nextWeekBtn) {
-            nextWeekBtn.addEventListener('click', () => {
-                currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-                loadWeekSchedule();
-            });
-        }
-
-        const todayWeekBtn = document.getElementById('todayWeekBtn');
-        if (todayWeekBtn) {
-            todayWeekBtn.addEventListener('click', () => {
-                currentWeekStart = getMonday(new Date());
-                loadWeekSchedule();
-            });
-        }
+        bindWeekNavigation();
 
         // Listen for postMessage from OAuth popup to update UI without redirect
         window.addEventListener('message', (ev) => {
@@ -1378,29 +1356,7 @@ function setupEventListeners() {
     }
 
     // Weekly schedule table navigation
-    const prevWeekBtn = document.getElementById('prevWeekBtn');
-    if (prevWeekBtn) {
-        prevWeekBtn.addEventListener('click', () => {
-            currentWeekStart.setDate(currentWeekStart.getDate() - 7);
-            loadWeekSchedule();
-        });
-    }
-
-    const nextWeekBtn = document.getElementById('nextWeekBtn');
-    if (nextWeekBtn) {
-        nextWeekBtn.addEventListener('click', () => {
-            currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-            loadWeekSchedule();
-        });
-    }
-
-    const todayWeekBtn = document.getElementById('todayWeekBtn');
-    if (todayWeekBtn) {
-        todayWeekBtn.addEventListener('click', () => {
-            currentWeekStart = getMonday(new Date());
-            loadWeekSchedule();
-        });
-    }
+    bindWeekNavigation();
 
     // Listen for postMessage from OAuth popup to update UI without redirect
     window.addEventListener('message', (ev) => {
@@ -2899,6 +2855,49 @@ function getMonday(date) {
     d.setDate(d.getDate() + diff);
     d.setHours(0, 0, 0, 0);
     return d;
+}
+
+function setWeekStart(date) {
+    currentWeekStart = getMonday(date);
+}
+
+function goToRelativeWeek(deltaWeeks) {
+    const base = new Date(
+        currentWeekStart.getFullYear(),
+        currentWeekStart.getMonth(),
+        currentWeekStart.getDate() + (deltaWeeks * 7)
+    );
+    setWeekStart(base);
+    invalidateScheduleCaches();
+    return loadWeekSchedule();
+}
+
+function bindWeekNavigation() {
+    const prevWeekBtn = document.getElementById('prevWeekBtn');
+    if (prevWeekBtn && prevWeekBtn.dataset.weekNavReady !== 'true') {
+        prevWeekBtn.dataset.weekNavReady = 'true';
+        prevWeekBtn.addEventListener('click', () => {
+            goToRelativeWeek(-1).catch(err => console.warn('Previous week load error:', err));
+        });
+    }
+
+    const nextWeekBtn = document.getElementById('nextWeekBtn');
+    if (nextWeekBtn && nextWeekBtn.dataset.weekNavReady !== 'true') {
+        nextWeekBtn.dataset.weekNavReady = 'true';
+        nextWeekBtn.addEventListener('click', () => {
+            goToRelativeWeek(1).catch(err => console.warn('Next week load error:', err));
+        });
+    }
+
+    const todayWeekBtn = document.getElementById('todayWeekBtn');
+    if (todayWeekBtn && todayWeekBtn.dataset.weekNavReady !== 'true') {
+        todayWeekBtn.dataset.weekNavReady = 'true';
+        todayWeekBtn.addEventListener('click', () => {
+            setWeekStart(new Date());
+            invalidateScheduleCaches();
+            loadWeekSchedule().catch(err => console.warn('Current week load error:', err));
+        });
+    }
 }
 
 function formatWeekDate(date) {
