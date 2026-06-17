@@ -1503,9 +1503,11 @@ async function handlePageChange(btn) {
     const page = btn.dataset.page;
     console.log(`🔄 Changing page to: ${page}`);
     
-    // Update nav buttons
+    // Update nav buttons across desktop sidebar and mobile bottom navigation.
     navBtns.forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
+    navBtns.forEach(b => {
+        if (b.dataset.page === page) b.classList.add('active');
+    });
     
     // Hide all pages
     document.querySelectorAll('.page').forEach(p => {

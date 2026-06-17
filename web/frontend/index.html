@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FlowMate - Không gian làm việc thông minh</title>
-    <link rel="stylesheet" href="/css/style.css?v=20260617-01">
+    <link rel="stylesheet" href="/css/style.css?v=20260617-03">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -29,7 +29,7 @@
 
     <div id="workspaceApp" class="container workspace-app" aria-hidden="true">
         <button id="menuToggle" class="menu-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
-            <span class="menu-toggle-icon" aria-hidden="true">‹</span>
+            <span class="menu-toggle-icon" aria-hidden="true">☰</span>
         </button>
         <!-- Sidebar -->
         <aside class="sidebar">
@@ -405,6 +405,29 @@
                 </div>
             </div>
         </aside>
+
+        <nav class="mobile-bottom-nav" aria-label="Điều hướng chính">
+            <button type="button" class="mobile-nav-btn active" data-page="chat">
+                <span class="mobile-nav-icon" aria-hidden="true">☰</span>
+                <span data-i18n="nav.chat">Chat</span>
+            </button>
+            <button type="button" class="mobile-nav-btn" data-page="emails">
+                <span class="mobile-nav-icon" aria-hidden="true">✉</span>
+                <span data-i18n="nav.email">Email</span>
+            </button>
+            <button type="button" class="mobile-nav-btn" data-page="schedule">
+                <span class="mobile-nav-icon" aria-hidden="true">□</span>
+                <span data-i18n="nav.calendar">Lịch</span>
+            </button>
+            <button type="button" class="mobile-nav-btn" data-page="history">
+                <span class="mobile-nav-icon" aria-hidden="true">↺</span>
+                <span data-i18n="nav.history">Lịch sử</span>
+            </button>
+            <button type="button" class="mobile-nav-btn" data-page="settings">
+                <span class="mobile-nav-icon" aria-hidden="true">⚙</span>
+                <span data-i18n="nav.settings">Cài đặt</span>
+            </button>
+        </nav>
     </div>
     
     <!-- Modals -->

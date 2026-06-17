@@ -3863,6 +3863,10 @@ body.dark-theme .daily-report-badge.is-meeting {
     color: #f0c37d;
 }
 
+.mobile-bottom-nav {
+    display: none;
+}
+
 /* Mobile web polish: keep the chat readable inside phone browsers. */
 @media (max-width: 860px) {
     body {
@@ -3877,6 +3881,8 @@ body.dark-theme .daily-report-badge.is-meeting {
         min-height: 100dvh;
         overflow: hidden;
         background: var(--panel);
+        --mobile-header-height: 64px;
+        --mobile-nav-height: 74px;
     }
 
     .workspace-app > .main-content,
@@ -3891,7 +3897,7 @@ body.dark-theme .daily-report-badge.is-meeting {
     .workspace-header {
         grid-template-columns: minmax(0, 1fr) auto;
         gap: 12px;
-        min-height: 64px;
+        min-height: var(--mobile-header-height);
         padding: 8px 14px 8px 58px;
         background: var(--panel);
     }
@@ -3923,17 +3929,256 @@ body.dark-theme .daily-report-badge.is-meeting {
     }
 
     .menu-toggle {
+        display: inline-grid !important;
         top: 16px;
         left: 14px;
         width: 34px;
         height: 34px;
+        border-color: var(--border);
+        background: var(--panel);
+        color: var(--text);
         box-shadow: none;
+    }
+
+    .sidebar {
+        width: min(82vw, 300px);
+        padding: 72px 16px 18px;
+        border-right: 1px solid var(--border);
+        box-shadow: 18px 0 40px rgba(15, 23, 42, 0.22);
+    }
+
+    .sidebar.open + .main-content,
+    .sidebar.open {
+        transform: translateX(0) !important;
+    }
+
+    .sidebar-nav {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+        margin-top: 0;
+    }
+
+    .sidebar .nav-btn {
+        min-height: 48px;
+        justify-content: flex-start;
+        padding: 12px 14px;
+    }
+
+    .sidebar .nav-label {
+        display: inline;
     }
 
     #chat-page.page.active {
         min-height: 0;
-        height: calc(100dvh - 64px);
+        height: calc(100dvh - var(--mobile-header-height) - var(--mobile-nav-height));
         padding: 0;
+    }
+
+    #emails-page.page.active,
+    #schedule-page.page.active,
+    #history-page.page.active,
+    #settings-page.page.active {
+        height: calc(100dvh - var(--mobile-header-height) - var(--mobile-nav-height));
+        min-height: 0;
+        gap: 0;
+        overflow: hidden;
+    }
+
+    #emails-page .section-header,
+    #schedule-page .section-header,
+    #history-page .section-header,
+    .settings-page-header {
+        flex: 0 0 auto;
+        margin: 0;
+        padding: 12px 14px;
+        border: 0;
+        border-bottom: 1px solid var(--border);
+        border-radius: 0;
+        box-shadow: none;
+        background: var(--panel);
+    }
+
+    #emails-page .section-header h2,
+    #schedule-page .section-header h2,
+    #history-page .section-header h2,
+    .settings-page-header h2 {
+        font-size: 18px;
+        line-height: 1.2;
+    }
+
+    .settings-page-header {
+        display: flex;
+        align-items: center;
+    }
+
+    .settings-page-header p,
+    .settings-kicker {
+        display: none;
+    }
+
+    .settings-save-state {
+        flex: 0 0 auto;
+    }
+
+    .email-toolbar,
+    #schedule-page .section-header > div {
+        display: flex !important;
+        width: 100%;
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 2px;
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        scrollbar-width: none;
+    }
+
+    .email-toolbar::-webkit-scrollbar,
+    #schedule-page .section-header > div::-webkit-scrollbar,
+    .tabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    .email-toolbar > *,
+    #schedule-page .section-header > div > * {
+        flex: 0 0 auto;
+    }
+
+    .gmail-account-badge {
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .email-include-read span {
+        font-size: 12px !important;
+    }
+
+    .tabs {
+        flex: 0 0 auto;
+        flex-wrap: nowrap;
+        gap: 8px;
+        margin: 0;
+        padding: 10px 12px;
+        overflow-x: auto;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+        scrollbar-width: none;
+    }
+
+    .page.active .tabs {
+        position: static;
+        top: auto;
+        padding-top: 10px;
+    }
+
+    .tab-btn {
+        flex: 0 0 auto;
+        min-height: 38px;
+        white-space: nowrap;
+    }
+
+    #emails-page.page.active .tab-content,
+    #schedule-page.page.active .tab-content,
+    #historyList,
+    .settings-grid {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        padding: 12px;
+    }
+
+    .email-search-bar,
+    .report-controls,
+    .week-nav {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 2px;
+        scrollbar-width: none;
+    }
+
+    .email-search-bar::-webkit-scrollbar,
+    .report-controls::-webkit-scrollbar,
+    .week-nav::-webkit-scrollbar {
+        display: none;
+    }
+
+    .email-search-bar input {
+        min-width: 220px;
+    }
+
+    .email-filter-control,
+    .email-search-bar .btn-secondary,
+    .report-controls .form-group,
+    .report-controls .btn-primary,
+    .week-nav > * {
+        flex: 0 0 auto;
+    }
+
+    .email-item,
+    .daily-report,
+    .history-item,
+    .settings-card,
+    .unified-schedules-list .unified-schedule-item {
+        border-radius: 8px;
+        box-shadow: none;
+    }
+
+    .compose-form,
+    .settings-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .settings-card {
+        padding: 14px;
+    }
+
+    .settings-row,
+    .settings-mode-profile {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .settings-row > button,
+    .settings-mode-change,
+    .language-segmented {
+        width: 100%;
+    }
+
+    .week-table-wrapper {
+        min-height: 260px;
+        max-height: 340px;
+        border-radius: 8px;
+    }
+
+    .week-table {
+        min-width: 860px;
+    }
+
+    .unified-schedules-list {
+        display: grid !important;
+        margin-top: 12px !important;
+    }
+
+    .unified-schedule-item,
+    .schedule-item-heading,
+    .schedule-item-actions {
+        grid-template-columns: 1fr;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .schedule-item-actions button {
+        width: 100%;
+    }
+
+    .history-list {
+        align-content: start;
     }
 
     .chat-container {
@@ -4011,11 +4256,62 @@ body.dark-theme .daily-report-badge.is-meeting {
         padding: 6px 12px;
         font-size: 11px;
     }
+
+    .mobile-bottom-nav {
+        position: fixed;
+        z-index: 1050;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        min-height: var(--mobile-nav-height);
+        padding: 7px 8px calc(7px + env(safe-area-inset-bottom));
+        border-top: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 -12px 28px rgba(15, 23, 42, 0.08);
+        backdrop-filter: blur(14px);
+    }
+
+    .mobile-nav-btn {
+        display: grid;
+        place-items: center;
+        gap: 3px;
+        min-width: 0;
+        min-height: 54px;
+        padding: 5px 2px;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1.1;
+    }
+
+    .mobile-nav-icon {
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        font-size: 17px;
+        line-height: 1;
+    }
+
+    .mobile-nav-btn.active {
+        background: rgba(37, 99, 235, 0.1);
+        color: var(--primary);
+    }
 }
 
 @media (max-width: 420px) {
+    .container.workspace-app,
+    .container.workspace-app.sidebar-collapsed {
+        --mobile-header-height: 60px;
+        --mobile-nav-height: 70px;
+    }
+
     .workspace-header {
-        min-height: 60px;
+        min-height: var(--mobile-header-height);
         padding-right: 10px;
     }
 
@@ -4034,7 +4330,14 @@ body.dark-theme .daily-report-badge.is-meeting {
     }
 
     #chat-page.page.active {
-        height: calc(100dvh - 60px);
+        height: calc(100dvh - var(--mobile-header-height) - var(--mobile-nav-height));
+    }
+
+    #emails-page.page.active,
+    #schedule-page.page.active,
+    #history-page.page.active,
+    #settings-page.page.active {
+        height: calc(100dvh - var(--mobile-header-height) - var(--mobile-nav-height));
     }
 
     .chat-messages {
@@ -4054,6 +4357,16 @@ body.dark-theme .daily-report-badge.is-meeting {
     #sendBtn {
         width: 100%;
     }
+
+    .mobile-bottom-nav {
+        min-height: var(--mobile-nav-height);
+        padding-right: 4px;
+        padding-left: 4px;
+    }
+
+    .mobile-nav-btn {
+        font-size: 9px;
+    }
 }
 
 @media (max-width: 860px) {
@@ -4070,5 +4383,16 @@ body.dark-theme .daily-report-badge.is-meeting {
     body.dark-theme .workspace-action {
         border-color: var(--border);
         background: var(--panel-soft);
+    }
+
+    body.dark-theme .mobile-bottom-nav {
+        border-color: var(--border);
+        background: rgba(23, 28, 42, 0.96);
+        box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.3);
+    }
+
+    body.dark-theme .mobile-nav-btn.active {
+        background: rgba(116, 104, 242, 0.16);
+        color: var(--primary);
     }
 }
