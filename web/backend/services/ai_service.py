@@ -197,7 +197,7 @@ class AIService:
             demo = self._get_demo_response(optimized_messages)
             try:
                 if cache_db:
-                    Cache.set(cache_key, {'response': demo, 'provider': 'demo'}, db_path=cache_db)
+                    Cache.set(cache_key, {'response': demo, 'provider': 'demo'}, ttl=3600, db_path=cache_db)
             except Exception:
                 pass
             return demo
@@ -224,7 +224,7 @@ class AIService:
                     print(f"✅ {provider.upper()} responded successfully")
                     try:
                         if cache_db:
-                            Cache.set(cache_key, {'response': response, 'provider': provider}, db_path=cache_db)
+                            Cache.set(cache_key, {'response': response, 'provider': provider}, ttl=3600, db_path=cache_db)
                     except Exception:
                         pass
                     return response
@@ -776,7 +776,7 @@ class AIService:
         ]
         response = self.generate_response(
             messages,
-            max_tokens=420,
+            max_tokens=min(260, self.task_max_tokens.get('summary', 180)),
             task='summary',
             user_id=user_id
         ).strip()

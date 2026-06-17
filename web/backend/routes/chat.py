@@ -289,6 +289,62 @@ def _format_profile_context(user_id):
     ])
 
 
+def _direct_schedule_list_response(message, user_id, db_path):
+    context = _format_calendar_context(message, user_id, db_path)
+    return (
+        context
+        + "\n\nMình chỉ liệt kê dữ liệu lịch đang có trong Calendar/FlowMate, "
+        "không tự suy đoán thêm sự kiện ngoài dữ liệu này."
+    )
+
+
+def _email_lookup_query(message):
+    normalized = _normalize_intent_text(message)
+    include_read = 'chua doc' not in normalized and 'unread' not in normalized
+    query = 'in:inbox' if include_read else 'is:unread'
+
+    quoted = re.search(r'"([^"]{2,80})"', message or '')
+    if quoted:
+        return f'{query} "{quoted.group(1).strip()}"', include_read
+
+    sender_match = re.search(r'(?:tu|from)\s+([\w\.-]+@[\w\.-]+\.\w+)', normalized)
+    if sender_match:
+        return f'{query} from:{sender_match.group(1)}', include_read
+
+    return query, include_read
+
+
+def _direct_email_search_response(message, user_id, limit=8):
+    token_file = get_user_token_file(user_id)
+    if not token_file or not os.path.exists(token_file):
+        return "Gmail chưa được kết nối, nên mình chưa thể xem email thật của bạn."
+
+    query, include_read = _email_lookup_query(message)
+    emails = GmailService(token_file=token_file).get_emails(
+        max_results=max(1, min(limit, 10)),
+        query=query,
+        include_read=include_read
+    )
+    if not emails:
+        return "Không tìm thấy email phù hợp trong Gmail theo dữ liệu hiện tại."
+
+    lines = [
+        "EMAIL TÌM THẤY",
+        f"Nguồn: Gmail thật, truy vấn: {query}",
+    ]
+    for index, email in enumerate(emails, start=1):
+        snippet = re.sub(r'\s+', ' ', email.get('snippet', '') or '').strip()
+        lines.extend([
+            f"{index}. {email.get('subject') or '(Không có tiêu đề)'}",
+            f"   Người gửi: {email.get('sender') or 'Không xác định'}",
+            f"   Thời gian: {email.get('date') or 'Không xác định'}",
+            f"   Trạng thái: {'Chưa đọc' if email.get('is_unread') else 'Đã đọc'}",
+            f"   Xem trước: {snippet[:220] or 'Không có nội dung xem trước'}",
+        ])
+    lines.append("\nMình không tự kết luận nội dung ngoài phần Gmail trả về ở trên.")
+    return "\n".join(lines)
+
+
 def _build_workspace_context(message, user_id, db_path):
     sources = _intent_sources(message)
     context_parts = []
@@ -482,7 +538,9 @@ def send_message():
                     'sender': email.get('sender'),
                     'subject': email.get('subject'),
                     'date': email.get('date')
-                } for email in source_emails]
+                } for email in source_emails],
+                'grounded': True,
+                'ai_used': True
             })
         except Exception as e:
             logger.exception("Failed to summarize latest Gmail messages for user %s", user_id)
@@ -496,7 +554,9 @@ def send_message():
                 'schedule_created': None,
                 'schedule_suggestion': None,
                 'intent': intent_result,
-                'refresh_targets': refresh_targets
+                'refresh_targets': refresh_targets,
+                'grounded': True,
+                'ai_used': False
             })
 
     client_confirm = bool(data.get('confirmed_schedule'))
@@ -533,7 +593,43 @@ def send_message():
             'schedule_suggestion': None if schedule_created else (intent_result.get('entities') or {}).get('schedule'),
             'workspace_sources': ['calendar'],
             'intent': intent_result,
-            'refresh_targets': ['schedule', 'history']
+            'refresh_targets': ['schedule', 'history'],
+            'grounded': True,
+            'ai_used': False
+        })
+
+    if intent_result.get('intent') == 'schedule.list':
+        response = _direct_schedule_list_response(user_message, user_id, db_path)
+        History.create(user_message, response, action_type='chat', db_path=db_path)
+        return jsonify({
+            'success': True,
+            'response': response,
+            'provider': None,
+            'demo_mode': False,
+            'schedule_created': None,
+            'schedule_suggestion': None,
+            'workspace_sources': ['calendar'],
+            'intent': intent_result,
+            'refresh_targets': refresh_targets,
+            'grounded': True,
+            'ai_used': False
+        })
+
+    if intent_result.get('intent') == 'email.search':
+        response = _direct_email_search_response(user_message, user_id)
+        History.create(user_message, response, action_type='chat', db_path=db_path)
+        return jsonify({
+            'success': True,
+            'response': response,
+            'provider': None,
+            'demo_mode': False,
+            'schedule_created': None,
+            'schedule_suggestion': None,
+            'workspace_sources': ['email'],
+            'intent': intent_result,
+            'refresh_targets': refresh_targets,
+            'grounded': True,
+            'ai_used': False
         })
 
     direct_result = intent_orchestrator.execute_direct(intent_result, user_id, db_path)
@@ -554,7 +650,9 @@ def send_message():
             'schedule_suggestion': direct_result.get('schedule_suggestion'),
             'workspace_sources': direct_result.get('workspace_sources') or [],
             'intent': intent_result,
-            'refresh_targets': direct_result.get('refresh_targets') or refresh_targets
+            'refresh_targets': direct_result.get('refresh_targets') or refresh_targets,
+            'grounded': True,
+            'ai_used': False
         })
 
     # Build messages for AI with recent chat context for smarter responses
@@ -562,10 +660,12 @@ def send_message():
         "role": "system",
         "content": (
             "You are FlowMate. " + mode_prompt
-            + " Be concise, clear, and action-focused. Classify useful information as "
-            "meetings, deadlines, tasks, reminders, important information, or low priority. "
-            "Suggest the next action, but do not claim a sensitive action was completed "
-            "unless the user explicitly confirmed it."
+            + " Answer in Vietnamese unless the user asks otherwise. Be concise, clear, and action-focused. "
+            "Use only provided workspace context for facts about the user's email, calendar, history, or account. "
+            "If the data is missing, say you do not have enough data instead of guessing. "
+            "Do not invent senders, dates, deadlines, meetings, or completed actions. "
+            "Classify useful information as meetings, deadlines, tasks, reminders, important information, or low priority. "
+            "Suggest the next action, but do not claim a sensitive action was completed unless the user explicitly confirmed it."
         )
     }]
 
@@ -600,7 +700,8 @@ def send_message():
             "content": (
                 "DỮ LIỆU WORKSPACE THỰC TẾ\n"
                 "Chỉ dùng dữ liệu dưới đây để trả lời câu hỏi tiếp theo. "
-                "Không bịa thêm dữ liệu không có trong context.\n\n"
+                "Không bịa thêm dữ liệu không có trong context. "
+                "Nếu context không đủ, nói rõ thiếu dữ liệu nào.\n\n"
                 + workspace_context
             )
         })
@@ -712,7 +813,9 @@ def send_message():
         'schedule_suggestion': schedule_suggestion,
         'workspace_sources': sorted(workspace_sources),
         'intent': intent_result,
-        'refresh_targets': sorted(set(refresh_targets))
+        'refresh_targets': sorted(set(refresh_targets)),
+        'grounded': bool(workspace_sources),
+        'ai_used': True
     })
 
 @chat_bp.route('/summarize-email', methods=['POST'])
