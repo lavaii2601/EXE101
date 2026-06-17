@@ -276,14 +276,6 @@ public class MainActivity extends Activity {
         language.addView(languageActions);
         body.addView(language);
 
-        LinearLayout connection = card();
-        connection.addView(label(tr("KẾT NỐI BACKEND", "BACKEND CONNECTION"), 11, Typeface.BOLD, ACCENT));
-        connection.addView(label(api.getBaseUrl(), 13, Typeface.NORMAL, MUTED));
-        Button changeBackend = secondaryButton(tr("Thay đổi Backend API", "Change Backend API"));
-        changeBackend.setOnClickListener(v -> showBackendUrlDialog());
-        connection.addView(changeBackend);
-        body.addView(connection);
-
         LinearLayout data = card();
         data.addView(label(tr("DỮ LIỆU & QUYỀN RIÊNG TƯ", "DATA & PRIVACY"), 11, Typeface.BOLD, ACCENT));
         Button clearHistory = secondaryButton(tr("Xóa toàn bộ lịch sử", "Clear all history"));
@@ -304,23 +296,6 @@ public class MainActivity extends Activity {
         body.addView(data);
 
         content.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-    }
-
-    private void showBackendUrlDialog() {
-        EditText backendInput = input(getString(R.string.backend_base_url), false);
-        backendInput.setText(api.getBaseUrl());
-        new AlertDialog.Builder(this)
-                .setTitle("Backend API")
-                .setMessage(tr("Mặc định dùng backend Railway. Có thể đổi tạm sang local khi phát triển.", "Railway backend is used by default. You can temporarily switch to local for development."))
-                .setView(backendInput)
-                .setNegativeButton(tr("Hủy", "Cancel"), null)
-                .setPositiveButton(tr("Lưu", "Save"), (dialog, which) -> {
-                    api.setBaseUrl(backendInput.getText().toString());
-                    prefs.edit().putString("baseUrl", api.getBaseUrl()).apply();
-                    toast(tr("Đã lưu Backend API", "Backend API saved"));
-                    showSettings();
-                })
-                .show();
     }
 
     private String tr(String vietnamese, String english) {
