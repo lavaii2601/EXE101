@@ -217,13 +217,11 @@ def _format_calendar_context(message, user_id, db_path):
             time_max=window_end.isoformat()
         )
 
-    local_schedules = []
-    for schedule in Schedule.get_all(limit=100, db_path=db_path):
-        start_time = _parse_schedule_datetime(schedule.get('start_time'))
-        if start_time and window_start <= start_time < window_end:
-            local_schedules.append(schedule)
-    local_schedules.sort(
-        key=lambda item: _parse_schedule_datetime(item.get('start_time')) or window_end
+    local_schedules = Schedule.get_between(
+        window_start.isoformat(),
+        window_end.isoformat(),
+        limit=100,
+        db_path=db_path
     )
 
     if not google_events and not local_schedules:
@@ -558,50 +556,6 @@ def send_message():
             'intent': intent_result,
             'refresh_targets': direct_result.get('refresh_targets') or refresh_targets
         })
-
-    if _is_latest_email_summary_request(user_message):
-        try:
-            requested_count = _latest_email_count(user_message)
-            response, source_emails = _summarize_latest_emails(user_id, requested_count)
-            source_email = source_emails[0]
-            History.create(user_message, response, action_type='chat', db_path=db_path)
-            return jsonify({
-                'success': True,
-                'response': response,
-                'provider': ai_service.last_provider_used,
-                'demo_mode': ai_service.last_provider_used == 'demo',
-                'schedule_created': None,
-                'schedule_suggestion': None,
-                'workspace_sources': ['email'],
-                'intent': intent_result,
-                'refresh_targets': refresh_targets,
-                'email_source': {
-                    'id': source_email.get('id'),
-                    'sender': source_email.get('sender'),
-                    'subject': source_email.get('subject'),
-                    'date': source_email.get('date')
-                },
-                'email_sources': [{
-                    'id': email.get('id'),
-                    'sender': email.get('sender'),
-                    'subject': email.get('subject'),
-                    'date': email.get('date')
-                } for email in source_emails]
-            })
-        except Exception as e:
-            logger.exception("Failed to summarize latest Gmail messages for user %s", user_id)
-            response = f"Không thể lấy email gần nhất từ Gmail: {e}"
-            History.create(user_message, response, action_type='chat', db_path=db_path)
-            return jsonify({
-                'success': True,
-                'response': response,
-                'provider': None,
-                'demo_mode': False,
-                'schedule_created': None,
-                'schedule_suggestion': None,
-                'intent': intent_result,
-                'refresh_targets': refresh_targets
-            })
 
     # Build messages for AI with recent chat context for smarter responses
     messages = [{

@@ -43,6 +43,8 @@ class Cache:
         # Create index for faster lookups
         try:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_cache_key ON cache(key)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_cache_key_expires ON cache(key, expires_at)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_cache_expires ON cache(expires_at)')
         except sqlite3.OperationalError:
             pass
 

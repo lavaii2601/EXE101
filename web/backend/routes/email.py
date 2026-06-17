@@ -248,17 +248,9 @@ def _extract_meeting_suggestion(email):
     }
 
 
-def _meeting_suggestion_exists_in_schedule(suggestion, db_path):
-    suggested_start = suggestion.get('start_time')
-    if not suggested_start:
-        return False
-    try:
-        suggested_dt = datetime.fromisoformat(suggested_start)
-    except (TypeError, ValueError):
-        return False
-
-    subject = _normalize_search_text(suggestion.get('subject', ''))
-    for schedule in Schedule.get_all(limit=200, db_path=db_path):
+def _load_schedule_match_index(db_path):
+    index = []
+    for schedule in Schedule.get_all(limit=500, db_path=db_path):
         try:
             schedule_dt = datetime.fromisoformat(
                 str(schedule.get('start_time') or '').replace('Z', '+00:00')
@@ -267,9 +259,31 @@ def _meeting_suggestion_exists_in_schedule(suggestion, db_path):
                 schedule_dt = schedule_dt.replace(tzinfo=None)
         except (TypeError, ValueError):
             continue
+        index.append({
+            'start_time': schedule_dt,
+            'title': _normalize_search_text(schedule.get('title', '')),
+        })
+    return index
+
+
+def _meeting_suggestion_exists_in_schedule(suggestion, schedule_index):
+    suggested_start = suggestion.get('start_time')
+    if not suggested_start:
+        return False
+    try:
+        suggested_dt = datetime.fromisoformat(suggested_start)
+    except (TypeError, ValueError):
+        return False
+
+    if suggested_dt.tzinfo is not None:
+        suggested_dt = suggested_dt.replace(tzinfo=None)
+
+    subject = _normalize_search_text(suggestion.get('subject', ''))
+    for schedule in schedule_index:
+        schedule_dt = schedule.get('start_time')
         if abs((schedule_dt - suggested_dt).total_seconds()) > 300:
             continue
-        title = _normalize_search_text(schedule.get('title', ''))
+        title = schedule.get('title', '')
         if title and (title in subject or subject in title):
             return True
     return False
@@ -277,6 +291,7 @@ def _meeting_suggestion_exists_in_schedule(suggestion, db_path):
 
 def _store_meeting_suggestions(emails, db_path):
     detected = []
+    schedule_index = None
     for email in emails:
         email_id = email.get('id')
         if not email_id:
@@ -284,7 +299,9 @@ def _store_meeting_suggestions(emails, db_path):
         suggestion = _extract_meeting_suggestion(email)
         if not suggestion:
             continue
-        if _meeting_suggestion_exists_in_schedule(suggestion, db_path):
+        if schedule_index is None:
+            schedule_index = _load_schedule_match_index(db_path)
+        if _meeting_suggestion_exists_in_schedule(suggestion, schedule_index):
             MeetingSuggestion.dismiss_email(email_id, db_path=db_path)
             continue
         suggestion_id = MeetingSuggestion.upsert(email_id, suggestion, db_path=db_path)
@@ -606,6 +623,7 @@ def get_unread_emails():
         db_cache_key = cache_key
         
         # Try in-memory cache first, then DB cache.
+        suggestions_scanned = False
         cached_emails, cached_total = _get_cached_emails(cache_key)
         if cached_emails is not None:
             filtered_emails = cached_emails
@@ -636,6 +654,7 @@ def get_unread_emails():
                     hydrated.append(email)
 
                 _store_meeting_suggestions(hydrated, db_path)
+                suggestions_scanned = True
                 filtered_emails = [email for email in hydrated if _matches_filter(email, filter_type)]
                 total_raw = len(raw_emails)
 
@@ -672,7 +691,8 @@ def get_unread_emails():
             _hydrate_email_for_list(email, user_id, cached_entries=cached_entries)
             for email in selected_emails
         ]
-        _store_meeting_suggestions(page_emails, db_path)
+        if not suggestions_scanned:
+            _store_meeting_suggestions(page_emails, db_path)
 
         return jsonify({
             'success': True,

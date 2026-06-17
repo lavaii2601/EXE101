@@ -32,6 +32,8 @@ class History:
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_history_created_at ON history(created_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_history_action_created ON history(action_type, created_at)")
         conn.commit()
         conn.close()
         History._initialized_dbs.add(db_path)

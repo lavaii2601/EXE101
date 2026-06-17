@@ -43,6 +43,8 @@ class MeetingSuggestion:
             )
             """
         )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_meeting_suggestions_status_start ON meeting_suggestions(status, start_time, created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_meeting_suggestions_email ON meeting_suggestions(email_id)")
         conn.commit()
         conn.close()
         MeetingSuggestion._initialized_dbs.add(db_path)

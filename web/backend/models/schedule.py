@@ -48,6 +48,10 @@ class Schedule:
             cursor.execute('ALTER TABLE schedules ADD COLUMN location TEXT')
         except sqlite3.OperationalError:
             pass
+
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_schedules_start_time ON schedules(start_time)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_schedules_status_start ON schedules(status, start_time)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_schedules_calendar_event ON schedules(calendar_event_id)')
         
         conn.commit()
         conn.close()
@@ -141,6 +145,43 @@ class Schedule:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM schedules ORDER BY start_time DESC LIMIT ?', (limit,))
+        schedules = cursor.fetchall()
+        conn.close()
+        return [dict(s) for s in schedules]
+
+    @staticmethod
+    def get_between(start_time, end_time, limit=100, db_path=None):
+        """Get schedules whose start time falls in [start_time, end_time)."""
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM schedules
+                    WHERE user_id = %s
+                      AND start_time >= %s
+                      AND start_time < %s
+                    ORDER BY start_time ASC
+                    LIMIT %s
+                    """,
+                    (user_id, start_time, end_time, limit),
+                ).fetchall()
+                return pg.normalize_rows(rows)
+
+        db_path = db_path or Config.DATABASE_PATH
+        Schedule.init_db(db_path=db_path)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT * FROM schedules
+            WHERE start_time >= ? AND start_time < ?
+            ORDER BY start_time ASC
+            LIMIT ?
+            ''',
+            (start_time, end_time, limit)
+        )
         schedules = cursor.fetchall()
         conn.close()
         return [dict(s) for s in schedules]
