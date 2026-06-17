@@ -6,6 +6,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
+from models import postgres_db as pg
 
 
 class User:
@@ -14,6 +15,8 @@ class User:
     @staticmethod
     def init_db():
         """Initialize users table"""
+        if pg.enabled():
+            return
         db_path = Config.DATABASE_PATH
         if db_path in User._initialized_dbs:
             return
@@ -72,6 +75,9 @@ class User:
     @staticmethod
     def get_or_create(user_id, name='Teacher', email=''):
         """Get or create user"""
+        if pg.enabled():
+            return pg.ensure_user(user_id, name=name, email=email)
+
         db_path = Config.DATABASE_PATH
         User.init_db()
         conn = sqlite3.connect(db_path)
@@ -96,6 +102,33 @@ class User:
     @staticmethod
     def update(user_id, **kwargs):
         """Update user info"""
+        if pg.enabled():
+            allowed_fields = [
+                'name', 'email', 'avatar_url', 'gmail_connected', 'gmail_email',
+                'gmail_name', 'gmail_picture', 'gmail_connected_at', 'user_mode',
+                'user_mode_selected_at'
+            ]
+            updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+            if not updates:
+                return False
+            if updates.get('user_mode') == '':
+                updates['user_mode'] = None
+            if 'gmail_connected' in updates:
+                updates['gmail_connected'] = bool(updates['gmail_connected'])
+            pg.ensure_user(user_id)
+            set_parts = [
+                f'{key} = %s::user_mode' if key == 'user_mode' else f'{key} = %s'
+                for key in updates.keys()
+            ]
+            set_clause = ', '.join(set_parts)
+            values = list(updates.values()) + [user_id]
+            with pg.connection() as conn:
+                cur = conn.execute(
+                    f"UPDATE users SET {set_clause} WHERE user_id = %s",
+                    values,
+                )
+                return cur.rowcount > 0
+
         db_path = Config.DATABASE_PATH
         User.init_db()
         conn = sqlite3.connect(db_path)
@@ -131,6 +164,14 @@ class User:
     @staticmethod
     def get(user_id):
         """Get user by ID"""
+        if pg.enabled():
+            with pg.connection() as conn:
+                user = conn.execute(
+                    "SELECT * FROM users WHERE user_id = %s",
+                    (user_id,),
+                ).fetchone()
+                return pg.normalize_row(user)
+
         db_path = Config.DATABASE_PATH
         User.init_db()
         conn = sqlite3.connect(db_path)

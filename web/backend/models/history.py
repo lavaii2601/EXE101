@@ -6,6 +6,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
+from models import postgres_db as pg
 
 
 class History:
@@ -13,6 +14,8 @@ class History:
 
     @staticmethod
     def init_db(db_path=None):
+        if pg.enabled():
+            return
         db_path = db_path or Config.DATABASE_PATH
         if db_path in History._initialized_dbs:
             return
@@ -35,6 +38,23 @@ class History:
 
     @staticmethod
     def create(user_message, assistant_response, action_type="chat", related_id=None, db_path=None):
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            pg.ensure_user(user_id)
+            with pg.connection() as conn:
+                row = conn.execute(
+                    """
+                    INSERT INTO history (
+                        user_id, user_message, assistant_response,
+                        action_type, related_id, created_at
+                    )
+                    VALUES (%s, %s, %s, %s::activity_type, %s, %s)
+                    RETURNING id
+                    """,
+                    (user_id, user_message, assistant_response, action_type, related_id, datetime.now()),
+                ).fetchone()
+                return row['id']
+
         db_path = db_path or Config.DATABASE_PATH
         History.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)
@@ -50,6 +70,20 @@ class History:
 
     @staticmethod
     def get_recent(limit=10, db_path=None):
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM history
+                    WHERE user_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    (user_id, limit),
+                ).fetchall()
+                return pg.normalize_rows(rows)
+
         db_path = db_path or Config.DATABASE_PATH
         History.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)
@@ -62,6 +96,21 @@ class History:
 
     @staticmethod
     def clear_all(action_type=None, db_path=None):
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                if action_type:
+                    cur = conn.execute(
+                        "DELETE FROM history WHERE user_id = %s AND action_type = %s",
+                        (user_id, action_type),
+                    )
+                else:
+                    cur = conn.execute(
+                        "DELETE FROM history WHERE user_id = %s",
+                        (user_id,),
+                    )
+                return cur.rowcount
+
         db_path = db_path or Config.DATABASE_PATH
         History.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)

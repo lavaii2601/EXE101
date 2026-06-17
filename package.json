@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "db:init": "node scripts/init-postgres-schema.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}

@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
+from models import postgres_db as pg
 
 class Cache:
     """Cache model for storing temporary data (emails, calendar events, schedules)"""
@@ -19,6 +20,8 @@ class Cache:
     @staticmethod
     def init_db(db_path=None):
         """Initialize cache table"""
+        if pg.enabled():
+            return
         db_path = db_path or Config.DATABASE_PATH
         if db_path in Cache._initialized_dbs:
             return
@@ -50,6 +53,23 @@ class Cache:
     @staticmethod
     def set(key, value, ttl=DEFAULT_TTL, db_path=None):
         """Store data in cache"""
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            pg.ensure_user(user_id)
+            expires_at = datetime.utcnow() + timedelta(seconds=ttl)
+            with pg.connection() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO cache (user_id, key, value, expires_at)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (user_id, key) DO UPDATE
+                    SET value = EXCLUDED.value,
+                        expires_at = EXCLUDED.expires_at
+                    """,
+                    (user_id, key, pg.json_value(value), expires_at),
+                )
+            return
+
         db_path = db_path or Config.DATABASE_PATH
         Cache.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)
@@ -69,6 +89,18 @@ class Cache:
     @staticmethod
     def get(key, db_path=None):
         """Get data from cache if not expired"""
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                row = conn.execute(
+                    """
+                    SELECT value FROM cache
+                    WHERE user_id = %s AND key = %s AND expires_at > NOW()
+                    """,
+                    (user_id, key),
+                ).fetchone()
+                return row['value'] if row else None
+
         db_path = db_path or Config.DATABASE_PATH
         Cache.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)
@@ -96,6 +128,20 @@ class Cache:
         keys = [key for key in (keys or []) if key]
         if not keys:
             return {}
+
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT key, value FROM cache
+                    WHERE user_id = %s
+                      AND key = ANY(%s)
+                      AND expires_at > NOW()
+                    """,
+                    (user_id, keys),
+                ).fetchall()
+                return {row['key']: row['value'] for row in rows}
 
         db_path = db_path or Config.DATABASE_PATH
         Cache.init_db(db_path=db_path)
@@ -125,6 +171,15 @@ class Cache:
     @staticmethod
     def delete(key, db_path=None):
         """Delete cache entry"""
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                conn.execute(
+                    "DELETE FROM cache WHERE user_id = %s AND key = %s",
+                    (user_id, key),
+                )
+            return
+
         db_path = db_path or Config.DATABASE_PATH
         Cache.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)
@@ -137,6 +192,15 @@ class Cache:
     @staticmethod
     def clear_pattern(pattern, db_path=None):
         """Clear all cache entries matching pattern"""
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                conn.execute(
+                    "DELETE FROM cache WHERE user_id = %s AND key LIKE %s",
+                    (user_id, pattern),
+                )
+            return
+
         db_path = db_path or Config.DATABASE_PATH
         Cache.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)
@@ -149,6 +213,15 @@ class Cache:
     @staticmethod
     def clear_expired(db_path=None):
         """Clear expired cache entries"""
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                conn.execute(
+                    "DELETE FROM cache WHERE user_id = %s AND expires_at < NOW()",
+                    (user_id,),
+                )
+            return
+
         db_path = db_path or Config.DATABASE_PATH
         Cache.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)
@@ -161,6 +234,12 @@ class Cache:
     @staticmethod
     def clear_all(db_path=None):
         """Clear all cache entries"""
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                conn.execute("DELETE FROM cache WHERE user_id = %s", (user_id,))
+            return
+
         db_path = db_path or Config.DATABASE_PATH
         Cache.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)

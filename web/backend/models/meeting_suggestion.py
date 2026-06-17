@@ -6,6 +6,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
+from models import postgres_db as pg
 
 
 class MeetingSuggestion:
@@ -13,6 +14,8 @@ class MeetingSuggestion:
 
     @staticmethod
     def init_db(db_path=None):
+        if pg.enabled():
+            return
         db_path = db_path or Config.DATABASE_PATH
         if db_path in MeetingSuggestion._initialized_dbs:
             return
@@ -46,6 +49,47 @@ class MeetingSuggestion:
 
     @staticmethod
     def upsert(email_id, suggestion, db_path=None):
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            pg.ensure_user(user_id)
+            with pg.connection() as conn:
+                row = conn.execute(
+                    """
+                    INSERT INTO meeting_suggestions (
+                        user_id, email_id, sender, subject, email_date, snippet,
+                        title, description, start_time, end_time, location, attendees
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id, email_id) DO UPDATE
+                    SET sender = EXCLUDED.sender,
+                        subject = EXCLUDED.subject,
+                        email_date = EXCLUDED.email_date,
+                        snippet = EXCLUDED.snippet,
+                        title = EXCLUDED.title,
+                        description = EXCLUDED.description,
+                        start_time = EXCLUDED.start_time,
+                        end_time = EXCLUDED.end_time,
+                        location = EXCLUDED.location,
+                        attendees = EXCLUDED.attendees
+                    RETURNING id
+                    """,
+                    (
+                        user_id,
+                        email_id,
+                        suggestion.get("sender", ""),
+                        suggestion.get("subject", ""),
+                        None,
+                        suggestion.get("snippet", ""),
+                        suggestion.get("title", ""),
+                        suggestion.get("description", ""),
+                        suggestion.get("start_time"),
+                        suggestion.get("end_time"),
+                        suggestion.get("location", ""),
+                        suggestion.get("attendees", ""),
+                    ),
+                ).fetchone()
+                return row['id']
+
         db_path = db_path or Config.DATABASE_PATH
         MeetingSuggestion.init_db(db_path)
         conn = sqlite3.connect(db_path)
@@ -107,6 +151,19 @@ class MeetingSuggestion:
 
     @staticmethod
     def get_pending(db_path=None):
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM meeting_suggestions
+                    WHERE user_id = %s AND status = 'pending'
+                    ORDER BY COALESCE(start_time, created_at), created_at DESC
+                    """,
+                    (user_id,),
+                ).fetchall()
+                return pg.normalize_rows(rows)
+
         db_path = db_path or Config.DATABASE_PATH
         MeetingSuggestion.init_db(db_path)
         conn = sqlite3.connect(db_path)
@@ -123,6 +180,19 @@ class MeetingSuggestion:
 
     @staticmethod
     def update_status(suggestion_id, status, schedule_id=None, db_path=None):
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                cur = conn.execute(
+                    """
+                    UPDATE meeting_suggestions
+                    SET status = %s::meeting_suggestion_status, schedule_id = %s
+                    WHERE id = %s AND user_id = %s
+                    """,
+                    (status, schedule_id, suggestion_id, user_id),
+                )
+                return cur.rowcount > 0
+
         db_path = db_path or Config.DATABASE_PATH
         MeetingSuggestion.init_db(db_path)
         conn = sqlite3.connect(db_path)
@@ -140,6 +210,19 @@ class MeetingSuggestion:
 
     @staticmethod
     def dismiss_email(email_id, db_path=None):
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                cur = conn.execute(
+                    """
+                    UPDATE meeting_suggestions
+                    SET status = 'dismissed'
+                    WHERE user_id = %s AND email_id = %s AND status = 'pending'
+                    """,
+                    (user_id, email_id),
+                )
+                return cur.rowcount > 0
+
         db_path = db_path or Config.DATABASE_PATH
         MeetingSuggestion.init_db(db_path)
         conn = sqlite3.connect(db_path)

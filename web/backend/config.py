@@ -24,6 +24,7 @@ class Config:
     REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DATA_DIR = os.path.join(REPO_ROOT, "data")
     DATABASE_PATH = os.path.join(DATA_DIR, "assistant.db")
+    DATABASE_URL = os.getenv("DATABASE_URL", "")
     GMAIL_CREDENTIALS_FILE = os.path.join(DATA_DIR, "credentials.json")
     GMAIL_TOKEN_FILE = os.path.join(DATA_DIR, "users", "gmail_token.pickle")
 
