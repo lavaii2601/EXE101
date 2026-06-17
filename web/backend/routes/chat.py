@@ -34,39 +34,46 @@ def _normalize_intent_text(value):
 
 def _is_latest_email_summary_request(message):
     normalized = _normalize_intent_text(message)
-    has_email = any(term in normalized for term in (
-        'email', 'e-mail', 'gmail', 'mail', 'thu moi', 'hop thu'
-    ))
-    has_latest = any(term in normalized for term in (
-        'moi nhat', 'gan nhat', 'vua nhan', 'moi nhan',
-        'latest', 'newest', 'most recent'
-    ))
-    has_summary = any(term in normalized for term in (
-        'tom tat', 'noi dung', 'noi gi', 'co gi', 'doc ',
-        'summary', 'summarize', 'what does'
-    ))
-    return has_email and has_latest and has_summary
+    email_word = r'(?:e-?mails?|gmails?|mails?|thu|hop thu|inbox)'
+    has_email = re.search(rf'\b{email_word}\b', normalized) is not None
+    has_latest = (
+        any(term in normalized for term in (
+            'moi nhat', 'gan nhat', 'gan day', 'vua nhan', 'moi nhan',
+            'latest', 'newest', 'most recent', 'recent',
+            'just received', 'newly received', 'last received'
+        ))
+        or re.search(r'\blast\s+(?:e-?mails?|mails?|message|messages)\b', normalized) is not None
+    )
+    return has_email and has_latest
 
 
 def _latest_email_count(message):
     normalized = _normalize_intent_text(message)
-    match = re.search(
-        r'\b(\d{1,2})\s*(?:email|e-mail|mail|thu)\b',
-        normalized
+    email_word = r'(?:e-?mails?|gmails?|mails?|thu|hop thu)'
+    latest_word = (
+        r'(?:moi nhat|gan nhat|gan day|vua nhan|moi nhan|latest|newest|'
+        r'most recent|recent|just received|newly received|last)'
+    )
+    match = (
+        re.search(rf'\b(\d{{1,2}})\s*(?:{latest_word}\s*)?{email_word}\b', normalized)
+        or re.search(rf'\b{latest_word}\s*(\d{{1,2}})\s*{email_word}\b', normalized)
+        or re.search(rf'\b{email_word}\s*{latest_word}\s*(\d{{1,2}})\b', normalized)
     )
     if match:
         return max(1, min(int(match.group(1)), 5))
 
     number_words = {
-        'mot': 1,
-        'hai': 2,
-        'ba': 3,
-        'bon': 4,
-        'tu': 4,
-        'nam': 5,
+        'mot': 1, 'một': 1, 'one': 1,
+        'hai': 2, 'two': 2,
+        'ba': 3, 'three': 3,
+        'bon': 4, 'bốn': 4, 'tu': 4, 'four': 4,
+        'nam': 5, 'năm': 5, 'five': 5,
     }
     for word, count in number_words.items():
-        if re.search(rf'\b{word}\s+(?:email|e-mail|mail|thu)\b', normalized):
+        if (
+            re.search(rf'\b{word}\s+(?:{latest_word}\s+)?{email_word}\b', normalized)
+            or re.search(rf'\b{latest_word}\s+{word}\s+{email_word}\b', normalized)
+        ):
             return count
     return 1
 
