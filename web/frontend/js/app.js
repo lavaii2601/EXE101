@@ -316,7 +316,7 @@ const USER_MODES = {
     }
 };
 
-const ONBOARDING_MODE_KEYS = ['student', 'worker', 'mentor', 'teacher', 'freelancer'];
+const ONBOARDING_MODE_KEYS = ['student', 'worker', 'mentor', 'teacher', 'freelancer', 'creator'];
 
 function modeLabel(mode) {
     return currentLanguage === 'en' ? (mode.labelEn || mode.label) : mode.label;
