@@ -530,7 +530,7 @@ def _build_oauth_flow(state=None, native=False):
 
     raise RuntimeError(
         'Gmail OAuth chưa được cấu hình. Vui lòng set GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET '
-        'hoặc GMAIL_CREDENTIALS_JSON trên Vercel.'
+        'hoặc GMAIL_CREDENTIALS_JSON trong biến môi trường của nơi deploy.'
     )
 
 
@@ -551,6 +551,9 @@ def oauth_config_check():
         'deployment': {
             'vercel': bool(os.getenv('VERCEL')),
             'vercel_url': os.getenv('VERCEL_URL', ''),
+            'railway': bool(os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_PROJECT_ID')),
+            'railway_environment': os.getenv('RAILWAY_ENVIRONMENT', ''),
+            'railway_public_domain': os.getenv('RAILWAY_PUBLIC_DOMAIN', ''),
             'host_header': request.headers.get('host', ''),
             'forwarded_host': request.headers.get('x-forwarded-host', '')
         },
