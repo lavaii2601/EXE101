@@ -2939,7 +2939,7 @@ async function loadWeekSchedule(options = {}) {
         rangeLabel.textContent = `${formatWeekDate(currentWeekStart)} - ${formatWeekDate(sunday)}/${sunday.getFullYear()}`;
     }
 
-    tableBody.innerHTML = `<tr><td colspan="6" class="week-loading">${ui('Đang tải...', 'Loading...')}</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="8" class="week-loading">${ui('Đang tải...', 'Loading...')}</td></tr>`;
 
     try {
         const syncFlag = options.sync ? 1 : 0;
@@ -2951,12 +2951,26 @@ async function loadWeekSchedule(options = {}) {
         if (requestId !== weekScheduleRequestId) return;
 
         if (!data.success) {
-            tableBody.innerHTML = `<tr><td colspan="6" class="week-loading">${ui('Không thể tải lịch tuần', 'Unable to load weekly calendar')}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="8" class="week-loading">${ui('Không thể tải lịch tuần', 'Unable to load weekly calendar')}</td></tr>`;
             return;
         }
 
+        const days = Array.isArray(data.days) ? data.days : [];
+        const eventHours = Array.from(new Set(
+            days
+                .flatMap((dayEvents) => Array.isArray(dayEvents) ? dayEvents : [])
+                .map((schedule) => new Date(schedule.start_time))
+                .filter((date) => !Number.isNaN(date.getTime()))
+                .map((date) => date.getHours())
+        )).sort((a, b) => a - b);
+
         tableBody.innerHTML = '';
-        for (let hour = 8; hour <= 18; hour++) {
+        if (eventHours.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="8" class="week-loading">${ui('Tuần này chưa có lịch hẹn', 'No appointments this week')}</td></tr>`;
+            return;
+        }
+
+        for (const hour of eventHours) {
             const row = document.createElement('tr');
             const timeCell = document.createElement('th');
             timeCell.className = 'week-time-label';
@@ -2970,7 +2984,7 @@ async function loadWeekSchedule(options = {}) {
                 td.className = 'week-hour-cell';
                 if (isSameDate(dayDate, today)) td.classList.add('is-today');
 
-                const dayEvents = (data.days && data.days[i]) || [];
+                const dayEvents = days[i] || [];
                 dayEvents
                     .filter((schedule) => new Date(schedule.start_time).getHours() === hour)
                     .forEach((schedule) => {
