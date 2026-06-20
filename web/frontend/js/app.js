@@ -228,6 +228,7 @@ function applyLanguage() {
     updateUserModeUI(currentUserMode);
     updateEmailFilterUI();
     updateSidebarTooltips();
+    setupDateTimePreviews();
 }
 
 function updateSidebarTooltips() {
@@ -451,6 +452,8 @@ async function initApp() {
         if (clearBtn) {
             clearBtn.addEventListener('click', clearConversation);
         }
+        setupChatWorkspaceControls();
+        setupDateTimePreviews();
 
         // Gmail buttons
         const userAvatar = document.getElementById('userAvatar');
@@ -573,9 +576,10 @@ async function initApp() {
                 apiFetch(`${API_BASE}/email/cache/clear`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
-                }).then(() => {
-                    loadEmails();
-                }).catch(err => console.error('Cache clear error:', err));
+                }).then(() => loadEmails())
+                    .then(() => scanMeetingSuggestions(true))
+                    .then(() => loadMeetingSuggestions())
+                    .catch(err => console.error('Cache clear error:', err));
             });
         }
 
@@ -590,7 +594,7 @@ async function initApp() {
         if (refreshCalendarBtn) {
             refreshCalendarBtn.addEventListener('click', () => {
                 console.log('🔄 Refreshing calendar events');
-                loadCalendarEvents();
+                refreshCalendarFromGoogle();
             });
         }
 
@@ -604,7 +608,7 @@ async function initApp() {
         if (prevWeekBtn) {
             prevWeekBtn.addEventListener('click', () => {
                 currentWeekStart.setDate(currentWeekStart.getDate() - 7);
-                loadWeekSchedule();
+                loadWeekSchedule({ skipSyncRefresh: true });
             });
         }
 
@@ -612,7 +616,7 @@ async function initApp() {
         if (nextWeekBtn) {
             nextWeekBtn.addEventListener('click', () => {
                 currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-                loadWeekSchedule();
+                loadWeekSchedule({ skipSyncRefresh: true });
             });
         }
 
@@ -620,7 +624,7 @@ async function initApp() {
         if (todayWeekBtn) {
             todayWeekBtn.addEventListener('click', () => {
                 currentWeekStart = getMonday(new Date());
-                loadWeekSchedule();
+                loadWeekSchedule({ skipSyncRefresh: true });
             });
         }
 
@@ -671,9 +675,6 @@ async function initApp() {
         }
     }
     await refreshAuthButtons();
-    scanMeetingSuggestions().catch(error => {
-        console.warn('Background meeting suggestion scan failed:', error);
-    });
     checkRuntimeConfig();
     
     // Auto-load emails if user is on emails page and authenticated
@@ -1000,6 +1001,82 @@ async function refreshWorkspaceTargets(targets = []) {
 
 function formatDateForApi(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function parseDateTimeValue(value) {
+    if (!value) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatReadableDateTime(value) {
+    const date = parseDateTimeValue(value);
+    if (!date) return ui('Chưa chọn thời gian', 'No time selected');
+    const locale = currentLanguage === 'en' ? 'en-US' : 'vi-VN';
+    return date.toLocaleString(locale, {
+        weekday: 'long',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function formatReadableDate(value) {
+    const date = parseDateTimeValue(value);
+    if (!date) return ui('Chưa rõ ngày', 'Date unknown');
+    const locale = currentLanguage === 'en' ? 'en-US' : 'vi-VN';
+    return date.toLocaleDateString(locale, {
+        weekday: 'long',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+}
+
+function formatReadableTime(value) {
+    const date = parseDateTimeValue(value);
+    if (!date) return ui('Chưa rõ giờ', 'Time unknown');
+    const locale = currentLanguage === 'en' ? 'en-US' : 'vi-VN';
+    return date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatScheduleRange(startValue, endValue) {
+    const start = parseDateTimeValue(startValue);
+    const end = parseDateTimeValue(endValue);
+    if (!start) {
+        return {
+            date: ui('Chưa rõ ngày', 'Date unknown'),
+            time: ui('Chưa rõ giờ', 'Time unknown'),
+            full: ui('Chưa xác định thời gian', 'Time not specified')
+        };
+    }
+    const startTime = formatReadableTime(start);
+    const endTime = end ? formatReadableTime(end) : '';
+    return {
+        date: formatReadableDate(start),
+        time: endTime ? `${startTime} - ${endTime}` : startTime,
+        full: endTime ? `${formatReadableDate(start)} · ${startTime} - ${endTime}` : formatReadableDateTime(start)
+    };
+}
+
+function updateDateTimePreview(input) {
+    if (!input) return;
+    const preview = document.querySelector(`[data-preview-for="${input.id}"]`);
+    if (!preview) return;
+    preview.textContent = formatReadableDateTime(input.value);
+    preview.classList.toggle('has-value', !!parseDateTimeValue(input.value));
+}
+
+function setupDateTimePreviews() {
+    document.querySelectorAll('input[type="datetime-local"]').forEach((input) => {
+        if (input.dataset.previewReady === 'true') return;
+        input.dataset.previewReady = 'true';
+        input.addEventListener('input', () => updateDateTimePreview(input));
+        input.addEventListener('change', () => updateDateTimePreview(input));
+        updateDateTimePreview(input);
+    });
 }
 
 function formatQuickScheduleDate(date) {
@@ -1345,9 +1422,10 @@ function setupEventListeners() {
             apiFetch(`${API_BASE}/email/cache/clear`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
-            }).then(() => {
-                loadEmails();
-            }).catch(err => console.error('Cache clear error:', err));
+            }).then(() => loadEmails())
+                .then(() => scanMeetingSuggestions(true))
+                .then(() => loadMeetingSuggestions())
+                .catch(err => console.error('Cache clear error:', err));
         });
     }
     
@@ -1365,7 +1443,7 @@ function setupEventListeners() {
     if (refreshCalendarBtn) {
         refreshCalendarBtn.addEventListener('click', () => {
             console.log('🔄 Refreshing calendar events');
-            loadCalendarEvents();
+            refreshCalendarFromGoogle();
         });
     }
     
@@ -1379,7 +1457,7 @@ function setupEventListeners() {
     if (prevWeekBtn) {
         prevWeekBtn.addEventListener('click', () => {
             currentWeekStart.setDate(currentWeekStart.getDate() - 7);
-            loadWeekSchedule();
+                loadWeekSchedule({ skipSyncRefresh: true });
         });
     }
 
@@ -1387,7 +1465,7 @@ function setupEventListeners() {
     if (nextWeekBtn) {
         nextWeekBtn.addEventListener('click', () => {
             currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-            loadWeekSchedule();
+                loadWeekSchedule({ skipSyncRefresh: true });
         });
     }
 
@@ -1395,7 +1473,7 @@ function setupEventListeners() {
     if (todayWeekBtn) {
         todayWeekBtn.addEventListener('click', () => {
             currentWeekStart = getMonday(new Date());
-            loadWeekSchedule();
+                loadWeekSchedule({ skipSyncRefresh: true });
         });
     }
 
@@ -1455,13 +1533,14 @@ function setupEventListeners() {
 async function refreshAuthButtons() {
     if (!gmailLoginBtn || !gmailLogoutBtn) return;
     try {
-        // Get Gmail info from database first
-        const gmailInfoResponse = await apiFetch(`${API_BASE}/user/gmail-info`);
-        const gmailInfo = await gmailInfoResponse.json();
-        
-        // Fallback to auth-status endpoint
-        const response = await apiFetch(`${API_BASE}/email/auth-status`);
-        const data = await response.json();
+        const [gmailInfoResponse, response] = await Promise.all([
+            apiFetch(`${API_BASE}/user/gmail-info`),
+            apiFetch(`${API_BASE}/email/auth-status`),
+        ]);
+        const [gmailInfo, data] = await Promise.all([
+            gmailInfoResponse.json(),
+            response.json(),
+        ]);
         const isAuth = !!(data && data.success && data.authenticated);
         
         // Merge both sources for most complete info
@@ -1567,6 +1646,7 @@ async function handlePageChange(btn) {
     }
     
     currentPage = page;
+    document.getElementById('workspaceApp')?.setAttribute('data-current-page', page);
     renderQuickActions(page);
     
     // Load page data
@@ -1594,9 +1674,12 @@ async function handlePageChange(btn) {
             // Fallback to attempting to load emails — loadEmails will handle errors
         }
 
-        loadEmails().catch(err => console.error('Email load error:', err));
+        loadEmails()
+            .then(() => scanMeetingSuggestions())
+            .then(() => loadMeetingSuggestions())
+            .catch(err => console.error('Email load/scan error:', err));
     } else if (page === 'schedule') {
-        loadWeekSchedule().catch(err => console.error('Week schedule load error:', err));
+        loadWeekSchedule({ skipSyncRefresh: true }).catch(err => console.error('Week schedule load error:', err));
         loadSchedules().catch(err => console.error('Schedule load error:', err));
     } else if (page === 'history') {
         loadActivityHistory().catch(err => console.error('History load error:', err));
@@ -1741,11 +1824,14 @@ function sendMessage() {
         if (attendeesEl) attendeesEl.value = draft.attendees;
         if (contentEl) contentEl.value = draft.content;
         if (body) {
+            const detectedStart = draft.date && draft.startTime ? `${draft.date}T${draft.startTime}` : '';
+            const detectedEnd = draft.date && draft.endTime ? `${draft.date}T${draft.endTime}` : '';
+            const detectedRange = formatScheduleRange(detectedStart, detectedEnd);
             body.innerHTML = `
                 <div><strong>${ui('Nội dung phát hiện', 'Detected content')}:</strong> ${escapeHtml(draft.content)}</div>
                 <div style="margin-top:8px; font-size:13px; line-height:1.5;">
-                    ${ui('Ngày', 'Date')}: ${escapeHtml(draft.date || ui('Chưa xác định', 'Not specified'))}<br>
-                    ${ui('Thời gian', 'Time')}: ${escapeHtml(draft.startTime ? (draft.endTime ? `${draft.startTime} - ${draft.endTime}` : draft.startTime) : ui('Chưa xác định', 'Not specified'))}<br>
+                    ${ui('Ngày', 'Date')}: ${escapeHtml(detectedStart ? detectedRange.date : ui('Chưa xác định', 'Not specified'))}<br>
+                    ${ui('Thời gian', 'Time')}: ${escapeHtml(detectedStart ? detectedRange.time : ui('Chưa xác định', 'Not specified'))}<br>
                     ${ui('Hình thức', 'Format')}: ${escapeHtml(draft.format || ui('Trực tiếp', 'In person'))}<br>
                     ${ui('Đối tượng', 'Participants')}: ${escapeHtml(draft.attendees || ui('Chưa xác định', 'Not specified'))}
                 </div>
@@ -2232,9 +2318,181 @@ async function loadChatHistory() {
                 addMessage(record.user_message, 'user');
                 addMessage(record.assistant_response, 'assistant');
             });
+            renderChatThreadList(data.history);
+        } else {
+            renderChatThreadList([]);
         }
     } catch (error) {
         console.error('Error loading chat history:', error);
+    }
+}
+
+function setupChatWorkspaceControls() {
+    const newChatButtons = [
+        document.getElementById('newChatBtn'),
+        document.getElementById('inlineNewChatBtn')
+    ].filter(Boolean);
+    newChatButtons.forEach((button) => {
+        button.addEventListener('click', startNewChatDraft);
+    });
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest('.chat-thread-actions')) {
+            document.querySelectorAll('.chat-thread-menu.show').forEach((menu) => {
+                menu.classList.remove('show');
+            });
+        }
+    });
+}
+
+function startNewChatDraft() {
+    if (currentPage !== 'chat') {
+        const chatButton = document.querySelector('.sidebar-nav [data-page="chat"]');
+        if (chatButton) handlePageChange(chatButton);
+    }
+    if (chatMessages) chatMessages.innerHTML = '';
+    const list = document.getElementById('chatThreadList');
+    if (!list) return;
+    list.querySelectorAll('.chat-thread-item').forEach((item) => item.classList.remove('active'));
+    const draft = document.createElement('button');
+    draft.type = 'button';
+    draft.className = 'chat-thread-item active';
+    draft.innerHTML = `
+        <span class="chat-thread-main">
+            <strong>${ui('Chat mới', 'New chat')}</strong>
+            <span>${ui('Bắt đầu hội thoại sạch', 'Start a clean conversation')}</span>
+        </span>
+    `;
+    list.prepend(draft);
+    if (userInput) userInput.focus();
+}
+
+function renderChatThreadList(records = []) {
+    const list = document.getElementById('chatThreadList');
+    if (!list) return;
+
+    const visibleRecords = records.slice(0, 8);
+    if (!visibleRecords.length) {
+        list.innerHTML = `
+            <button type="button" class="chat-thread-item active">
+                <span class="chat-thread-main">
+                    <strong>${ui('Chat hiện tại', 'Current chat')}</strong>
+                    <span>${ui('Bắt đầu hội thoại với FlowMate', 'Start a conversation with FlowMate')}</span>
+                </span>
+            </button>
+        `;
+        return;
+    }
+
+    list.innerHTML = visibleRecords.map((record, index) => {
+        const title = record.title || record.user_message || ui('Cuộc trò chuyện', 'Conversation');
+        const detail = record.created_at
+            ? new Date(record.created_at).toLocaleDateString(currentLanguage === 'en' ? 'en-US' : 'vi-VN')
+            : ui('Đã lưu', 'Saved');
+        return `
+            <button type="button" class="chat-thread-item ${index === 0 ? 'active' : ''}" data-thread-index="${index}" data-history-id="${record.id || ''}">
+                <span class="chat-thread-main">
+                    <strong>${escapeHtml(title)}</strong>
+                    <span>${escapeHtml(detail)}</span>
+                </span>
+                <span class="chat-thread-actions" aria-label="${ui('Thao tác đoạn chat', 'Chat actions')}">
+                    <span role="button" tabindex="0" class="chat-thread-menu-trigger" data-thread-action="menu" aria-label="${ui('Mở menu đoạn chat', 'Open chat menu')}">...</span>
+                    <span class="chat-thread-menu">
+                        <span role="button" tabindex="0" class="chat-thread-menu-item" data-thread-action="rename">${ui('Đổi tên', 'Rename')}</span>
+                        <span role="button" tabindex="0" class="chat-thread-menu-item danger" data-thread-action="delete">${ui('Xóa', 'Delete')}</span>
+                    </span>
+                </span>
+            </button>
+        `;
+    }).join('');
+
+    list.querySelectorAll('.chat-thread-item').forEach((item) => {
+        item.addEventListener('click', (event) => {
+            if (event.target.closest('[data-thread-action]')) return;
+            if (currentPage !== 'chat') {
+                const chatButton = document.querySelector('.sidebar-nav [data-page="chat"]');
+                if (chatButton) handlePageChange(chatButton);
+            }
+            list.querySelectorAll('.chat-thread-item').forEach((button) => button.classList.remove('active'));
+            item.classList.add('active');
+            const record = visibleRecords[Number(item.dataset.threadIndex)];
+            if (record && chatMessages) {
+                chatMessages.innerHTML = '';
+                addMessage(record.user_message || '', 'user');
+                addMessage(record.assistant_response || '', 'assistant');
+            }
+        });
+    });
+
+    list.querySelectorAll('[data-thread-action]').forEach((actionButton) => {
+        actionButton.addEventListener('click', () => handleChatThreadAction(actionButton, visibleRecords));
+        actionButton.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                handleChatThreadAction(actionButton, visibleRecords);
+            }
+        });
+    });
+}
+
+async function handleChatThreadAction(actionButton, records) {
+    const item = actionButton.closest('.chat-thread-item');
+    const record = records[Number(item?.dataset.threadIndex)];
+    const historyId = item?.dataset.historyId;
+    if (!record || !historyId) return;
+
+    const action = actionButton.dataset.threadAction;
+    if (action === 'menu') {
+        const menu = item.querySelector('.chat-thread-menu');
+        document.querySelectorAll('.chat-thread-menu.show').forEach((openMenu) => {
+            if (openMenu !== menu) openMenu.classList.remove('show');
+        });
+        menu?.classList.toggle('show');
+        return;
+    }
+
+    item.querySelector('.chat-thread-menu')?.classList.remove('show');
+
+    if (action === 'rename') {
+        const currentTitle = record.title || record.user_message || '';
+        const nextTitle = prompt(ui('Đổi tên đoạn chat', 'Rename chat'), currentTitle);
+        if (nextTitle == null) return;
+        const title = nextTitle.trim();
+        if (!title) return;
+
+        try {
+            const response = await apiFetch(`${API_BASE}/chat/history/${encodeURIComponent(historyId)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.error || response.statusText);
+            record.title = data.title || title;
+            const titleEl = item.querySelector('.chat-thread-main strong');
+            if (titleEl) titleEl.textContent = record.title;
+            showNotification(ui('Đã đổi tên đoạn chat', 'Chat renamed'), 'success');
+        } catch (error) {
+            showNotification(`${ui('Lỗi', 'Error')}: ${error.message}`, 'error');
+        }
+        return;
+    }
+
+    if (action === 'delete') {
+        if (!confirm(ui('Xóa đoạn chat này ngay?', 'Delete this chat now?'))) return;
+        try {
+            const response = await apiFetch(`${API_BASE}/chat/history/${encodeURIComponent(historyId)}`, {
+                method: 'DELETE'
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.error || response.statusText);
+            const wasActive = item.classList.contains('active');
+            item.remove();
+            if (wasActive && chatMessages) chatMessages.innerHTML = '';
+            if (!document.querySelector('.chat-thread-item')) renderChatThreadList([]);
+            showNotification(ui('Đã xóa đoạn chat', 'Chat deleted'), 'success');
+        } catch (error) {
+            showNotification(`${ui('Lỗi', 'Error')}: ${error.message}`, 'error');
+        }
     }
 }
 
@@ -2250,6 +2508,7 @@ async function clearConversation() {
         const data = await response.json();
         if (data.success) {
             chatMessages.innerHTML = '';
+            renderChatThreadList([]);
             showNotification(ui('✅ Lịch sử đã bị xóa', '✅ History cleared'), 'success');
         }
     } catch (error) {
@@ -2345,15 +2604,13 @@ async function loadEmails(page = 1) {
     const includeRead = includeReadCheckbox ? includeReadCheckbox.checked : true;
     currentEmailPage = page;
 
-    await refreshAuthButtons();
-    
     try {
         const search = emailSearchInput ? emailSearchInput.value.trim() : '';
         const url = `${API_BASE}/email/get-unread?max_results=20&page=${page}&filter=${encodeURIComponent(selectedFilter)}&include_read=${includeRead}&search=${encodeURIComponent(search)}`;
         console.log(`📧 Loading emails: ${url}`);
         console.log(`🔍 Filter: ${selectedFilter}, Page: ${page}, Include read: ${includeRead}`);
-        
-        const response = await apiFetch(url);
+
+        const [response] = await Promise.all([apiFetch(url), refreshAuthButtons()]);
         console.log(`📡 Response status: ${response.status}`);
         
         if (!response.ok) {
@@ -2940,10 +3197,11 @@ async function loadWeekSchedule(options = {}) {
     tableBody.innerHTML = `<tr><td colspan="6" class="week-loading">${ui('Đang tải...', 'Loading...')}</td></tr>`;
 
     try {
-        const syncFlag = options.skipSyncRefresh ? 0 : 1;
+        const syncFlag = options.forceSync ? 1 : 0;
+        const forceParam = options.forceSync ? '&force=1' : '';
         const data = await fetchJsonCached(
-            `schedule:week:${weekStartStr}:${syncFlag}`,
-            `${API_BASE}/schedule/week?start=${weekStartStr}&sync=${syncFlag}`,
+            `schedule:week:${weekStartStr}:${syncFlag}:${options.forceSync ? 1 : 0}`,
+            `${API_BASE}/schedule/week?start=${weekStartStr}&sync=${syncFlag}${forceParam}`,
             6000
         );
         if (requestId !== weekScheduleRequestId) return;
@@ -2974,12 +3232,12 @@ async function loadWeekSchedule(options = {}) {
                     .forEach((schedule) => {
                     const eventDiv = document.createElement('div');
                     eventDiv.className = 'week-event';
-                    const startTime = new Date(schedule.start_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-                    const endTime = schedule.end_time ? new Date(schedule.end_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '';
+                    const scheduleTime = formatScheduleRange(schedule.start_time, schedule.end_time);
+                    eventDiv.title = scheduleTime.full;
 
                     eventDiv.innerHTML = `
                         <div class="week-event-title">${escapeHtml(schedule.title)}</div>
-                        <div class="week-event-time">${startTime}${endTime ? ' - ' + endTime : ''}</div>
+                        <div class="week-event-time">${escapeHtml(scheduleTime.time)}</div>
                     `;
                     eventDiv.addEventListener('click', () => openEditSchedule(schedule.id));
                     td.appendChild(eventDiv);
@@ -2989,10 +3247,11 @@ async function loadWeekSchedule(options = {}) {
             tableBody.appendChild(row);
         }
 
-        if (data.calendar_sync_pending && !options.skipSyncRefresh) {
+        if (data.calendar_sync_pending && options.forceSync) {
             window.setTimeout(() => {
                 invalidateScheduleCaches();
                 loadWeekSchedule({ skipSyncRefresh: true }).catch(err => console.warn('Week schedule refresh error:', err));
+                loadSchedules().catch(err => console.warn('Schedule list refresh error:', err));
                 refreshQuickScheduleSummary();
             }, 1800);
         }
@@ -3005,6 +3264,7 @@ function openNewScheduleModal(preserveSuggestion = false) {
     const modal = document.getElementById('newScheduleModal');
     const form = document.getElementById('scheduleForm');
     if (!preserveSuggestion && form) delete form.dataset.meetingSuggestionId;
+    setupDateTimePreviews();
     if (modal) modal.classList.add('show');
 }
 
@@ -3016,23 +3276,44 @@ function closeNewScheduleModal() {
 }
 
 // SCHEDULE FUNCTIONS
-async function loadSchedules() {
+async function refreshCalendarFromGoogle() {
+    const button = document.getElementById('refreshCalendarBtn');
+    const originalText = button ? button.textContent : '';
+    if (button) {
+        button.disabled = true;
+        button.textContent = ui('Đang làm mới...', 'Refreshing...');
+    }
+    try {
+        invalidateScheduleCaches();
+        await loadWeekSchedule({ forceSync: true });
+        await loadSchedules({ liveGoogle: true });
+        await refreshQuickScheduleSummary();
+        showNotification(ui('Đã làm mới lịch từ Google Calendar', 'Calendar refreshed from Google Calendar'), 'success');
+    } catch (error) {
+        showNotification(`${ui('Lỗi làm mới lịch', 'Calendar refresh error')}: ${error.message}`, 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.textContent = originalText;
+        }
+    }
+}
+
+async function loadSchedules(options = {}) {
     const schedulesList = document.getElementById('schedulesList');
     if (!schedulesList) return;
     const requestId = ++scheduleListRequestId;
 
     schedulesList.innerHTML = `<p class="schedule-empty-state">${ui('Đang tải lịch tổng hợp...', 'Loading calendar...')}</p>`;
-    scanMeetingSuggestions()
-        .catch(error => console.warn('Meeting suggestion scan error:', error))
-        .finally(() => loadMeetingSuggestions().catch(error => {
-            console.error('Meeting suggestion load error:', error);
-        }));
+    loadMeetingSuggestions().catch(error => {
+        console.error('Meeting suggestion load error:', error);
+    });
 
     try {
         const data = await fetchJsonCached(
-            'schedule:unified:100:0',
-            `${API_BASE}/schedule/unified?max_results=100&live=0`,
-            8000
+            `schedule:unified:100:${options.liveGoogle ? 1 : 0}`,
+            `${API_BASE}/schedule/unified?max_results=100&live=${options.liveGoogle ? 1 : 0}`,
+            options.liveGoogle ? 1000 : 8000
         );
         if (requestId !== scheduleListRequestId) return;
 
@@ -3049,8 +3330,7 @@ async function loadSchedules() {
             schedules.forEach(schedule => {
                 const scheduleDiv = document.createElement('div');
                 scheduleDiv.className = `schedule-item unified-schedule-item source-${schedule.source || 'local'}`;
-                const startTime = new Date(schedule.start_time).toLocaleString('vi-VN');
-                const endTime = schedule.end_time ? new Date(schedule.end_time).toLocaleString('vi-VN') : '';
+                const scheduleTime = formatScheduleRange(schedule.start_time, schedule.end_time);
                 const durationMinutes = getDurationMinutes(schedule.start_time, schedule.end_time);
                 const statusClass = schedule.status === 'completed' ? 'completed' : 'pending';
                 const statusText = schedule.status === 'completed'
@@ -3082,7 +3362,10 @@ async function loadSchedules() {
                         <div class="schedule-item-heading">
                             <div>
                                 <div class="schedule-item-title">${escapeHtml(schedule.title || ui('Sự kiện', 'Event'))}</div>
-                                <div class="schedule-item-time">${startTime}${endTime ? ` - ${endTime}` : ''}</div>
+                                <div class="schedule-item-time">
+                                    <span class="schedule-time-date">${escapeHtml(scheduleTime.date)}</span>
+                                    <span class="schedule-time-clock">${escapeHtml(scheduleTime.time)}</span>
+                                </div>
                             </div>
                             <div class="schedule-item-badges">
                                 ${isLocal ? `<span class="schedule-item-status ${statusClass}">${statusText}</span>` : ''}
@@ -3126,8 +3409,8 @@ function notifyMeetingSuggestions(suggestions) {
 
     showNotification(
         ui(
-            `📅 Phát hiện ${fresh.length} email liên quan đến cuộc họp. Xem gợi ý trong tab Lịch.`,
-            `📅 Found ${fresh.length} meeting-related email. Review suggestions in Calendar.`
+            `📅 Phát hiện ${fresh.length} email liên quan đến deadline hoặc lịch hẹn. Xem gợi ý trong tab Lịch.`,
+            `📅 Found ${fresh.length} deadline or appointment email. Review suggestions in Calendar.`
         ),
         'info'
     );
@@ -3172,6 +3455,8 @@ function openMeetingSuggestion(suggestion) {
     document.getElementById('scheduleStartTime').value = toDatetimeLocal(suggestion.start_time);
     const endInput = document.getElementById('scheduleEndTime');
     if (endInput) endInput.value = toDatetimeLocal(suggestion.end_time);
+    updateDateTimePreview(document.getElementById('scheduleStartTime'));
+    updateDateTimePreview(endInput);
     const locationInput = document.getElementById('scheduleLocation');
     if (locationInput) locationInput.value = suggestion.location || '';
     document.getElementById('scheduleAttendees').value = suggestion.attendees || '';
@@ -3208,7 +3493,7 @@ async function loadMeetingSuggestions() {
         const card = document.createElement('article');
         card.className = 'meeting-suggestion-card';
         const start = suggestion.start_time
-            ? new Date(suggestion.start_time).toLocaleString(currentLanguage === 'en' ? 'en-US' : 'vi-VN')
+            ? formatScheduleRange(suggestion.start_time, suggestion.end_time).full
             : ui('Chưa xác định thời gian', 'Time not detected');
         card.innerHTML = `
             <div class="meeting-suggestion-main">
@@ -3320,6 +3605,7 @@ async function openEditSchedule(scheduleId) {
         document.getElementById('editScheduleTitle').value = schedule.title;
         document.getElementById('editScheduleDesc').value = schedule.description || '';
         document.getElementById('editScheduleTime').value = toDatetimeLocal(schedule.start_time);
+        updateDateTimePreview(document.getElementById('editScheduleTime'));
         const editDurationInput = document.getElementById('editScheduleDuration');
         if (editDurationInput) {
             editDurationInput.value = getDurationMinutes(schedule.start_time, schedule.end_time) || 60;
@@ -3448,8 +3734,6 @@ async function handleScheduleSubmit(e) {
             scheduleForm.reset();
             closeNewScheduleModal();
             await loadSchedules();
-            // refresh calendar events too
-            await loadCalendarEvents();
             await loadWeekSchedule();
             refreshQuickScheduleSummary();
 
@@ -3462,7 +3746,6 @@ async function handleScheduleSubmit(e) {
                         showNotification(ui('⚠️ Đồng bộ lịch hẹn chưa hoàn tất - thử lại sau', '⚠️ Appointment sync is not complete - try again later'), 'info');
                     }
                     loadSchedules();
-                    loadCalendarEvents();
                     loadWeekSchedule();
                     refreshQuickScheduleSummary();
                 }).catch(err => {

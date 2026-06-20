@@ -164,6 +164,11 @@ def _extract_meeting_suggestion(email):
         'google meet', 'zoom', 'microsoft teams', 'book slot', 'booked',
     ]
     schedule_terms = ['schedule', 'calendar', 'dat lich', 'xep lich', 'time slot']
+    deadline_terms = [
+        'deadline', 'due date', 'due by', 'due on', 'submit by', 'submission',
+        'han chot', 'han nop', 'han cuoi', 'den han', 'ngay nop', 'nop bai',
+        'het han', 'truoc ngay', 'truoc han'
+    ]
     time_signal = bool(re.search(r'(?<!\d)(?:[01]?\d|2[0-3])[:h]\d{2}(?!\d)', normalized))
     date_signal = bool(re.search(
         r'(?<!\d)(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})(?!\d)',
@@ -172,6 +177,7 @@ def _extract_meeting_suggestion(email):
     is_meeting = (
         any(term in normalized for term in direct_terms)
         or (any(term in normalized for term in schedule_terms) and (time_signal or date_signal))
+        or (any(term in normalized for term in deadline_terms) and (time_signal or date_signal))
     )
     if not is_meeting:
         return None
@@ -444,8 +450,26 @@ def _get_redirect_uri():
     return "http://127.0.0.1:5000/api/email/oauth2callback"
 
 
+def _is_local_oauth_request():
+    configured_uri = (Config.GMAIL_REDIRECT_URI or '').strip().lower()
+    host = (request.host or '').split(':')[0].lower()
+    return (
+        Config.DEBUG
+        or configured_uri.startswith('http://127.0.0.1')
+        or configured_uri.startswith('http://localhost')
+        or host in {'127.0.0.1', 'localhost'}
+    )
+
+
+def _allow_insecure_oauth_for_local_request():
+    if _is_local_oauth_request():
+        os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+
 def _build_oauth_flow(state=None, native=False):
     """Create OAuth flow from env vars (preferred) or credentials file."""
+    if not native:
+        _allow_insecure_oauth_for_local_request()
     redirect_uri = _get_redirect_uri() if not native else ""
 
     # Android requests its server auth code for the web client bundled with

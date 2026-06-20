@@ -819,6 +819,36 @@ def get_history():
         'history': history
     })
 
+
+@chat_bp.route('/history/<int:history_id>', methods=['PATCH'])
+def update_history_item(history_id):
+    """Update a saved chat/history item."""
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+    data = request.get_json(silent=True) or {}
+    title = str(data.get('title') or '').strip()
+    if not title:
+        return jsonify({'success': False, 'error': 'title_required'}), 400
+    if len(title) > 120:
+        title = title[:120]
+
+    updated = History.update_title(history_id, title, db_path=db_path)
+    if not updated:
+        return jsonify({'success': False, 'error': 'history_not_found'}), 404
+    return jsonify({'success': True, 'id': history_id, 'title': title})
+
+
+@chat_bp.route('/history/<int:history_id>', methods=['DELETE'])
+def delete_history_item(history_id):
+    """Delete a saved chat/history item immediately."""
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+    deleted = History.delete(history_id, db_path=db_path)
+    if not deleted:
+        return jsonify({'success': False, 'error': 'history_not_found'}), 404
+    return jsonify({'success': True, 'id': history_id})
+
+
 @chat_bp.route('/providers', methods=['GET'])
 def get_ai_providers():
     """Get AI provider status and fallback chain"""

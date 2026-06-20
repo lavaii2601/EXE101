@@ -298,7 +298,7 @@ def _sync_google_week_events(user_id, db_path, monday, week_end):
     _clear_schedule_cache(db_path)
 
 
-def _start_week_sync(user_id, db_path, monday, week_end):
+def _start_week_sync(user_id, db_path, monday, week_end, force=False):
     if not _load_calendar_service(user_id):
         return False
 
@@ -306,7 +306,7 @@ def _start_week_sync(user_id, db_path, monday, week_end):
     now = time.monotonic()
     with _week_sync_lock:
         last_sync = _week_sync_recent.get(key, 0)
-        if key in _week_sync_inflight or now - last_sync < _WEEK_SYNC_TTL_SECONDS:
+        if key in _week_sync_inflight or (not force and now - last_sync < _WEEK_SYNC_TTL_SECONDS):
             return False
         _week_sync_inflight.add(key)
 
@@ -425,15 +425,16 @@ def get_week_schedules():
     monday = (ref_date - timedelta(days=ref_date.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
     week_end = monday + timedelta(days=7)
 
-    sync_requested = request.args.get('sync', '1') != '0'
-    cache_key = _schedule_cache_key(user_id, 'week', monday.date().isoformat(), int(sync_requested))
+    sync_requested = request.args.get('sync', '0') == '1'
+    force_sync = request.args.get('force', '0') == '1'
+    cache_key = _schedule_cache_key(user_id, 'week', monday.date().isoformat(), int(sync_requested), int(force_sync))
     cached = Cache.get(cache_key, db_path=db_path)
     if cached:
         if sync_requested:
-            _start_week_sync(user_id, db_path, monday, week_end)
+            _start_week_sync(user_id, db_path, monday, week_end, force=force_sync)
         return jsonify(cached)
 
-    sync_started = _start_week_sync(user_id, db_path, monday, week_end) if sync_requested else False
+    sync_started = _start_week_sync(user_id, db_path, monday, week_end, force=force_sync) if sync_requested else False
 
     # Build the Mon-Sun grid from local schedules
     all_schedules = Schedule.get_all(limit=200, db_path=db_path)

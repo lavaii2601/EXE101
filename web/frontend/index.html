@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FlowMate - Không gian làm việc thông minh</title>
-    <link rel="stylesheet" href="/css/style.css?v=20260616-05">
+    <link rel="stylesheet" href="/css/style.css?v=20260620-scan-on-demand">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -27,7 +27,7 @@
         </div>
     </section>
 
-    <div id="workspaceApp" class="container workspace-app" aria-hidden="true">
+    <div id="workspaceApp" class="container workspace-app" data-current-page="chat" aria-hidden="true">
         <button id="menuToggle" class="menu-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
             <span class="menu-toggle-icon" aria-hidden="true">‹</span>
         </button>
@@ -90,7 +90,21 @@
                     <span class="nav-label" data-i18n="nav.settings">Cài đặt</span>
                 </button>
             </nav>
-            
+
+            <section class="chat-thread-panel sidebar-chat-history" aria-label="Danh sách đoạn chat">
+                <div class="chat-thread-header">
+                    <button type="button" id="newChatBtn" class="btn-primary chat-new-btn">Chat mới</button>
+                </div>
+                <div id="chatThreadList" class="chat-thread-list">
+                    <button type="button" class="chat-thread-item active">
+                        <span class="chat-thread-main">
+                            <strong>Chat hiện tại</strong>
+                            <span>Bắt đầu hội thoại với FlowMate</span>
+                        </span>
+                    </button>
+                </div>
+            </section>
+
             <div class="sidebar-footer">
                 <button class="btn-secondary" id="clearBtn">
                     <span class="sidebar-footer-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg></span>
@@ -120,13 +134,22 @@
             </header>
             <!-- Chat Page -->
             <section id="chat-page" class="page active">
-                <div class="chat-container">
-                    <div class="chat-messages" id="chatMessages"></div>
-                    <div class="chat-input-area">
-                        <textarea id="userInput" placeholder="Nhập tin nhắn của bạn..." rows="3"></textarea>
-                        <button id="sendBtn" class="btn-primary">Gửi</button>
+                <div class="chat-workspace">
+                    <div class="chat-container">
+                        <div class="chat-topbar">
+                            <div>
+                                <strong>Chat với FlowMate</strong>
+                                <span>Hỏi, phân tích email hoặc tạo lịch bằng ngôn ngữ tự nhiên</span>
+                            </div>
+                            <button type="button" id="inlineNewChatBtn" class="btn-secondary">Chat mới</button>
+                        </div>
+                        <div class="chat-messages" id="chatMessages"></div>
+                        <div class="chat-input-area">
+                            <textarea id="userInput" placeholder="Nhập tin nhắn của bạn..." rows="3"></textarea>
+                            <button id="sendBtn" class="btn-primary">Gửi</button>
+                        </div>
+                        <div id="providerStatus" class="provider-status-bar"></div>
                     </div>
-                    <div id="providerStatus" class="provider-status-bar"></div>
                 </div>
             </section>
             
@@ -260,7 +283,7 @@
                         <div class="meeting-suggestions-header">
                             <div>
                                 <span>GỢI Ý TỪ EMAIL</span>
-                                <h3>Cuộc họp và lịch hẹn được phát hiện</h3>
+                                <h3>Deadline và lịch hẹn được phát hiện</h3>
                             </div>
                             <span id="meetingSuggestionCount" class="meeting-suggestion-count">0</span>
                         </div>
@@ -453,10 +476,12 @@
                 <div class="form-group">
                     <label>Ngày giờ bắt đầu</label>
                     <input type="datetime-local" id="scheduleStartTime" required>
+                    <div class="datetime-preview" data-preview-for="scheduleStartTime">Chưa chọn thời gian</div>
                 </div>
                 <div class="form-group">
                     <label>Ngày giờ kết thúc</label>
                     <input type="datetime-local" id="scheduleEndTime">
+                    <div class="datetime-preview" data-preview-for="scheduleEndTime">Chưa chọn thời gian</div>
                 </div>
                 <div class="form-group">
                     <label>Thời lượng (phút)</label>
@@ -495,6 +520,7 @@
                 <div class="form-group">
                     <label>Ngày giờ</label>
                     <input type="datetime-local" id="editScheduleTime" required>
+                    <div class="datetime-preview" data-preview-for="editScheduleTime">Chưa chọn thời gian</div>
                 </div>
                 <div class="form-group">
                     <label>Thời lượng (phút)</label>
@@ -523,16 +549,16 @@
                     <label>Tiêu đề</label>
                     <input type="text" id="confirmScheduleTitle" placeholder="Tiêu đề (ví dụ: Họp phụ huynh)">
                 </div>
-                <div style="display:flex; gap:8px;">
-                    <div class="form-group" style="flex:1;">
+                <div class="schedule-date-time-grid">
+                    <div class="form-group">
                         <label>Ngày</label>
                         <input type="date" id="confirmScheduleDate">
                     </div>
-                    <div class="form-group" style="width:140px;">
+                    <div class="form-group">
                         <label>Bắt đầu</label>
                         <input type="time" id="confirmScheduleStartTime">
                     </div>
-                    <div class="form-group" style="width:140px;">
+                    <div class="form-group">
                         <label>Kết thúc</label>
                         <input type="time" id="confirmScheduleEndTime">
                     </div>
@@ -563,6 +589,6 @@
         </div>
     </div>
     
-    <script src="/js/app.js?v=20260616-05"></script>
+    <script src="/js/app.js?v=20260620-scan-on-demand"></script>
 </body>
 </html>

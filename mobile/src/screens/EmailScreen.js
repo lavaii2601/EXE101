@@ -61,10 +61,10 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
   const loadEmails = useCallback(async () => {
     setLoading(true);
     try {
-      await loadAuth();
-      const data = await apiGet(
-        `/email/get-unread?max_results=20&page=1&filter=${filter}&include_read=${includeRead}&search=${encodeURIComponent(searchKeyword)}`
-      );
+      const [, data] = await Promise.all([
+        loadAuth(),
+        apiGet(`/email/get-unread?max_results=20&page=1&filter=${filter}&include_read=${includeRead}&search=${encodeURIComponent(searchKeyword)}`),
+      ]);
       setEmails(data.emails || []);
     } catch (error) {
       if (error.status === 401) setEmails([]);
