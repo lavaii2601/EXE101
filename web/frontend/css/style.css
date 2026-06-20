@@ -2688,12 +2688,20 @@ select:focus {
 /* Ensure pages with tabs keep the tabs fixed and let tab-content fill/scroll
    Only apply the flex layout when the page is active to avoid multiple pages showing */
 #emails-page.page.active,
-#schedule-page.page.active,
-#settings-page.page.active {
+#schedule-page.page.active {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    min-height: 0; /* allow child flex items to shrink properly */
+    min-height: 0;
+}
+
+#settings-page.page.active {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-height: 0;
+    padding: 22px;
+    overflow: auto;
 }
 
 .settings-page-header {
@@ -2739,7 +2747,11 @@ select:focus {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
-    overflow: auto;
+    overflow: visible;
+}
+
+.settings-grid > article:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
 }
 
 .settings-card {
@@ -3094,13 +3106,13 @@ body {
     height: 100vh;
     height: 100dvh;
     overflow: hidden;
-    grid-template-columns: 280px minmax(620px, 1fr) 360px;
+    grid-template-columns: 280px minmax(0, 1fr) 360px;
     grid-template-rows: minmax(0, 1fr);
     background: #f8f9fc;
 }
 
 .container.workspace-app[data-current-page="chat"] {
-    grid-template-columns: 280px minmax(620px, 1fr);
+    grid-template-columns: 280px minmax(0, 1fr);
 }
 
 .container.workspace-app[data-current-page="chat"] .assistant-panel {
@@ -3109,12 +3121,12 @@ body {
 
 /* Ignore stale collapsed-sidebar state from older builds. */
 .container.workspace-app.sidebar-collapsed {
-    grid-template-columns: 280px minmax(620px, 1fr) 360px;
+    grid-template-columns: 280px minmax(0, 1fr) 360px;
     grid-template-rows: minmax(0, 1fr);
 }
 
 .container.workspace-app.sidebar-collapsed[data-current-page="chat"] {
-    grid-template-columns: 280px minmax(620px, 1fr);
+    grid-template-columns: 280px minmax(0, 1fr);
 }
 
 .workspace-app.sidebar-collapsed .brand-copy,
@@ -3140,8 +3152,9 @@ body {
 }
 
 .brand-mark {
-    border-radius: 50%;
-    background: linear-gradient(145deg, #5b53ed, #3f35dc);
+    border-radius: 12px;
+    background: linear-gradient(135deg, #55BEFE 0%, #5A54FB 55%, #D65EFC 100%);
+    box-shadow: 0 6px 18px rgba(90, 84, 251, 0.38);
 }
 
 .brand-copy strong {
@@ -3840,11 +3853,22 @@ body {
         padding-left: 64px;
     }
 
-    .workspace-app > .main-content {
-        grid-column: 1;
+    .workspace-app > .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        z-index: 1000;
+        transform: translateX(-110%);
+        transition: transform 240ms ease-in-out;
+        background: #fafbfe;
     }
 
-    .workspace-app > .sidebar {
+    .workspace-app > .sidebar.open {
+        transform: translateX(0);
+    }
+
+    .workspace-app > .main-content {
         grid-column: 1;
     }
 
@@ -4394,11 +4418,18 @@ body.dark-theme .daily-report-badge.is-meeting {
 
     #emails-page.page.active,
     #schedule-page.page.active,
-    #history-page.page.active,
+    #history-page.page.active {
+        height: calc(100dvh - var(--mobile-header-height));
+        min-height: 0;
+        gap: 0;
+        overflow: hidden;
+    }
+
     #settings-page.page.active {
         height: calc(100dvh - var(--mobile-header-height));
         min-height: 0;
         gap: 0;
+        padding: 0;
         overflow: hidden;
     }
 
