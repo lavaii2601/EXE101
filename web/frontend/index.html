@@ -16,18 +16,33 @@
         <div class="auth-orb auth-orb-three"></div>
         <div class="auth-card">
             <div class="auth-logo" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none">
+                <svg viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <defs>
-                        <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stop-color="#55BEFE"/>
-                            <stop offset="50%" stop-color="#5A54FB"/>
+                        <linearGradient id="bgGrad" x1="0" y1="0" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%"   stop-color="#55BEFE"/>
+                            <stop offset="40%"  stop-color="#5A54FB"/>
+                            <stop offset="75%"  stop-color="#8171FD"/>
                             <stop offset="100%" stop-color="#D65EFC"/>
                         </linearGradient>
+                        <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0%"   stop-color="#ff6fd8"/>
+                            <stop offset="100%" stop-color="#946BFD"/>
+                        </linearGradient>
                     </defs>
-                    <rect x="3" y="4" width="18" height="17" rx="3" stroke="url(#logoGrad)" stroke-width="1.8"/>
-                    <path d="M8 2v4M16 2v4M3 9h18" stroke="url(#logoGrad)" stroke-width="1.8" stroke-linecap="round"/>
-                    <path d="M7 13h4M7 16.5h7" stroke="url(#logoGrad)" stroke-width="1.8" stroke-linecap="round"/>
-                    <path d="M18 13l1.5 1.5L22 11" stroke="#D65EFC" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    <!-- Gradient background -->
+                    <rect width="56" height="56" rx="14" fill="url(#bgGrad)"/>
+                    <!-- Calendar body (white card) -->
+                    <rect x="9" y="16" width="38" height="30" rx="4" fill="white" opacity="0.95"/>
+                    <!-- Clips / rings -->
+                    <rect x="18" y="11" width="7" height="10" rx="3.5" fill="white" opacity="0.95"/>
+                    <rect x="31" y="11" width="7" height="10" rx="3.5" fill="white" opacity="0.95"/>
+                    <!-- Lines (gradient) -->
+                    <rect x="13" y="25" width="25" height="4" rx="2" fill="url(#lineGrad)"/>
+                    <rect x="13" y="32" width="20" height="4" rx="2" fill="url(#lineGrad)" opacity="0.85"/>
+                    <rect x="13" y="39" width="14" height="4" rx="2" fill="url(#lineGrad)" opacity="0.70"/>
+                    <!-- Sparkle (4-point star) top-right -->
+                    <line x1="45" y1="9" x2="45" y2="17" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                    <line x1="41" y1="13" x2="49" y2="13" stroke="white" stroke-width="2" stroke-linecap="round"/>
                 </svg>
             </div>
             <h1 id="authGateTitle">FlowMate</h1>
@@ -51,10 +66,25 @@
             <div class="sidebar-header">
                 <div class="sidebar-brand">
                     <span class="brand-mark" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <rect x="3" y="4" width="18" height="17" rx="3" stroke="white" stroke-width="1.8"/>
-                            <path d="M8 2v4M16 2v4M3 9h18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-                            <path d="M7 13h4M7 16.5h6" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <linearGradient id="bmLine" x1="0" y1="0" x2="1" y2="0">
+                                    <stop offset="0%" stop-color="#ff6fd8"/>
+                                    <stop offset="100%" stop-color="#946BFD"/>
+                                </linearGradient>
+                            </defs>
+                            <!-- Calendar body -->
+                            <rect x="3" y="6" width="18" height="16" rx="2.5" fill="white" opacity="0.95"/>
+                            <!-- Clips -->
+                            <rect x="7.5" y="4" width="3" height="5" rx="1.5" fill="white" opacity="0.95"/>
+                            <rect x="13.5" y="4" width="3" height="5" rx="1.5" fill="white" opacity="0.95"/>
+                            <!-- Lines -->
+                            <rect x="5.5" y="11" width="11" height="2" rx="1" fill="url(#bmLine)"/>
+                            <rect x="5.5" y="15" width="8.5" height="2" rx="1" fill="url(#bmLine)" opacity="0.8"/>
+                            <rect x="5.5" y="19" width="5.5" height="2" rx="1" fill="url(#bmLine)" opacity="0.6"/>
+                            <!-- Sparkle -->
+                            <line x1="20" y1="5" x2="20" y2="9" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+                            <line x1="18" y1="7" x2="22" y2="7" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
                         </svg>
                     </span>
                     <span class="brand-copy"><strong>FlowMate</strong><small>Không gian AI</small></span>

@@ -5,29 +5,95 @@ import Button from './Button';
 import { USER_MODES } from '../config/userModes';
 import { useTheme } from '../theme/ThemeContext';
 
+function GradientLine({ width }) {
+  return (
+    <LinearGradient
+      colors={['#ff6fd8', '#D65EFC', '#946BFD']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
+      style={[calendarStyles.line, { width }]}
+    />
+  );
+}
+
+function Sparkle() {
+  return (
+    <View style={calendarStyles.sparkleWrap}>
+      <View style={calendarStyles.sparkleV} />
+      <View style={calendarStyles.sparkleH} />
+    </View>
+  );
+}
+
 function CalendarIcon() {
   return (
     <View style={calendarStyles.wrap}>
-      <View style={calendarStyles.header}>
-        <View style={calendarStyles.clip} /><View style={calendarStyles.clip} />
+      {/* Clips */}
+      <View style={calendarStyles.clips}>
+        <View style={calendarStyles.clip} />
+        <View style={calendarStyles.clip} />
       </View>
+      {/* Calendar body */}
       <View style={calendarStyles.body}>
-        <View style={[calendarStyles.line, { width: 28 }]} />
-        <View style={[calendarStyles.line, { width: 22, backgroundColor: '#D65EFC' }]} />
-        <View style={[calendarStyles.line, { width: 16, backgroundColor: '#946BFD' }]} />
+        <GradientLine width={32} />
+        <GradientLine width={26} />
+        <GradientLine width={18} />
       </View>
-      <View style={calendarStyles.sparkle}><Text style={{ color: '#fff', fontSize: 11 }}>✦</Text></View>
+      {/* Sparkle top-right */}
+      <Sparkle />
     </View>
   );
 }
 
 const calendarStyles = StyleSheet.create({
-  wrap:    { width: 54, height: 54, alignItems: 'center', justifyContent: 'center' },
-  header:  { flexDirection: 'row', gap: 14, marginBottom: 6 },
-  clip:    { width: 4, height: 8, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.9)' },
-  body:    { gap: 4, alignItems: 'flex-start' },
-  line:    { height: 3.5, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.9)' },
-  sparkle: { position: 'absolute', top: 2, right: 4 },
+  wrap: {
+    width: 60,
+    height: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clips: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 7,
+  },
+  clip: {
+    width: 10,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
+  body: {
+    gap: 5,
+    alignItems: 'flex-start',
+  },
+  line: {
+    height: 4,
+    borderRadius: 2,
+  },
+  sparkleWrap: {
+    position: 'absolute',
+    top: 2,
+    right: 3,
+    width: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sparkleV: {
+    position: 'absolute',
+    width: 2,
+    height: 13,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
+  sparkleH: {
+    position: 'absolute',
+    width: 13,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
 });
 
 export default function RoleSelection({ initialValue = '', onContinue, saving }) {
@@ -90,16 +156,16 @@ function makeStyles(colors) {
     root: { flex: 1, backgroundColor: colors.background },
     brand: { alignItems: 'center', paddingHorizontal: 26, paddingTop: 42, paddingBottom: 20 },
     orb: {
-      width: 82,
-      height: 82,
-      borderRadius: 22,
+      width: 96,
+      height: 96,
+      borderRadius: 26,
       alignItems: 'center',
       justifyContent: 'center',
       shadowColor: '#5A54FB',
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.45,
-      shadowRadius: 18,
-      elevation: 10,
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.50,
+      shadowRadius: 22,
+      elevation: 12,
     },
     eyebrow: { marginTop: 18, color: colors.accentText, fontSize: 11, fontWeight: '800', letterSpacing: 1.4 },
     title: { marginTop: 7, color: colors.text, fontSize: 25, fontWeight: '900' },

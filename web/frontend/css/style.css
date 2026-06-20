@@ -114,18 +114,18 @@ body.workspace-ready .workspace-app {
 .auth-logo {
     display: grid;
     place-items: center;
-    width: 82px;
-    height: 82px;
+    width: 90px;
+    height: 90px;
     margin: 0 auto 34px;
-    border-radius: 22px;
-    background: linear-gradient(135deg, #55BEFE 0%, #5A54FB 50%, #D65EFC 100%);
-    box-shadow: 0 12px 36px rgba(90, 84, 251, .45), 0 0 0 1px rgba(255,255,255,.12);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
 }
 
 .auth-logo svg {
-    width: 42px;
-    height: 42px;
-    filter: drop-shadow(0 2px 6px rgba(0,0,0,.2));
+    width: 90px;
+    height: 90px;
+    filter: drop-shadow(0 10px 28px rgba(90, 84, 251, .50));
 }
 
 .auth-card h1 {
