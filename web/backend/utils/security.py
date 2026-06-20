@@ -1,5 +1,6 @@
 import time
 from collections import defaultdict, deque
+from urllib.parse import urlparse
 
 from flask import current_app, request, session
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -74,4 +75,17 @@ def valid_request_origin():
     origin = request.headers.get("Origin")
     if not origin:
         return False
-    return origin in current_app.config.get("ALLOWED_ORIGINS", [])
+    if origin in current_app.config.get("ALLOWED_ORIGINS", []):
+        return True
+
+    parsed_origin = urlparse(origin)
+    origin_host = parsed_origin.netloc.lower()
+    request_hosts = {
+        (request.host or "").lower(),
+        (request.headers.get("X-Forwarded-Host") or "").split(",")[0].strip().lower(),
+    }
+    railway_domain = (current_app.config.get("RAILWAY_PUBLIC_DOMAIN") or "").lower()
+    if railway_domain:
+        request_hosts.add(railway_domain)
+
+    return bool(origin_host and origin_host in request_hosts)

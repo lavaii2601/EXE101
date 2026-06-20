@@ -13,11 +13,14 @@ import { useTheme } from '../theme/ThemeContext';
 import ModeBrief from '../components/ModeBrief';
 
 const filters = [
-  { label: 'Tat ca',   value: 'all' },
-  { label: 'Giao duc', value: 'education' },
-  { label: 'Cong viec',value: 'work' },
-  { label: 'Hop',      value: 'meeting' },
-  { label: 'Ca nhan',  value: 'personal' },
+  { label: 'Tat ca',     value: 'all' },
+  { label: 'Giao duc',   value: 'education' },
+  { label: 'Cong viec',  value: 'work' },
+  { label: 'Hop',        value: 'meeting' },
+  { label: 'Khuyen mai', value: 'promotion' },
+  { label: 'Tai chinh',  value: 'finance' },
+  { label: 'Ca nhan',    value: 'personal' },
+  { label: 'Khac',       value: 'other' },
 ];
 
 const modes = [
@@ -140,6 +143,31 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
     }
   };
 
+  const draftReply = async (email = selectedEmail) => {
+    if (!email) return;
+    setLoading(true);
+    try {
+      const context = `Tieu de: ${email.subject || ''}\nTu: ${email.sender || email.from || ''}\nNoi dung: ${emailBody || email.body || email.summary || email.snippet || ''}`;
+      const data = await apiPost('/chat/generate-reply', {
+        context,
+        choice: 'Xac nhan da nhan duoc email va se phan hoi/xu ly som, van phong lich su',
+      });
+      const senderEmail = extractEmailAddress(email.sender || email.from || '');
+      setCompose({
+        to: senderEmail,
+        subject: String(email.subject || '').startsWith('Re:') ? email.subject : `Re: ${email.subject || ''}`,
+        body: data.reply || '',
+      });
+      setSelectedEmail(null);
+      setMode('compose');
+      Alert.alert('Da tao ban nhap', 'Vui long kiem tra noi dung truoc khi gui.');
+    } catch (error) {
+      Alert.alert('Khong tao duoc tra loi', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const toggleReadStatus = async (email) => {
     const wasUnread = !!email.is_unread;
     try {
@@ -195,7 +223,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
         title: row.schedule_title || row.subject || 'Lich hen tu email',
         description: row.suggested_description || row.summary || '',
         start_time: start,
-        end_time: row.suggested_end_time || '',
+        end_time: row.suggested_end_time || buildReportEnd(start),
         attendees: [],
       });
       Alert.alert('Da tao lich');
@@ -368,6 +396,13 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
                 loading={summarizingId === selectedEmail.id}
                 style={styles.detailButton}
               />
+              <Button
+                title="Soan tra loi AI"
+                variant="secondary"
+                onPress={() => draftReply(selectedEmail)}
+                loading={loading}
+                style={styles.detailButton}
+              />
             </Card>
           ) : null}
         </Screen>
@@ -380,6 +415,23 @@ function buildReportStart(reportDate) {
   const [dd, mm, yyyy] = reportDate.split('/');
   if (!dd || !mm || !yyyy) return new Date().toISOString();
   return `${yyyy}-${mm}-${dd}T09:00:00`;
+}
+
+function buildReportEnd(startValue) {
+  const start = new Date(startValue);
+  if (Number.isNaN(start.getTime())) return '';
+  start.setMinutes(start.getMinutes() + 60);
+  const yyyy = start.getFullYear();
+  const mm = String(start.getMonth() + 1).padStart(2, '0');
+  const dd = String(start.getDate()).padStart(2, '0');
+  const hh = String(start.getHours()).padStart(2, '0');
+  const min = String(start.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}:00`;
+}
+
+function extractEmailAddress(value) {
+  const match = String(value || '').match(/<(.+?)>/);
+  return match ? match[1] : String(value || '').trim();
 }
 
 function makeStyles(colors) {

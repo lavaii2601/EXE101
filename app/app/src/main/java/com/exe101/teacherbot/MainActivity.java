@@ -46,6 +46,7 @@ import java.util.Calendar;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
 import java.net.URLEncoder;
 import java.io.File;
 
@@ -66,6 +67,10 @@ public class MainActivity extends Activity {
     private static final int WARNING = Color.rgb(251, 191, 36);
     private static final int DANGER = Color.rgb(248, 113, 113);
     private static final int RC_SIGN_IN = 9001;
+    private static final int EMAIL_SCAN_FAST_LIMIT = 25;
+    private static final int EMAIL_SCAN_DEEP_LIMIT = 50;
+    private static final int EMAIL_SCAN_STEP = 25;
+    private static final int EMAIL_SCAN_MAX_LIMIT = 150;
 
     private ApiClient api;
     private GoogleSignInClient mGoogleSignInClient;
@@ -77,10 +82,12 @@ public class MainActivity extends Activity {
     private String activeTab = "chat";
     private String emailFilter = "all";
     private String emailSearch = "";
+    private int emailScanLimit = EMAIL_SCAN_FAST_LIMIT;
     private boolean emailIncludeRead = true;
     private String selectedRole = "";
     private String selectedScheduleDate = "";
     private String appLanguage = "vi";
+    private String activeChatSessionId = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -88,7 +95,13 @@ public class MainActivity extends Activity {
         prefs = securePreferences();
         selectedRole = prefs.getString("role", "");
         appLanguage = prefs.getString("language", "vi");
-        api = new ApiClient(prefs.getString("baseUrl", "http://10.0.2.2:5000/api"));
+        String configuredBaseUrl = prefs.getString("baseUrl", "").trim();
+        String defaultBaseUrl = getString(R.string.backend_base_url);
+        if (configuredBaseUrl.isEmpty() || isLegacyLocalBackend(configuredBaseUrl)) {
+            configuredBaseUrl = defaultBaseUrl;
+            prefs.edit().putString("baseUrl", configuredBaseUrl).apply();
+        }
+        api = new ApiClient(configuredBaseUrl);
         api.setAccessToken(prefs.getString("accessToken", ""));
 
         GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
@@ -270,14 +283,6 @@ public class MainActivity extends Activity {
         language.addView(languageActions);
         body.addView(language);
 
-        LinearLayout connection = card();
-        connection.addView(label(tr("KẾT NỐI BACKEND", "BACKEND CONNECTION"), 11, Typeface.BOLD, ACCENT));
-        connection.addView(label(api.getBaseUrl(), 13, Typeface.NORMAL, MUTED));
-        Button changeBackend = secondaryButton(tr("Thay đổi Backend API", "Change Backend API"));
-        changeBackend.setOnClickListener(v -> showBackendUrlDialog());
-        connection.addView(changeBackend);
-        body.addView(connection);
-
         LinearLayout data = card();
         data.addView(label(tr("DỮ LIỆU & QUYỀN RIÊNG TƯ", "DATA & PRIVACY"), 11, Typeface.BOLD, ACCENT));
         Button clearHistory = secondaryButton(tr("Xóa toàn bộ lịch sử", "Clear all history"));
@@ -300,25 +305,15 @@ public class MainActivity extends Activity {
         content.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
     }
 
-    private void showBackendUrlDialog() {
-        EditText backendInput = input("http://10.0.2.2:5000/api", false);
-        backendInput.setText(api.getBaseUrl());
-        new AlertDialog.Builder(this)
-                .setTitle("Backend API")
-                .setMessage(tr("Dùng 10.0.2.2 cho Android emulator, hoặc IP máy tính khi dùng điện thoại thật.", "Use 10.0.2.2 for the Android emulator, or your computer's IP address on a physical phone."))
-                .setView(backendInput)
-                .setNegativeButton(tr("Hủy", "Cancel"), null)
-                .setPositiveButton(tr("Lưu", "Save"), (dialog, which) -> {
-                    api.setBaseUrl(backendInput.getText().toString());
-                    prefs.edit().putString("baseUrl", api.getBaseUrl()).apply();
-                    toast(tr("Đã lưu Backend API", "Backend API saved"));
-                    showSettings();
-                })
-                .show();
-    }
-
     private String tr(String vietnamese, String english) {
         return "en".equals(appLanguage) ? english : vietnamese;
+    }
+
+    private boolean isLegacyLocalBackend(String value) {
+        String lower = value == null ? "" : value.toLowerCase(Locale.US);
+        return lower.contains("10.0.2.2")
+                || lower.contains("127.0.0.1")
+                || lower.contains("localhost");
     }
 
     private void setAppLanguage(String language) {
@@ -356,6 +351,7 @@ public class MainActivity extends Activity {
         }
         popup.setOnMenuItemClickListener(item -> {
             emailFilter = values[item.getItemId()];
+            resetEmailScanLimit();
             showEmailInbox();
             return true;
         });
@@ -795,6 +791,7 @@ public class MainActivity extends Activity {
     private void openRoleFeature(String action) {
         if ("education".equals(action) || "work".equals(action) || "finance".equals(action)) {
             emailFilter = action;
+            resetEmailScanLimit();
             showEmailInbox();
         } else if ("schedule".equals(action)) {
             showScheduleList();
@@ -885,13 +882,27 @@ public class MainActivity extends Activity {
         content.setBackgroundColor(BG);
         setActiveTab("chat");
         content.removeAllViews();
+        if (activeChatSessionId.isEmpty()) activeChatSessionId = newChatSessionId();
         LinearLayout top = titleRow("Assistant");
         Button mode = secondaryButton(roleTitle(selectedRole));
         mode.setOnClickListener(v -> showRoleSelection());
         top.addView(mode);
+        Button newChat = secondaryButton(tr("Chat mới", "New chat"));
+        newChat.setOnClickListener(v -> {
+            activeChatSessionId = newChatSessionId();
+            if (chatList != null) {
+                resetChatSurface();
+                addMuted(chatList, tr(
+                        "Đã bắt đầu chat mới. Lịch sử hoạt động cũ vẫn được giữ.",
+                        "Started a new chat. Previous activity remains available."
+                ));
+            }
+        });
+        top.addView(newChat);
         Button clear = secondaryButton("Clear");
         clear.setOnClickListener(v -> runApi(() -> api.post("/chat/clear", new JSONObject()), data -> {
-            chatList.removeAllViews();
+            activeChatSessionId = newChatSessionId();
+            resetChatSurface();
             toast(tr("Đã xóa lịch sử chat", "Chat history cleared"));
         }));
         top.addView(clear);
@@ -901,8 +912,7 @@ public class MainActivity extends Activity {
         chatList = new LinearLayout(this);
         chatList.setOrientation(LinearLayout.VERTICAL);
         chatList.setPadding(dp(16), dp(8), dp(16), dp(12));
-        addRoleWelcome(chatList);
-        addRoleFeatures(chatList);
+        resetChatSurface();
         scroll.addView(chatList);
         content.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
@@ -923,6 +933,7 @@ public class MainActivity extends Activity {
                 JSONObject body = new JSONObject();
                 body.put("message", message);
                 body.put("mode", selectedRole);
+                body.put("session_id", activeChatSessionId);
                 return api.post("/chat/message", body);
             }, data -> {
                 addBubble(data.optString("response", tr("Không có phản hồi.", "No response received.")), false);
@@ -951,7 +962,7 @@ public class MainActivity extends Activity {
     }
 
     private void addBubble(String text, boolean user) {
-        TextView bubble = label(text, 15, Typeface.NORMAL, user ? Color.WHITE : TEXT);
+        TextView bubble = label(user ? text : cleanAssistantMessage(text), 15, Typeface.NORMAL, user ? Color.WHITE : TEXT);
         bubble.setPadding(dp(12), dp(10), dp(12), dp(10));
         bubble.setBackground(round(user ? PRIMARY : PANEL_RAISED, user ? PRIMARY : BORDER));
         LinearLayout row = new LinearLayout(this);
@@ -959,6 +970,28 @@ public class MainActivity extends Activity {
         row.setPadding(0, dp(5), 0, dp(5));
         row.addView(bubble, new LinearLayout.LayoutParams(-2, -2));
         chatList.addView(row);
+    }
+
+    private String cleanAssistantMessage(String text) {
+        if (text == null) return "";
+        String cleaned = text
+                .replace("**", "")
+                .replace("Next Action:", tr("Việc nên làm:", "Suggested action:"))
+                .replace("Next action:", tr("Việc nên làm:", "Suggested action:"))
+                .replace("Low Priority", tr("Ưu tiên thấp", "Low priority"))
+                .replace("Medium Priority", tr("Ưu tiên vừa", "Medium priority"))
+                .replace("High Priority", tr("Ưu tiên cao", "High priority"))
+                .replace("Email mới nhất:", tr("Email mới nhất:", "Latest email:"))
+                .replace("Người gửi:", tr("Người gửi:", "Sender:"))
+                .replace("Tiêu đề:", tr("Tiêu đề:", "Subject:"))
+                .replace("Thời gian:", tr("Thời gian:", "Time:"))
+                .replace("Trạng thái:", tr("Trạng thái:", "Status:"))
+                .replace("Phân loại:", tr("Mức ưu tiên:", "Priority:"))
+                .replace("Chưa đọc", tr("Chưa đọc", "Unread"))
+                .replace("Đã đọc", tr("Đã đọc", "Read"));
+        cleaned = cleaned.replace(" - ", "\n- ");
+        cleaned = cleaned.replace("\n\n\n", "\n\n");
+        return cleaned.trim();
     }
 
     private void addScheduleSuggestion(JSONObject suggestion) {
@@ -1031,6 +1064,7 @@ public class MainActivity extends Activity {
         Button searchButton = primaryButton(tr("Tìm", "Search"));
         View.OnClickListener runSearch = v -> {
             emailSearch = search.getText().toString().trim();
+            resetEmailScanLimit();
             loadEmails(emailIncludeRead);
         };
         searchButton.setOnClickListener(runSearch);
@@ -1064,6 +1098,7 @@ public class MainActivity extends Activity {
         includeRead.setChecked(emailIncludeRead);
         includeRead.setOnCheckedChangeListener((buttonView, checked) -> {
             emailIncludeRead = checked;
+            resetEmailScanLimit();
             loadEmails(checked);
         });
         filters.addView(includeRead);
@@ -1079,9 +1114,13 @@ public class MainActivity extends Activity {
         if (emailList == null) return;
         emailIncludeRead = includeRead;
         emailList.removeAllViews();
-        addMuted(emailList, tr("Đang quét tối đa 70 email...", "Scanning up to 70 emails..."));
+        int scanLimit = Math.max(emailScanLimit, initialEmailScanLimit());
+        scanLimit = Math.min(scanLimit, EMAIL_SCAN_MAX_LIMIT);
+        emailScanLimit = scanLimit;
+        final int requestScanLimit = scanLimit;
+        addMuted(emailList, tr("Đang tải email mới nhất...", "Loading latest emails..."));
         runApi(() -> api.get(
-                "/email/get-unread?max_results=70&page=1&filter=" + emailFilter
+                "/email/get-unread?max_results=" + requestScanLimit + "&page=1&fresh=1&filter=" + emailFilter
                         + "&include_read=" + includeRead
                         + "&search=" + URLEncoder.encode(emailSearch, "UTF-8")
         ), data -> {
@@ -1103,7 +1142,42 @@ public class MainActivity extends Activity {
                 JSONObject email = emails.optJSONObject(i);
                 if (email != null) emailList.addView(emailCard(email));
             }
+            addLoadMoreEmails(data, emails);
         });
+    }
+
+    private String newChatSessionId() {
+        return UUID.randomUUID().toString();
+    }
+
+    private void resetChatSurface() {
+        if (chatList == null) return;
+        chatList.removeAllViews();
+        addRoleWelcome(chatList);
+        addRoleFeatures(chatList);
+    }
+
+    private void addLoadMoreEmails(JSONObject data, JSONArray emails) {
+        JSONObject debug = data.optJSONObject("debug");
+        int rawCount = debug == null ? (emails == null ? 0 : emails.length()) : debug.optInt("raw_email_count", 0);
+        int currentLimit = data.optInt("scan_limit", emailScanLimit);
+        boolean gmailMayHaveMore = rawCount >= currentLimit;
+        if (!gmailMayHaveMore || currentLimit >= EMAIL_SCAN_MAX_LIMIT) return;
+
+        LinearLayout loadMoreCard = card();
+        loadMoreCard.addView(label(
+                tr("Đang hiển thị email gần nhất trong ", "Showing latest emails from ") + currentLimit + tr(" thư đã kiểm tra.", " checked messages."),
+                13,
+                Typeface.NORMAL,
+                MUTED
+        ));
+        Button loadMore = secondaryButton(tr("Xem thêm email cũ hơn", "Load older emails"));
+        loadMore.setOnClickListener(v -> {
+            emailScanLimit = Math.min(EMAIL_SCAN_MAX_LIMIT, currentLimit + EMAIL_SCAN_STEP);
+            loadEmails(emailIncludeRead);
+        });
+        loadMoreCard.addView(loadMore);
+        emailList.addView(loadMoreCard);
     }
 
     private View emailCard(JSONObject email) {
@@ -1127,7 +1201,7 @@ public class MainActivity extends Activity {
         TextView subject = label(email.optString("subject", tr("(Không tiêu đề)", "(No subject)")), 15, Typeface.BOLD, TEXT);
         subject.setPadding(0, dp(5), 0, dp(3));
         card.addView(subject);
-        TextView preview = label(email.optString("summary", email.optString("snippet", "")), 14, Typeface.NORMAL, MUTED);
+        TextView preview = label(emailPreview(email), 14, Typeface.NORMAL, MUTED);
         preview.setMaxLines(3);
         preview.setEllipsize(TextUtils.TruncateAt.END);
         card.addView(preview);
@@ -1189,21 +1263,24 @@ public class MainActivity extends Activity {
 
         LinearLayout summary = card();
         summary.setBackground(round(Color.rgb(31, 27, 48), PRIMARY_DARK));
-        TextView title = label("✦ AI SUMMARY · TODAY", 11, Typeface.BOLD, ACCENT);
+        TextView title = label(tr("✦ TÓM TẮT EMAIL", "✦ EMAIL SUMMARY"), 11, Typeface.BOLD, ACCENT);
         title.setLetterSpacing(0.08f);
         summary.addView(title);
-        String message = "Scanned " + scanned + " messages. " + matched + " match the current filter";
-        if (urgent > 0) message += ", and " + urgent + " may need action";
+        String message = tr("Đã kiểm tra ", "Checked ") + scanned
+                + tr(" email gần nhất. Có ", " latest emails. ")
+                + matched
+                + tr(" email phù hợp bộ lọc hiện tại", " match the current filter");
+        if (urgent > 0) message += tr(", trong đó ", ", including ") + urgent + tr(" email cần chú ý", " needing attention");
         message += ".";
         TextView detail = label(message, 14, Typeface.NORMAL, MUTED);
         detail.setPadding(0, dp(7), 0, dp(8));
         summary.addView(detail);
 
         LinearLayout stats = rowWrap();
-        stats.addView(statPill(String.valueOf(scanned), "scanned"));
-        stats.addView(statPill(String.valueOf(matched), "important"));
-        stats.addView(statPill(String.valueOf(urgent), "urgent"));
-        if (meetings > 0) stats.addView(statPill(String.valueOf(meetings), "meetings"));
+        stats.addView(statPill(String.valueOf(scanned), tr("đã kiểm tra", "scanned")));
+        stats.addView(statPill(String.valueOf(matched), tr("phù hợp", "matched")));
+        stats.addView(statPill(String.valueOf(urgent), tr("cần chú ý", "urgent")));
+        if (meetings > 0) stats.addView(statPill(String.valueOf(meetings), tr("lịch họp", "meetings")));
         summary.addView(horizontal(stats));
         return summary;
     }
@@ -1290,6 +1367,37 @@ public class MainActivity extends Activity {
                 || value.contains("action required")
                 || value.contains("due today")
                 || value.contains("eod");
+    }
+
+    private boolean shouldUseDeepEmailScan() {
+        return !emailSearch.trim().isEmpty() || !"all".equals(emailFilter);
+    }
+
+    private int initialEmailScanLimit() {
+        return shouldUseDeepEmailScan() ? EMAIL_SCAN_DEEP_LIMIT : EMAIL_SCAN_FAST_LIMIT;
+    }
+
+    private void resetEmailScanLimit() {
+        emailScanLimit = initialEmailScanLimit();
+    }
+
+    private String emailPreview(JSONObject email) {
+        String preview = email.optString("summary", "");
+        if (preview.isEmpty()) preview = email.optString("snippet", "");
+        preview = cleanEmailText(preview).replace("**", "").trim();
+        if (preview.length() > 180) preview = preview.substring(0, 177).trim() + "...";
+        return preview;
+    }
+
+    private String cleanEmailText(String raw) {
+        if (raw == null) return "";
+        return raw
+                .replace('\u00a0', ' ')
+                .replaceAll("<[^>]+>", " ")
+                .replaceAll("&nbsp;", " ")
+                .replaceAll("&amp;", "&")
+                .replaceAll("[ \\t\\r\\n]+", " ")
+                .trim();
     }
 
     private String friendlyTag(String tag) {
@@ -2482,7 +2590,7 @@ public class MainActivity extends Activity {
                         "Verify this Android OAuth client in Google Cloud:\n" +
                         getString(R.string.google_android_client_id) + "\n\n" +
                         "Package name:\ncom.exe101.teacherbot\n\n" +
-                        "Debug SHA-1:\n69:8C:F1:A4:A6:5D:38:A9:D6:54:4C:39:DE:8B:AE:87:B0:8E:93:20\n\n" +
+                        "Debug SHA-1:\n10:97:50:B9:23:0E:FA:91:6E:A7:7F:FE:37:2D:3E:7B:61:E4:F1:1A\n\n" +
                         "Then wait a few minutes, uninstall FlowMate AI, and run it again from Android Studio."
                 );
             } else {

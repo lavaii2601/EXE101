@@ -197,7 +197,7 @@ class AIService:
             demo = self._get_demo_response(optimized_messages)
             try:
                 if cache_db:
-                    Cache.set(cache_key, {'response': demo, 'provider': 'demo'}, db_path=cache_db)
+                    Cache.set(cache_key, {'response': demo, 'provider': 'demo'}, ttl=3600, db_path=cache_db)
             except Exception:
                 pass
             return demo
@@ -224,7 +224,7 @@ class AIService:
                     print(f"✅ {provider.upper()} responded successfully")
                     try:
                         if cache_db:
-                            Cache.set(cache_key, {'response': response, 'provider': provider}, db_path=cache_db)
+                            Cache.set(cache_key, {'response': response, 'provider': provider}, ttl=3600, db_path=cache_db)
                     except Exception:
                         pass
                     return response
@@ -776,7 +776,7 @@ class AIService:
         ]
         response = self.generate_response(
             messages,
-            max_tokens=420,
+            max_tokens=min(260, self.task_max_tokens.get('summary', 180)),
             task='summary',
             user_id=user_id
         ).strip()
@@ -967,12 +967,12 @@ class AIService:
             )
 
         prompt = (
-            "Tóm tắt TỪng email thành ĐỨC 1 CÂU TỐ NGẮN. Yêu cầu:\n"
-            "1. Nội dung chính + ý nghĩa rõ ràng\n"
-            "2. Hành động cần thực hiện (nếu có)\n"
-            "3. Mức độ ưu tiên (nếu cần)\n"
+            "Tóm tắt từng email thành đúng 1 câu rất ngắn. Yêu cầu:\n"
+            "1. Chỉ dùng thông tin xuất hiện trong tiêu đề/snippet/nội dung được cung cấp\n"
+            "2. Không suy đoán người nhận, môn học, lớp học, deadline, địa điểm hoặc hành động nếu email không nói rõ\n"
+            "3. Nếu thiếu nội dung, hãy mô tả email theo tiêu đề/thông báo hệ thống\n"
             "4. BỎ toàn bộ dư thừa, quảng cáo, signature\n"
-            "5. Nếu là lịch họp/cuộc họp → đặt is_meeting=true\n\n"
+            "5. Chỉ đặt is_meeting=true khi email có từ khóa họp/lịch hẹn VÀ có ngày/giờ rõ ràng\n\n"
             "Trả về JSON array có cấu trúc:\n"
             "[\n"
             '  {"index": 1, "summary": "...", "is_meeting": false, ...}\n'
@@ -991,7 +991,7 @@ class AIService:
                 "role": "system",
                 "content": (
                     "Bạn là trợ lý giáo viên chuyên nghiệp. Tóm tắt email CHÍNH XÁC, NGẮN GỌN, "
-                    "loại bỏ hết dư thừa. Nội dung phải rõ ý, hữu ích cho giáo viên. "
+                    "không bịa thêm chi tiết ngoài dữ liệu email. Nội dung phải rõ ý, hữu ích cho giáo viên. "
                     "Trả về JSON hợp lệ, không giải thích thêm."
                 )
             },
@@ -1037,12 +1037,13 @@ class AIService:
                 fallback_summary = self._truncate_text(email.get('snippet', '') or email.get('body', ''), 140)
                 inferred = self._infer_meeting_signals(email, report_date=report_date)
                 item = index_to_item.get(idx, {})
+                safe_summary = self._safe_report_summary(email, item.get('summary'), fallback_summary)
                 rows.append({
                     'sender': email.get('sender', 'Unknown'),
-                    'summary': item.get('summary') or fallback_summary,
+                    'summary': safe_summary,
                     'subject': email.get('subject', ''),
                     'date': email.get('date', ''),
-                    'is_meeting': bool(item.get('is_meeting', inferred.get('is_meeting', False))),
+                    'is_meeting': bool(inferred.get('is_meeting', False)),
                     'meeting_note': item.get('meeting_note') or inferred.get('meeting_note', ''),
                     'schedule_title': item.get('schedule_title') or inferred.get('schedule_title', ''),
                     'suggested_start_time': item.get('suggested_start_time') or inferred.get('suggested_start_time'),
@@ -1053,7 +1054,7 @@ class AIService:
             try:
                 if user_id:
                     db_path = get_user_db_path(user_id)
-                    Cache.set(f"email_report::{user_id}::{report_date}", rows, db_path=db_path, ttl=600)
+                    Cache.set(f"email_report:v2:{user_id}::{report_date}", rows, db_path=db_path, ttl=600)
             except Exception:
                 pass
             return rows
@@ -1101,3 +1102,28 @@ class AIService:
                     'suggested_description': inferred.get('suggested_description', '')
                 })
             return rows
+
+    def _safe_report_summary(self, email, ai_summary, fallback_summary):
+        """Prefer AI wording only when it overlaps the actual email enough."""
+        subject = str(email.get('subject') or '').strip()
+        snippet = str(email.get('snippet') or '').strip()
+        body = str(email.get('body') or '').strip()
+        source = re.sub(r'\s+', ' ', ' '.join([subject, snippet, body[:500]])).strip()
+        fallback = self._truncate_text(snippet or body or subject, 180)
+        summary = strip_markup(str(ai_summary or '').strip())
+        if not summary:
+            return fallback or fallback_summary or subject or 'Không có nội dung tóm tắt.'
+
+        source_tokens = set(re.findall(r'[\wÀ-ỹ]+', source.lower()))
+        summary_tokens = [
+            token for token in re.findall(r'[\wÀ-ỹ]+', summary.lower())
+            if len(token) >= 4
+        ]
+        if not source_tokens or not summary_tokens:
+            return fallback or summary
+
+        overlap = sum(1 for token in summary_tokens if token in source_tokens)
+        ratio = overlap / max(len(summary_tokens), 1)
+        if ratio < 0.28:
+            return fallback or subject or summary
+        return self._truncate_text(summary, 220)

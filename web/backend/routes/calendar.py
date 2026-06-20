@@ -6,7 +6,9 @@ from flask import Blueprint, request, jsonify
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.calendar_service import CalendarService
+from models.cache import Cache
 from models.history import History
+from models.schedule import Schedule
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 
 # Configure module logger
@@ -26,6 +28,13 @@ def _load_calendar_service(user_id):
         except Exception as e:
             logger.error(f"Error creating CalendarService: {e}")
     return None
+
+
+def _clear_schedule_cache(db_path):
+    try:
+        Cache.clear_pattern('schedule:%', db_path=db_path)
+    except Exception:
+        logger.debug("Could not clear schedule cache", exc_info=True)
 
 
 @calendar_bp.route('/events', methods=['GET'])
@@ -179,6 +188,11 @@ def delete_calendar_event(event_id):
         
         if not success:
             return jsonify({'error': 'Failed to delete calendar event'}), 500
+
+        local_schedule = Schedule.get_by_calendar_event_id(event_id, db_path=db_path)
+        if local_schedule:
+            Schedule.delete(local_schedule.get('id'), db_path=db_path)
+        _clear_schedule_cache(db_path)
         
         # Save to history
         History.create(

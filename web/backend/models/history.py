@@ -1,11 +1,13 @@
 import os
 import sqlite3
 import sys
+import uuid
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
+from models import postgres_db as pg
 
 
 class History:
@@ -13,6 +15,8 @@ class History:
 
     @staticmethod
     def init_db(db_path=None):
+        if pg.enabled():
+            return
         db_path = db_path or Config.DATABASE_PATH
         if db_path in History._initialized_dbs:
             return
@@ -22,7 +26,6 @@ class History:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT,
                 user_message TEXT,
                 assistant_response TEXT,
                 action_type TEXT,
@@ -30,86 +33,446 @@ class History:
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        cursor.execute("PRAGMA table_info(history)")
-        columns = {row[1] for row in cursor.fetchall()}
-        if "title" not in columns:
-            cursor.execute("ALTER TABLE history ADD COLUMN title TEXT")
+        try:
+            cursor.execute("ALTER TABLE history ADD COLUMN chat_session_id TEXT")
+        except sqlite3.OperationalError:
+            pass
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                mode TEXT,
+                retention_days INTEGER NOT NULL DEFAULT 90,
+                expires_at DATETIME NOT NULL,
+                archived_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_history_created_at ON history(created_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_history_action_created ON history(action_type, created_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_history_chat_session ON history(chat_session_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated ON chat_sessions(updated_at)")
         conn.commit()
         conn.close()
         History._initialized_dbs.add(db_path)
 
     @staticmethod
-    def create(user_message, assistant_response, action_type="chat", related_id=None, title=None, db_path=None):
+    def _normalize_session_id(value):
+        try:
+            return str(uuid.UUID(str(value or '').strip()))
+        except (TypeError, ValueError):
+            return str(uuid.uuid4())
+
+    @staticmethod
+    def _clamp_retention_days(value):
+        try:
+            days = int(value or 90)
+        except (TypeError, ValueError):
+            days = 90
+        return max(30, min(days, 93))
+
+    @staticmethod
+    def ensure_chat_session(user_id, session_id=None, title=None, mode='worker', retention_days=90, db_path=None):
+        session_id = History._normalize_session_id(session_id)
+        title = (title or 'Chat').strip()[:120] or 'Chat'
+        retention_days = History._clamp_retention_days(retention_days)
+        safe_mode = mode if mode in {
+            'student', 'worker', 'freelancer', 'creator', 'business', 'mentor', 'teacher'
+        } else 'worker'
+
+        if pg.enabled():
+            pg.ensure_user(user_id)
+            with pg.connection() as conn:
+                if session_id:
+                    existing = conn.execute(
+                        """
+                        SELECT id::TEXT
+                        FROM chat_sessions
+                        WHERE id = %s
+                          AND user_id = %s
+                          AND archived_at IS NULL
+                          AND expires_at > NOW()
+                        """,
+                        (session_id, user_id),
+                    ).fetchone()
+                    owned_expired = conn.execute(
+                        "SELECT id::TEXT FROM chat_sessions WHERE id = %s AND user_id = %s",
+                        (session_id, user_id),
+                    ).fetchone()
+                    if owned_expired and not existing:
+                        session_id = str(uuid.uuid4())
+                conn.execute(
+                    """
+                    INSERT INTO chat_sessions (id, user_id, title, mode, retention_days, expires_at)
+                    VALUES (%s, %s, %s, %s::user_mode, %s, NOW() + (%s || ' days')::INTERVAL)
+                    ON CONFLICT (id) DO UPDATE
+                    SET updated_at = NOW(),
+                        title = CASE
+                            WHEN chat_sessions.title IS NULL OR chat_sessions.title = '' OR chat_sessions.title = 'Chat'
+                            THEN EXCLUDED.title
+                            ELSE chat_sessions.title
+                        END,
+                        mode = COALESCE(chat_sessions.mode, EXCLUDED.mode),
+                        retention_days = COALESCE(chat_sessions.retention_days, EXCLUDED.retention_days),
+                        expires_at = GREATEST(chat_sessions.expires_at, NOW() + (chat_sessions.retention_days || ' days')::INTERVAL)
+                    WHERE chat_sessions.user_id = EXCLUDED.user_id
+                    """,
+                    (session_id, user_id, title, safe_mode, retention_days, retention_days),
+                )
+            return session_id
+
+        db_path = db_path or Config.DATABASE_PATH
+        History.init_db(db_path=db_path)
+        expires_at = (datetime.now() + timedelta(days=retention_days)).isoformat()
+        now = datetime.now().isoformat()
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id FROM chat_sessions
+            WHERE id = ?
+              AND archived_at IS NULL
+              AND datetime(expires_at) > CURRENT_TIMESTAMP
+            """,
+            (session_id,),
+        )
+        existing = cursor.fetchone()
+        cursor.execute("SELECT id FROM chat_sessions WHERE id = ?", (session_id,))
+        owned_expired = cursor.fetchone()
+        if owned_expired and not existing:
+            session_id = str(uuid.uuid4())
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO chat_sessions (
+                id, title, mode, retention_days, expires_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (session_id, title, safe_mode, retention_days, expires_at, now, now),
+        )
+        cursor.execute(
+            """
+            UPDATE chat_sessions
+            SET updated_at = ?,
+                title = CASE WHEN title IS NULL OR title = '' OR title = 'Chat' THEN ? ELSE title END
+            WHERE id = ?
+            """,
+            (now, title, session_id),
+        )
+        conn.commit()
+        conn.close()
+        return session_id
+
+    @staticmethod
+    def list_chat_sessions(user_id, limit=30, db_path=None):
+        limit = max(1, min(int(limit or 30), 100))
+        if pg.enabled():
+            with pg.connection() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT
+                        session.id::TEXT,
+                        COALESCE(NULLIF(session.title, ''), 'Chat') AS title,
+                        session.mode::TEXT AS mode,
+                        session.retention_days,
+                        session.expires_at,
+                        session.created_at,
+                        session.updated_at,
+                        COUNT(history.id) AS message_count,
+                        MAX(history.created_at) AS last_message_at,
+                        (
+                            ARRAY_AGG(history.user_message ORDER BY history.created_at DESC)
+                            FILTER (WHERE history.user_message IS NOT NULL AND history.user_message <> '')
+                        )[1] AS last_message
+                    FROM chat_sessions session
+                    LEFT JOIN history
+                        ON history.chat_session_id = session.id
+                       AND history.action_type = 'chat'
+                    WHERE session.user_id = %s
+                      AND session.archived_at IS NULL
+                      AND session.expires_at > NOW()
+                    GROUP BY session.id
+                    ORDER BY COALESCE(MAX(history.created_at), session.updated_at, session.created_at) DESC
+                    LIMIT %s
+                    """,
+                    (user_id, limit),
+                ).fetchall()
+                return pg.normalize_rows(rows)
+
+        db_path = db_path or Config.DATABASE_PATH
+        History.init_db(db_path=db_path)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                session.id,
+                COALESCE(NULLIF(session.title, ''), 'Chat') AS title,
+                session.mode,
+                session.retention_days,
+                session.expires_at,
+                session.created_at,
+                session.updated_at,
+                COUNT(history.id) AS message_count,
+                MAX(history.created_at) AS last_message_at,
+                (
+                    SELECT h2.user_message
+                    FROM history h2
+                    WHERE h2.chat_session_id = session.id
+                      AND h2.action_type = 'chat'
+                    ORDER BY h2.created_at DESC
+                    LIMIT 1
+                ) AS last_message
+            FROM chat_sessions session
+            LEFT JOIN history
+                ON history.chat_session_id = session.id
+               AND history.action_type = 'chat'
+            WHERE session.archived_at IS NULL
+              AND datetime(session.expires_at) > CURRENT_TIMESTAMP
+            GROUP BY session.id
+            ORDER BY COALESCE(MAX(history.created_at), session.updated_at, session.created_at) DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        rows = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return rows
+
+    @staticmethod
+    def chat_session_available(user_id, session_id, db_path=None):
+        session_id = History._normalize_session_id(session_id)
+        if pg.enabled():
+            with pg.connection() as conn:
+                row = conn.execute(
+                    """
+                    SELECT id
+                    FROM chat_sessions
+                    WHERE id = %s
+                      AND user_id = %s
+                      AND archived_at IS NULL
+                      AND expires_at > NOW()
+                    """,
+                    (session_id, user_id),
+                ).fetchone()
+                return bool(row)
+
         db_path = db_path or Config.DATABASE_PATH
         History.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id FROM chat_sessions
+            WHERE id = ?
+              AND archived_at IS NULL
+              AND datetime(expires_at) > CURRENT_TIMESTAMP
+            """,
+            (session_id,),
+        )
+        available = bool(cursor.fetchone())
+        conn.close()
+        return available
+
+    @staticmethod
+    def update_chat_session(user_id, session_id, title=None, retention_days=None, db_path=None):
+        session_id = History._normalize_session_id(session_id)
+        assignments = []
+        values = []
+        if title is not None:
+            assignments.append("title = %s" if pg.enabled() else "title = ?")
+            values.append((title or 'Chat').strip()[:120] or 'Chat')
+        if retention_days is not None:
+            days = History._clamp_retention_days(retention_days)
+            if pg.enabled():
+                assignments.extend(["retention_days = %s", "expires_at = NOW() + (%s || ' days')::INTERVAL"])
+                values.extend([days, days])
+            else:
+                assignments.extend(["retention_days = ?", "expires_at = ?"])
+                values.extend([days, (datetime.now() + timedelta(days=days)).isoformat()])
+        if not assignments:
+            return False
+
+        if pg.enabled():
+            with pg.connection() as conn:
+                cur = conn.execute(
+                    f"""
+                    UPDATE chat_sessions
+                    SET {', '.join(assignments)}, updated_at = NOW()
+                    WHERE id = %s AND user_id = %s
+                    """,
+                    (*values, session_id, user_id),
+                )
+                return cur.rowcount > 0
+
+        db_path = db_path or Config.DATABASE_PATH
+        History.init_db(db_path=db_path)
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            f"UPDATE chat_sessions SET {', '.join(assignments)}, updated_at = ? WHERE id = ?",
+            (*values, datetime.now().isoformat(), session_id),
+        )
+        updated = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return updated
+
+    @staticmethod
+    def delete_chat_session(user_id, session_id, db_path=None):
+        """Delete a chat session and the chat messages attached to it."""
+        session_id = History._normalize_session_id(session_id)
+        if not session_id:
+            return False
+
+        if pg.enabled():
+            with pg.connection() as conn:
+                conn.execute(
+                    "DELETE FROM history WHERE user_id = %s AND action_type = %s::activity_type AND chat_session_id = %s",
+                    (user_id, 'chat', session_id),
+                )
+                cur = conn.execute(
+                    "DELETE FROM chat_sessions WHERE id = %s AND user_id = %s",
+                    (session_id, user_id),
+                )
+                return cur.rowcount > 0
+
+        db_path = db_path or Config.DATABASE_PATH
+        History.init_db(db_path=db_path)
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM history WHERE action_type = ? AND chat_session_id = ?",
+            ('chat', session_id),
+        )
+        cursor.execute("DELETE FROM chat_sessions WHERE id = ?", (session_id,))
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return deleted
+
+    @staticmethod
+    def create(user_message, assistant_response, action_type="chat", related_id=None, db_path=None, chat_session_id=None):
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            pg.ensure_user(user_id)
+            with pg.connection() as conn:
+                row = conn.execute(
+                    """
+                    INSERT INTO history (
+                        user_id, user_message, assistant_response,
+                        action_type, related_id, chat_session_id, created_at
+                    )
+                    VALUES (%s, %s, %s, %s::activity_type, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (user_id, user_message, assistant_response, action_type, related_id, chat_session_id, datetime.now()),
+                ).fetchone()
+                return row['id']
+
+        db_path = db_path or Config.DATABASE_PATH
+        History.init_db(db_path=db_path)
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("ALTER TABLE history ADD COLUMN chat_session_id TEXT")
+        except sqlite3.OperationalError:
+            pass
         cursor.execute("""
-            INSERT INTO history (title, user_message, assistant_response, action_type, related_id, created_at)
+            INSERT INTO history (user_message, assistant_response, action_type, related_id, chat_session_id, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (title, user_message, assistant_response, action_type, related_id, datetime.now().isoformat()))
+        """, (user_message, assistant_response, action_type, related_id, chat_session_id, datetime.now().isoformat()))
         conn.commit()
         rowid = cursor.lastrowid
         conn.close()
         return rowid
 
     @staticmethod
-    def prune_older_than(days=90, db_path=None):
-        db_path = db_path or Config.DATABASE_PATH
-        History.init_db(db_path=db_path)
-        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM history WHERE created_at < ?", (cutoff,))
-        deleted = cursor.rowcount
-        conn.commit()
-        conn.close()
-        return deleted
+    def get_recent(limit=10, db_path=None, chat_session_id=None):
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                if chat_session_id:
+                    rows = conn.execute(
+                        """
+                        SELECT * FROM history
+                        WHERE user_id = %s
+                          AND chat_session_id = %s
+                        ORDER BY created_at DESC
+                        LIMIT %s
+                        """,
+                        (user_id, chat_session_id, limit),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        """
+                        SELECT * FROM history
+                        WHERE user_id = %s
+                        ORDER BY created_at DESC
+                        LIMIT %s
+                        """,
+                        (user_id, limit),
+                    ).fetchall()
+                return pg.normalize_rows(rows)
 
-    @staticmethod
-    def get_recent(limit=10, db_path=None):
         db_path = db_path or Config.DATABASE_PATH
         History.init_db(db_path=db_path)
-        History.prune_older_than(90, db_path=db_path)
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM history ORDER BY created_at DESC LIMIT ?", (limit,))
+        try:
+            cursor.execute("ALTER TABLE history ADD COLUMN chat_session_id TEXT")
+        except sqlite3.OperationalError:
+            pass
+        if chat_session_id:
+            cursor.execute(
+                "SELECT * FROM history WHERE chat_session_id = ? ORDER BY created_at DESC LIMIT ?",
+                (chat_session_id, limit),
+            )
+        else:
+            cursor.execute("SELECT * FROM history ORDER BY created_at DESC LIMIT ?", (limit,))
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
 
     @staticmethod
-    def update_title(history_id, title, db_path=None):
-        db_path = db_path or Config.DATABASE_PATH
-        History.init_db(db_path=db_path)
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("UPDATE history SET title = ? WHERE id = ?", (title, history_id))
-        updated = cursor.rowcount
-        conn.commit()
-        conn.close()
-        return updated > 0
+    def clear_all(action_type=None, db_path=None, chat_session_id=None):
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                if chat_session_id:
+                    cur = conn.execute(
+                        "DELETE FROM history WHERE user_id = %s AND action_type = %s AND chat_session_id = %s",
+                        (user_id, action_type or 'chat', chat_session_id),
+                    )
+                elif action_type:
+                    cur = conn.execute(
+                        "DELETE FROM history WHERE user_id = %s AND action_type = %s",
+                        (user_id, action_type),
+                    )
+                else:
+                    cur = conn.execute(
+                        "DELETE FROM history WHERE user_id = %s",
+                        (user_id,),
+                    )
+                return cur.rowcount
 
-    @staticmethod
-    def delete(history_id, db_path=None):
         db_path = db_path or Config.DATABASE_PATH
         History.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM history WHERE id = ?", (history_id,))
-        deleted = cursor.rowcount
-        conn.commit()
-        conn.close()
-        return deleted > 0
-
-    @staticmethod
-    def clear_all(action_type=None, db_path=None):
-        db_path = db_path or Config.DATABASE_PATH
-        History.init_db(db_path=db_path)
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        if action_type:
+        try:
+            cursor.execute("ALTER TABLE history ADD COLUMN chat_session_id TEXT")
+        except sqlite3.OperationalError:
+            pass
+        if chat_session_id:
+            cursor.execute(
+                "DELETE FROM history WHERE action_type = ? AND chat_session_id = ?",
+                (action_type or 'chat', chat_session_id),
+            )
+        elif action_type:
             cursor.execute("DELETE FROM history WHERE action_type = ?", (action_type,))
         else:
             cursor.execute("DELETE FROM history")

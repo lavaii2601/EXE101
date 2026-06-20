@@ -28,7 +28,8 @@ Copy file mẫu và chỉnh giá trị thực tế (không commit file `.env` ch
 
 ```powershell
 Copy-Item web/.env.example web/.env -ErrorAction SilentlyContinue
-# Mở .env và thêm giá trị của bạn, ví dụ GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, OPENROUTER_API_KEY, v.v.
+# Mở .env và thêm giá trị của bạn, ví dụ GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET,
+# GMAIL_CREDENTIALS_JSON, OPENROUTER_API_KEY, v.v.
 notepad web/.env
 ```
 
@@ -39,6 +40,8 @@ FLASK_ENV=development
 SECRET_KEY=change-me
 GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
+GMAIL_CREDENTIALS_JSON=
+GMAIL_REDIRECT_URI=http://127.0.0.1:5000/api/email/oauth2callback
 OPENROUTER_API_KEY=
 OPENAI_API_KEY=
 ```
@@ -59,7 +62,9 @@ curl http://127.0.0.1:5000/api/status
 ```
 
 6) OAuth (Gmail/Calendar)
-- Nếu bạn cần Gmail/Calendar, làm theo phần Google OAuth trong `README.md` để tạo Client ID/Secret và đặt vào `.env`.
+- Nếu chạy local, đặt `GMAIL_CLIENT_ID` và `GMAIL_CLIENT_SECRET` trong `web/.env`.
+- Trong Google Cloud OAuth Client, thêm redirect URI `http://127.0.0.1:5000/api/email/oauth2callback` và `http://localhost:5000/api/email/oauth2callback`.
+- Nếu chạy trên Vercel, `web/.env` không được đọc từ máy bạn. Vào Vercel Project Settings -> Environment Variables và set `GMAIL_CLIENT_ID` + `GMAIL_CLIENT_SECRET`, hoặc set `GMAIL_CREDENTIALS_JSON` bằng toàn bộ nội dung file JSON OAuth client, rồi deploy lại.
 
 7) Lưu ý bảo mật
 - Không lưu `data/` hoặc file token (`*.pickle`) trong Git. `.gitignore` đã loại trừ các tệp này.

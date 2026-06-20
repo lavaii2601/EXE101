@@ -7,6 +7,7 @@ import base64
 import re
 import requests
 import unicodedata
+from threading import Lock
 from io import BytesIO
 from flask import Blueprint, request, jsonify, redirect, url_for, session, send_file
 from datetime import datetime, timedelta
@@ -42,11 +43,95 @@ ai_service = AIService()
 
 # Simple in-memory cache for email lists (10 minute TTL for optimal performance)
 _email_cache = {}
-EMAIL_SCAN_DEFAULT = 70
-EMAIL_SCAN_MAX = 70
+EMAIL_SCAN_DEFAULT = 25
+EMAIL_SCAN_MAX = 150
 EMAIL_LIST_CACHE_TTL = 1800
 EMAIL_BODY_CACHE_TTL = 86400
 EMAIL_SUMMARY_CACHE_TTL = 86400
+OAUTH_STATE_TTL_SECONDS = 1800
+_oauth_state_lock = Lock()
+
+
+def _oauth_state_file():
+    os.makedirs(Config.DATA_DIR, exist_ok=True)
+    return os.path.join(Config.DATA_DIR, 'oauth_states.json')
+
+
+def _read_oauth_states():
+    path = _oauth_state_file()
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, 'r', encoding='utf-8') as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_oauth_states(data):
+    path = _oauth_state_file()
+    with open(path, 'w', encoding='utf-8') as handle:
+        json.dump(data, handle)
+
+
+def _store_oauth_code_verifier(state, code_verifier):
+    if not state or not code_verifier:
+        return
+    now = datetime.utcnow().timestamp()
+    with _oauth_state_lock:
+        data = _read_oauth_states()
+        data = {
+            key: value for key, value in data.items()
+            if isinstance(value, dict)
+            and now - float(value.get('created_at') or 0) <= OAUTH_STATE_TTL_SECONDS
+        }
+        data[state] = {
+            'code_verifier': code_verifier,
+            'created_at': now,
+        }
+        _write_oauth_states(data)
+
+
+def _pop_oauth_code_verifier(state):
+    if not state:
+        return None
+    now = datetime.utcnow().timestamp()
+    with _oauth_state_lock:
+        data = _read_oauth_states()
+        record = data.pop(state, None)
+        data = {
+            key: value for key, value in data.items()
+            if isinstance(value, dict)
+            and now - float(value.get('created_at') or 0) <= OAUTH_STATE_TTL_SECONDS
+        }
+        _write_oauth_states(data)
+    if not isinstance(record, dict):
+        return None
+    if now - float(record.get('created_at') or 0) > OAUTH_STATE_TTL_SECONDS:
+        return None
+    return record.get('code_verifier')
+
+
+def _get_flow_code_verifier(flow):
+    code_verifier = getattr(flow, 'code_verifier', None)
+    if not code_verifier and hasattr(flow, '_client'):
+        code_verifier = getattr(flow._client, 'code_verifier', None)
+    return code_verifier
+
+
+def _set_flow_code_verifier(flow, code_verifier):
+    if not code_verifier:
+        return
+    try:
+        setattr(flow, 'code_verifier', code_verifier)
+    except Exception:
+        pass
+    if hasattr(flow, '_client'):
+        try:
+            setattr(flow._client, 'code_verifier', code_verifier)
+        except Exception:
+            pass
 
 def _get_cache_key(user_id, filter_type, include_read=False, scan_limit=EMAIL_SCAN_DEFAULT):
     """Generate cache key"""
@@ -254,17 +339,9 @@ def _extract_meeting_suggestion(email):
     }
 
 
-def _meeting_suggestion_exists_in_schedule(suggestion, db_path):
-    suggested_start = suggestion.get('start_time')
-    if not suggested_start:
-        return False
-    try:
-        suggested_dt = datetime.fromisoformat(suggested_start)
-    except (TypeError, ValueError):
-        return False
-
-    subject = _normalize_search_text(suggestion.get('subject', ''))
-    for schedule in Schedule.get_all(limit=200, db_path=db_path):
+def _load_schedule_match_index(db_path):
+    index = []
+    for schedule in Schedule.get_all(limit=500, db_path=db_path):
         try:
             schedule_dt = datetime.fromisoformat(
                 str(schedule.get('start_time') or '').replace('Z', '+00:00')
@@ -273,9 +350,31 @@ def _meeting_suggestion_exists_in_schedule(suggestion, db_path):
                 schedule_dt = schedule_dt.replace(tzinfo=None)
         except (TypeError, ValueError):
             continue
+        index.append({
+            'start_time': schedule_dt,
+            'title': _normalize_search_text(schedule.get('title', '')),
+        })
+    return index
+
+
+def _meeting_suggestion_exists_in_schedule(suggestion, schedule_index):
+    suggested_start = suggestion.get('start_time')
+    if not suggested_start:
+        return False
+    try:
+        suggested_dt = datetime.fromisoformat(suggested_start)
+    except (TypeError, ValueError):
+        return False
+
+    if suggested_dt.tzinfo is not None:
+        suggested_dt = suggested_dt.replace(tzinfo=None)
+
+    subject = _normalize_search_text(suggestion.get('subject', ''))
+    for schedule in schedule_index:
+        schedule_dt = schedule.get('start_time')
         if abs((schedule_dt - suggested_dt).total_seconds()) > 300:
             continue
-        title = _normalize_search_text(schedule.get('title', ''))
+        title = schedule.get('title', '')
         if title and (title in subject or subject in title):
             return True
     return False
@@ -283,6 +382,7 @@ def _meeting_suggestion_exists_in_schedule(suggestion, db_path):
 
 def _store_meeting_suggestions(emails, db_path):
     detected = []
+    schedule_index = None
     for email in emails:
         email_id = email.get('id')
         if not email_id:
@@ -290,7 +390,9 @@ def _store_meeting_suggestions(emails, db_path):
         suggestion = _extract_meeting_suggestion(email)
         if not suggestion:
             continue
-        if _meeting_suggestion_exists_in_schedule(suggestion, db_path):
+        if schedule_index is None:
+            schedule_index = _load_schedule_match_index(db_path)
+        if _meeting_suggestion_exists_in_schedule(suggestion, schedule_index):
             MeetingSuggestion.dismiss_email(email_id, db_path=db_path)
             continue
         suggestion_id = MeetingSuggestion.upsert(email_id, suggestion, db_path=db_path)
@@ -432,17 +534,28 @@ def _clear_oauth_state(user_id):
 def _get_redirect_uri():
     """Return the redirect URI registered in Google Console for this client."""
     configured_uri = (Config.GMAIL_REDIRECT_URI or '').strip()
+    deployed = bool(
+        os.getenv('VERCEL')
+        or os.getenv('RAILWAY_ENVIRONMENT')
+        or os.getenv('RAILWAY_PROJECT_ID')
+    )
     if configured_uri:
-        return configured_uri
+        configured_lower = configured_uri.lower()
+        is_local_uri = (
+            configured_lower.startswith('http://127.0.0.1')
+            or configured_lower.startswith('http://localhost')
+        )
+        if not (deployed and is_local_uri):
+            return configured_uri
 
     forwarded_proto = request.headers.get('x-forwarded-proto', '').split(',')[0].strip()
     forwarded_host = request.headers.get('x-forwarded-host', '').split(',')[0].strip()
     scheme = forwarded_proto or request.scheme
     host = forwarded_host or request.host
 
-    if os.getenv('VERCEL'):
+    if deployed:
         scheme = 'https'
-        host = host or os.getenv('VERCEL_URL', '')
+        host = host or os.getenv('VERCEL_URL', '') or os.getenv('RAILWAY_PUBLIC_DOMAIN', '')
 
     if scheme and host:
         return f"{scheme}://{host}/api/email/oauth2callback"
@@ -554,7 +667,7 @@ def _build_oauth_flow(state=None, native=False):
 
     raise RuntimeError(
         'Gmail OAuth chưa được cấu hình. Vui lòng set GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET '
-        'hoặc GMAIL_CREDENTIALS_JSON trên Vercel.'
+        'hoặc GMAIL_CREDENTIALS_JSON trong biến môi trường của nơi deploy.'
     )
 
 
@@ -575,6 +688,9 @@ def oauth_config_check():
         'deployment': {
             'vercel': bool(os.getenv('VERCEL')),
             'vercel_url': os.getenv('VERCEL_URL', ''),
+            'railway': bool(os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_PROJECT_ID')),
+            'railway_environment': os.getenv('RAILWAY_ENVIRONMENT', ''),
+            'railway_public_domain': os.getenv('RAILWAY_PUBLIC_DOMAIN', ''),
             'host_header': request.headers.get('host', ''),
             'forwarded_host': request.headers.get('x-forwarded-host', '')
         },
@@ -610,19 +726,22 @@ def get_unread_emails():
         filter_type = request.args.get('filter', 'education', type=str).strip().lower()
         search = request.args.get('search', '', type=str).strip()
         include_read = request.args.get('include_read', 'false', type=str).lower() == 'true'
+        fresh = request.args.get('fresh', 'false', type=str).lower() in {'1', 'true', 'yes'}
         db_path = get_user_db_path(user_id)
         
         cache_key = _get_cache_key(user_id, filter_type, include_read=include_read, scan_limit=scan_limit)
         db_cache_key = cache_key
         
         # Try in-memory cache first, then DB cache.
-        cached_emails, cached_total = _get_cached_emails(cache_key)
+        suggestions_scanned = False
+        cache_hit = False
+        cached_emails, cached_total = (None, None) if fresh else _get_cached_emails(cache_key)
         if cached_emails is not None:
             filtered_emails = cached_emails
             total_raw = cached_total
             cache_hit = True
         else:
-            cached_db = Cache.get(db_cache_key, db_path=db_path)
+            cached_db = None if fresh else Cache.get(db_cache_key, db_path=db_path)
             if isinstance(cached_db, dict) and cached_db.get('emails') is not None:
                 filtered_emails = cached_db.get('emails') or []
                 total_raw = cached_db.get('total', len(filtered_emails))
@@ -646,6 +765,7 @@ def get_unread_emails():
                     hydrated.append(email)
 
                 _store_meeting_suggestions(hydrated, db_path)
+                suggestions_scanned = True
                 filtered_emails = [email for email in hydrated if _matches_filter(email, filter_type)]
                 total_raw = len(raw_emails)
 
@@ -682,7 +802,8 @@ def get_unread_emails():
             _hydrate_email_for_list(email, user_id, cached_entries=cached_entries)
             for email in selected_emails
         ]
-        _store_meeting_suggestions(page_emails, db_path)
+        if not suggestions_scanned:
+            _store_meeting_suggestions(page_emails, db_path)
 
         return jsonify({
             'success': True,
@@ -692,6 +813,7 @@ def get_unread_emails():
             'total_filtered': total_raw,
             'matched_count': total_emails,
             'cache_hit': cache_hit,
+            'fresh': fresh,
             'scan_limit': scan_limit,
             'debug': {
                 'raw_email_count': total_raw,
@@ -1062,7 +1184,7 @@ def summarize_emails_by_date():
             })
 
         # Try to read cached report first
-        cache_key = f"email_report::{user_id}::{date_str}"
+        cache_key = f"email_report:v2:{user_id}::{date_str}"
         rows = None
         try:
             from models.cache import Cache
@@ -1215,11 +1337,11 @@ def gmail_auth():
     session['oauth_state'] = state
     # try to capture code_verifier used for PKCE (name may differ by implementation)
     try:
-        code_verifier = getattr(flow, 'code_verifier', None)
-        if not code_verifier and hasattr(flow, '_client'):
-            code_verifier = getattr(flow._client, 'code_verifier', None)
+        code_verifier = _get_flow_code_verifier(flow)
         if code_verifier:
             session['oauth_code_verifier'] = code_verifier
+            _store_oauth_code_verifier(state, code_verifier)
+        session.modified = True
     except Exception:
         pass
     return redirect(auth_url)
@@ -1243,23 +1365,17 @@ def oauth2callback():
         return jsonify({'error': str(e)}), 503
 
     # restore PKCE code_verifier from session if present
-    code_verifier = session.get('oauth_code_verifier')
+    code_verifier = session.get('oauth_code_verifier') or _pop_oauth_code_verifier(state)
     try:
-        if code_verifier:
-            try:
-                setattr(flow, 'code_verifier', code_verifier)
-            except Exception:
-                pass
-            if hasattr(flow, '_client'):
-                try:
-                    setattr(flow._client, 'code_verifier', code_verifier)
-                except Exception:
-                    pass
+        _set_flow_code_verifier(flow, code_verifier)
     except Exception:
         pass
 
     try:
-        flow.fetch_token(authorization_response=request.url)
+        fetch_kwargs = {'authorization_response': request.url}
+        if code_verifier:
+            fetch_kwargs['code_verifier'] = code_verifier
+        flow.fetch_token(**fetch_kwargs)
         creds = flow.credentials
     except Exception as e:
         logger.error(f"Failed to fetch token: {e}")
@@ -1393,11 +1509,11 @@ def gmail_auth_url():
     session['oauth_state'] = state
     # store PKCE verifier as well so callback can exchange token
     try:
-        code_verifier = getattr(flow, 'code_verifier', None)
-        if not code_verifier and hasattr(flow, '_client'):
-            code_verifier = getattr(flow._client, 'code_verifier', None)
+        code_verifier = _get_flow_code_verifier(flow)
         if code_verifier:
             session['oauth_code_verifier'] = code_verifier
+            _store_oauth_code_verifier(state, code_verifier)
+        session.modified = True
     except Exception:
         pass
     return jsonify({'auth_url': auth_url})

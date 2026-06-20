@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FlowMate - Không gian làm việc thông minh</title>
-    <link rel="stylesheet" href="/css/style.css?v=20260620-scan-on-demand">
+    <link rel="stylesheet" href="/css/style.css?v=20260617-09">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -29,7 +29,7 @@
 
     <div id="workspaceApp" class="container workspace-app" data-current-page="chat" aria-hidden="true">
         <button id="menuToggle" class="menu-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
-            <span class="menu-toggle-icon" aria-hidden="true">‹</span>
+            <span class="menu-toggle-icon" aria-hidden="true">☰</span>
         </button>
         <!-- Sidebar -->
         <aside class="sidebar">
@@ -69,6 +69,13 @@
             </div>
             
             <nav class="sidebar-nav">
+                <button id="newChatSidebarBtn" class="sidebar-new-chat-btn" type="button">
+                    <span class="icon" aria-hidden="true">+</span>
+                    <span class="sidebar-new-chat-copy">
+                        <strong data-i18n="chat.new">Chat mới</strong>
+                        <small data-i18n="chat.newHint">Bắt đầu hội thoại sạch</small>
+                    </span>
+                </button>
                 <button class="nav-btn active" data-page="chat">
                     <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H6l-4 2 1.4-4.2A9 9 0 1 1 21 12Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg></span>
                     <span class="nav-label" data-i18n="nav.chat">Chat</span>
@@ -91,19 +98,12 @@
                 </button>
             </nav>
 
-            <section class="chat-thread-panel sidebar-chat-history" aria-label="Danh sách đoạn chat">
-                <div class="chat-thread-header">
-                    <button type="button" id="newChatBtn" class="btn-primary chat-new-btn">Chat mới</button>
+            <aside class="chat-history-panel sidebar-chat-history" aria-label="Doan chat cu">
+                <button id="newChatPanelBtn" type="button" class="btn-primary sidebar-chat-new-btn" data-i18n="chat.new">Chat moi</button>
+                <div id="chatSessionsList" class="chat-sessions-list">
+                    <div class="chat-session-empty" data-i18n="chat.noSaved">Chua co doan chat cu.</div>
                 </div>
-                <div id="chatThreadList" class="chat-thread-list">
-                    <button type="button" class="chat-thread-item active">
-                        <span class="chat-thread-main">
-                            <strong>Chat hiện tại</strong>
-                            <span>Bắt đầu hội thoại với FlowMate</span>
-                        </span>
-                    </button>
-                </div>
-            </section>
+            </aside>
 
             <div class="sidebar-footer">
                 <button class="btn-secondary" id="clearBtn">
@@ -134,14 +134,31 @@
             </header>
             <!-- Chat Page -->
             <section id="chat-page" class="page active">
-                <div class="chat-workspace">
-                    <div class="chat-container">
-                        <div class="chat-topbar">
+                <div class="chat-shell">
+                    <aside class="chat-history-panel" aria-label="Đoạn chat cũ">
+                        <div class="chat-history-header">
                             <div>
-                                <strong>Chat với FlowMate</strong>
-                                <span>Hỏi, phân tích email hoặc tạo lịch bằng ngôn ngữ tự nhiên</span>
+                                <strong data-i18n="chat.sessions">Đoạn chat</strong>
+                                <small data-i18n="chat.retentionHint">Lưu 1-3 tháng</small>
                             </div>
-                            <button type="button" id="inlineNewChatBtn" class="btn-secondary">Chat mới</button>
+                            <button id="newChatPanelBtn" type="button" class="btn-primary" data-i18n="chat.new">Chat mới</button>
+                        </div>
+                        <label class="chat-retention-control">
+                            <span data-i18n="chat.saveCurrent">Lưu chat hiện tại</span>
+                            <select id="chatRetentionSelect">
+                                <option value="30" data-i18n="chat.oneMonth">1 tháng</option>
+                                <option value="60" data-i18n="chat.twoMonths">2 tháng</option>
+                                <option value="90" selected data-i18n="chat.threeMonths">3 tháng</option>
+                            </select>
+                        </label>
+                        <div id="chatSessionsList" class="chat-sessions-list">
+                            <div class="chat-session-empty" data-i18n="chat.noSaved">Chưa có đoạn chat cũ.</div>
+                        </div>
+                    </aside>
+                    <div class="chat-container">
+                        <div class="chat-session-bar">
+                            <strong id="chatSessionTitle">Chat hiện tại</strong>
+                            <button id="newChatBtn" type="button" class="btn-secondary">Chat mới</button>
                         </div>
                         <div class="chat-messages" id="chatMessages"></div>
                         <div class="chat-input-area">
@@ -283,7 +300,7 @@
                         <div class="meeting-suggestions-header">
                             <div>
                                 <span>GỢI Ý TỪ EMAIL</span>
-                                <h3>Deadline và lịch hẹn được phát hiện</h3>
+                                <h3>Cuộc họp và lịch hẹn được phát hiện</h3>
                             </div>
                             <span id="meetingSuggestionCount" class="meeting-suggestion-count">0</span>
                         </div>
@@ -428,6 +445,7 @@
                 </div>
             </div>
         </aside>
+
     </div>
     
     <!-- Modals -->
@@ -476,16 +494,16 @@
                 <div class="form-group">
                     <label>Ngày giờ bắt đầu</label>
                     <input type="datetime-local" id="scheduleStartTime" required>
-                    <div class="datetime-preview" data-preview-for="scheduleStartTime">Chưa chọn thời gian</div>
-                </div>
-                <div class="form-group">
-                    <label>Ngày giờ kết thúc</label>
-                    <input type="datetime-local" id="scheduleEndTime">
-                    <div class="datetime-preview" data-preview-for="scheduleEndTime">Chưa chọn thời gian</div>
+                    <div class="datetime-preview" data-preview-for="scheduleStartTime">Chua chon thoi gian</div>
                 </div>
                 <div class="form-group">
                     <label>Thời lượng (phút)</label>
                     <input type="number" id="scheduleDuration" min="15" step="15" value="60" placeholder="Ví dụ: 60">
+                </div>
+                <div class="form-group">
+                    <label>Ngày giờ kết thúc (tự tính)</label>
+                    <input type="datetime-local" id="scheduleEndTime" readonly>
+                    <div class="datetime-preview" data-preview-for="scheduleEndTime">Chua chon thoi gian</div>
                 </div>
                 <div class="form-group">
                     <label>Địa điểm</label>
@@ -520,11 +538,15 @@
                 <div class="form-group">
                     <label>Ngày giờ</label>
                     <input type="datetime-local" id="editScheduleTime" required>
-                    <div class="datetime-preview" data-preview-for="editScheduleTime">Chưa chọn thời gian</div>
+                    <div class="datetime-preview" data-preview-for="editScheduleTime">Chua chon thoi gian</div>
                 </div>
                 <div class="form-group">
                     <label>Thời lượng (phút)</label>
                     <input type="number" id="editScheduleDuration" min="15" step="15" value="60" placeholder="Ví dụ: 60">
+                </div>
+                <div class="form-group">
+                    <label>Địa điểm</label>
+                    <input type="text" id="editScheduleLocation" placeholder="Địa điểm">
                 </div>
                 <div class="form-group">
                     <label>Người tham dự (email, cách nhau bằng dấu phẩy)</label>
@@ -532,7 +554,7 @@
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn-primary">Lưu thay đổi</button>
-                    <button type="button" class="btn-secondary" onclick="document.getElementById('editScheduleModal').style.display='none'">Hủy</button>
+                    <button type="button" class="btn-secondary" data-close-edit-schedule>Hủy</button>
                 </div>
             </form>
         </div>
@@ -563,6 +585,7 @@
                         <input type="time" id="confirmScheduleEndTime">
                     </div>
                 </div>
+                <div class="datetime-preview" id="confirmSchedulePreview">Chua chon thoi gian</div>
                 <div style="display:flex; gap:8px; align-items:center;">
                     <div class="form-group" style="flex:1;">
                         <label>Hình thức</label>
@@ -589,6 +612,6 @@
         </div>
     </div>
     
-    <script src="/js/app.js?v=20260620-scan-on-demand"></script>
+    <script src="/js/app.js?v=20260617-04"></script>
 </body>
 </html>

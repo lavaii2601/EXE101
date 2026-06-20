@@ -72,6 +72,13 @@ def _load_calendar_service(user_id):
     return None
 
 
+def _has_calendar_token(user_id):
+    """Fast connectivity check without constructing a Google API client."""
+    if not user_id or user_id == 'default':
+        return False
+    return os.path.exists(get_user_token_file(user_id))
+
+
 def _normalize_attendees(attendees_value):
     if not attendees_value:
         return []
@@ -277,7 +284,9 @@ def _sync_google_week_events(user_id, db_path, monday, week_end):
     local_tz = datetime.now().astimezone().tzinfo
     time_min = monday.replace(tzinfo=local_tz).isoformat()
     time_max = week_end.replace(tzinfo=local_tz).isoformat()
-    gcal_events = calendar_service.get_events(max_results=100, time_min=time_min, time_max=time_max)
+    gcal_events = calendar_service.get_events(max_results=250, time_min=time_min, time_max=time_max)
+    live_google_ids = {event.get('id') for event in gcal_events if event.get('id')}
+
     for event in gcal_events:
         event_id = event.get('id')
         if not event_id:
@@ -295,11 +304,26 @@ def _sync_google_week_events(user_id, db_path, monday, week_end):
             calendar_event_id=event_id,
             db_path=db_path
         )
+
+    for schedule in Schedule.get_all(limit=300, db_path=db_path):
+        calendar_event_id = schedule.get('calendar_event_id')
+        if not calendar_event_id or calendar_event_id in live_google_ids:
+            continue
+
+        start_dt = _parse_dt(schedule.get('start_time'))
+        if not start_dt or not (monday <= start_dt < week_end):
+            continue
+
+        exists = calendar_service.event_exists(calendar_event_id)
+        if exists is False:
+            Schedule.delete(schedule.get('id'), db_path=db_path)
+            logger.info(f"Removed local schedule for deleted Google event: {calendar_event_id}")
+
     _clear_schedule_cache(db_path)
 
 
 def _start_week_sync(user_id, db_path, monday, week_end, force=False):
-    if not _load_calendar_service(user_id):
+    if not _has_calendar_token(user_id):
         return False
 
     key = (user_id, monday.date().isoformat())
@@ -355,12 +379,12 @@ def get_unified_schedules():
             for item in local_schedules
         }
 
-        calendar_connected = False
-        calendar_service = _load_calendar_service(user_id)
-        if calendar_service:
-            calendar_connected = True
-        if calendar_service and live_google:
+        calendar_connected = _has_calendar_token(user_id)
+        if calendar_connected and live_google:
             try:
+                calendar_service = _load_calendar_service(user_id)
+                if not calendar_service:
+                    raise RuntimeError("Google Calendar service is not available")
                 time_max = (datetime.utcnow() + timedelta(days=90)).isoformat() + 'Z'
                 for event in calendar_service.get_events(
                     max_results=max_results,
@@ -475,6 +499,21 @@ def get_upcoming():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+@schedule_bp.route('/<int:schedule_id>', methods=['GET'])
+def get_schedule(schedule_id):
+    """Get one schedule by ID."""
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+    schedule = Schedule.get_by_id(schedule_id, db_path=db_path)
+    if not schedule:
+        return jsonify({'error': 'Schedule not found'}), 404
+    return jsonify({
+        'success': True,
+        'schedule': schedule
+    })
+
+
 @schedule_bp.route('/<int:schedule_id>/update-status', methods=['PATCH', 'POST'])
 def update_status(schedule_id):
     """Update schedule status"""
@@ -524,6 +563,8 @@ def update_schedule(schedule_id):
         update_data['start_time'] = data.get('start_time', '').strip()
     if 'end_time' in data:
         update_data['end_time'] = data.get('end_time', '').strip() or None
+    if 'location' in data:
+        update_data['location'] = data.get('location', '').strip()
     duration_minutes = _parse_duration_minutes(data.get('duration_minutes'))
     if 'attendees' in data:
         attendees = data.get('attendees', [])
@@ -575,10 +616,17 @@ def delete_schedule(schedule_id):
             calendar_service = _load_calendar_service(user_id)
             if calendar_service:
                 try:
-                    calendar_service.delete_event(event_id=calendar_event_id)
+                    deleted_from_calendar = calendar_service.delete_event(event_id=calendar_event_id)
+                    if not deleted_from_calendar:
+                        return jsonify({
+                            'error': 'Không thể xóa sự kiện trên Google Calendar. Vui lòng thử lại sau.'
+                        }), 502
                     logger.info(f"Calendar event deleted: {calendar_event_id}")
                 except Exception as e:
                     logger.warning(f"Failed to delete Google Calendar event: {e}")
+                    return jsonify({
+                        'error': 'Không thể xóa sự kiện trên Google Calendar. Vui lòng thử lại sau.'
+                    }), 502
         
         # Delete from local database
         Schedule.delete(schedule_id, db_path=db_path)

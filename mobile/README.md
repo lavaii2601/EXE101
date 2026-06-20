@@ -22,13 +22,22 @@ npm install
 npm start
 ```
 
-Backend Flask can chay truoc tai `http://127.0.0.1:5000`.
+Mac dinh mobile dung backend Railway:
 
-Mac dinh:
+```text
+https://exe101.up.railway.app/api
+```
 
-- Android emulator dung `http://10.0.2.2:5000/api`.
-- iOS simulator va web dung `http://127.0.0.1:5000/api`.
-- Thiet bi that nen dat `EXPO_PUBLIC_API_BASE_URL`, vi du:
+Khi can test backend local, dat `EXPO_PUBLIC_API_BASE_URL` truoc khi chay Expo:
+
+- Android emulator:
+
+```powershell
+$env:EXPO_PUBLIC_API_BASE_URL='http://10.0.2.2:5000/api'
+npm start
+```
+
+- Thiet bi that:
 
 ```powershell
 $env:EXPO_PUBLIC_API_BASE_URL='http://192.168.1.20:5000/api'

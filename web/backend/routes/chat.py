@@ -26,6 +26,16 @@ ai_service = AIService()
 intent_orchestrator = IntentOrchestrator()
 
 
+def _ensure_chat_session(user_id, session_id, mode='worker', title=None):
+    return History.ensure_chat_session(
+        user_id=user_id,
+        session_id=session_id,
+        title=title,
+        mode=mode,
+        db_path=get_user_db_path(user_id),
+    )
+
+
 def _normalize_intent_text(value):
     value = unicodedata.normalize('NFD', str(value or '').lower())
     value = ''.join(char for char in value if unicodedata.category(char) != 'Mn')
@@ -34,39 +44,46 @@ def _normalize_intent_text(value):
 
 def _is_latest_email_summary_request(message):
     normalized = _normalize_intent_text(message)
-    has_email = any(term in normalized for term in (
-        'email', 'e-mail', 'gmail', 'mail', 'thu moi', 'hop thu'
-    ))
-    has_latest = any(term in normalized for term in (
-        'moi nhat', 'gan nhat', 'vua nhan', 'moi nhan',
-        'latest', 'newest', 'most recent'
-    ))
-    has_summary = any(term in normalized for term in (
-        'tom tat', 'noi dung', 'noi gi', 'co gi', 'doc ',
-        'summary', 'summarize', 'what does'
-    ))
-    return has_email and has_latest and has_summary
+    email_word = r'(?:e-?mails?|gmails?|mails?|thu|hop thu|inbox)'
+    has_email = re.search(rf'\b{email_word}\b', normalized) is not None
+    has_latest = (
+        any(term in normalized for term in (
+            'moi nhat', 'gan nhat', 'gan day', 'vua nhan', 'moi nhan',
+            'latest', 'newest', 'most recent', 'recent',
+            'just received', 'newly received', 'last received'
+        ))
+        or re.search(r'\blast\s+(?:e-?mails?|mails?|message|messages)\b', normalized) is not None
+    )
+    return has_email and has_latest
 
 
 def _latest_email_count(message):
     normalized = _normalize_intent_text(message)
-    match = re.search(
-        r'\b(\d{1,2})\s*(?:email|e-mail|mail|thu)\b',
-        normalized
+    email_word = r'(?:e-?mails?|gmails?|mails?|thu|hop thu)'
+    latest_word = (
+        r'(?:moi nhat|gan nhat|gan day|vua nhan|moi nhan|latest|newest|'
+        r'most recent|recent|just received|newly received|last)'
+    )
+    match = (
+        re.search(rf'\b(\d{{1,2}})\s*(?:{latest_word}\s*)?{email_word}\b', normalized)
+        or re.search(rf'\b{latest_word}\s*(\d{{1,2}})\s*{email_word}\b', normalized)
+        or re.search(rf'\b{email_word}\s*{latest_word}\s*(\d{{1,2}})\b', normalized)
     )
     if match:
         return max(1, min(int(match.group(1)), 5))
 
     number_words = {
-        'mot': 1,
-        'hai': 2,
-        'ba': 3,
-        'bon': 4,
-        'tu': 4,
-        'nam': 5,
+        'mot': 1, 'một': 1, 'one': 1,
+        'hai': 2, 'two': 2,
+        'ba': 3, 'three': 3,
+        'bon': 4, 'bốn': 4, 'tu': 4, 'four': 4,
+        'nam': 5, 'năm': 5, 'five': 5,
     }
     for word, count in number_words.items():
-        if re.search(rf'\b{word}\s+(?:email|e-mail|mail|thu)\b', normalized):
+        if (
+            re.search(rf'\b{word}\s+(?:{latest_word}\s+)?{email_word}\b', normalized)
+            or re.search(rf'\b{latest_word}\s+{word}\s+{email_word}\b', normalized)
+        ):
             return count
     return 1
 
@@ -217,13 +234,11 @@ def _format_calendar_context(message, user_id, db_path):
             time_max=window_end.isoformat()
         )
 
-    local_schedules = []
-    for schedule in Schedule.get_all(limit=100, db_path=db_path):
-        start_time = _parse_schedule_datetime(schedule.get('start_time'))
-        if start_time and window_start <= start_time < window_end:
-            local_schedules.append(schedule)
-    local_schedules.sort(
-        key=lambda item: _parse_schedule_datetime(item.get('start_time')) or window_end
+    local_schedules = Schedule.get_between(
+        window_start.isoformat(),
+        window_end.isoformat(),
+        limit=100,
+        db_path=db_path
     )
 
     if not google_events and not local_schedules:
@@ -289,6 +304,62 @@ def _format_profile_context(user_id):
         f"Chế độ làm việc: {user.get('user_mode') or 'Chưa chọn'}",
         f"Gmail đã kết nối: {'Có' if user.get('gmail_connected') else 'Không'}",
     ])
+
+
+def _direct_schedule_list_response(message, user_id, db_path):
+    context = _format_calendar_context(message, user_id, db_path)
+    return (
+        context
+        + "\n\nMình chỉ liệt kê dữ liệu lịch đang có trong Calendar/FlowMate, "
+        "không tự suy đoán thêm sự kiện ngoài dữ liệu này."
+    )
+
+
+def _email_lookup_query(message):
+    normalized = _normalize_intent_text(message)
+    include_read = 'chua doc' not in normalized and 'unread' not in normalized
+    query = 'in:inbox' if include_read else 'is:unread'
+
+    quoted = re.search(r'"([^"]{2,80})"', message or '')
+    if quoted:
+        return f'{query} "{quoted.group(1).strip()}"', include_read
+
+    sender_match = re.search(r'(?:tu|from)\s+([\w\.-]+@[\w\.-]+\.\w+)', normalized)
+    if sender_match:
+        return f'{query} from:{sender_match.group(1)}', include_read
+
+    return query, include_read
+
+
+def _direct_email_search_response(message, user_id, limit=8):
+    token_file = get_user_token_file(user_id)
+    if not token_file or not os.path.exists(token_file):
+        return "Gmail chưa được kết nối, nên mình chưa thể xem email thật của bạn."
+
+    query, include_read = _email_lookup_query(message)
+    emails = GmailService(token_file=token_file).get_emails(
+        max_results=max(1, min(limit, 10)),
+        query=query,
+        include_read=include_read
+    )
+    if not emails:
+        return "Không tìm thấy email phù hợp trong Gmail theo dữ liệu hiện tại."
+
+    lines = [
+        "EMAIL TÌM THẤY",
+        f"Nguồn: Gmail thật, truy vấn: {query}",
+    ]
+    for index, email in enumerate(emails, start=1):
+        snippet = re.sub(r'\s+', ' ', email.get('snippet', '') or '').strip()
+        lines.extend([
+            f"{index}. {email.get('subject') or '(Không có tiêu đề)'}",
+            f"   Người gửi: {email.get('sender') or 'Không xác định'}",
+            f"   Thời gian: {email.get('date') or 'Không xác định'}",
+            f"   Trạng thái: {'Chưa đọc' if email.get('is_unread') else 'Đã đọc'}",
+            f"   Xem trước: {snippet[:220] or 'Không có nội dung xem trước'}",
+        ])
+    lines.append("\nMình không tự kết luận nội dung ngoài phần Gmail trả về ở trên.")
+    return "\n".join(lines)
 
 
 def _build_workspace_context(message, user_id, db_path):
@@ -453,6 +524,22 @@ def send_message():
     db_path = get_user_db_path(user_id)
     History.init_db(db_path=db_path)
     Schedule.init_db(db_path=db_path)
+    chat_session_id = _ensure_chat_session(
+        user_id,
+        data.get('session_id') or data.get('chat_session_id'),
+        mode=mode,
+        title=user_message[:80]
+    )
+
+    def save_chat_history(user_text, assistant_text, action_type='chat', related_id=None):
+        return History.create(
+            user_text,
+            assistant_text,
+            action_type=action_type,
+            related_id=related_id,
+            db_path=db_path,
+            chat_session_id=chat_session_id if action_type == 'chat' else None,
+        )
 
     intent_result = intent_orchestrator.detect(user_message)
     refresh_targets = list(intent_result.get('refresh_targets') or [])
@@ -462,9 +549,10 @@ def send_message():
             requested_count = int((intent_result.get('entities') or {}).get('count') or _latest_email_count(user_message))
             response, source_emails = _summarize_latest_emails(user_id, requested_count)
             source_email = source_emails[0]
-            History.create(user_message, response, action_type='chat', db_path=db_path)
+            save_chat_history(user_message, response)
             return jsonify({
                 'success': True,
+                'session_id': chat_session_id,
                 'response': response,
                 'provider': ai_service.last_provider_used,
                 'demo_mode': ai_service.last_provider_used == 'demo',
@@ -484,21 +572,26 @@ def send_message():
                     'sender': email.get('sender'),
                     'subject': email.get('subject'),
                     'date': email.get('date')
-                } for email in source_emails]
+                } for email in source_emails],
+                'grounded': True,
+                'ai_used': True
             })
         except Exception as e:
             logger.exception("Failed to summarize latest Gmail messages for user %s", user_id)
             response = f"Khong the lay email gan nhat tu Gmail: {e}"
-            History.create(user_message, response, action_type='chat', db_path=db_path)
+            save_chat_history(user_message, response)
             return jsonify({
                 'success': True,
+                'session_id': chat_session_id,
                 'response': response,
                 'provider': None,
                 'demo_mode': False,
                 'schedule_created': None,
                 'schedule_suggestion': None,
                 'intent': intent_result,
-                'refresh_targets': refresh_targets
+                'refresh_targets': refresh_targets,
+                'grounded': True,
+                'ai_used': False
             })
 
     client_confirm = bool(data.get('confirmed_schedule'))
@@ -525,9 +618,10 @@ def send_message():
             logger.exception("Failed to create schedule through intent orchestrator")
             response = f"Khong the tao lich: {e}"
 
-        History.create(user_message, response, action_type='chat', db_path=db_path)
+        save_chat_history(user_message, response)
         return jsonify({
             'success': True,
+            'session_id': chat_session_id,
             'response': response,
             'provider': None,
             'demo_mode': False,
@@ -535,20 +629,54 @@ def send_message():
             'schedule_suggestion': None if schedule_created else (intent_result.get('entities') or {}).get('schedule'),
             'workspace_sources': ['calendar'],
             'intent': intent_result,
-            'refresh_targets': ['schedule', 'history']
+            'refresh_targets': ['schedule', 'history'],
+            'grounded': True,
+            'ai_used': False
+        })
+
+    if intent_result.get('intent') == 'schedule.list':
+        response = _direct_schedule_list_response(user_message, user_id, db_path)
+        save_chat_history(user_message, response)
+        return jsonify({
+            'success': True,
+            'session_id': chat_session_id,
+            'response': response,
+            'provider': None,
+            'demo_mode': False,
+            'schedule_created': None,
+            'schedule_suggestion': None,
+            'workspace_sources': ['calendar'],
+            'intent': intent_result,
+            'refresh_targets': refresh_targets,
+            'grounded': True,
+            'ai_used': False
+        })
+
+    if intent_result.get('intent') == 'email.search':
+        response = _direct_email_search_response(user_message, user_id)
+        save_chat_history(user_message, response)
+        return jsonify({
+            'success': True,
+            'session_id': chat_session_id,
+            'response': response,
+            'provider': None,
+            'demo_mode': False,
+            'schedule_created': None,
+            'schedule_suggestion': None,
+            'workspace_sources': ['email'],
+            'intent': intent_result,
+            'refresh_targets': refresh_targets,
+            'grounded': True,
+            'ai_used': False
         })
 
     direct_result = intent_orchestrator.execute_direct(intent_result, user_id, db_path)
     if direct_result and intent_result.get('intent') in {'settings.update_mode', 'history.list', 'schedule.create'}:
         response = direct_result.get('response') or ''
-        History.create(
-            user_message,
-            response,
-            action_type=direct_result.get('action_type') or 'chat',
-            db_path=db_path
-        )
+        save_chat_history(user_message, response, action_type=direct_result.get('action_type') or 'chat')
         return jsonify({
             'success': True,
+            'session_id': chat_session_id,
             'response': response,
             'provider': None,
             'demo_mode': False,
@@ -556,62 +684,22 @@ def send_message():
             'schedule_suggestion': direct_result.get('schedule_suggestion'),
             'workspace_sources': direct_result.get('workspace_sources') or [],
             'intent': intent_result,
-            'refresh_targets': direct_result.get('refresh_targets') or refresh_targets
+            'refresh_targets': direct_result.get('refresh_targets') or refresh_targets,
+            'grounded': True,
+            'ai_used': False
         })
-
-    if _is_latest_email_summary_request(user_message):
-        try:
-            requested_count = _latest_email_count(user_message)
-            response, source_emails = _summarize_latest_emails(user_id, requested_count)
-            source_email = source_emails[0]
-            History.create(user_message, response, action_type='chat', db_path=db_path)
-            return jsonify({
-                'success': True,
-                'response': response,
-                'provider': ai_service.last_provider_used,
-                'demo_mode': ai_service.last_provider_used == 'demo',
-                'schedule_created': None,
-                'schedule_suggestion': None,
-                'workspace_sources': ['email'],
-                'intent': intent_result,
-                'refresh_targets': refresh_targets,
-                'email_source': {
-                    'id': source_email.get('id'),
-                    'sender': source_email.get('sender'),
-                    'subject': source_email.get('subject'),
-                    'date': source_email.get('date')
-                },
-                'email_sources': [{
-                    'id': email.get('id'),
-                    'sender': email.get('sender'),
-                    'subject': email.get('subject'),
-                    'date': email.get('date')
-                } for email in source_emails]
-            })
-        except Exception as e:
-            logger.exception("Failed to summarize latest Gmail messages for user %s", user_id)
-            response = f"Không thể lấy email gần nhất từ Gmail: {e}"
-            History.create(user_message, response, action_type='chat', db_path=db_path)
-            return jsonify({
-                'success': True,
-                'response': response,
-                'provider': None,
-                'demo_mode': False,
-                'schedule_created': None,
-                'schedule_suggestion': None,
-                'intent': intent_result,
-                'refresh_targets': refresh_targets
-            })
 
     # Build messages for AI with recent chat context for smarter responses
     messages = [{
         "role": "system",
         "content": (
             "You are FlowMate. " + mode_prompt
-            + " Be concise, clear, and action-focused. Classify useful information as "
-            "meetings, deadlines, tasks, reminders, important information, or low priority. "
-            "Suggest the next action, but do not claim a sensitive action was completed "
-            "unless the user explicitly confirmed it."
+            + " Answer in Vietnamese unless the user asks otherwise. Be concise, clear, and action-focused. "
+            "Use only provided workspace context for facts about the user's email, calendar, history, or account. "
+            "If the data is missing, say you do not have enough data instead of guessing. "
+            "Do not invent senders, dates, deadlines, meetings, or completed actions. "
+            "Classify useful information as meetings, deadlines, tasks, reminders, important information, or low priority. "
+            "Suggest the next action, but do not claim a sensitive action was completed unless the user explicitly confirmed it."
         )
     }]
 
@@ -627,7 +715,7 @@ def send_message():
         logger.exception("Failed to build workspace context for user %s", user_id)
 
     if not workspace_sources:
-        recent_history = History.get_recent(limit=8, db_path=db_path)
+        recent_history = History.get_recent(limit=8, db_path=db_path, chat_session_id=chat_session_id)
         for record in reversed(recent_history):
             if record.get('action_type') != 'chat':
                 continue
@@ -646,7 +734,8 @@ def send_message():
             "content": (
                 "DỮ LIỆU WORKSPACE THỰC TẾ\n"
                 "Chỉ dùng dữ liệu dưới đây để trả lời câu hỏi tiếp theo. "
-                "Không bịa thêm dữ liệu không có trong context.\n\n"
+                "Không bịa thêm dữ liệu không có trong context. "
+                "Nếu context không đủ, nói rõ thiếu dữ liệu nào.\n\n"
                 + workspace_context
             )
         })
@@ -660,7 +749,7 @@ def send_message():
     response = ai_service.generate_response(messages, task=task, user_id=user_id)
     
     # Save to history
-    History.create(user_message, response, action_type='chat', db_path=db_path)
+    save_chat_history(user_message, response)
     
     # Auto-detect schedule suggestion from AI response
     schedule_info = extract_schedule_from_response(response, user_message)
@@ -751,6 +840,7 @@ def send_message():
 
     return jsonify({
         'success': True,
+        'session_id': chat_session_id,
         'response': response,
         'provider': ai_service.last_provider_used,
         'demo_mode': ai_service.last_provider_used == 'demo',
@@ -758,7 +848,9 @@ def send_message():
         'schedule_suggestion': schedule_suggestion,
         'workspace_sources': sorted(workspace_sources),
         'intent': intent_result,
-        'refresh_targets': sorted(set(refresh_targets))
+        'refresh_targets': sorted(set(refresh_targets)),
+        'grounded': bool(workspace_sources),
+        'ai_used': True
     })
 
 @chat_bp.route('/summarize-email', methods=['POST'])
@@ -812,41 +904,73 @@ def get_history():
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
     limit = request.args.get('limit', 20, type=int)
-    history = History.get_recent(limit=limit, db_path=db_path)
+    chat_session_id = request.args.get('session_id') or request.args.get('chat_session_id')
+    if chat_session_id:
+        if not History.chat_session_available(user_id, chat_session_id, db_path=db_path):
+            return jsonify({
+                'success': True,
+                'session_id': None,
+                'expired': True,
+                'history': []
+            })
+    history = History.get_recent(limit=limit, db_path=db_path, chat_session_id=chat_session_id)
     
     return jsonify({
         'success': True,
+        'session_id': chat_session_id,
         'history': history
     })
 
 
-@chat_bp.route('/history/<int:history_id>', methods=['PATCH'])
-def update_history_item(history_id):
-    """Update a saved chat/history item."""
+@chat_bp.route('/sessions', methods=['GET'])
+def get_chat_sessions():
+    """List saved chat sessions that are still within retention."""
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
+    limit = request.args.get('limit', 30, type=int)
+    sessions = History.list_chat_sessions(user_id=user_id, limit=limit, db_path=db_path)
+    return jsonify({
+        'success': True,
+        'sessions': sessions,
+        'retention': {
+            'min_days': 30,
+            'max_days': 93,
+            'default_days': 90,
+        }
+    })
+
+
+@chat_bp.route('/sessions/<session_id>', methods=['PATCH'])
+def update_chat_session(session_id):
+    """Update chat session metadata such as title or retention period."""
     data = request.get_json(silent=True) or {}
-    title = str(data.get('title') or '').strip()
-    if not title:
-        return jsonify({'success': False, 'error': 'title_required'}), 400
-    if len(title) > 120:
-        title = title[:120]
-
-    updated = History.update_title(history_id, title, db_path=db_path)
-    if not updated:
-        return jsonify({'success': False, 'error': 'history_not_found'}), 404
-    return jsonify({'success': True, 'id': history_id, 'title': title})
-
-
-@chat_bp.route('/history/<int:history_id>', methods=['DELETE'])
-def delete_history_item(history_id):
-    """Delete a saved chat/history item immediately."""
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
-    deleted = History.delete(history_id, db_path=db_path)
+    updated = History.update_chat_session(
+        user_id=user_id,
+        session_id=session_id,
+        title=data.get('title') if 'title' in data else None,
+        retention_days=data.get('retention_days') if 'retention_days' in data else None,
+        db_path=db_path,
+    )
+    if not updated:
+        return jsonify({'success': False, 'error': 'chat_session_not_found'}), 404
+    return jsonify({'success': True})
+
+
+@chat_bp.route('/sessions/<session_id>', methods=['DELETE'])
+def delete_chat_session(session_id):
+    """Delete a saved chat session immediately."""
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+    deleted = History.delete_chat_session(
+        user_id=user_id,
+        session_id=session_id,
+        db_path=db_path,
+    )
     if not deleted:
-        return jsonify({'success': False, 'error': 'history_not_found'}), 404
-    return jsonify({'success': True, 'id': history_id})
+        return jsonify({'success': False, 'error': 'chat_session_not_found'}), 404
+    return jsonify({'success': True})
 
 
 @chat_bp.route('/providers', methods=['GET'])
@@ -860,14 +984,19 @@ def get_ai_providers():
 @chat_bp.route('/clear', methods=['POST'])
 def clear_conversation():
     """Clear conversation history"""
+    data = request.get_json(silent=True) or {}
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
+    chat_session_id = data.get('session_id') or data.get('chat_session_id')
+    if chat_session_id:
+        chat_session_id = _ensure_chat_session(user_id, chat_session_id)
     
     # Delete only chat messages, preserve email and schedule history
-    deleted_count = History.clear_all(action_type='chat', db_path=db_path)
+    deleted_count = History.clear_all(action_type='chat', db_path=db_path, chat_session_id=chat_session_id)
     
     return jsonify({
         'success': True,
+        'session_id': chat_session_id,
         'message': f'Đã xóa {deleted_count} tin nhắn',
         'deleted_count': deleted_count
     })
@@ -885,3 +1014,4 @@ def clear_all_history():
         'message': f'Đã xóa {deleted_count} bản ghi lịch sử',
         'deleted_count': deleted_count
     })
+
