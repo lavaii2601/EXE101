@@ -9,15 +9,15 @@ import { useTheme } from '../theme/ThemeContext';
 
 const labels = {
   chat:                   'Chat',
-  email_summary:          'Tom tat email',
-  email_reply:            'Tao tra loi email',
-  email_sent:             'Gui email',
-  email_daily_summary:    'Bao cao email',
-  schedule_created:       'Tao lich',
-  schedule_updated:       'Sua lich',
-  schedule_deleted:       'Xoa lich',
-  calendar_event_created: 'Tao Google Calendar',
-  calendar_event_deleted: 'Xoa Google Calendar',
+  email_summary:          'Tóm tắt email',
+  email_reply:            'Tạo trả lời email',
+  email_sent:             'Gửi email',
+  email_daily_summary:    'Báo cáo email',
+  schedule_created:       'Tạo lịch',
+  schedule_updated:       'Sửa lịch',
+  schedule_deleted:       'Xóa lịch',
+  calendar_event_created: 'Tạo Google Calendar',
+  calendar_event_deleted: 'Xóa Google Calendar',
 };
 
 export default function HistoryScreen() {
@@ -33,7 +33,7 @@ export default function HistoryScreen() {
       const data = await apiGet('/chat/history?limit=50');
       setHistory(data.history || []);
     } catch (error) {
-      Alert.alert('Loi tai lich su', error.message);
+      Alert.alert('Lỗi tải lịch sử', error.message);
     } finally {
       setRefreshing(false);
     }
@@ -48,19 +48,19 @@ export default function HistoryScreen() {
       await apiPost('/chat/clear-all');
       setHistory([]);
     } catch (error) {
-      Alert.alert('Khong xoa duoc lich su', error.message);
+      Alert.alert('Không xóa được lịch sử', error.message);
     }
   };
 
   return (
     <Screen
-      title="Lich su"
+      title="Lịch sử"
       refreshing={refreshing}
       onRefresh={loadHistory}
-      actions={<Button title="Xoa het" variant="secondary" onPress={clearAll} />}
+      actions={<Button title="Xóa hết" variant="secondary" onPress={clearAll} />}
     >
       {history.length === 0 ? (
-        <EmptyState title="Chua co hoat dong" detail="Cac lan chat, gui email va tao lich se hien o day." />
+        <EmptyState title="Chưa có hoạt động" detail="Các lần chat, gửi email và tạo lịch sẽ hiện ở đây." />
       ) : (
         history.map((item) => (
           <Card key={item.id}>

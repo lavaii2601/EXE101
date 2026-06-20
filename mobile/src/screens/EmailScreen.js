@@ -13,20 +13,20 @@ import { useTheme } from '../theme/ThemeContext';
 import ModeBrief from '../components/ModeBrief';
 
 const filters = [
-  { label: 'Tat ca',     value: 'all' },
-  { label: 'Giao duc',   value: 'education' },
-  { label: 'Cong viec',  value: 'work' },
-  { label: 'Hop',        value: 'meeting' },
-  { label: 'Khuyen mai', value: 'promotion' },
-  { label: 'Tai chinh',  value: 'finance' },
-  { label: 'Ca nhan',    value: 'personal' },
-  { label: 'Khac',       value: 'other' },
+  { label: 'Tất cả',     value: 'all' },
+  { label: 'Giáo dục',   value: 'education' },
+  { label: 'Công việc',  value: 'work' },
+  { label: 'Họp',        value: 'meeting' },
+  { label: 'Khuyến mãi', value: 'promotion' },
+  { label: 'Tài chính',  value: 'finance' },
+  { label: 'Cá nhân',    value: 'personal' },
+  { label: 'Khác',       value: 'other' },
 ];
 
 const modes = [
-  { label: 'Hop thu', value: 'inbox' },
-  { label: 'Bao cao', value: 'report' },
-  { label: 'Soan thu',value: 'compose' },
+  { label: 'Hộp thư',  value: 'inbox' },
+  { label: 'Báo cáo',  value: 'report' },
+  { label: 'Soạn thư', value: 'compose' },
 ];
 
 export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
@@ -71,7 +71,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
       setEmails(data.emails || []);
     } catch (error) {
       if (error.status === 401) setEmails([]);
-      else Alert.alert('Loi tai email', error.message);
+      else Alert.alert('Lỗi tải email', error.message);
     } finally {
       setLoading(false);
     }
@@ -92,7 +92,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
         onAuthChanged?.();
       }
     } catch (error) {
-      Alert.alert('Khong mo duoc Gmail OAuth', error.message);
+      Alert.alert('Không mở được Gmail OAuth', error.message);
     }
   };
 
@@ -109,7 +109,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
       setEmails([]);
       onAuthChanged?.();
     } catch (error) {
-      Alert.alert('Khong dang xuat duoc', error.message);
+      Alert.alert('Không đăng xuất được', error.message);
     }
   };
 
@@ -137,7 +137,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
         item.id === email.id ? { ...item, summary: data.summary || '' } : item
       )));
     } catch (error) {
-      Alert.alert('Khong tom tat duoc', error.message);
+      Alert.alert('Không tóm tắt được', error.message);
     } finally {
       setSummarizingId('');
     }
@@ -147,10 +147,10 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
     if (!email) return;
     setLoading(true);
     try {
-      const context = `Tieu de: ${email.subject || ''}\nTu: ${email.sender || email.from || ''}\nNoi dung: ${emailBody || email.body || email.summary || email.snippet || ''}`;
+      const context = `Tiêu đề: ${email.subject || ''}\nTừ: ${email.sender || email.from || ''}\nNội dung: ${emailBody || email.body || email.summary || email.snippet || ''}`;
       const data = await apiPost('/chat/generate-reply', {
         context,
-        choice: 'Xac nhan da nhan duoc email va se phan hoi/xu ly som, van phong lich su',
+        choice: 'Xác nhận đã nhận được email và sẽ phản hồi/xử lý sớm, văn phong lịch sự',
       });
       const senderEmail = extractEmailAddress(email.sender || email.from || '');
       setCompose({
@@ -160,9 +160,9 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
       });
       setSelectedEmail(null);
       setMode('compose');
-      Alert.alert('Da tao ban nhap', 'Vui long kiem tra noi dung truoc khi gui.');
+      Alert.alert('Đã tạo bản nháp', 'Vui lòng kiểm tra nội dung trước khi gửi.');
     } catch (error) {
-      Alert.alert('Khong tao duoc tra loi', error.message);
+      Alert.alert('Không tạo được trả lời', error.message);
     } finally {
       setLoading(false);
     }
@@ -179,22 +179,22 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
         setSelectedEmail((current) => ({ ...current, is_unread: !wasUnread }));
       }
     } catch (error) {
-      Alert.alert('Khong cap nhat duoc email', error.message);
+      Alert.alert('Không cập nhật được email', error.message);
     }
   };
 
   const sendEmail = async () => {
     if (!compose.to || !compose.subject || !compose.body) {
-      Alert.alert('Thieu thong tin', 'Vui long dien nguoi nhan, tieu de va noi dung.');
+      Alert.alert('Thiếu thông tin', 'Vui lòng điền người nhận, tiêu đề và nội dung.');
       return;
     }
     setLoading(true);
     try {
       await apiPost('/email/send-reply', compose);
       setCompose({ to: '', subject: '', body: '' });
-      Alert.alert('Da gui email');
+      Alert.alert('Đã gửi email');
     } catch (error) {
-      Alert.alert('Khong gui duoc email', error.message);
+      Alert.alert('Không gửi được email', error.message);
     } finally {
       setLoading(false);
     }
@@ -202,7 +202,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
 
   const generateReport = async () => {
     if (!reportDate) {
-      Alert.alert('Chon ngay', 'Nhap ngay theo dinh dang DD/MM/YYYY.');
+      Alert.alert('Chọn ngày', 'Nhập ngày theo định dạng DD/MM/YYYY.');
       return;
     }
     setLoading(true);
@@ -210,7 +210,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
       const data = await apiPost('/email/summarize-by-date', { date: reportDate, max_results: 50 });
       setReport(data);
     } catch (error) {
-      Alert.alert('Khong tao duoc bao cao', error.message);
+      Alert.alert('Không tạo được báo cáo', error.message);
     } finally {
       setLoading(false);
     }
@@ -220,15 +220,15 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
     try {
       const start = row.suggested_start_time || buildReportStart(reportDate);
       await apiPost('/schedule/create', {
-        title: row.schedule_title || row.subject || 'Lich hen tu email',
+        title: row.schedule_title || row.subject || 'Lịch hẹn từ email',
         description: row.suggested_description || row.summary || '',
         start_time: start,
         end_time: row.suggested_end_time || buildReportEnd(start),
         attendees: [],
       });
-      Alert.alert('Da tao lich');
+      Alert.alert('Đã tạo lịch');
     } catch (error) {
-      Alert.alert('Khong tao duoc lich', error.message);
+      Alert.alert('Không tạo được lịch', error.message);
     }
   };
 
@@ -236,20 +236,20 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
     <>
       <Card>
         <Field
-          label="Gmail da ket noi tren backend"
+          label="Gmail đã kết nối trên backend"
           value={userIdInput}
           onChangeText={setUserIdInput}
           placeholder="ten@gmail.com"
           keyboardType="email-address"
         />
-        <Button title="Dung tai khoan nay" variant="secondary" onPress={applyMobileUser} style={styles.applyButton} />
+        <Button title="Dùng tài khoản này" variant="secondary" onPress={applyMobileUser} style={styles.applyButton} />
         <View style={styles.authRow}>
           <View style={styles.authText}>
-            <Text style={styles.cardTitle}>{auth?.authenticated ? 'Gmail da ket noi' : 'Chua ket noi Gmail'}</Text>
-            <Text style={styles.muted} numberOfLines={1}>{auth?.gmail_email || 'Dang nhap de doc va gui email.'}</Text>
+            <Text style={styles.cardTitle}>{auth?.authenticated ? 'Gmail đã kết nối' : 'Chưa kết nối Gmail'}</Text>
+            <Text style={styles.muted} numberOfLines={1}>{auth?.gmail_email || 'Đăng nhập để đọc và gửi email.'}</Text>
           </View>
           <Button
-            title={auth?.authenticated ? 'Dang xuat' : 'Dang nhap'}
+            title={auth?.authenticated ? 'Đăng xuất' : 'Đăng nhập'}
             variant={auth?.authenticated ? 'secondary' : 'primary'}
             onPress={auth?.authenticated ? logout : login}
           />
@@ -257,14 +257,14 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
       </Card>
       <Card style={styles.searchCard}>
         <Field
-          label="Tim kiem email"
+          label="Tìm kiếm email"
           value={searchInput}
           onChangeText={setSearchInput}
-          placeholder="Nguoi gui, tieu de, noi dung..."
+          placeholder="Người gửi, tiêu đề, nội dung..."
         />
         {searchInput ? (
           <Button
-            title="Xoa tu khoa"
+            title="Xóa từ khóa"
             variant="secondary"
             onPress={() => {
               setSearchInput('');
@@ -276,14 +276,14 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
       <SegmentedControl options={filters} value={filter} onChange={setFilter} />
       <Card>
         <View style={styles.switchRow}>
-          <Text style={styles.cardTitle}>Giu email da doc trong hop thu</Text>
+          <Text style={styles.cardTitle}>Giữ email đã đọc trong hộp thư</Text>
           <Switch value={includeRead} onValueChange={setIncludeRead} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#ffffff" />
         </View>
       </Card>
       {emails.length === 0 ? (
         <EmptyState
-          title={auth?.authenticated ? 'Khong tim thay email' : 'Can dang nhap Gmail'}
-          detail={searchKeyword ? `Khong co ket qua cho "${searchKeyword}".` : 'Keo xuong de lam moi hoac doi bo loc email.'}
+          title={auth?.authenticated ? 'Không tìm thấy email' : 'Cần đăng nhập Gmail'}
+          detail={searchKeyword ? `Không có kết quả cho "${searchKeyword}".` : 'Kéo xuống để làm mới hoặc đổi bộ lọc email.'}
         />
       ) : (
         emails.map((email) => (
@@ -293,18 +293,18 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
           >
             <TouchableOpacity onPress={() => openEmail(email)} activeOpacity={0.86}>
               <View style={styles.rowBetween}>
-                <Text style={styles.subject} numberOfLines={2}>{email.subject || '(Khong tieu de)'}</Text>
+                <Text style={styles.subject} numberOfLines={2}>{email.subject || '(Không tiêu đề)'}</Text>
                 <View style={styles.badges}>
                   <Text style={[styles.readBadge, email.is_unread ? styles.unreadBadge : styles.readBadgeDone]}>
-                    {email.is_unread ? 'CHUA DOC' : 'DA DOC'}
+                    {email.is_unread ? 'CHƯA ĐỌC' : 'ĐÃ ĐỌC'}
                   </Text>
                   <Text style={styles.tag}>{email.tag || 'email'}</Text>
                 </View>
               </View>
-              <Text style={styles.sender} numberOfLines={1}>{email.sender || email.from || 'Nguoi gui'}</Text>
+              <Text style={styles.sender} numberOfLines={1}>{email.sender || email.from || 'Người gửi'}</Text>
               {email.summary ? (
                 <View style={styles.aiSummary}>
-                  <Text style={styles.aiSummaryLabel}>AI TOM TAT</Text>
+                  <Text style={styles.aiSummaryLabel}>AI TÓM TẮT</Text>
                   <Text style={styles.preview} numberOfLines={4}>{email.summary}</Text>
                 </View>
               ) : (
@@ -314,12 +314,12 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
             <View style={styles.inlineActions}>
               <Button title="Xem" variant="secondary" onPress={() => openEmail(email)} />
               <Button
-                title={email.summary ? 'Xem tom tat AI' : 'Tom tat AI'}
+                title={email.summary ? 'Xem tóm tắt AI' : 'Tóm tắt AI'}
                 onPress={() => email.summary ? openEmail(email) : summarizeEmail(email)}
                 loading={summarizingId === email.id}
               />
               <Button
-                title={email.is_unread ? 'Danh dau da doc' : 'Danh dau chua doc'}
+                title={email.is_unread ? 'Đánh dấu đã đọc' : 'Đánh dấu chưa đọc'}
                 variant="secondary"
                 onPress={() => toggleReadStatus(email)}
               />
@@ -332,29 +332,29 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
 
   const renderCompose = () => (
     <Card>
-      <Field label="Nguoi nhan" value={compose.to}      onChangeText={(to)      => setCompose((c) => ({ ...c, to }))}      placeholder="email@example.com" keyboardType="email-address" />
-      <Field label="Tieu de"    value={compose.subject} onChangeText={(subject) => setCompose((c) => ({ ...c, subject }))} placeholder="Tieu de email" />
-      <Field label="Noi dung"   value={compose.body}    onChangeText={(body)    => setCompose((c) => ({ ...c, body }))}    placeholder="Noi dung email" multiline />
-      <Button title="Gui email" onPress={sendEmail} loading={loading} />
+      <Field label="Người nhận" value={compose.to}      onChangeText={(to)      => setCompose((c) => ({ ...c, to }))}      placeholder="email@example.com" keyboardType="email-address" />
+      <Field label="Tiêu đề"    value={compose.subject} onChangeText={(subject) => setCompose((c) => ({ ...c, subject }))} placeholder="Tiêu đề email" />
+      <Field label="Nội dung"   value={compose.body}    onChangeText={(body)    => setCompose((c) => ({ ...c, body }))}    placeholder="Nội dung email" multiline />
+      <Button title="Gửi email" onPress={sendEmail} loading={loading} />
     </Card>
   );
 
   const renderReport = () => (
     <>
       <Card>
-        <Field label="Ngay bao cao" value={reportDate} onChangeText={setReportDate} placeholder="05/06/2026" />
-        <Button title="Tao bao cao" onPress={generateReport} loading={loading} />
+        <Field label="Ngày báo cáo" value={reportDate} onChangeText={setReportDate} placeholder="05/06/2026" />
+        <Button title="Tạo báo cáo" onPress={generateReport} loading={loading} />
       </Card>
       {report ? (
         <Card>
-          <Text style={styles.cardTitle}>Bao cao ngay {report.date}</Text>
-          <Text style={styles.muted}>Tong {report.total_emails || 0} email</Text>
+          <Text style={styles.cardTitle}>Báo cáo ngày {report.date}</Text>
+          <Text style={styles.muted}>Tổng {report.total_emails || 0} email</Text>
           {(report.rows || []).map((row, index) => (
             <View key={`${row.subject}-${index}`} style={styles.reportRow}>
               <Text style={styles.subject}>{index + 1}. {row.subject || 'Email'}</Text>
-              <Text style={styles.preview}>{row.summary || 'Khong co tom tat'}</Text>
+              <Text style={styles.preview}>{row.summary || 'Không có tóm tắt'}</Text>
               {row.is_meeting
-                ? <Button title="Tao lich" variant="secondary" onPress={() => createScheduleFromReport(row)} style={styles.reportButton} />
+                ? <Button title="Tạo lịch" variant="secondary" onPress={() => createScheduleFromReport(row)} style={styles.reportButton} />
                 : null}
             </View>
           ))}
@@ -374,30 +374,30 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
         <ModeBrief
           userMode={userMode}
           stats={[
-            { value: emails.length, label: 'Email hien thi' },
-            { value: emails.filter((email) => email.is_unread).length, label: 'Chua doc' },
-            { value: emails.filter((email) => email.tag === 'meeting').length, label: 'Cuoc hop' },
+            { value: emails.length, label: 'Email hiển thị' },
+            { value: emails.filter((email) => email.is_unread).length, label: 'Chưa đọc' },
+            { value: emails.filter((email) => email.tag === 'meeting').length, label: 'Cuộc họp' },
           ]}
         />
         <SegmentedControl options={modes} value={mode} onChange={setMode} />
         {mode === 'compose' ? renderCompose() : mode === 'report' ? renderReport() : renderInbox()}
       </Screen>
       <Modal visible={!!selectedEmail} animationType="slide" onRequestClose={() => setSelectedEmail(null)}>
-        <Screen title="Chi tiet email" actions={<Button title="Dong" variant="secondary" onPress={() => setSelectedEmail(null)} />}>
+        <Screen title="Chi tiết email" actions={<Button title="Đóng" variant="secondary" onPress={() => setSelectedEmail(null)} />}>
           {selectedEmail ? (
             <Card>
-              <Text style={styles.subject}>{selectedEmail.subject || '(Khong tieu de)'}</Text>
+              <Text style={styles.subject}>{selectedEmail.subject || '(Không tiêu đề)'}</Text>
               <Text style={styles.sender}>{selectedEmail.sender || selectedEmail.from || ''}</Text>
-              <Text style={styles.body}>{emailBody || selectedEmail.snippet || 'Dang tai...'}</Text>
+              <Text style={styles.body}>{emailBody || selectedEmail.snippet || 'Đang tải...'}</Text>
               {summary ? <Text style={styles.summary}>{summary}</Text> : null}
               <Button
-                title={summary ? 'Tom tat lai bang AI' : 'Tom tat bang AI'}
+                title={summary ? 'Tóm tắt lại bằng AI' : 'Tóm tắt bằng AI'}
                 onPress={() => summarizeEmail(selectedEmail)}
                 loading={summarizingId === selectedEmail.id}
                 style={styles.detailButton}
               />
               <Button
-                title="Soan tra loi AI"
+                title="Soạn trả lời AI"
                 variant="secondary"
                 onPress={() => draftReply(selectedEmail)}
                 loading={loading}

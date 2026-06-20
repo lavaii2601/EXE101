@@ -32,35 +32,35 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const [biometric,     setBiometric]     = useState(false);
   const [twoFactor,     setTwoFactor]     = useState(false);
 
-  const name     = profile?.name || profile?.gmail_name || 'Nguoi dung';
-  const email    = profile?.gmail_email || profile?.email || 'Chua ket noi Gmail';
+  const name     = profile?.name || profile?.gmail_name || 'Người dùng';
+  const email    = profile?.gmail_email || profile?.email || 'Chưa kết nối Gmail';
   const avatar   = profile?.avatar_url || profile?.gmail_picture;
   const gmailOk  = status?.gmail_configured;
   const initials = name.charAt(0).toUpperCase();
   const mode = getUserMode(userMode);
 
   const confirmLogout = () => {
-    Alert.alert('Dang xuat', 'Ban co chac muon dang xuat?', [
-      { text: 'Huy', style: 'cancel' },
-      { text: 'Dang xuat', style: 'destructive', onPress: onLogout },
+    Alert.alert('Đăng xuất', 'Bạn có chắc muốn đăng xuất?', [
+      { text: 'Hủy', style: 'cancel' },
+      { text: 'Đăng xuất', style: 'destructive', onPress: onLogout },
     ]);
   };
 
   const comingSoon = (feature) =>
-    Alert.alert('Sap co', `"${feature}" se co trong phien ban tiep theo.`);
+    Alert.alert('Sắp có', `"${feature}" sẽ có trong phiên bản tiếp theo.`);
 
   const clearHistory = () => {
-    Alert.alert('Xoa toan bo lich su', 'Chat, email va hoat dong lich da ghi nhan se bi xoa.', [
-      { text: 'Huy', style: 'cancel' },
+    Alert.alert('Xóa toàn bộ lịch sử', 'Chat, email và hoạt động lịch đã ghi nhận sẽ bị xóa.', [
+      { text: 'Hủy', style: 'cancel' },
       {
-        text: 'Xoa',
+        text: 'Xóa',
         style: 'destructive',
         onPress: async () => {
           try {
             const data = await apiPost('/chat/clear-all');
-            Alert.alert('Da xoa du lieu', `${data.deleted_count || 0} muc da duoc xoa.`);
+            Alert.alert('Đã xóa dữ liệu', `${data.deleted_count || 0} mục đã được xóa.`);
           } catch (error) {
-            Alert.alert('Khong xoa duoc du lieu', error.message);
+            Alert.alert('Không xóa được dữ liệu', error.message);
           }
         },
       },
@@ -70,11 +70,11 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.body}>
 
-      <Text style={styles.pageTitle}>Setting</Text>
+      <Text style={styles.pageTitle}>Cài đặt</Text>
 
       {/* ── Profile ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>TAI KHOAN</Text>
+        <Text style={styles.sectionLabel}>TÀI KHOẢN</Text>
         <View style={styles.profileRow}>
           <View style={styles.avatarWrap}>
             {avatar
@@ -86,7 +86,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             <Text style={styles.profileEmail}>{email}</Text>
             <View style={[styles.badge, gmailOk ? styles.badgeOk : styles.badgeWarn]}>
               <Text style={styles.badgeText}>
-                {gmailOk ? '● Gmail ket noi' : '● Gmail chua ket noi'}
+                {gmailOk ? '● Gmail đã kết nối' : '● Gmail chưa kết nối'}
               </Text>
             </View>
           </View>
@@ -97,8 +97,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             <Text style={[styles.modeIcon, { color: colors.accentText }]}>{mode.icon}</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Che do nguoi dung</Text>
-            <Text style={styles.settingSub}>{mode.label} · Cham de thay doi</Text>
+            <Text style={styles.settingTitle}>Chế độ người dùng</Text>
+            <Text style={styles.settingSub}>{mode.label} · Chạm để thay đổi</Text>
           </View>
           <Text style={styles.chevron}>›</Text>
         </TouchableOpacity>
@@ -106,15 +106,15 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
       {/* ── Appearance ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>GIAO DIEN</Text>
+        <Text style={styles.sectionLabel}>GIAO DIỆN</Text>
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: isDark ? '#1e3a5f' : '#e8eef8' }]}>
             <Text style={styles.settingIcon}>{isDark ? '🌙' : '☀️'}</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Che do hien thi</Text>
-            <Text style={styles.settingSub}>{isDark ? 'Dang dung che do toi' : 'Dang dung che do sang'}</Text>
+            <Text style={styles.settingTitle}>Chế độ hiển thị</Text>
+            <Text style={styles.settingSub}>{isDark ? 'Đang dùng chế độ tối' : 'Đang dùng chế độ sáng'}</Text>
           </View>
           <Switch
             value={isDark}
@@ -127,8 +127,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         <View style={styles.divider} />
 
         <View>
-          <Text style={styles.settingTitle}>Mau sac chu dao</Text>
-          <Text style={styles.settingSubStandalone}>Chon mau phu hop voi phong cach cua ban</Text>
+          <Text style={styles.settingTitle}>Màu sắc chủ đạo</Text>
+          <Text style={styles.settingSubStandalone}>Chọn màu phù hợp với phong cách của bạn</Text>
           <View style={styles.accentRow}>
             {ACCENT_OPTIONS.map((opt) => (
               <TouchableOpacity
@@ -150,21 +150,21 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
       {/* ── Notifications ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>THONG BAO</Text>
+        <Text style={styles.sectionLabel}>THÔNG BÁO</Text>
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: '#fef3c7' }]}>
             <Text style={styles.settingIcon}>🔔</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Thong bao day</Text>
-            <Text style={styles.settingSub}>Nhan thong bao truc tiep tren thiet bi</Text>
+            <Text style={styles.settingTitle}>Thông báo đẩy</Text>
+            <Text style={styles.settingSub}>Nhận thông báo trực tiếp trên thiết bị</Text>
           </View>
           <Switch
             value={pushNotif}
             onValueChange={(v) => {
               setPushNotif(v);
-              if (v) Alert.alert('Da bat', 'Thong bao day da duoc bat!');
+              if (v) Alert.alert('Đã bật', 'Thông báo đẩy đã được bật!');
             }}
             trackColor={{ false: colors.border, true: colors.primary }}
             thumbColor="#ffffff"
@@ -178,8 +178,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             <Text style={styles.settingIcon}>📧</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Thong bao email</Text>
-            <Text style={styles.settingSub}>Nhan cap nhat quan trong qua email</Text>
+            <Text style={styles.settingTitle}>Thông báo email</Text>
+            <Text style={styles.settingSub}>Nhận cập nhật quan trọng qua email</Text>
           </View>
           <Switch
             value={emailNotif}
@@ -196,8 +196,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             <Text style={styles.settingIcon}>⏰</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Nhac lich</Text>
-            <Text style={styles.settingSub}>Nhac nho truoc khi cuoc hen bat dau</Text>
+            <Text style={styles.settingTitle}>Nhắc lịch</Text>
+            <Text style={styles.settingSub}>Nhắc nhở trước khi cuộc hẹn bắt đầu</Text>
           </View>
           <Switch
             value={reminderNotif}
@@ -210,21 +210,21 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
       {/* ── Security ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>BAO MAT</Text>
+        <Text style={styles.sectionLabel}>BẢO MẬT</Text>
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: '#ede9fe' }]}>
             <Text style={styles.settingIcon}>👆</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Xac thuc sinh trac hoc</Text>
-            <Text style={styles.settingSub}>Van tay hoac nhan dang khuon mat</Text>
+            <Text style={styles.settingTitle}>Xác thực sinh trắc học</Text>
+            <Text style={styles.settingSub}>Vân tay hoặc nhận dạng khuôn mặt</Text>
           </View>
           <Switch
             value={biometric}
             onValueChange={(v) => {
               if (v) {
-                comingSoon('Xac thuc sinh trac hoc');
+                comingSoon('Xác thực sinh trắc học');
                 return;
               }
               setBiometric(false);
@@ -238,15 +238,15 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <TouchableOpacity
           style={styles.settingRow}
-          onPress={() => comingSoon('Doi mat khau')}
+          onPress={() => comingSoon('Đổi mật khẩu')}
           activeOpacity={0.75}
         >
           <View style={[styles.iconWrap, { backgroundColor: '#fce7f3' }]}>
             <Text style={styles.settingIcon}>🔑</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Doi mat khau</Text>
-            <Text style={styles.settingSub}>Thay doi mat khau tai khoan</Text>
+            <Text style={styles.settingTitle}>Đổi mật khẩu</Text>
+            <Text style={styles.settingSub}>Thay đổi mật khẩu tài khoản</Text>
           </View>
           <Text style={styles.chevron}>›</Text>
         </TouchableOpacity>
@@ -258,14 +258,14 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             <Text style={styles.settingIcon}>🛡️</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Xac thuc hai yeu to</Text>
-            <Text style={styles.settingSub}>Tang cuong bao mat tai khoan (2FA)</Text>
+            <Text style={styles.settingTitle}>Xác thực hai yếu tố</Text>
+            <Text style={styles.settingSub}>Tăng cường bảo mật tài khoản (2FA)</Text>
           </View>
           <Switch
             value={twoFactor}
             onValueChange={(v) => {
               if (v) {
-                comingSoon('Xac thuc hai yeu to (2FA)');
+                comingSoon('Xác thực hai yếu tố (2FA)');
                 return;
               }
               setTwoFactor(false);
@@ -279,15 +279,15 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <TouchableOpacity
           style={styles.settingRow}
-          onPress={() => comingSoon('Quan ly phien dang nhap')}
+          onPress={() => comingSoon('Quản lý phiên đăng nhập')}
           activeOpacity={0.75}
         >
           <View style={[styles.iconWrap, { backgroundColor: '#ffedd5' }]}>
             <Text style={styles.settingIcon}>📱</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Phien dang nhap</Text>
-            <Text style={styles.settingSub}>Quan ly thiet bi dang nhap</Text>
+            <Text style={styles.settingTitle}>Phiên đăng nhập</Text>
+            <Text style={styles.settingSub}>Quản lý thiết bị đăng nhập</Text>
           </View>
           <Text style={styles.chevron}>›</Text>
         </TouchableOpacity>
@@ -295,14 +295,14 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
       {/* ── About ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>VE UNG DUNG</Text>
+        <Text style={styles.sectionLabel}>VỀ ỨNG DỤNG</Text>
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: colors.secondaryBg }]}>
             <Text style={styles.settingIcon}>ℹ️</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Phien ban</Text>
+            <Text style={styles.settingTitle}>Phiên bản</Text>
             <Text style={styles.settingSub}>1.0.0 (FlowMate AI)</Text>
           </View>
         </View>
@@ -311,26 +311,26 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <TouchableOpacity
           style={styles.settingRow}
-          onPress={() => comingSoon('Chinh sach bao mat')}
+          onPress={() => comingSoon('Chính sách bảo mật')}
           activeOpacity={0.75}
         >
           <View style={[styles.iconWrap, { backgroundColor: colors.secondaryBg }]}>
             <Text style={styles.settingIcon}>📄</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Chinh sach bao mat</Text>
-            <Text style={styles.settingSub}>Doc chinh sach su dung du lieu</Text>
+            <Text style={styles.settingTitle}>Chính sách bảo mật</Text>
+            <Text style={styles.settingSub}>Đọc chính sách sử dụng dữ liệu</Text>
           </View>
           <Text style={styles.chevron}>›</Text>
         </TouchableOpacity>
       </View>
 
-      {/* ── Logout ── */}
+      {/* ── Data / Logout ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>DU LIEU</Text>
-        <Button title="Lam moi trang thai" variant="secondary" onPress={onRefresh} />
-        <Button title="Xoa toan bo lich su" variant="secondary" onPress={clearHistory} />
-        <Button title="Dang xuat" variant="danger" onPress={confirmLogout} />
+        <Text style={styles.sectionLabel}>DỮ LIỆU</Text>
+        <Button title="Làm mới trạng thái" variant="secondary" onPress={onRefresh} />
+        <Button title="Xóa toàn bộ lịch sử" variant="secondary" onPress={clearHistory} />
+        <Button title="Đăng xuất" variant="danger" onPress={confirmLogout} />
       </View>
 
     </ScrollView>

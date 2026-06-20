@@ -46,7 +46,7 @@ export default function ChatScreen({ userMode = 'worker' }) {
       const nextMessages = (data.history || []).reverse().flatMap(mapHistoryItem).filter((m) => m.text);
       setMessages(nextMessages);
     } catch (error) {
-      Alert.alert('Loi tai lich su chat', error.message);
+      Alert.alert('Lỗi tải lịch sử chat', error.message);
     } finally {
       setRefreshing(false);
     }
@@ -82,15 +82,15 @@ export default function ChatScreen({ userMode = 'worker' }) {
       const assistantMessage = {
         id: `a-${Date.now()}`,
         role: 'assistant',
-        text: data.response || 'Khong co phan hoi.',
+        text: data.response || 'Không có phản hồi.',
       };
       setMessages((current) => [...current, assistantMessage]);
       if (data.schedule_suggestion) setSuggestion(data.schedule_suggestion);
-      if (data.schedule_created) Alert.alert('Da tao lich', data.schedule_created.title || 'Lich hen moi');
+      if (data.schedule_created) Alert.alert('Đã tạo lịch', data.schedule_created.title || 'Lịch hẹn mới');
     } catch (error) {
       setMessages((current) => [
         ...current,
-        { id: `e-${Date.now()}`, role: 'assistant', text: `Loi ket noi: ${error.message}` },
+        { id: `e-${Date.now()}`, role: 'assistant', text: `Lỗi kết nối: ${error.message}` },
       ]);
     } finally {
       setLoading(false);
@@ -109,11 +109,11 @@ export default function ChatScreen({ userMode = 'worker' }) {
         attendees: suggestion.attendees || [],
       });
       if (data.success) {
-        Alert.alert('Da tao lich', data.message || 'Lich hen da duoc tao.');
+        Alert.alert('Đã tạo lịch', data.message || 'Lịch hẹn đã được tạo.');
         setSuggestion(null);
       }
     } catch (error) {
-      Alert.alert('Khong tao duoc lich', error.message);
+      Alert.alert('Không tạo được lịch', error.message);
     } finally {
       setLoading(false);
     }
@@ -126,7 +126,7 @@ export default function ChatScreen({ userMode = 'worker' }) {
       setSuggestion(null);
       setSessionId(createSessionId());
     } catch (error) {
-      Alert.alert('Khong xoa duoc lich su', error.message);
+      Alert.alert('Không xóa được lịch sử', error.message);
     }
   };
 
@@ -142,15 +142,15 @@ export default function ChatScreen({ userMode = 'worker' }) {
           <Text style={styles.title}>FlowMate AI</Text>
         </View>
         <View style={styles.headerActions}>
-          <Button title="Chat moi" variant="secondary" onPress={startNewChat} />
-          <Button title="Xoa" variant="secondary" onPress={clearChat} />
+          <Button title="Chat mới" variant="secondary" onPress={startNewChat} />
+          <Button title="Xóa" variant="secondary" onPress={clearChat} />
         </View>
       </View>
       <ModeBrief
         userMode={userMode}
         stats={[
-          { value: messages.filter((item) => item.role === 'assistant').length, label: 'AI phan hoi' },
-          { value: suggestion ? 1 : 0, label: 'Goi y lich' },
+          { value: messages.filter((item) => item.role === 'assistant').length, label: 'AI phản hồi' },
+          { value: suggestion ? 1 : 0, label: 'Gợi ý lịch' },
           { value: mode.prompts.length, label: 'Prompt nhanh' },
         ]}
       />
@@ -163,7 +163,7 @@ export default function ChatScreen({ userMode = 'worker' }) {
         refreshing={refreshing}
         onRefresh={loadHistory}
         ListEmptyComponent={
-          <EmptyState title="Bat dau voi FlowMate AI" detail="Hoi ve email, lich hen, cong viec hoac ke hoach cua ban." />
+          <EmptyState title="Bắt đầu với FlowMate AI" detail="Hỏi về email, lịch hẹn, công việc hoặc kế hoạch của bạn." />
         }
         renderItem={({ item }) => (
           <View style={[styles.messageRow, item.role === 'user' && styles.messageRowUser]}>
@@ -186,12 +186,12 @@ export default function ChatScreen({ userMode = 'worker' }) {
 
       {suggestion ? (
         <Card style={styles.suggestion}>
-          <Text style={styles.suggestionTitle}>Goi y tao lich</Text>
-          <Text style={styles.suggestionText}>{suggestion.title || 'Lich hen'}</Text>
-          <Text style={styles.suggestionMeta}>{suggestion.start_time || 'Chua co thoi gian'}</Text>
+          <Text style={styles.suggestionTitle}>Gợi ý tạo lịch</Text>
+          <Text style={styles.suggestionText}>{suggestion.title || 'Lịch hẹn'}</Text>
+          <Text style={styles.suggestionMeta}>{suggestion.start_time || 'Chưa có thời gian'}</Text>
           <View style={styles.suggestionActions}>
-            <Button title="Tao lich" onPress={createSuggestedSchedule} loading={loading} />
-            <Button title="Bo qua" variant="secondary" onPress={() => setSuggestion(null)} />
+            <Button title="Tạo lịch" onPress={createSuggestedSchedule} loading={loading} />
+            <Button title="Bỏ qua" variant="secondary" onPress={() => setSuggestion(null)} />
           </View>
         </Card>
       ) : null}
@@ -201,12 +201,12 @@ export default function ChatScreen({ userMode = 'worker' }) {
           style={styles.input}
           value={input}
           onChangeText={setInput}
-          placeholder="Nhap tin nhan..."
+          placeholder="Nhập tin nhắn..."
           placeholderTextColor={colors.inputPlaceholder}
           multiline
         />
         <Button
-          title={loading ? '' : 'Gui'}
+          title={loading ? '' : 'Gửi'}
           onPress={sendMessage}
           loading={loading}
           disabled={!input.trim()}

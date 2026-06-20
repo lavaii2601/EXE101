@@ -53,8 +53,8 @@ function buildColors(isDark, accentKey) {
 const ThemeContext = createContext(null);
 
 export function ThemeProvider({ children }) {
-  const [isDark, setIsDark] = useState(true);
-  const [accent, setAccent] = useState('purple');
+  const [isDark, setIsDark] = useState(false);
+  const [accent, setAccent] = useState('blue');
 
   const colors = useMemo(() => buildColors(isDark, accent), [isDark, accent]);
 

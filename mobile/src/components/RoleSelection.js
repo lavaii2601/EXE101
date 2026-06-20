@@ -1,8 +1,34 @@
 import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Button from './Button';
 import { USER_MODES } from '../config/userModes';
 import { useTheme } from '../theme/ThemeContext';
+
+function CalendarIcon() {
+  return (
+    <View style={calendarStyles.wrap}>
+      <View style={calendarStyles.header}>
+        <View style={calendarStyles.clip} /><View style={calendarStyles.clip} />
+      </View>
+      <View style={calendarStyles.body}>
+        <View style={[calendarStyles.line, { width: 28 }]} />
+        <View style={[calendarStyles.line, { width: 22, backgroundColor: '#D65EFC' }]} />
+        <View style={[calendarStyles.line, { width: 16, backgroundColor: '#946BFD' }]} />
+      </View>
+      <View style={calendarStyles.sparkle}><Text style={{ color: '#fff', fontSize: 11 }}>✦</Text></View>
+    </View>
+  );
+}
+
+const calendarStyles = StyleSheet.create({
+  wrap:    { width: 54, height: 54, alignItems: 'center', justifyContent: 'center' },
+  header:  { flexDirection: 'row', gap: 14, marginBottom: 6 },
+  clip:    { width: 4, height: 8, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.9)' },
+  body:    { gap: 4, alignItems: 'flex-start' },
+  line:    { height: 3.5, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.9)' },
+  sparkle: { position: 'absolute', top: 2, right: 4 },
+});
 
 export default function RoleSelection({ initialValue = '', onContinue, saving }) {
   const { colors } = useTheme();
@@ -12,11 +38,18 @@ export default function RoleSelection({ initialValue = '', onContinue, saving })
   return (
     <View style={styles.root}>
       <View style={styles.brand}>
-        <View style={styles.orb}><Text style={styles.orbText}>AI</Text></View>
+        <LinearGradient
+          colors={['#55BEFE', '#5A54FB', '#8171FD', '#D65EFC']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.orb}
+        >
+          <CalendarIcon />
+        </LinearGradient>
         <Text style={styles.eyebrow}>FLOWMATE AI</Text>
-        <Text style={styles.title}>Chon che do cua ban</Text>
+        <Text style={styles.title}>Chọn chế độ của bạn</Text>
         <Text style={styles.subtitle}>
-          FlowMate se thay doi uu tien email, goi y lich va cach AI phan hoi theo vai tro.
+          FlowMate sẽ thay đổi ưu tiên email, gợi ý lịch và cách AI phản hồi theo vai trò.
         </Text>
       </View>
       <ScrollView contentContainerStyle={styles.body}>
@@ -35,13 +68,13 @@ export default function RoleSelection({ initialValue = '', onContinue, saving })
                 </View>
                 <Text style={styles.cardTitle}>{mode.label}</Text>
                 <Text style={styles.cardDescription}>{mode.description}</Text>
-                {active ? <Text style={styles.check}>Da chon</Text> : null}
+                {active ? <Text style={styles.check}>Đã chọn</Text> : null}
               </TouchableOpacity>
             );
           })}
         </View>
         <Button
-          title="Tiep tuc"
+          title="Tiếp tục"
           disabled={!selected}
           loading={saving}
           onPress={() => onContinue(selected)}
@@ -57,16 +90,17 @@ function makeStyles(colors) {
     root: { flex: 1, backgroundColor: colors.background },
     brand: { alignItems: 'center', paddingHorizontal: 26, paddingTop: 42, paddingBottom: 20 },
     orb: {
-      width: 78,
-      height: 78,
-      borderRadius: 39,
+      width: 82,
+      height: 82,
+      borderRadius: 22,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.primary,
-      borderWidth: 8,
-      borderColor: 'rgba(108,99,255,0.18)',
+      shadowColor: '#5A54FB',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.45,
+      shadowRadius: 18,
+      elevation: 10,
     },
-    orbText: { color: '#ffffff', fontSize: 24, fontWeight: '900' },
     eyebrow: { marginTop: 18, color: colors.accentText, fontSize: 11, fontWeight: '800', letterSpacing: 1.4 },
     title: { marginTop: 7, color: colors.text, fontSize: 25, fontWeight: '900' },
     subtitle: { marginTop: 8, color: colors.textMuted, textAlign: 'center', lineHeight: 20 },

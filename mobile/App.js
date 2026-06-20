@@ -12,11 +12,11 @@ import { apiGet, apiPost } from './src/api/client';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 
 const tabs = [
-  { key: 'chat',     icon: 'AI', label: 'Chat' },
-  { key: 'emails',   icon: '@',  label: 'Email' },
-  { key: 'schedule', icon: '31', label: 'Lich' },
-  { key: 'history',  icon: 'LG', label: 'Nhat ky' },
-  { key: 'settings', icon: '...', label: 'Setting' },
+  { key: 'chat',     icon: '💬', label: 'Chat' },
+  { key: 'emails',   icon: '✉',  label: 'Email' },
+  { key: 'schedule', icon: '📅', label: 'Lịch' },
+  { key: 'history',  icon: '🕐', label: 'Lịch sử' },
+  { key: 'settings', icon: '⚙',  label: 'Cài đặt' },
 ];
 
 export default function App() {
@@ -69,7 +69,7 @@ function AppShell() {
       setUserMode(mode);
       setModePickerOpen(false);
     } catch (error) {
-      Alert.alert('Khong luu duoc che do', error.message);
+      Alert.alert('Không lưu được chế độ', error.message);
     } finally {
       setSavingMode(false);
     }

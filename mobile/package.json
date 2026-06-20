@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "expo": "~56.0.12",
+    "expo-linear-gradient": "^56.0.4",
     "expo-status-bar": "~56.0.4",
     "expo-web-browser": "~56.0.5",
     "react": "19.2.3",

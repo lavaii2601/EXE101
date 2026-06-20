@@ -10,8 +10,8 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 
 const modes = [
-  { label: 'Lich tong hop', value: 'list' },
-  { label: 'Tao moi',       value: 'create' },
+  { label: 'Lịch tổng hợp', value: 'list' },
+  { label: 'Tạo mới',        value: 'create' },
 ];
 
 const initialForm = {
@@ -54,7 +54,7 @@ export default function ScheduleScreen() {
         next: flattenWeekSchedules(nextWeek.days),
       });
     } catch (error) {
-      Alert.alert('Loi tai lich', error.message);
+      Alert.alert('Lỗi tải lịch', error.message);
     } finally {
       setLoading(false);
     }
@@ -66,7 +66,7 @@ export default function ScheduleScreen() {
       const data = await apiGet('/email/meeting-suggestions');
       setMeetingSuggestions(data.suggestions || []);
     } catch (error) {
-      if (error.status !== 401) Alert.alert('Loi tai goi y lich', error.message);
+      if (error.status !== 401) Alert.alert('Lỗi tải gợi ý lịch', error.message);
     } finally {
       setSuggestionsLoading(false);
     }
@@ -80,7 +80,7 @@ export default function ScheduleScreen() {
 
   const createSchedule = async () => {
     if (!form.title || !form.start_time) {
-      Alert.alert('Thieu thong tin', 'Vui long nhap tieu de va thoi gian bat dau.');
+      Alert.alert('Thiếu thông tin', 'Vui lòng nhập tiêu đề và thời gian bắt đầu.');
       return;
     }
     setLoading(true);
@@ -98,9 +98,9 @@ export default function ScheduleScreen() {
       setForm(initialForm);
       setMode('list');
       await loadSchedules();
-      Alert.alert('Da tao lich');
+      Alert.alert('Đã tạo lịch');
     } catch (error) {
-      Alert.alert('Khong tao duoc lich', error.message);
+      Alert.alert('Không tạo được lịch', error.message);
     } finally {
       setLoading(false);
     }
@@ -111,7 +111,7 @@ export default function ScheduleScreen() {
       await apiPatch(`/schedule/${schedule.local_id}/update-status`, { status });
       await loadSchedules();
     } catch (error) {
-      Alert.alert('Khong cap nhat duoc lich', error.message);
+      Alert.alert('Không cập nhật được lịch', error.message);
     }
   };
 
@@ -120,9 +120,9 @@ export default function ScheduleScreen() {
     try {
       const data = await apiPost('/email/meeting-suggestions/scan');
       setMeetingSuggestions(data.suggestions || []);
-      Alert.alert('Da quet email', `Tim thay ${data.count || 0} goi y lich dang cho.`);
+      Alert.alert('Đã quét email', `Tìm thấy ${data.count || 0} gợi ý lịch đang chờ.`);
     } catch (error) {
-      Alert.alert('Khong quet duoc email', error.message);
+      Alert.alert('Không quét được email', error.message);
     } finally {
       setSuggestionsLoading(false);
     }
@@ -139,7 +139,7 @@ export default function ScheduleScreen() {
   const createScheduleFromSuggestion = async (suggestion) => {
     if (!suggestion.start_time) {
       setForm({
-        title: suggestion.title || suggestion.subject || 'Lich hen tu email',
+        title: suggestion.title || suggestion.subject || 'Lịch hẹn từ email',
         description: suggestion.description || suggestion.snippet || '',
         start_time: '',
         end_time: '',
@@ -148,14 +148,14 @@ export default function ScheduleScreen() {
         attendees: suggestion.attendees || '',
       });
       setMode('create');
-      Alert.alert('Can bo sung thoi gian', 'Goi y nay chua co gio bat dau, hay nhap thoi gian de tao lich.');
+      Alert.alert('Cần bổ sung thời gian', 'Gợi ý này chưa có giờ bắt đầu, hãy nhập thời gian để tạo lịch.');
       return;
     }
 
     setLoading(true);
     try {
       const data = await apiPost('/schedule/create', {
-        title: suggestion.title || suggestion.subject || 'Lich hen tu email',
+        title: suggestion.title || suggestion.subject || 'Lịch hẹn từ email',
         description: suggestion.description || suggestion.snippet || '',
         start_time: normalizeDateTime(suggestion.start_time),
         end_time: normalizeDateTime(suggestion.end_time) || addMinutesIso(suggestion.start_time, 60),
@@ -165,9 +165,9 @@ export default function ScheduleScreen() {
       });
       await updateMeetingSuggestionStatus(suggestion.id, 'created', data.schedule_id);
       await loadSchedules();
-      Alert.alert('Da tao lich tu email');
+      Alert.alert('Đã tạo lịch từ email');
     } catch (error) {
-      Alert.alert('Khong tao duoc lich', error.message);
+      Alert.alert('Không tạo được lịch', error.message);
     } finally {
       setLoading(false);
     }
@@ -188,7 +188,7 @@ export default function ScheduleScreen() {
 
   const updateSchedule = async () => {
     if (!editingSchedule?.local_id || !editForm.title || !editForm.start_time) {
-      Alert.alert('Thieu thong tin', 'Vui long nhap tieu de va thoi gian bat dau.');
+      Alert.alert('Thiếu thông tin', 'Vui lòng nhập tiêu đề và thời gian bắt đầu.');
       return;
     }
     setLoading(true);
@@ -205,9 +205,9 @@ export default function ScheduleScreen() {
       setEditingSchedule(null);
       setEditForm(initialForm);
       await loadSchedules();
-      Alert.alert('Da cap nhat lich');
+      Alert.alert('Đã cập nhật lịch');
     } catch (error) {
-      Alert.alert('Khong cap nhat duoc lich', error.message);
+      Alert.alert('Không cập nhật được lịch', error.message);
     } finally {
       setLoading(false);
     }
@@ -218,7 +218,7 @@ export default function ScheduleScreen() {
       await apiDelete(`/schedule/${schedule.local_id}`);
       await loadSchedules();
     } catch (error) {
-      Alert.alert('Khong xoa duoc lich', error.message);
+      Alert.alert('Không xóa được lịch', error.message);
     }
   };
 
@@ -227,7 +227,7 @@ export default function ScheduleScreen() {
       await apiDelete(`/calendar/delete/${event.google_event_id}`);
       await loadSchedules();
     } catch (error) {
-      Alert.alert('Khong xoa duoc su kien', error.message);
+      Alert.alert('Không xóa được sự kiện', error.message);
     }
   };
 
@@ -244,46 +244,46 @@ export default function ScheduleScreen() {
       <Card style={styles.summaryCard}>
         <View style={styles.summaryHeader}>
           <View>
-            <Text style={styles.summaryKicker}>Tong hop lich hen</Text>
+            <Text style={styles.summaryKicker}>Tổng hợp lịch hẹn</Text>
             <Text style={styles.summaryTitle}>{formatWeekRange(currentWeekStart)}</Text>
           </View>
           <Text style={styles.summaryTotal}>{weekSummary.current.length + weekSummary.next.length}</Text>
         </View>
         <View style={styles.weekNav}>
-          <Button title="Tuan truoc" variant="secondary" onPress={() => shiftWeek(-1)} />
-          <Button title="Tuan nay" variant="secondary" onPress={() => setCurrentWeekStart(getMonday(new Date()))} />
-          <Button title="Tuan sau" variant="secondary" onPress={() => shiftWeek(1)} />
+          <Button title="Tuần trước" variant="secondary" onPress={() => shiftWeek(-1)} />
+          <Button title="Tuần này" variant="secondary" onPress={() => setCurrentWeekStart(getMonday(new Date()))} />
+          <Button title="Tuần sau" variant="secondary" onPress={() => shiftWeek(1)} />
         </View>
         <View style={styles.weekGrid}>
-          {renderWeekSummary('Tuan dang xem', weekSummary.current)}
-          {renderWeekSummary('Tuan ke tiep', weekSummary.next)}
+          {renderWeekSummary('Tuần đang xem', weekSummary.current)}
+          {renderWeekSummary('Tuần kế tiếp', weekSummary.next)}
         </View>
       </Card>
 
       <Card style={styles.suggestionCard}>
         <View style={styles.summaryHeader}>
           <View>
-            <Text style={styles.summaryKicker}>Goi y tu email</Text>
-            <Text style={styles.summaryTitle}>Cuoc hop va lich hen phat hien</Text>
+            <Text style={styles.summaryKicker}>Gợi ý từ email</Text>
+            <Text style={styles.summaryTitle}>Cuộc họp và lịch hẹn phát hiện</Text>
           </View>
           <Text style={styles.summaryTotal}>{meetingSuggestions.length}</Text>
         </View>
         <View style={styles.weekNav}>
-          <Button title="Quet email" variant="secondary" onPress={scanMeetingSuggestions} loading={suggestionsLoading} />
-          <Button title="Lam moi" variant="secondary" onPress={loadMeetingSuggestions} loading={suggestionsLoading} />
+          <Button title="Quét email" variant="secondary" onPress={scanMeetingSuggestions} loading={suggestionsLoading} />
+          <Button title="Làm mới" variant="secondary" onPress={loadMeetingSuggestions} loading={suggestionsLoading} />
         </View>
         {meetingSuggestions.length === 0 ? (
-          <Text style={styles.weekEmpty}>Chua co goi y lich moi.</Text>
+          <Text style={styles.weekEmpty}>Chưa có gợi ý lịch mới.</Text>
         ) : (
           meetingSuggestions.map((suggestion) => (
             <View key={suggestion.id} style={styles.suggestionItem}>
-              <Text style={styles.weekItemTitle}>{suggestion.title || suggestion.subject || 'Lich hen tu email'}</Text>
-              <Text style={styles.weekItemTime}>Tu: {suggestion.sender || 'Khong xac dinh'}</Text>
+              <Text style={styles.weekItemTitle}>{suggestion.title || suggestion.subject || 'Lịch hẹn từ email'}</Text>
+              <Text style={styles.weekItemTime}>Từ: {suggestion.sender || 'Không xác định'}</Text>
               <Text style={styles.previewText} numberOfLines={3}>{suggestion.snippet || suggestion.description || ''}</Text>
-              <Text style={styles.weekItemTime}>{suggestion.start_time ? formatShortDate(suggestion.start_time) : 'Chua xac dinh thoi gian'}</Text>
+              <Text style={styles.weekItemTime}>{suggestion.start_time ? formatShortDate(suggestion.start_time) : 'Chưa xác định thời gian'}</Text>
               <View style={styles.actions}>
-                <Button title="Tao lich" onPress={() => createScheduleFromSuggestion(suggestion)} />
-                <Button title="Bo qua" variant="secondary" onPress={() => updateMeetingSuggestionStatus(suggestion.id, 'dismissed')} />
+                <Button title="Tạo lịch" onPress={() => createScheduleFromSuggestion(suggestion)} />
+                <Button title="Bỏ qua" variant="secondary" onPress={() => updateMeetingSuggestionStatus(suggestion.id, 'dismissed')} />
               </View>
             </View>
           ))
@@ -291,7 +291,7 @@ export default function ScheduleScreen() {
       </Card>
 
       {schedules.length === 0 ? (
-        <EmptyState title="Chua co lich sap toi" detail="Tao lich moi hoac dang nhap Gmail de dong bo Google Calendar." />
+        <EmptyState title="Chưa có lịch sắp tới" detail="Tạo lịch mới hoặc đăng nhập Gmail để đồng bộ Google Calendar." />
       ) : (
         schedules.map((schedule) => (
           <Card key={schedule.id}>
@@ -309,18 +309,18 @@ export default function ScheduleScreen() {
               {schedule.end_time ? ` - ${formatDate(schedule.end_time)}` : ''}
             </Text>
             {schedule.description ? <Text style={styles.description}>{schedule.description}</Text> : null}
-            {schedule.location   ? <Text style={styles.meta}>Dia diem: {schedule.location}</Text>  : null}
-            {schedule.attendees  ? <Text style={styles.meta}>Tham du: {schedule.attendees}</Text>   : null}
+            {schedule.location   ? <Text style={styles.meta}>Địa điểm: {schedule.location}</Text>  : null}
+            {schedule.attendees  ? <Text style={styles.meta}>Tham dự: {schedule.attendees}</Text>   : null}
             <View style={styles.actions}>
               {schedule.local_id ? (
                 <>
-                  <Button title="Hoan tat" variant="secondary" onPress={() => updateStatus(schedule, 'completed')} />
-                  <Button title="Sua" variant="secondary" onPress={() => openEditSchedule(schedule)} />
-                  <Button title="Huy" variant="secondary" onPress={() => updateStatus(schedule, 'cancelled')} />
-                  <Button title="Xoa" variant="danger" onPress={() => deleteSchedule(schedule)} />
+                  <Button title="Hoàn tất" variant="secondary" onPress={() => updateStatus(schedule, 'completed')} />
+                  <Button title="Sửa" variant="secondary" onPress={() => openEditSchedule(schedule)} />
+                  <Button title="Hủy" variant="secondary" onPress={() => updateStatus(schedule, 'cancelled')} />
+                  <Button title="Xóa" variant="danger" onPress={() => deleteSchedule(schedule)} />
                 </>
               ) : (
-                <Button title="Xoa khoi Google" variant="danger" onPress={() => deleteEvent(schedule)} />
+                <Button title="Xóa khỏi Google" variant="danger" onPress={() => deleteEvent(schedule)} />
               )}
             </View>
           </Card>
@@ -333,59 +333,59 @@ export default function ScheduleScreen() {
     <View style={styles.weekSummary}>
       <View style={styles.weekSummaryHeader}>
         <Text style={styles.weekTitle}>{title}</Text>
-        <Text style={styles.weekCount}>{items.length} lich</Text>
+        <Text style={styles.weekCount}>{items.length} lịch</Text>
       </View>
       {items.length === 0 ? (
-        <Text style={styles.weekEmpty}>Chua co lich hen.</Text>
+        <Text style={styles.weekEmpty}>Chưa có lịch hẹn.</Text>
       ) : (
         items.slice(0, 3).map((item) => (
           <View key={`${item.id}-${item.start_time}`} style={styles.weekItem}>
             <Text style={styles.weekItemTime}>{formatShortDate(item.start_time)}</Text>
-            <Text style={styles.weekItemTitle} numberOfLines={2}>{item.title || 'Su kien'}</Text>
+            <Text style={styles.weekItemTitle} numberOfLines={2}>{item.title || 'Sự kiện'}</Text>
           </View>
         ))
       )}
       {items.length > 3 ? (
-        <Text style={styles.weekMore}>+{items.length - 3} lich khac</Text>
+        <Text style={styles.weekMore}>+{items.length - 3} lịch khác</Text>
       ) : null}
     </View>
   );
 
   const renderCreate = () => (
     <Card>
-      <Field label="Tieu de"          value={form.title}            onChangeText={(v) => setField('title', v)}            placeholder="Hop phu huynh" />
-      <Field label="Mo ta"             value={form.description}      onChangeText={(v) => setField('description', v)}      placeholder="Noi dung lich hen" multiline />
-      <Field label="Bat dau"           value={form.start_time}       onChangeText={(v) => setField('start_time', v)}       placeholder="2026-06-05T09:00:00" />
-      <Field label="Ket thuc"          value={form.end_time}         onChangeText={(v) => setField('end_time', v)}         placeholder="2026-06-05T10:00:00" />
-      <Field label="Thoi luong phut"   value={form.duration_minutes} onChangeText={(v) => setField('duration_minutes', v)} placeholder="60" keyboardType="number-pad" />
-      <Field label="Dia diem"          value={form.location}         onChangeText={(v) => setField('location', v)}         placeholder="Phong hop / online" />
-      <Field label="Nguoi tham du"     value={form.attendees}        onChangeText={(v) => setField('attendees', v)}        placeholder="a@example.com, b@example.com" />
-      <Button title="Tao lich hen" onPress={createSchedule} loading={loading} />
+      <Field label="Tiêu đề"         value={form.title}            onChangeText={(v) => setField('title', v)}            placeholder="Họp phụ huynh" />
+      <Field label="Mô tả"            value={form.description}      onChangeText={(v) => setField('description', v)}      placeholder="Nội dung lịch hẹn" multiline />
+      <Field label="Bắt đầu"          value={form.start_time}       onChangeText={(v) => setField('start_time', v)}       placeholder="2026-06-05T09:00:00" />
+      <Field label="Kết thúc"         value={form.end_time}         onChangeText={(v) => setField('end_time', v)}         placeholder="2026-06-05T10:00:00" />
+      <Field label="Thời lượng (phút)" value={form.duration_minutes} onChangeText={(v) => setField('duration_minutes', v)} placeholder="60" keyboardType="number-pad" />
+      <Field label="Địa điểm"         value={form.location}         onChangeText={(v) => setField('location', v)}         placeholder="Phòng họp / online" />
+      <Field label="Người tham dự"    value={form.attendees}        onChangeText={(v) => setField('attendees', v)}        placeholder="a@example.com, b@example.com" />
+      <Button title="Tạo lịch hẹn" onPress={createSchedule} loading={loading} />
     </Card>
   );
 
   return (
     <>
       <Screen
-        title="Lich"
+        title="Lịch"
         refreshing={loading}
         onRefresh={loadSchedules}
-        actions={<Button title={calendarConnected ? 'Da ket noi Google' : 'Ket noi Google'} variant="secondary" onPress={() => Linking.openURL('https://calendar.google.com')} />}
+        actions={<Button title={calendarConnected ? 'Đã kết nối Google' : 'Kết nối Google'} variant="secondary" onPress={() => Linking.openURL('https://calendar.google.com')} />}
       >
         <SegmentedControl options={modes} value={mode} onChange={setMode} />
         {mode === 'create' ? renderCreate() : renderList()}
       </Screen>
       <Modal visible={!!editingSchedule} animationType="slide" onRequestClose={() => setEditingSchedule(null)}>
-        <Screen title="Sua lich hen" actions={<Button title="Dong" variant="secondary" onPress={() => setEditingSchedule(null)} />}>
+        <Screen title="Sửa lịch hẹn" actions={<Button title="Đóng" variant="secondary" onPress={() => setEditingSchedule(null)} />}>
           <Card>
-            <Field label="Tieu de"          value={editForm.title}            onChangeText={(v) => setEditField('title', v)}            placeholder="Hop phu huynh" />
-            <Field label="Mo ta"             value={editForm.description}      onChangeText={(v) => setEditField('description', v)}      placeholder="Noi dung lich hen" multiline />
-            <Field label="Bat dau"           value={editForm.start_time}       onChangeText={(v) => setEditField('start_time', v)}       placeholder="2026-06-05T09:00:00" />
-            <Field label="Ket thuc"          value={editForm.end_time}         onChangeText={(v) => setEditField('end_time', v)}         placeholder="2026-06-05T10:00:00" />
-            <Field label="Thoi luong phut"   value={editForm.duration_minutes} onChangeText={(v) => setEditField('duration_minutes', v)} placeholder="60" keyboardType="number-pad" />
-            <Field label="Dia diem"          value={editForm.location}         onChangeText={(v) => setEditField('location', v)}         placeholder="Phong hop / online" />
-            <Field label="Nguoi tham du"     value={editForm.attendees}        onChangeText={(v) => setEditField('attendees', v)}        placeholder="a@example.com, b@example.com" />
-            <Button title="Luu thay doi" onPress={updateSchedule} loading={loading} />
+            <Field label="Tiêu đề"         value={editForm.title}            onChangeText={(v) => setEditField('title', v)}            placeholder="Họp phụ huynh" />
+            <Field label="Mô tả"            value={editForm.description}      onChangeText={(v) => setEditField('description', v)}      placeholder="Nội dung lịch hẹn" multiline />
+            <Field label="Bắt đầu"          value={editForm.start_time}       onChangeText={(v) => setEditField('start_time', v)}       placeholder="2026-06-05T09:00:00" />
+            <Field label="Kết thúc"         value={editForm.end_time}         onChangeText={(v) => setEditField('end_time', v)}         placeholder="2026-06-05T10:00:00" />
+            <Field label="Thời lượng (phút)" value={editForm.duration_minutes} onChangeText={(v) => setEditField('duration_minutes', v)} placeholder="60" keyboardType="number-pad" />
+            <Field label="Địa điểm"         value={editForm.location}         onChangeText={(v) => setEditField('location', v)}         placeholder="Phòng họp / online" />
+            <Field label="Người tham dự"    value={editForm.attendees}        onChangeText={(v) => setEditField('attendees', v)}        placeholder="a@example.com, b@example.com" />
+            <Button title="Lưu thay đổi" onPress={updateSchedule} loading={loading} />
           </Card>
         </Screen>
       </Modal>
@@ -418,7 +418,7 @@ function flattenWeekSchedules(days) {
 }
 
 function sourceLabel(source) {
-  if (source === 'synced') return 'Da dong bo';
+  if (source === 'synced') return 'Đã đồng bộ';
   if (source === 'google') return 'Google';
   return 'FlowMate';
 }
