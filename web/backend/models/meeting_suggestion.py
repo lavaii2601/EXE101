@@ -2,7 +2,11 @@ import os
 import sqlite3
 import sys
 from email.utils import parsedate_to_datetime
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -10,18 +14,22 @@ from config import Config
 from models import postgres_db as pg
 
 
+LOCAL_TZ = ZoneInfo("Asia/Ho_Chi_Minh") if ZoneInfo else timezone(timedelta(hours=7))
+
+
 def _coerce_datetime(value):
     if not value:
         return None
     if isinstance(value, datetime):
-        return value
+        return value if value.tzinfo is not None else value.replace(tzinfo=LOCAL_TZ)
 
     text = str(value).strip()
     if not text:
         return None
 
     try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=LOCAL_TZ)
     except ValueError:
         pass
 

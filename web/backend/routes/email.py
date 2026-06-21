@@ -7,6 +7,7 @@ import base64
 import re
 import requests
 import unicodedata
+from email.utils import parsedate_to_datetime
 from threading import Lock
 from io import BytesIO
 from flask import Blueprint, request, jsonify, redirect, url_for, session, send_file
@@ -216,6 +217,68 @@ def _matches_search(email, keyword):
     return normalized_keyword in _normalize_search_text(searchable)
 
 
+def _parse_email_base_date(email):
+    raw_date = (email or {}).get('date') or (email or {}).get('email_date') or ''
+    try:
+        parsed = parsedate_to_datetime(str(raw_date))
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone().replace(tzinfo=None)
+        return parsed.date()
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return datetime.now().date()
+
+
+def _extract_weekday_date(normalized_text, base_date):
+    weekday_patterns = [
+        (0, r'\bthu\s*(?:2|hai)\b'),
+        (1, r'\bthu\s*(?:3|ba)\b'),
+        (2, r'\bthu\s*(?:4|tu)\b'),
+        (3, r'\bthu\s*(?:5|nam)\b'),
+        (4, r'\bthu\s*(?:6|sau)\b'),
+        (5, r'\bthu\s*(?:7|bay)\b'),
+        (6, r'\b(?:chu\s*nhat|cn)\b'),
+    ]
+    for weekday, pattern in weekday_patterns:
+        if re.search(pattern, normalized_text):
+            days_ahead = (weekday - base_date.weekday()) % 7
+            return base_date + timedelta(days=days_ahead)
+    return None
+
+
+def _extract_times(normalized_text):
+    times = []
+    seen_spans = []
+
+    def add_time(hour, minute, span=None, meridiem=''):
+        try:
+            hour = int(hour)
+            minute = int(minute or 0)
+        except (TypeError, ValueError):
+            return
+        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+            return
+        if meridiem in {'chieu', 'toi'} and 1 <= hour <= 11:
+            hour += 12
+        elif meridiem == 'sang' and hour == 12:
+            hour = 0
+        if span:
+            seen_spans.append(span)
+        times.append((hour, minute))
+
+    for match in re.finditer(r'(?<!\d)((?:[01]?\d|2[0-3]))[:h](\d{2})(?!\d)', normalized_text):
+        add_time(match.group(1), match.group(2), match.span())
+
+    for match in re.finditer(
+        r'(?<!\d)((?:[01]?\d|2[0-3]))\s*(?:gio|g|h)\s*(?:(\d{1,2})\s*(?:phut|p)?)?\s*(sang|chieu|toi)?(?!\d)',
+        normalized_text
+    ):
+        if any(match.start() >= start and match.end() <= end for start, end in seen_spans):
+            continue
+        add_time(match.group(1), match.group(2) or 0, match.span(), match.group(3) or '')
+
+    return times
+
+
 def _hydrate_email_for_list(email, user_id, cached_entries=None):
     email = dict(email or {})
     email['tag'] = email.get('tag') or _classify_email_lightweight(email)
@@ -256,14 +319,15 @@ def _extract_meeting_suggestion(email):
         'het han', 'truoc ngay', 'truoc han'
     ]
     time_signal = bool(re.search(r'(?<!\d)(?:[01]?\d|2[0-3])[:h]\d{2}(?!\d)', normalized))
+    natural_time_signal = bool(re.search(r'(?<!\d)(?:[01]?\d|2[0-3])\s*(?:gio|g|h)(?:\s*\d{1,2})?\s*(?:sang|chieu|toi)?(?!\d)', normalized))
     date_signal = bool(re.search(
         r'(?<!\d)(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})(?!\d)',
         normalized
-    ))
+    )) or bool(_extract_weekday_date(normalized, _parse_email_base_date(email)))
     is_meeting = (
         any(term in normalized for term in direct_terms)
-        or (any(term in normalized for term in schedule_terms) and (time_signal or date_signal))
-        or (any(term in normalized for term in deadline_terms) and (time_signal or date_signal))
+        or (any(term in normalized for term in schedule_terms) and (time_signal or natural_time_signal or date_signal))
+        or (any(term in normalized for term in deadline_terms) and (time_signal or natural_time_signal or date_signal))
     )
     if not is_meeting:
         return None
@@ -295,22 +359,21 @@ def _extract_meeting_suggestion(email):
             meeting_date = datetime(year, month, day).date()
     except ValueError:
         meeting_date = None
+    if meeting_date is None:
+        meeting_date = _extract_weekday_date(normalized, _parse_email_base_date(email))
 
     start_time = None
     end_time = None
-    time_matches = re.findall(
-        r'(?<!\d)((?:[01]?\d|2[0-3]))[:h](\d{2})(?!\d)',
-        normalized
-    )
+    time_matches = _extract_times(normalized)
     if meeting_date and time_matches:
-        start_hour, start_minute = map(int, time_matches[0])
+        start_hour, start_minute = time_matches[0]
         start_dt = datetime.combine(
             meeting_date,
             datetime.strptime(f'{start_hour:02d}:{start_minute:02d}', '%H:%M').time()
         )
         start_time = start_dt.isoformat()
         if len(time_matches) > 1:
-            end_hour, end_minute = map(int, time_matches[1])
+            end_hour, end_minute = time_matches[1]
             end_dt = datetime.combine(
                 meeting_date,
                 datetime.strptime(f'{end_hour:02d}:{end_minute:02d}', '%H:%M').time()

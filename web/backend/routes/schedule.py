@@ -132,6 +132,23 @@ def _sync_schedule_to_calendar(user_id, schedule_id, schedule_payload, db_path):
 
     return None
 
+
+def _sync_schedule_to_calendar_async(user_id, schedule_id, db_path):
+    if not _has_calendar_token(user_id):
+        return False
+
+    def _bg():
+        try:
+            schedule = Schedule.get_by_id(schedule_id, db_path=db_path)
+            if schedule:
+                _sync_schedule_to_calendar(user_id, schedule_id, schedule, db_path)
+        except Exception:
+            logger.debug("Background calendar sync failed for schedule %s", schedule_id, exc_info=True)
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return True
+
+
 @schedule_bp.route('/create', methods=['POST'])
 def create_schedule():
     """Create new schedule and sync to Google Calendar"""
@@ -729,9 +746,7 @@ def update_schedule(schedule_id):
         Schedule.update(schedule_id, db_path=db_path, **update_data)
         _clear_schedule_cache(db_path)
         
-        # Try to update Google Calendar event, or create one if it does not exist yet.
-        updated_schedule = Schedule.get_by_id(schedule_id, db_path=db_path)
-        _sync_schedule_to_calendar(user_id, schedule_id, updated_schedule or {**schedule, **update_data}, db_path)
+        calendar_sync_pending = _sync_schedule_to_calendar_async(user_id, schedule_id, db_path)
         
         History.create(
             f"Chỉnh sửa lịch hẹn: {schedule.get('title', '')}",
@@ -744,7 +759,8 @@ def update_schedule(schedule_id):
         updated = Schedule.get_by_id(schedule_id, db_path=db_path)
         return jsonify({
             'success': True,
-            'schedule': updated
+            'schedule': updated,
+            'calendar_sync_pending': calendar_sync_pending,
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

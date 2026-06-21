@@ -3939,6 +3939,9 @@ async function handleEditScheduleSubmit(e) {
         return;
     }
     
+    const submitButton = e.submitter || editForm?.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
+
     try {
         const response = await apiFetch(`${API_BASE}/schedule/${scheduleId}`, {
             method: 'PUT',
@@ -3957,14 +3960,19 @@ async function handleEditScheduleSubmit(e) {
         if (response.ok && data.success) {
             showNotification(ui('✓ Đã cập nhật lịch hẹn', '✓ Appointment updated'), 'success');
             closeEditScheduleModal();
-            await loadSchedules();
-            await loadWeekSchedule();
+            invalidateScheduleCaches();
+            await Promise.all([
+                loadSchedules(),
+                loadWeekSchedule()
+            ]);
             refreshQuickScheduleSummary();
         } else {
             showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể cập nhật lịch hẹn', 'Unable to update appointment')), 'error');
         }
     } catch (error) {
         showNotification(ui('❌ Lỗi: ', '❌ Error: ') + error.message, 'error');
+    } finally {
+        if (submitButton) submitButton.disabled = false;
     }
 }
 

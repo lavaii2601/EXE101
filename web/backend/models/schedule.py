@@ -1,12 +1,32 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import sqlite3
 import os
 import sys
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
 from models import postgres_db as pg
+
+LOCAL_TZ = ZoneInfo("Asia/Ho_Chi_Minh") if ZoneInfo else timezone(timedelta(hours=7))
+
+
+def _coerce_local_datetime(value):
+    if not value:
+        return value
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        except (TypeError, ValueError):
+            return value
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=LOCAL_TZ)
+
 
 class Schedule:
     _initialized_dbs = set()
@@ -64,6 +84,8 @@ class Schedule:
             user_id = pg.user_id_from_db_path(db_path)
             pg.ensure_user(user_id)
             attendees_value = ','.join(attendees) if isinstance(attendees, list) else attendees
+            start_time_value = _coerce_local_datetime(start_time)
+            end_time_value = _coerce_local_datetime(end_time)
             with pg.connection() as conn:
                 row = conn.execute(
                     """
@@ -75,7 +97,7 @@ class Schedule:
                     RETURNING id
                     """,
                     (
-                        user_id, title, description, start_time, end_time,
+                        user_id, title, description, start_time_value, end_time_value,
                         attendees_value, email_body, location, calendar_event_id
                     ),
                 ).fetchone()
@@ -244,6 +266,10 @@ class Schedule:
                 return False
             if isinstance(updates.get('attendees'), list):
                 updates['attendees'] = ','.join(updates['attendees'])
+            if 'start_time' in updates:
+                updates['start_time'] = _coerce_local_datetime(updates.get('start_time'))
+            if 'end_time' in updates:
+                updates['end_time'] = _coerce_local_datetime(updates.get('end_time'))
             set_parts = [
                 f'{key} = %s::schedule_status' if key == 'status' else f'{key} = %s'
                 for key in updates.keys()
