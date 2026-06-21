@@ -1,12 +1,34 @@
 import os
 import sqlite3
 import sys
+from email.utils import parsedate_to_datetime
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
 from models import postgres_db as pg
+
+
+def _coerce_datetime(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        pass
+
+    try:
+        return parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
 
 
 class MeetingSuggestion:
@@ -54,6 +76,9 @@ class MeetingSuggestion:
         if pg.enabled():
             user_id = pg.user_id_from_db_path(db_path)
             pg.ensure_user(user_id)
+            email_date = _coerce_datetime(suggestion.get("email_date"))
+            start_time = _coerce_datetime(suggestion.get("start_time"))
+            end_time = _coerce_datetime(suggestion.get("end_time"))
             with pg.connection() as conn:
                 row = conn.execute(
                     """
@@ -80,12 +105,12 @@ class MeetingSuggestion:
                         email_id,
                         suggestion.get("sender", ""),
                         suggestion.get("subject", ""),
-                        None,
+                        email_date,
                         suggestion.get("snippet", ""),
                         suggestion.get("title", ""),
                         suggestion.get("description", ""),
-                        suggestion.get("start_time"),
-                        suggestion.get("end_time"),
+                        start_time,
+                        end_time,
                         suggestion.get("location", ""),
                         suggestion.get("attendees", ""),
                     ),

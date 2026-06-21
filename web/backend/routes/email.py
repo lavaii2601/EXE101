@@ -385,19 +385,27 @@ def _store_meeting_suggestions(emails, db_path):
     detected = []
     schedule_index = None
     for email in emails:
-        email_id = email.get('id')
-        if not email_id:
-            continue
-        suggestion = _extract_meeting_suggestion(email)
-        if not suggestion:
-            continue
-        if schedule_index is None:
-            schedule_index = _load_schedule_match_index(db_path)
-        if _meeting_suggestion_exists_in_schedule(suggestion, schedule_index):
-            MeetingSuggestion.dismiss_email(email_id, db_path=db_path)
-            continue
-        suggestion_id = MeetingSuggestion.upsert(email_id, suggestion, db_path=db_path)
-        detected.append({'id': suggestion_id, 'email_id': email_id, **suggestion})
+        try:
+            email_id = email.get('id')
+            if not email_id:
+                continue
+            suggestion = _extract_meeting_suggestion(email)
+            if not suggestion:
+                continue
+            if schedule_index is None:
+                schedule_index = _load_schedule_match_index(db_path)
+            if _meeting_suggestion_exists_in_schedule(suggestion, schedule_index):
+                MeetingSuggestion.dismiss_email(email_id, db_path=db_path)
+                continue
+            suggestion_id = MeetingSuggestion.upsert(email_id, suggestion, db_path=db_path)
+            detected.append({'id': suggestion_id, 'email_id': email_id, **suggestion})
+        except Exception as e:
+            logger.warning(
+                "Skipping meeting suggestion scan for email %s: %s",
+                (email or {}).get('id', 'unknown'),
+                e,
+                exc_info=True,
+            )
     return detected
 
 def _are_emails_cached(cache_key):
@@ -855,20 +863,24 @@ def scan_meeting_suggestions():
     if not service:
         return jsonify({'error': 'not_authenticated'}), 401
 
-    emails = service.get_emails(
-        max_results=20,
-        query='in:inbox',
-        include_read=True,
-    )
-    detected = _store_meeting_suggestions(emails, db_path)
-    pending = MeetingSuggestion.get_pending(db_path=db_path)
-    return jsonify({
-        'success': True,
-        'scanned': len(emails),
-        'detected': len(detected),
-        'suggestions': pending,
-        'count': len(pending),
-    })
+    try:
+        emails = service.get_emails(
+            max_results=20,
+            query='in:inbox',
+            include_read=True,
+        )
+        detected = _store_meeting_suggestions(emails, db_path)
+        pending = MeetingSuggestion.get_pending(db_path=db_path)
+        return jsonify({
+            'success': True,
+            'scanned': len(emails),
+            'detected': len(detected),
+            'suggestions': pending,
+            'count': len(pending),
+        })
+    except Exception as e:
+        logger.error(f"Error in scan_meeting_suggestions: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e), 'error_type': type(e).__name__}), 500
 
 
 @email_bp.route('/meeting-suggestions/<int:suggestion_id>/status', methods=['PATCH'])
