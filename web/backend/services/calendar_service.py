@@ -9,12 +9,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from config import Config
+from models.schedule import LOCAL_TZ
 
 # Configure module logger
 logger = logging.getLogger(__name__)
 
 CALENDAR_TIMEZONE = 'Asia/Ho_Chi_Minh'
-_LOCAL_TZ = datetime.now().astimezone().tzinfo
+# Anchor naive datetimes to Vietnam time explicitly. The server's OS timezone
+# (e.g. UTC on Railway) must not leak into events meant for Vietnamese users.
+_LOCAL_TZ = LOCAL_TZ
 
 class CalendarService:
     """Service for Google Calendar API operations"""

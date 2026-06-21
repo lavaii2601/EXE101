@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from services.schedule_service import ScheduleService
 from services.calendar_service import CalendarService
 from models.cache import Cache
-from models.schedule import Schedule
+from models.schedule import Schedule, LOCAL_TZ
 from models.history import History
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from utils.google_service_cache import get_cached_service
@@ -270,7 +270,7 @@ def _parse_dt(value):
     except ValueError:
         return None
     if dt.tzinfo is not None:
-        dt = dt.astimezone().replace(tzinfo=None)
+        dt = dt.astimezone(LOCAL_TZ).replace(tzinfo=None)
     return dt
 
 
@@ -396,9 +396,8 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
     if not calendar_service:
         return 0
 
-    local_tz = datetime.now().astimezone().tzinfo
-    time_min = start_time.replace(tzinfo=local_tz).isoformat()
-    time_max = end_time.replace(tzinfo=local_tz).isoformat()
+    time_min = start_time.replace(tzinfo=LOCAL_TZ).isoformat()
+    time_max = end_time.replace(tzinfo=LOCAL_TZ).isoformat()
     gcal_events = calendar_service.get_events(max_results=max_results, time_min=time_min, time_max=time_max)
     live_google_ids = {event.get('id') for event in gcal_events if event.get('id')}
     created_count = 0

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from models.schedule import Schedule
+from models.schedule import Schedule, LOCAL_TZ
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ def _to_local_naive(value):
             return None
 
     if parsed.tzinfo is not None:
-        parsed = parsed.astimezone().replace(tzinfo=None)
+        parsed = parsed.astimezone(LOCAL_TZ).replace(tzinfo=None)
     return parsed
 
 

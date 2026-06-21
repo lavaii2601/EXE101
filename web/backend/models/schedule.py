@@ -12,7 +12,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
 from models import postgres_db as pg
 
-LOCAL_TZ = ZoneInfo("Asia/Ho_Chi_Minh") if ZoneInfo else timezone(timedelta(hours=7))
+try:
+    LOCAL_TZ = ZoneInfo("Asia/Ho_Chi_Minh") if ZoneInfo else timezone(timedelta(hours=7))
+except Exception:
+    # Windows Python has no built-in IANA tzdata; ZoneInfo raises at runtime
+    # (not ImportError) when the optional `tzdata` package isn't installed.
+    LOCAL_TZ = timezone(timedelta(hours=7))
 
 
 def _coerce_local_datetime(value):
