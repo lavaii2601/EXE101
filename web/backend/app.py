@@ -1,5 +1,6 @@
 from flask import Flask, send_from_directory, jsonify, session as flask_session, request
 from flask_cors import CORS
+from flask_compress import Compress
 from werkzeug.middleware.proxy_fix import ProxyFix
 import os
 import sys
@@ -87,6 +88,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 # Allow CORS with credentials for the frontend origin(s) so session cookies are preserved
 allowed_origins = Config.ALLOWED_ORIGINS
 CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
+Compress(app)
 
 
 @app.after_request
@@ -99,7 +101,8 @@ def add_security_headers(response):
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
         "img-src 'self' data: https://*.googleusercontent.com; "
-        "style-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
         "script-src 'self' 'unsafe-inline'; "
         "connect-src 'self'; "
         "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
@@ -138,7 +141,9 @@ def serve_frontend():
 def serve_static(path):
     """Serve static files"""
     if path.startswith('css/') or path.startswith('js/'):
-        return send_from_directory('../frontend', path)
+        # Safe to cache for a year: filenames are version-tagged via ?v= query
+        # string, so a new deploy is requested under a new URL automatically.
+        return send_from_directory('../frontend', path, max_age=31536000)
     return send_from_directory('../frontend', 'index.html')
 
 @app.route('/api/health', methods=['GET'])
