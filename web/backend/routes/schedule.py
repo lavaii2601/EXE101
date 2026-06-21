@@ -26,6 +26,7 @@ _week_sync_recent = {}
 _WEEK_SYNC_TTL_SECONDS = 90
 _SCHEDULE_CACHE_TTL_SECONDS = 15
 _FULL_SYNC_DAYS = 365
+_LOCAL_EDIT_SYNC_GRACE_SECONDS = 180
 
 
 def _schedule_cache_key(user_id, name, *parts):
@@ -285,6 +286,27 @@ def _schedule_fingerprint(schedule):
     return _event_fingerprint(schedule.get('title'), schedule.get('start_time'))
 
 
+def _recently_updated(schedule, seconds=_LOCAL_EDIT_SYNC_GRACE_SECONDS):
+    updated_at = _parse_dt((schedule or {}).get('updated_at'))
+    if not updated_at:
+        return False
+    return 0 <= (datetime.now() - updated_at).total_seconds() <= seconds
+
+
+def _google_sync_would_overwrite_recent_edit(schedule, event_payload):
+    if not _recently_updated(schedule):
+        return False
+    local_start = _parse_dt((schedule or {}).get('start_time'))
+    google_start = _parse_dt((event_payload or {}).get('start_time'))
+    local_end = _parse_dt((schedule or {}).get('end_time'))
+    google_end = _parse_dt((event_payload or {}).get('end_time'))
+    if not local_start or not google_start:
+        return False
+    starts_differ = abs((local_start - google_start).total_seconds()) > 60
+    ends_differ = bool(local_end and google_end and abs((local_end - google_end).total_seconds()) > 60)
+    return starts_differ or ends_differ
+
+
 def _dedupe_schedule_items(schedules):
     """Return one display item for duplicate local/Google-backed copies."""
     by_google_id = {}
@@ -395,6 +417,12 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
             'location': event.get('location') or '',
         }
         if existing_schedule:
+            if _google_sync_would_overwrite_recent_edit(existing_schedule, event_payload):
+                logger.info(
+                    "Skipped stale Google Calendar overwrite for recently edited schedule %s",
+                    existing_schedule.get('id')
+                )
+                continue
             Schedule.update(
                 existing_schedule.get('id'),
                 **event_payload,
