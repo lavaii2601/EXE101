@@ -414,8 +414,18 @@ def _load_schedule_match_index(db_path):
                 schedule_dt = schedule_dt.replace(tzinfo=None)
         except (TypeError, ValueError):
             continue
+        end_dt = None
+        try:
+            end_dt = datetime.fromisoformat(
+                str(schedule.get('end_time') or '').replace('Z', '+00:00')
+            )
+            if end_dt.tzinfo is not None:
+                end_dt = end_dt.replace(tzinfo=None)
+        except (TypeError, ValueError):
+            end_dt = None
         index.append({
             'start_time': schedule_dt,
+            'end_time': end_dt,
             'title': _normalize_search_text(schedule.get('title', '')),
         })
     return index
@@ -436,10 +446,13 @@ def _meeting_suggestion_exists_in_schedule(suggestion, schedule_index):
     subject = _normalize_search_text(suggestion.get('subject', ''))
     for schedule in schedule_index:
         schedule_dt = schedule.get('start_time')
+        schedule_end = schedule.get('end_time')
+        if schedule_end and schedule_dt <= suggested_dt <= schedule_end:
+            return True
         if abs((schedule_dt - suggested_dt).total_seconds()) > 300:
             continue
         title = schedule.get('title', '')
-        if title and (title in subject or subject in title):
+        if not title or title in subject or subject in title:
             return True
     return False
 
@@ -470,6 +483,22 @@ def _store_meeting_suggestions(emails, db_path):
                 exc_info=True,
             )
     return detected
+
+
+def _prune_existing_meeting_suggestions(db_path):
+    schedule_index = _load_schedule_match_index(db_path)
+    if not schedule_index:
+        return []
+    pending = MeetingSuggestion.get_pending(db_path=db_path)
+    visible = []
+    for suggestion in pending:
+        if _meeting_suggestion_exists_in_schedule(suggestion, schedule_index):
+            email_id = suggestion.get('email_id')
+            if email_id:
+                MeetingSuggestion.dismiss_email(email_id, db_path=db_path)
+        else:
+            visible.append(suggestion)
+    return visible
 
 def _are_emails_cached(cache_key):
     """Check if cache is still valid (10 minute TTL for better performance)"""
@@ -910,7 +939,7 @@ def get_unread_emails():
 def get_meeting_suggestions():
     user_id = get_current_user_id(request, session=session)
     db_path = get_user_db_path(user_id)
-    suggestions = MeetingSuggestion.get_pending(db_path=db_path)
+    suggestions = _prune_existing_meeting_suggestions(db_path)
     return jsonify({
         'success': True,
         'suggestions': suggestions,
@@ -933,7 +962,7 @@ def scan_meeting_suggestions():
             include_read=True,
         )
         detected = _store_meeting_suggestions(emails, db_path)
-        pending = MeetingSuggestion.get_pending(db_path=db_path)
+        pending = _prune_existing_meeting_suggestions(db_path)
         return jsonify({
             'success': True,
             'scanned': len(emails),
