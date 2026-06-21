@@ -837,12 +837,20 @@ def get_unread_emails():
 def get_meeting_suggestions():
     user_id = get_current_user_id(request, session=session)
     db_path = get_user_db_path(user_id)
-    suggestions = MeetingSuggestion.get_pending(db_path=db_path)
-    return jsonify({
-        'success': True,
-        'suggestions': suggestions,
-        'count': len(suggestions),
-    })
+    try:
+        suggestions = MeetingSuggestion.get_pending(db_path=db_path)
+        return jsonify({
+            'success': True,
+            'suggestions': suggestions,
+            'count': len(suggestions),
+        })
+    except Exception as e:
+        logger.exception("Failed to load meeting suggestions for %s", user_id)
+        return jsonify({
+            'error': 'Không tải được gợi ý lịch từ email',
+            'details': str(e),
+            'error_type': type(e).__name__,
+        }), 500
 
 
 @email_bp.route('/meeting-suggestions/scan', methods=['POST'])
@@ -851,22 +859,34 @@ def scan_meeting_suggestions():
     db_path = get_user_db_path(user_id)
     service = _load_gmail_service(user_id)
     if not service:
-        return jsonify({'error': 'not_authenticated'}), 401
+        return jsonify({
+            'error': 'not_authenticated',
+            'message': 'Bạn cần đăng nhập lại Gmail trước khi quét email.',
+            'auth_url': url_for('email.gmail_auth_url', _external=True),
+        }), 401
 
-    emails = service.get_emails(
-        max_results=20,
-        query='in:inbox',
-        include_read=True,
-    )
-    detected = _store_meeting_suggestions(emails, db_path)
-    pending = MeetingSuggestion.get_pending(db_path=db_path)
-    return jsonify({
-        'success': True,
-        'scanned': len(emails),
-        'detected': len(detected),
-        'suggestions': pending,
-        'count': len(pending),
-    })
+    try:
+        emails = service.get_emails(
+            max_results=20,
+            query='in:inbox',
+            include_read=True,
+        )
+        detected = _store_meeting_suggestions(emails, db_path)
+        pending = MeetingSuggestion.get_pending(db_path=db_path)
+        return jsonify({
+            'success': True,
+            'scanned': len(emails),
+            'detected': len(detected),
+            'suggestions': pending,
+            'count': len(pending),
+        })
+    except Exception as e:
+        logger.exception("Failed to scan meeting suggestions for %s", user_id)
+        return jsonify({
+            'error': 'Không quét được email. Hãy đăng nhập lại Gmail rồi thử lại.',
+            'details': str(e),
+            'error_type': type(e).__name__,
+        }), 500
 
 
 @email_bp.route('/meeting-suggestions/<int:suggestion_id>/status', methods=['PATCH'])

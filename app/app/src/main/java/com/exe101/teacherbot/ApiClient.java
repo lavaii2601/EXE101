@@ -114,7 +114,7 @@ public class ApiClient {
             connection.disconnect();
             try {
                 JSONObject data = text.isEmpty() ? new JSONObject() : new JSONObject(text);
-                throw new IOException(data.optString("error", data.optString("message", "HTTP " + status)));
+                throw new IOException(errorMessage(data, status));
             } catch (org.json.JSONException ignored) {
                 throw new IOException(text.isEmpty() ? "HTTP " + status : text);
             }
@@ -168,10 +168,27 @@ public class ApiClient {
 
         JSONObject data = text.isEmpty() ? new JSONObject() : new JSONObject(text);
         if (status >= 400) {
-            String message = data.optString("error", data.optString("message", "HTTP " + status));
-            throw new IOException(message);
+            throw new IOException(errorMessage(data, status));
         }
         return data;
+    }
+
+    private String errorMessage(JSONObject data, int status) {
+        String message = data.optString("error", "");
+        if (message == null || message.trim().isEmpty()) {
+            message = data.optString("message", "");
+        }
+        if (message == null || message.trim().isEmpty()) {
+            message = data.optString("details", "");
+        }
+        if (message == null || message.trim().isEmpty()) {
+            message = "HTTP " + status;
+        }
+        String details = data.optString("details", "");
+        if (details != null && !details.trim().isEmpty() && !details.equals(message)) {
+            message = message + "\n" + details;
+        }
+        return message;
     }
 
     private String readAll(InputStream stream) throws IOException {

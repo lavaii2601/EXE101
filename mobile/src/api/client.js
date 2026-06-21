@@ -21,7 +21,7 @@ async function request(path, options = {}) {
   }
 
   if (!response.ok) {
-    const message = data.error || data.message || `HTTP ${response.status}`;
+    const message = data.error || data.message || data.details || data.raw || `HTTP ${response.status}`;
     const error = new Error(message);
     error.status = response.status;
     error.data = data;
