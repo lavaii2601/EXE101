@@ -37,7 +37,7 @@ function makeStyles(colors) {
       gap: 10,
     },
     title: { color: colors.text, fontSize: 22, fontWeight: '800' },
-    actions: { flexDirection: 'row', gap: 8 },
+    actions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, flexShrink: 1 },
     body: { paddingHorizontal: 16, paddingBottom: 18, gap: 12 },
   });
 }

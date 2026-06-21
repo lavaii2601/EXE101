@@ -24,6 +24,7 @@ _week_sync_inflight = set()
 _week_sync_recent = {}
 _WEEK_SYNC_TTL_SECONDS = 90
 _SCHEDULE_CACHE_TTL_SECONDS = 15
+_FULL_SYNC_DAYS = 365
 
 
 def _schedule_cache_key(user_id, name, *parts):
@@ -266,6 +267,19 @@ def _event_fingerprint(title, start_time):
     return f'{normalized_title}|{normalized_start}'
 
 
+def _prune_expired_google_backed_schedules(db_path):
+    """Keep DB schedule summaries lean; Google remains the source of history."""
+    try:
+        deleted = Schedule.delete_expired_google_backed(datetime.now(), db_path=db_path)
+        if deleted:
+            _clear_schedule_cache(db_path)
+            logger.info("Pruned %s expired Google-backed schedules", deleted)
+        return deleted
+    except Exception:
+        logger.debug("Could not prune expired schedules", exc_info=True)
+        return 0
+
+
 def _unified_schedule_item(schedule):
     google_event_id = schedule.get('calendar_event_id') or ''
     return {
@@ -276,22 +290,34 @@ def _unified_schedule_item(schedule):
     }
 
 
-def _sync_google_week_events(user_id, db_path, monday, week_end):
+def _sync_google_events_range(user_id, db_path, start_time, end_time, max_results=250):
     calendar_service = _load_calendar_service(user_id)
     if not calendar_service:
-        return
+        return 0
 
     local_tz = datetime.now().astimezone().tzinfo
-    time_min = monday.replace(tzinfo=local_tz).isoformat()
-    time_max = week_end.replace(tzinfo=local_tz).isoformat()
-    gcal_events = calendar_service.get_events(max_results=250, time_min=time_min, time_max=time_max)
+    time_min = start_time.replace(tzinfo=local_tz).isoformat()
+    time_max = end_time.replace(tzinfo=local_tz).isoformat()
+    gcal_events = calendar_service.get_events(max_results=max_results, time_min=time_min, time_max=time_max)
     live_google_ids = {event.get('id') for event in gcal_events if event.get('id')}
+    created_count = 0
 
     for event in gcal_events:
         event_id = event.get('id')
         if not event_id:
             continue
-        if Schedule.get_by_calendar_event_id(event_id, db_path=db_path):
+        existing_schedule = Schedule.get_by_calendar_event_id(event_id, db_path=db_path)
+        if existing_schedule:
+            Schedule.update(
+                existing_schedule.get('id'),
+                title=event.get('title') or 'Untitled',
+                description=event.get('description') or '',
+                start_time=event.get('start'),
+                end_time=event.get('end'),
+                attendees=','.join(event.get('attendees') or []),
+                location=event.get('location') or '',
+                db_path=db_path
+            )
             continue
         Schedule.create(
             title=event.get('title') or 'Untitled',
@@ -304,14 +330,15 @@ def _sync_google_week_events(user_id, db_path, monday, week_end):
             calendar_event_id=event_id,
             db_path=db_path
         )
+        created_count += 1
 
-    for schedule in Schedule.get_all(limit=300, db_path=db_path):
+    for schedule in Schedule.get_all(limit=1000, db_path=db_path):
         calendar_event_id = schedule.get('calendar_event_id')
         if not calendar_event_id or calendar_event_id in live_google_ids:
             continue
 
         start_dt = _parse_dt(schedule.get('start_time'))
-        if not start_dt or not (monday <= start_dt < week_end):
+        if not start_dt or not (start_time <= start_dt < end_time):
             continue
 
         exists = calendar_service.event_exists(calendar_event_id)
@@ -319,7 +346,13 @@ def _sync_google_week_events(user_id, db_path, monday, week_end):
             Schedule.delete(schedule.get('id'), db_path=db_path)
             logger.info(f"Removed local schedule for deleted Google event: {calendar_event_id}")
 
+    _prune_expired_google_backed_schedules(db_path)
     _clear_schedule_cache(db_path)
+    return created_count
+
+
+def _sync_google_week_events(user_id, db_path, monday, week_end):
+    return _sync_google_events_range(user_id, db_path, monday, week_end, max_results=250)
 
 
 def _start_week_sync(user_id, db_path, monday, week_end, force=False):
@@ -349,12 +382,47 @@ def _start_week_sync(user_id, db_path, monday, week_end, force=False):
     return True
 
 
+@schedule_bp.route('/sync', methods=['POST'])
+def sync_schedules():
+    """Scan Google Calendar into the local schedule summary on demand."""
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+
+    if not _has_calendar_token(user_id):
+        return jsonify({
+            'success': False,
+            'error': 'not_authenticated',
+            'message': 'User not authenticated with Google Calendar'
+        })
+
+    try:
+        now = datetime.now()
+        sync_end = now + timedelta(days=_FULL_SYNC_DAYS)
+        created_count = _sync_google_events_range(
+            user_id,
+            db_path,
+            now.replace(hour=0, minute=0, second=0, microsecond=0),
+            sync_end,
+            max_results=2500
+        )
+        return jsonify({
+            'success': True,
+            'created_count': created_count,
+            'sync_start': now.isoformat(),
+            'sync_end': sync_end.isoformat(),
+        })
+    except Exception as e:
+        logger.error(f"Error syncing schedules: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
 @schedule_bp.route('/unified', methods=['GET'])
 def get_unified_schedules():
     """Merge upcoming local schedules and Google Calendar events into one timeline."""
     try:
         user_id = get_current_user_id(request)
         db_path = get_user_db_path(user_id)
+        _prune_expired_google_backed_schedules(db_path)
         now = datetime.now()
         max_results = min(max(request.args.get('max_results', 50, type=int), 1), 200)
         live_google = request.args.get('live', '0') == '1'
@@ -440,6 +508,7 @@ def get_week_schedules():
     """Get schedules for a Mon-Sun week and refresh Google Calendar in the background."""
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
+    _prune_expired_google_backed_schedules(db_path)
 
     start_param = request.args.get('start')
     ref_date = _parse_dt(start_param) if start_param else None

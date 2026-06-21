@@ -305,3 +305,38 @@ class Schedule:
         deleted = cursor.rowcount
         conn.close()
         return deleted > 0
+
+    @staticmethod
+    def delete_expired_google_backed(cutoff_time, db_path=None):
+        """Delete local copies of Google-backed schedules that already ended."""
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                cur = conn.execute(
+                    """
+                    DELETE FROM schedules
+                    WHERE user_id = %s
+                      AND calendar_event_id IS NOT NULL
+                      AND COALESCE(end_time, start_time) < %s
+                    """,
+                    (user_id, cutoff_time),
+                )
+                return cur.rowcount or 0
+
+        db_path = db_path or Config.DATABASE_PATH
+        Schedule.init_db(db_path=db_path)
+        cutoff_value = cutoff_time.isoformat() if isinstance(cutoff_time, datetime) else cutoff_time
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            DELETE FROM schedules
+            WHERE calendar_event_id IS NOT NULL
+              AND COALESCE(end_time, start_time) < ?
+            ''',
+            (cutoff_value,)
+        )
+        conn.commit()
+        deleted = cursor.rowcount
+        conn.close()
+        return deleted

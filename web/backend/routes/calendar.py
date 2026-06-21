@@ -102,6 +102,20 @@ def create_calendar_event():
         
         if not event_id:
             return jsonify({'error': 'Failed to create calendar event'}), 500
+
+        if not Schedule.get_by_calendar_event_id(event_id, db_path=db_path):
+            Schedule.create(
+                title=title,
+                description=description,
+                start_time=start_time,
+                end_time=end_time,
+                attendees=','.join(attendees) if isinstance(attendees, list) else attendees,
+                email_body='',
+                location=location,
+                calendar_event_id=event_id,
+                db_path=db_path
+            )
+            _clear_schedule_cache(db_path)
         
         # Save to history
         attendee_list = ', '.join(attendees) if attendees else 'Không có người tham dự'

@@ -33,6 +33,7 @@ let emailSearchTimer;
 
 // State
 let currentPage = 'chat';
+let initialScheduleSyncDone = false;
 let currentEmailPage = 1;
 let currentWeekStart = getMonday(new Date());
 let currentDetailEmail = null;
@@ -661,11 +662,9 @@ async function initApp() {
     if (refreshCalendarBtn) {
         refreshCalendarBtn.addEventListener('click', () => {
             console.log('🔄 Refreshing calendar events');
-            invalidateScheduleCaches();
-            loadSchedules({ liveGoogle: true }).catch(err => console.warn('Schedule refresh error:', err));
-            loadWeekSchedule({ forceSync: true }).catch(err => console.warn('Week sync refresh error:', err));
             scheduleMeetingSuggestionRefresh({ scan: false, delay: 0 });
-            loadCalendarEvents();
+            refreshCalendarScheduleData({ notify: true, continueOnError: true })
+                .catch(err => console.warn('Schedule refresh error:', err));
         });
     }
 
@@ -922,6 +921,42 @@ function invalidateScheduleCaches() {
     clearRuntimeCache('schedule:');
 }
 
+async function refreshCalendarScheduleData(options = {}) {
+    invalidateScheduleCaches();
+    let syncedGoogle = false;
+    try {
+        const response = await apiFetch(`${API_BASE}/schedule/sync`, { method: 'POST' });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || (data && data.success === false)) {
+            if (data.error === 'not_authenticated') {
+                if (!options.silent) {
+                    showNotification(ui('Chưa kết nối Google Calendar', 'Google Calendar is not connected'), 'info');
+                }
+            } else {
+                throw new Error(data.error || ui('Không thể cập nhật lịch', 'Unable to refresh calendar'));
+            }
+        } else {
+            syncedGoogle = true;
+        }
+    } catch (error) {
+        if (!options.silent) {
+            showNotification(ui('❌ Không thể cập nhật lịch: ', '❌ Unable to refresh calendar: ') + error.message, 'error');
+        }
+        if (!options.continueOnError) return;
+    }
+
+    await Promise.allSettled([
+        loadSchedules(),
+        loadWeekSchedule(),
+        loadCalendarEvents(),
+        refreshQuickScheduleSummary()
+    ]);
+
+    if (options.notify && syncedGoogle) {
+        showNotification(ui('✅ Đã cập nhật lịch', '✅ Calendar refreshed'), 'success');
+    }
+}
+
 const QUICK_ACTIONS = {
     chat: {
         icon: 'AI',
@@ -952,6 +987,7 @@ const QUICK_ACTIONS = {
         tip: 'Dùng Chat khi lịch cần suy luận từ ngôn ngữ tự nhiên hoặc nhiều điều kiện.',
         actions: [
             { icon: '+', label: 'Tạo sự kiện', detail: 'Mở biểu mẫu lịch mới', action: 'create-event' },
+            { icon: '↻', label: 'Cập nhật', detail: 'Quét lại Google Calendar', action: 'refresh-calendar' },
             { icon: '◎', label: 'Về tuần này', detail: 'Hiển thị tuần hiện tại', action: 'this-week' }
         ]
     },
@@ -1023,6 +1059,7 @@ async function runQuickAction(action) {
     if (action === 'daily-report') return document.querySelector('#emails-page [data-tab="daily-report"]')?.click();
     if (action === 'compose-email') return document.querySelector('#emails-page [data-tab="compose"]')?.click();
     if (action === 'create-event') return openNewScheduleModal();
+    if (action === 'refresh-calendar') return refreshCalendarScheduleData({ notify: true, continueOnError: true });
     if (action === 'this-week') return document.getElementById('todayWeekBtn')?.click();
     if (action === 'refresh-history') return loadActivityHistory();
     if (action === 'change-mode') return openUserModeModal(false);
@@ -1034,12 +1071,7 @@ async function refreshWorkspaceTargets(targets = []) {
     if (!uniqueTargets.length) return;
 
     if (uniqueTargets.includes('schedule')) {
-        invalidateScheduleCaches();
-        await Promise.allSettled([
-            loadSchedules(),
-            loadWeekSchedule(),
-            refreshQuickScheduleSummary()
-        ]);
+        await refreshCalendarScheduleData({ silent: true, continueOnError: true });
     }
     if (uniqueTargets.includes('email')) {
         try { await loadEmails(currentEmailPage || 1); } catch (e) { /* ignore refresh errors */ }
@@ -1419,11 +1451,9 @@ function setupEventListeners() {
         if (refreshCalendarBtn) {
             refreshCalendarBtn.addEventListener('click', () => {
                 console.log('🔄 Refreshing calendar events');
-                invalidateScheduleCaches();
-                loadSchedules({ liveGoogle: true }).catch(err => console.warn('Schedule refresh error:', err));
-                loadWeekSchedule({ forceSync: true }).catch(err => console.warn('Week sync refresh error:', err));
                 scheduleMeetingSuggestionRefresh({ scan: false, delay: 0 });
-                loadCalendarEvents();
+                refreshCalendarScheduleData({ notify: true, continueOnError: true })
+                    .catch(err => console.warn('Schedule refresh error:', err));
             });
         }
     
@@ -1607,8 +1637,14 @@ async function handlePageChange(btn) {
             .then(() => loadMeetingSuggestions())
             .catch(err => console.error('Email load error:', err));
     } else if (page === 'schedule') {
-        loadWeekSchedule().catch(err => console.error('Week schedule load error:', err));
-        loadSchedules().catch(err => console.error('Schedule load error:', err));
+        if (!initialScheduleSyncDone) {
+            initialScheduleSyncDone = true;
+            refreshCalendarScheduleData({ silent: true, continueOnError: true })
+                .catch(err => console.error('Initial schedule sync error:', err));
+        } else {
+            loadWeekSchedule().catch(err => console.error('Week schedule load error:', err));
+            loadSchedules().catch(err => console.error('Schedule load error:', err));
+        }
     } else if (page === 'history') {
         loadActivityHistory().catch(err => console.error('History load error:', err));
     } else if (page === 'settings') {
@@ -3978,11 +4014,7 @@ async function handleScheduleSubmit(e) {
             }
             scheduleForm.reset();
             closeNewScheduleModal();
-            await loadSchedules();
-            // refresh calendar events too
-            await loadCalendarEvents();
-            await loadWeekSchedule();
-            refreshQuickScheduleSummary();
+            await refreshCalendarScheduleData({ silent: true, continueOnError: true });
 
             // If calendar_event_id not present, poll for status in background
             if (!data.calendar_event_id && sid) {
@@ -4143,8 +4175,7 @@ async function handleCalendarEventSubmit(e) {
         if (data.success) {
             showNotification(ui(`✅ Sự kiện "${title}" đã được tạo`, `✅ Event "${title}" created`), 'success');
             document.getElementById('calendarEventForm').reset();
-            await loadSchedules();
-            await loadWeekSchedule();
+            await refreshCalendarScheduleData({ silent: true, continueOnError: true });
         } else {
             showNotification(`${ui('❌ Lỗi', '❌ Error')}: ${data.error || ui('Không thể tạo sự kiện', 'Unable to create event')}`, 'error');
         }

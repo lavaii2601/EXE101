@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Linking, Modal, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
 import Card from '../components/Card';
@@ -34,10 +34,21 @@ export default function ScheduleScreen() {
   const [editForm, setEditForm] = useState(initialForm);
   const [loading, setLoading] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const initialCalendarSyncDone = useRef(false);
 
-  const loadSchedules = useCallback(async () => {
+  const loadSchedules = useCallback(async (options = {}) => {
     setLoading(true);
     try {
+      if (options.syncGoogle) {
+        try {
+          await apiPost('/schedule/sync');
+        } catch (error) {
+          if (error.status !== 401 && !options.silentSync) {
+            throw error;
+          }
+        }
+      }
+
       const nextWeekStart = new Date(currentWeekStart);
       nextWeekStart.setDate(nextWeekStart.getDate() + 7);
 
@@ -72,7 +83,14 @@ export default function ScheduleScreen() {
     }
   }, []);
 
-  useEffect(() => { loadSchedules(); }, [loadSchedules]);
+  useEffect(() => {
+    if (!initialCalendarSyncDone.current) {
+      initialCalendarSyncDone.current = true;
+      loadSchedules({ syncGoogle: true, silentSync: true });
+      return;
+    }
+    loadSchedules();
+  }, [loadSchedules]);
   useEffect(() => { loadMeetingSuggestions(); }, [loadMeetingSuggestions]);
 
   const setField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
@@ -97,7 +115,7 @@ export default function ScheduleScreen() {
       await apiPost('/schedule/create', payload);
       setForm(initialForm);
       setMode('list');
-      await loadSchedules();
+      await loadSchedules({ syncGoogle: true, silentSync: true });
       Alert.alert('Đã tạo lịch');
     } catch (error) {
       Alert.alert('Không tạo được lịch', error.message);
@@ -164,7 +182,7 @@ export default function ScheduleScreen() {
         attendees: splitAttendees(suggestion.attendees || ''),
       });
       await updateMeetingSuggestionStatus(suggestion.id, 'created', data.schedule_id);
-      await loadSchedules();
+      await loadSchedules({ syncGoogle: true, silentSync: true });
       Alert.alert('Đã tạo lịch từ email');
     } catch (error) {
       Alert.alert('Không tạo được lịch', error.message);
@@ -369,8 +387,13 @@ export default function ScheduleScreen() {
       <Screen
         title="Lịch"
         refreshing={loading}
-        onRefresh={loadSchedules}
-        actions={<Button title={calendarConnected ? 'Đã kết nối Google' : 'Kết nối Google'} variant="secondary" onPress={() => Linking.openURL('https://calendar.google.com')} />}
+        onRefresh={() => loadSchedules({ syncGoogle: true })}
+        actions={
+          <>
+            <Button title="Cập nhật" variant="secondary" onPress={() => loadSchedules({ syncGoogle: true })} loading={loading} />
+            <Button title={calendarConnected ? 'Đã kết nối Google' : 'Kết nối Google'} variant="secondary" onPress={() => Linking.openURL('https://calendar.google.com')} />
+          </>
+        }
       >
         <SegmentedControl options={modes} value={mode} onChange={setMode} />
         {mode === 'create' ? renderCreate() : renderList()}
