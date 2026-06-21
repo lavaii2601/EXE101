@@ -400,6 +400,19 @@ def _store_meeting_suggestions(emails, db_path):
         detected.append({'id': suggestion_id, 'email_id': email_id, **suggestion})
     return detected
 
+
+def _safe_store_meeting_suggestions(emails, db_path, user_id=''):
+    try:
+        return _store_meeting_suggestions(emails, db_path)
+    except Exception as e:
+        logger.warning(
+            "Meeting suggestion extraction skipped for %s: %s",
+            user_id or 'unknown',
+            e,
+            exc_info=True,
+        )
+        return []
+
 def _are_emails_cached(cache_key):
     """Check if cache is still valid (10 minute TTL for better performance)"""
     if cache_key not in _email_cache:
@@ -766,7 +779,7 @@ def get_unread_emails():
                     email['summary_type'] = 'preview'
                     hydrated.append(email)
 
-                _store_meeting_suggestions(hydrated, db_path)
+                _safe_store_meeting_suggestions(hydrated, db_path, user_id=user_id)
                 suggestions_scanned = True
                 filtered_emails = [email for email in hydrated if _matches_filter(email, filter_type)]
                 total_raw = len(raw_emails)
@@ -805,7 +818,18 @@ def get_unread_emails():
             for email in selected_emails
         ]
         if not suggestions_scanned:
-            _store_meeting_suggestions(page_emails, db_path)
+            _safe_store_meeting_suggestions(page_emails, db_path, user_id=user_id)
+
+        meeting_suggestions = []
+        try:
+            meeting_suggestions = MeetingSuggestion.get_pending(db_path=db_path)
+        except Exception as e:
+            logger.warning(
+                "Meeting suggestions omitted from email list for %s: %s",
+                user_id,
+                e,
+                exc_info=True,
+            )
 
         return jsonify({
             'success': True,
@@ -828,7 +852,7 @@ def get_unread_emails():
                 'per_page': per_page,
                 'total_items': total_emails
             },
-            'meeting_suggestions': MeetingSuggestion.get_pending(db_path=db_path)
+            'meeting_suggestions': meeting_suggestions
         })
     except Exception as e:
         logger.error(f"Error in get_unread_emails: {str(e)}", exc_info=True)
@@ -839,12 +863,20 @@ def get_unread_emails():
 def get_meeting_suggestions():
     user_id = get_current_user_id(request, session=session)
     db_path = get_user_db_path(user_id)
-    suggestions = MeetingSuggestion.get_pending(db_path=db_path)
-    return jsonify({
-        'success': True,
-        'suggestions': suggestions,
-        'count': len(suggestions),
-    })
+    try:
+        suggestions = MeetingSuggestion.get_pending(db_path=db_path)
+        return jsonify({
+            'success': True,
+            'suggestions': suggestions,
+            'count': len(suggestions),
+        })
+    except Exception as e:
+        logger.exception("Failed to load meeting suggestions for %s", user_id)
+        return jsonify({
+            'error': 'Không tải được gợi ý lịch từ email',
+            'details': str(e),
+            'error_type': type(e).__name__,
+        }), 500
 
 
 @email_bp.route('/meeting-suggestions/scan', methods=['POST'])
@@ -853,22 +885,34 @@ def scan_meeting_suggestions():
     db_path = get_user_db_path(user_id)
     service = _load_gmail_service(user_id)
     if not service:
-        return jsonify({'error': 'not_authenticated'}), 401
+        return jsonify({
+            'error': 'not_authenticated',
+            'message': 'Bạn cần đăng nhập lại Gmail trước khi quét email.',
+            'auth_url': url_for('email.gmail_auth_url', _external=True),
+        }), 401
 
-    emails = service.get_emails(
-        max_results=20,
-        query='in:inbox',
-        include_read=True,
-    )
-    detected = _store_meeting_suggestions(emails, db_path)
-    pending = MeetingSuggestion.get_pending(db_path=db_path)
-    return jsonify({
-        'success': True,
-        'scanned': len(emails),
-        'detected': len(detected),
-        'suggestions': pending,
-        'count': len(pending),
-    })
+    try:
+        emails = service.get_emails(
+            max_results=20,
+            query='in:inbox',
+            include_read=True,
+        )
+        detected = _safe_store_meeting_suggestions(emails, db_path, user_id=user_id)
+        pending = MeetingSuggestion.get_pending(db_path=db_path)
+        return jsonify({
+            'success': True,
+            'scanned': len(emails),
+            'detected': len(detected),
+            'suggestions': pending,
+            'count': len(pending),
+        })
+    except Exception as e:
+        logger.exception("Failed to scan meeting suggestions for %s", user_id)
+        return jsonify({
+            'error': 'Không quét được email. Hãy đăng nhập lại Gmail rồi thử lại.',
+            'details': str(e),
+            'error_type': type(e).__name__,
+        }), 500
 
 
 @email_bp.route('/meeting-suggestions/<int:suggestion_id>/status', methods=['PATCH'])
@@ -915,7 +959,7 @@ def get_email_body(email_id):
 
         email_data = service.get_email_details(email_id, lazy=False)
         if email_data:
-            _store_meeting_suggestions([email_data], db_path)
+            _safe_store_meeting_suggestions([email_data], db_path, user_id=user_id)
             Cache.set(
                 _email_body_cache_key(user_id, email_id),
                 email_data,
@@ -994,7 +1038,7 @@ def summarize_email_detail(email_id):
             email_data = service.get_email_details(email_id, lazy=False)
             if not email_data:
                 return jsonify({'error': 'Email not found'}), 404
-            _store_meeting_suggestions([email_data], db_path)
+            _safe_store_meeting_suggestions([email_data], db_path, user_id=user_id)
             Cache.set(
                 _email_body_cache_key(user_id, email_id),
                 email_data,

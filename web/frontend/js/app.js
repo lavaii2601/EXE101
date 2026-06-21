@@ -1276,6 +1276,15 @@ async function apiFetch(url, options = {}) {
     }
 }
 
+async function apiErrorMessage(response, fallback) {
+    try {
+        const data = await response.json();
+        return data.error || data.message || data.details || fallback || `HTTP ${response.status}`;
+    } catch (error) {
+        return fallback || `HTTP ${response.status}`;
+    }
+}
+
 async function checkOAuthCallback() {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('gmail_auth') === 'success') {
@@ -1883,7 +1892,7 @@ async function sendMessageConfirmed(message, opts = {}) {
         console.log(`⚙️ Response status: ${response.status}`);
 
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            throw new Error(await apiErrorMessage(response, `HTTP ${response.status}: ${response.statusText}`));
         }
 
         const data = await response.json();
@@ -2652,7 +2661,7 @@ async function loadEmails(page = 1) {
         console.log(`📡 Response status: ${response.status}`);
         
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            throw new Error(await apiErrorMessage(response, `HTTP ${response.status}: ${response.statusText}`));
         }
         
         const data = await response.json();
@@ -2864,7 +2873,12 @@ async function loadEmails(page = 1) {
         }
     } catch (error) {
         console.error('Email load error:', error);
-        emailsList.innerHTML = `<p>${ui('❌ Lỗi', '❌ Error')}: ${escapeHtml(error.message)}</p>`;
+        emailsList.innerHTML = `
+            <div style="padding: 20px; background: #FFEBEE; border-radius: 8px; margin: 20px;">
+                <p style="color: #C62828; font-weight: bold;">${ui('❌ Lỗi', '❌ Error')}: ${escapeHtml(error.message)}</p>
+                <button onclick="loadEmails(1)" class="btn-primary" style="margin-top: 10px;">${ui('🔄 Thử lại', '🔄 Try again')}</button>
+            </div>
+        `;
     }
 }
 
@@ -4597,7 +4611,7 @@ async function generateDailyReport() {
         });
 
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            throw new Error(await apiErrorMessage(response, `HTTP ${response.status}: ${response.statusText}`));
         }
 
         const data = await response.json();
