@@ -10,6 +10,7 @@ from models.cache import Cache
 from models.history import History
 from models.schedule import Schedule
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
+from utils.google_service_cache import get_cached_service
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -18,13 +19,13 @@ logger = logging.getLogger(__name__)
 calendar_bp = Blueprint('calendar', __name__, url_prefix='/api/calendar')
 
 def _load_calendar_service(user_id):
-    """Return CalendarService instance if credentials token exists."""
+    """Return a cached CalendarService instance if credentials token exists."""
     if not user_id or user_id == 'default':
         return None
     token_file = get_user_token_file(user_id)
     if os.path.exists(token_file):
         try:
-            return CalendarService(token_file=token_file)
+            return get_cached_service(token_file, lambda: CalendarService(token_file=token_file))
         except Exception as e:
             logger.error(f"Error creating CalendarService: {e}")
     return None

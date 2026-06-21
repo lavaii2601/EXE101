@@ -1112,9 +1112,9 @@ function formatQuickScheduleTime(schedule) {
 }
 
 function flattenWeekSchedules(days) {
-    return (days || [])
+    return dedupeSchedules((days || [])
         .flatMap((dayEvents) => Array.isArray(dayEvents) ? dayEvents : [])
-        .filter((schedule) => schedule && schedule.start_time)
+        .filter((schedule) => schedule && schedule.start_time))
         .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
 }
 
@@ -3327,6 +3327,48 @@ function isSameDate(a, b) {
     return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+function scheduleFingerprint(schedule) {
+    const title = String(schedule?.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const start = new Date(schedule?.start_time || '');
+    const startKey = Number.isNaN(start.getTime())
+        ? String(schedule?.start_time || '')
+        : start.toISOString().slice(0, 16);
+    return `${title}|${startKey}`;
+}
+
+function dedupeSchedules(schedules = []) {
+    const byGoogleId = new Map();
+    const byFingerprint = new Map();
+    const result = [];
+    const priority = (schedule) => (
+        schedule?.calendar_event_id || schedule?.google_event_id || schedule?.source === 'synced'
+            ? 2
+            : schedule?.source === 'google' ? 1 : 0
+    );
+
+    schedules.forEach((schedule) => {
+        if (!schedule) return;
+        const googleId = schedule.calendar_event_id || schedule.google_event_id || '';
+        const fingerprint = scheduleFingerprint(schedule);
+        const existing = (googleId && byGoogleId.get(googleId)) || byFingerprint.get(fingerprint);
+        if (!existing) {
+            result.push(schedule);
+            if (googleId) byGoogleId.set(googleId, schedule);
+            byFingerprint.set(fingerprint, schedule);
+            return;
+        }
+
+        if (priority(schedule) > priority(existing)) {
+            const index = result.indexOf(existing);
+            if (index >= 0) result[index] = schedule;
+            if (googleId) byGoogleId.set(googleId, schedule);
+            byFingerprint.set(fingerprint, schedule);
+        }
+    });
+
+    return result;
+}
+
 async function loadWeekSchedule(options = {}) {
     const headerRow = document.getElementById('weekTableHeader');
     const tableBody = document.getElementById('weekTableBody');
@@ -3374,7 +3416,9 @@ async function loadWeekSchedule(options = {}) {
             return;
         }
 
-        const days = Array.isArray(data.days) ? data.days : [];
+        const days = (Array.isArray(data.days) ? data.days : []).map((dayEvents) =>
+            dedupeSchedules(Array.isArray(dayEvents) ? dayEvents : [])
+        );
         const eventHours = Array.from(new Set(
             days
                 .flatMap((dayEvents) => Array.isArray(dayEvents) ? dayEvents : [])

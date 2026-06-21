@@ -14,6 +14,7 @@ from models.cache import Cache
 from models.schedule import Schedule
 from models.history import History
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
+from utils.google_service_cache import get_cached_service
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -61,13 +62,13 @@ def _compute_end_time(start_time, end_time, duration_minutes):
     return (start_dt + timedelta(minutes=duration)).isoformat()
 
 def _load_calendar_service(user_id):
-    """Return CalendarService instance if credentials token exists."""
+    """Return a cached CalendarService instance if credentials token exists."""
     if not user_id or user_id == 'default':
         return None
     token_file = get_user_token_file(user_id)
     if os.path.exists(token_file):
         try:
-            return CalendarService(token_file=token_file)
+            return get_cached_service(token_file, lambda: CalendarService(token_file=token_file))
         except Exception as e:
             logger.warning(f"Error creating CalendarService: {e}")
     return None
@@ -175,33 +176,29 @@ def create_schedule():
             from threading import Thread
             def _bg():
                 try:
-                    token_file = get_user_token_file(user_id)
-                    if os.path.exists(token_file):
-                        # call internal sync function directly to avoid HTTP
-                        from services.calendar_service import CalendarService
-                        schedule = Schedule.get_by_id(schedule_id, db_path=db_path)
-                        cal = CalendarService(token_file=token_file)
-                        if cal and getattr(cal, 'service', None):
-                            if schedule.get('calendar_event_id'):
-                                cal.update_event(
-                                    event_id=schedule.get('calendar_event_id'),
-                                    title=schedule.get('title'),
-                                    description=schedule.get('description'),
-                                    start_time=schedule.get('start_time'),
-                                    end_time=schedule.get('end_time'),
-                                    attendees=[a.strip() for a in (schedule.get('attendees') or '').split(',') if a.strip()]
-                                )
-                            else:
-                                event_id = cal.create_event(
-                                    title=schedule.get('title'),
-                                    description=schedule.get('description'),
-                                    start_time=schedule.get('start_time'),
-                                    end_time=schedule.get('end_time'),
-                                    attendees=[a.strip() for a in (schedule.get('attendees') or '').split(',') if a.strip()]
-                                )
-                                if event_id:
-                                    Schedule.update(schedule_id, calendar_event_id=event_id, db_path=db_path)
-                                    _clear_schedule_cache(db_path)
+                    schedule = Schedule.get_by_id(schedule_id, db_path=db_path)
+                    cal = _load_calendar_service(user_id)
+                    if cal and getattr(cal, 'service', None):
+                        if schedule.get('calendar_event_id'):
+                            cal.update_event(
+                                event_id=schedule.get('calendar_event_id'),
+                                title=schedule.get('title'),
+                                description=schedule.get('description'),
+                                start_time=schedule.get('start_time'),
+                                end_time=schedule.get('end_time'),
+                                attendees=[a.strip() for a in (schedule.get('attendees') or '').split(',') if a.strip()]
+                            )
+                        else:
+                            event_id = cal.create_event(
+                                title=schedule.get('title'),
+                                description=schedule.get('description'),
+                                start_time=schedule.get('start_time'),
+                                end_time=schedule.get('end_time'),
+                                attendees=[a.strip() for a in (schedule.get('attendees') or '').split(',') if a.strip()]
+                            )
+                            if event_id:
+                                Schedule.update(schedule_id, calendar_event_id=event_id, db_path=db_path)
+                                _clear_schedule_cache(db_path)
                 except Exception:
                     pass
             Thread(target=_bg, daemon=True).start()
@@ -267,6 +264,46 @@ def _event_fingerprint(title, start_time):
     return f'{normalized_title}|{normalized_start}'
 
 
+def _schedule_fingerprint(schedule):
+    return _event_fingerprint(schedule.get('title'), schedule.get('start_time'))
+
+
+def _dedupe_schedule_items(schedules):
+    """Return one display item for duplicate local/Google-backed copies."""
+    by_google_id = {}
+    by_fingerprint = {}
+    result = []
+
+    def priority(item):
+        if item.get('calendar_event_id') or item.get('google_event_id'):
+            return 2
+        if item.get('source') == 'google':
+            return 1
+        return 0
+
+    for item in schedules:
+        google_id = item.get('calendar_event_id') or item.get('google_event_id') or ''
+        fingerprint = _schedule_fingerprint(item)
+        existing = by_google_id.get(google_id) if google_id else None
+        if not existing:
+            existing = by_fingerprint.get(fingerprint)
+        if not existing:
+            result.append(item)
+            if google_id:
+                by_google_id[google_id] = item
+            by_fingerprint[fingerprint] = item
+            continue
+
+        if priority(item) > priority(existing):
+            index = result.index(existing)
+            result[index] = item
+            if google_id:
+                by_google_id[google_id] = item
+            by_fingerprint[fingerprint] = item
+
+    return result
+
+
 def _prune_expired_google_backed_schedules(db_path):
     """Keep DB schedule summaries lean; Google remains the source of history."""
     try:
@@ -277,6 +314,31 @@ def _prune_expired_google_backed_schedules(db_path):
         return deleted
     except Exception:
         logger.debug("Could not prune expired schedules", exc_info=True)
+        return 0
+
+
+def _prune_local_duplicates_for_google_events(db_path):
+    """Remove stale local copies once an equivalent Google-backed schedule exists."""
+    try:
+        schedules = Schedule.get_all(limit=1000, db_path=db_path)
+        google_backed_fingerprints = {
+            _schedule_fingerprint(schedule)
+            for schedule in schedules
+            if schedule.get('calendar_event_id')
+        }
+        deleted = 0
+        for schedule in schedules:
+            if schedule.get('calendar_event_id'):
+                continue
+            if _schedule_fingerprint(schedule) in google_backed_fingerprints:
+                if Schedule.delete(schedule.get('id'), db_path=db_path):
+                    deleted += 1
+        if deleted:
+            _clear_schedule_cache(db_path)
+            logger.info("Pruned %s duplicate local schedules after Google sync", deleted)
+        return deleted
+    except Exception:
+        logger.debug("Could not prune duplicate local schedules", exc_info=True)
         return 0
 
 
@@ -307,26 +369,44 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
         if not event_id:
             continue
         existing_schedule = Schedule.get_by_calendar_event_id(event_id, db_path=db_path)
+        event_payload = {
+            'title': event.get('title') or 'Untitled',
+            'description': event.get('description') or '',
+            'start_time': event.get('start'),
+            'end_time': event.get('end'),
+            'attendees': ','.join(event.get('attendees') or []),
+            'location': event.get('location') or '',
+        }
         if existing_schedule:
             Schedule.update(
                 existing_schedule.get('id'),
-                title=event.get('title') or 'Untitled',
-                description=event.get('description') or '',
-                start_time=event.get('start'),
-                end_time=event.get('end'),
-                attendees=','.join(event.get('attendees') or []),
-                location=event.get('location') or '',
+                **event_payload,
                 db_path=db_path
             )
             continue
+
+        event_fingerprint = _event_fingerprint(event_payload['title'], event_payload['start_time'])
+        matching_local = next((
+            schedule for schedule in Schedule.get_all(limit=1000, db_path=db_path)
+            if not schedule.get('calendar_event_id') and _schedule_fingerprint(schedule) == event_fingerprint
+        ), None)
+        if matching_local:
+            Schedule.update(
+                matching_local.get('id'),
+                **event_payload,
+                calendar_event_id=event_id,
+                db_path=db_path
+            )
+            continue
+
         Schedule.create(
-            title=event.get('title') or 'Untitled',
-            description=event.get('description') or '',
-            start_time=event.get('start'),
-            end_time=event.get('end'),
-            attendees=','.join(event.get('attendees') or []),
+            title=event_payload['title'],
+            description=event_payload['description'],
+            start_time=event_payload['start_time'],
+            end_time=event_payload['end_time'],
+            attendees=event_payload['attendees'],
             email_body='',
-            location=event.get('location') or '',
+            location=event_payload['location'],
             calendar_event_id=event_id,
             db_path=db_path
         )
@@ -347,6 +427,7 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
             logger.info(f"Removed local schedule for deleted Google event: {calendar_event_id}")
 
     _prune_expired_google_backed_schedules(db_path)
+    _prune_local_duplicates_for_google_events(db_path)
     _clear_schedule_cache(db_path)
     return created_count
 
@@ -486,6 +567,7 @@ def get_unified_schedules():
             except Exception as e:
                 logger.warning(f"Failed to merge Google Calendar events: {e}")
 
+        local_schedules = _dedupe_schedule_items(local_schedules)
         local_schedules.sort(
             key=lambda item: _parse_dt(item.get('start_time')) or datetime.max
         )
@@ -540,6 +622,7 @@ def get_week_schedules():
         if 0 <= day_index < 7:
             days[day_index].append(schedule)
 
+    days = [_dedupe_schedule_items(day_schedules) for day_schedules in days]
     for day_schedules in days:
         day_schedules.sort(key=lambda s: s.get('start_time') or '')
 

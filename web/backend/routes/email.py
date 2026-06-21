@@ -30,6 +30,7 @@ from config import Config
 from config import GMAIL_CLIENT_ID_KEYS, GMAIL_CLIENT_SECRET_KEYS, GMAIL_CREDENTIALS_JSON_KEYS
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from utils.security import issue_mobile_token
+from utils.google_service_cache import get_cached_service, invalidate_cached_service
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -499,13 +500,13 @@ def _fetch_google_people_profile(creds):
 
 
 def _load_gmail_service(user_id):
-    """Return GmailService instance if credentials token exists."""
+    """Return a cached GmailService instance if credentials token exists."""
     if not user_id or user_id == 'default':
         return None
     token_file = get_user_token_file(user_id)
     if os.path.exists(token_file):
         try:
-            return GmailService(token_file=token_file)
+            return get_cached_service(token_file, lambda: GmailService(token_file=token_file))
         except Exception as e:
             print(f"Error creating GmailService: {e}")
     return None
@@ -520,6 +521,7 @@ def _clear_oauth_state(user_id):
             os.remove(token_file)
         except Exception as e:
             print(f"Error deleting token file: {e}")
+    invalidate_cached_service(token_file)
 
     # Clear oauth session keys
     session.pop('oauth_state', None)
