@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, Modal, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
 import Card from '../components/Card';
@@ -34,8 +34,6 @@ export default function ScheduleScreen() {
   const [editForm, setEditForm] = useState(initialForm);
   const [loading, setLoading] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-  const initialCalendarSyncDone = useRef(false);
-
   const loadSchedules = useCallback(async (options = {}) => {
     setLoading(true);
     try {
@@ -84,11 +82,6 @@ export default function ScheduleScreen() {
   }, []);
 
   useEffect(() => {
-    if (!initialCalendarSyncDone.current) {
-      initialCalendarSyncDone.current = true;
-      loadSchedules({ syncGoogle: true, silentSync: true });
-      return;
-    }
     loadSchedules();
   }, [loadSchedules]);
   useEffect(() => { loadMeetingSuggestions(); }, [loadMeetingSuggestions]);
@@ -222,7 +215,7 @@ export default function ScheduleScreen() {
       });
       setEditingSchedule(null);
       setEditForm(initialForm);
-      await loadSchedules();
+      await loadSchedules({ syncGoogle: true, silentSync: true });
       Alert.alert('Đã cập nhật lịch');
     } catch (error) {
       Alert.alert('Không cập nhật được lịch', error.message);

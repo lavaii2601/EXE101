@@ -33,7 +33,6 @@ let emailSearchTimer;
 
 // State
 let currentPage = 'chat';
-let initialScheduleSyncDone = false;
 let currentEmailPage = 1;
 let currentWeekStart = getMonday(new Date());
 let currentDetailEmail = null;
@@ -659,7 +658,8 @@ async function initApp() {
 
         // Calendar buttons
     const refreshCalendarBtn = document.getElementById('refreshCalendarBtn');
-    if (refreshCalendarBtn) {
+    if (refreshCalendarBtn && refreshCalendarBtn.dataset.refreshBound !== 'true') {
+        refreshCalendarBtn.dataset.refreshBound = 'true';
         refreshCalendarBtn.addEventListener('click', () => {
             console.log('🔄 Refreshing calendar events');
             scheduleMeetingSuggestionRefresh({ scan: false, delay: 0 });
@@ -1448,7 +1448,8 @@ function setupEventListeners() {
     if (calendarEventForm) calendarEventForm.addEventListener('submit', handleCalendarEventSubmit);
     
         const refreshCalendarBtn = document.getElementById('refreshCalendarBtn');
-        if (refreshCalendarBtn) {
+        if (refreshCalendarBtn && refreshCalendarBtn.dataset.refreshBound !== 'true') {
+            refreshCalendarBtn.dataset.refreshBound = 'true';
             refreshCalendarBtn.addEventListener('click', () => {
                 console.log('🔄 Refreshing calendar events');
                 scheduleMeetingSuggestionRefresh({ scan: false, delay: 0 });
@@ -1637,14 +1638,8 @@ async function handlePageChange(btn) {
             .then(() => loadMeetingSuggestions())
             .catch(err => console.error('Email load error:', err));
     } else if (page === 'schedule') {
-        if (!initialScheduleSyncDone) {
-            initialScheduleSyncDone = true;
-            refreshCalendarScheduleData({ silent: true, continueOnError: true })
-                .catch(err => console.error('Initial schedule sync error:', err));
-        } else {
-            loadWeekSchedule().catch(err => console.error('Week schedule load error:', err));
-            loadSchedules().catch(err => console.error('Schedule load error:', err));
-        }
+        loadWeekSchedule().catch(err => console.error('Week schedule load error:', err));
+        loadSchedules().catch(err => console.error('Schedule load error:', err));
     } else if (page === 'history') {
         loadActivityHistory().catch(err => console.error('History load error:', err));
     } else if (page === 'settings') {
@@ -3960,12 +3955,7 @@ async function handleEditScheduleSubmit(e) {
         if (response.ok && data.success) {
             showNotification(ui('✓ Đã cập nhật lịch hẹn', '✓ Appointment updated'), 'success');
             closeEditScheduleModal();
-            invalidateScheduleCaches();
-            await Promise.all([
-                loadSchedules(),
-                loadWeekSchedule()
-            ]);
-            refreshQuickScheduleSummary();
+            await refreshCalendarScheduleData({ silent: true, continueOnError: true });
         } else {
             showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể cập nhật lịch hẹn', 'Unable to update appointment')), 'error');
         }
