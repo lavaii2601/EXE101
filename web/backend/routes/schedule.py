@@ -158,6 +158,24 @@ def _sync_schedule_to_calendar_async(user_id, schedule_id, db_path):
     return True
 
 
+def _delete_calendar_event_async(user_id, calendar_event_id, db_path):
+    if not calendar_event_id or not _has_calendar_token(user_id):
+        return False
+
+    def _bg():
+        try:
+            calendar_service = _load_calendar_service(user_id)
+            if calendar_service:
+                calendar_service.delete_event(event_id=calendar_event_id)
+            CalendarEvent.delete_google_event(user_id, calendar_event_id, db_path=db_path)
+            _clear_schedule_cache(db_path)
+        except Exception:
+            logger.debug("Background calendar event delete failed for %s", calendar_event_id, exc_info=True)
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return True
+
+
 @schedule_bp.route('/create', methods=['POST'])
 def create_schedule():
     """Create new schedule and sync to Google Calendar"""
@@ -916,7 +934,7 @@ def update_schedule(schedule_id):
 
 @schedule_bp.route('/<int:schedule_id>', methods=['DELETE'])
 def delete_schedule(schedule_id):
-    """Delete schedule and Google Calendar event"""
+    """Delete schedule locally immediately and remove Google Calendar event in the background."""
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
     
@@ -926,6 +944,27 @@ def delete_schedule(schedule_id):
         return jsonify({'error': 'Schedule not found'}), 404
     
     try:
+        calendar_event_id = schedule.get('calendar_event_id')
+        Schedule.delete(schedule_id, db_path=db_path)
+        if calendar_event_id:
+            CalendarEvent.delete_google_event(user_id, calendar_event_id, db_path=db_path)
+        _clear_schedule_cache(db_path)
+        calendar_delete_pending = _delete_calendar_event_async(user_id, calendar_event_id, db_path)
+
+        History.create(
+            f"Xoa lich hen: {schedule.get('title', '')}",
+            f"Lich hen da bi xoa" + (f" (Google Calendar event queued for delete: {calendar_event_id})" if calendar_event_id else ""),
+            action_type='schedule_deleted',
+            related_id=schedule_id,
+            db_path=db_path
+        )
+
+        return jsonify({
+            'success': True,
+            'message': f"Da xoa lich hen: {schedule.get('title', '')}",
+            'calendar_delete_pending': calendar_delete_pending
+        })
+
         # Delete from Google Calendar if event exists
         calendar_event_id = schedule.get('calendar_event_id')
         if calendar_event_id:

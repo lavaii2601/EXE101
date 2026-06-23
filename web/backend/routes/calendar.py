@@ -1,12 +1,14 @@
 import os
 import sys
 import logging
+import threading
 from flask import Blueprint, request, jsonify
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.calendar_service import CalendarService
 from models.cache import Cache
+from models.calendar_event import CalendarEvent
 from models.history import History
 from models.schedule import Schedule
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
@@ -36,6 +38,24 @@ def _clear_schedule_cache(db_path):
         Cache.clear_pattern('schedule:%', db_path=db_path)
     except Exception:
         logger.debug("Could not clear schedule cache", exc_info=True)
+
+
+def _delete_google_event_async(user_id, event_id, db_path):
+    if not event_id:
+        return False
+
+    def _bg():
+        try:
+            service = _load_calendar_service(user_id)
+            if service:
+                service.delete_event(event_id=event_id)
+            CalendarEvent.delete_google_event(user_id, event_id, db_path=db_path)
+            _clear_schedule_cache(db_path)
+        except Exception:
+            logger.debug("Background Google Calendar delete failed for %s", event_id, exc_info=True)
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return True
 
 
 @calendar_bp.route('/events', methods=['GET'])
@@ -189,16 +209,33 @@ def update_calendar_event(event_id):
 
 @calendar_bp.route('/delete/<event_id>', methods=['DELETE'])
 def delete_calendar_event(event_id):
-    """Delete a calendar event"""
+    """Delete a calendar event locally immediately and remove it from Google in the background."""
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
     logger.info(f"delete_calendar_event: event_id = {event_id}, user_id = {user_id}")
-    
-    service = _load_calendar_service(user_id)
-    if not service:
-        return jsonify({'error': 'not_authenticated'}), 401
-    
+
     try:
+        local_schedule = Schedule.get_by_calendar_event_id(event_id, db_path=db_path)
+        if local_schedule:
+            Schedule.delete(local_schedule.get('id'), db_path=db_path)
+        CalendarEvent.delete_google_event(user_id, event_id, db_path=db_path)
+        _clear_schedule_cache(db_path)
+        calendar_delete_pending = _delete_google_event_async(user_id, event_id, db_path)
+
+        History.create(
+            f"Xoa su kien Google Calendar: {event_id}",
+            f"Su kien ID queued for delete: {event_id}",
+            action_type='calendar_event_deleted',
+            related_id=event_id,
+            db_path=db_path
+        )
+
+        return jsonify({
+            'success': True,
+            'message': f'Calendar event "{event_id}" delete queued',
+            'calendar_delete_pending': calendar_delete_pending
+        })
+
         success = service.delete_event(event_id=event_id)
         
         if not success:
