@@ -275,6 +275,42 @@ def _google_sync_would_overwrite_recent_edit(schedule, event_payload):
     return starts_differ or ends_differ
 
 
+def _normalize_compare_text(value):
+    return str(value or '').strip()
+
+
+def _normalize_compare_attendees(value):
+    if isinstance(value, list):
+        attendees = value
+    else:
+        attendees = str(value or '').split(',')
+    return sorted({str(item or '').strip().lower() for item in attendees if str(item or '').strip()})
+
+
+def _datetimes_equal(left, right, tolerance_seconds=60):
+    left_dt = _parse_dt(left)
+    right_dt = _parse_dt(right)
+    if not left_dt and not right_dt:
+        return True
+    if not left_dt or not right_dt:
+        return False
+    return abs((left_dt - right_dt).total_seconds()) <= tolerance_seconds
+
+
+def _schedule_matches_google_payload(schedule, event_payload):
+    if not schedule:
+        return False
+    text_fields = ('title', 'description', 'location')
+    for field in text_fields:
+        if _normalize_compare_text(schedule.get(field)) != _normalize_compare_text(event_payload.get(field)):
+            return False
+    if not _datetimes_equal(schedule.get('start_time'), event_payload.get('start_time')):
+        return False
+    if not _datetimes_equal(schedule.get('end_time'), event_payload.get('end_time')):
+        return False
+    return _normalize_compare_attendees(schedule.get('attendees')) == _normalize_compare_attendees(event_payload.get('attendees'))
+
+
 def _dedupe_schedule_items(schedules):
     """Return one display item for duplicate local/Google-backed copies."""
     by_google_id = {}
@@ -380,6 +416,9 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
         if not schedule.get('calendar_event_id')
     }
     created_count = 0
+    updated_count = 0
+    deleted_count = 0
+    unchanged_count = 0
 
     for event in gcal_events:
         event_id = event.get('id')
@@ -400,12 +439,17 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
                     "Skipped stale Google Calendar overwrite for recently edited schedule %s",
                     existing_schedule.get('id')
                 )
+                unchanged_count += 1
+                continue
+            if _schedule_matches_google_payload(existing_schedule, event_payload):
+                unchanged_count += 1
                 continue
             Schedule.update(
                 existing_schedule.get('id'),
                 **event_payload,
                 db_path=db_path
             )
+            updated_count += 1
             continue
 
         event_fingerprint = _event_fingerprint(event_payload['title'], event_payload['start_time'])
@@ -418,6 +462,7 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
                 db_path=db_path
             )
             schedules_by_google_id[event_id] = {**matching_local, **event_payload, 'calendar_event_id': event_id}
+            updated_count += 1
             continue
 
         Schedule.create(
@@ -445,12 +490,21 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
         exists = calendar_service.event_exists(calendar_event_id)
         if exists is False:
             Schedule.delete(schedule.get('id'), db_path=db_path)
+            deleted_count += 1
             logger.info(f"Removed local schedule for deleted Google event: {calendar_event_id}")
 
-    _prune_expired_google_backed_schedules(db_path)
-    _prune_local_duplicates_for_google_events(db_path)
-    _clear_schedule_cache(db_path)
-    return created_count
+    pruned_count = _prune_expired_google_backed_schedules(db_path)
+    duplicate_deleted_count = _prune_local_duplicates_for_google_events(db_path)
+    changed_count = created_count + updated_count + deleted_count + pruned_count + duplicate_deleted_count
+    if changed_count:
+        _clear_schedule_cache(db_path)
+    return {
+        'created_count': created_count,
+        'updated_count': updated_count,
+        'deleted_count': deleted_count + pruned_count + duplicate_deleted_count,
+        'unchanged_count': unchanged_count,
+        'changed_count': changed_count,
+    }
 
 
 def _sync_google_week_events(user_id, db_path, monday, week_end):
@@ -501,7 +555,7 @@ def sync_schedules():
         now = datetime.now()
         sync_days = min(max(request.args.get('days', _FULL_SYNC_DAYS, type=int), 1), 365)
         sync_end = now + timedelta(days=sync_days)
-        created_count = _sync_google_events_range(
+        sync_result = _sync_google_events_range(
             user_id,
             db_path,
             now.replace(hour=0, minute=0, second=0, microsecond=0),
@@ -510,7 +564,7 @@ def sync_schedules():
         )
         return jsonify({
             'success': True,
-            'created_count': created_count,
+            **sync_result,
             'sync_start': now.isoformat(),
             'sync_end': sync_end.isoformat(),
             'sync_days': sync_days,

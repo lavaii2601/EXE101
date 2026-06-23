@@ -90,7 +90,10 @@ class CalendarService:
                     'end': event.get('end', {}).get('dateTime', event.get('end', {}).get('date', '')),
                     'attendees': [a.get('email') for a in event.get('attendees', [])],
                     'location': event.get('location', ''),
-                    'status': event.get('status', 'confirmed')
+                    'status': event.get('status', 'confirmed'),
+                    'updated': event.get('updated', ''),
+                    'etag': event.get('etag', ''),
+                    'html_link': event.get('htmlLink', '')
                 })
             
             return formatted_events
