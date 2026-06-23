@@ -11,8 +11,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from services.schedule_service import ScheduleService
 from services.calendar_service import CalendarService
 from models.cache import Cache
+from models.calendar_event import CalendarEvent
 from models.schedule import Schedule, LOCAL_TZ
 from models.history import History
+from models.sync_job import SyncJob
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from utils.google_service_cache import get_cached_service
 
@@ -398,7 +400,13 @@ def _unified_schedule_item(schedule):
 def _sync_google_events_range(user_id, db_path, start_time, end_time, max_results=250):
     calendar_service = _load_calendar_service(user_id)
     if not calendar_service:
-        return 0
+        return {
+            'created_count': 0,
+            'updated_count': 0,
+            'deleted_count': 0,
+            'unchanged_count': 0,
+            'changed_count': 0,
+        }
 
     time_min = start_time.replace(tzinfo=LOCAL_TZ).isoformat()
     time_max = end_time.replace(tzinfo=LOCAL_TZ).isoformat()
@@ -425,6 +433,9 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
         if not event_id:
             continue
         existing_schedule = schedules_by_google_id.get(event_id)
+        if existing_schedule and CalendarEvent.google_event_unchanged(user_id, event, db_path=db_path):
+            unchanged_count += 1
+            continue
         event_payload = {
             'title': event.get('title') or 'Untitled',
             'description': event.get('description') or '',
@@ -442,6 +453,7 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
                 unchanged_count += 1
                 continue
             if _schedule_matches_google_payload(existing_schedule, event_payload):
+                CalendarEvent.upsert_google_event(user_id, event, schedule_id=existing_schedule.get('id'), db_path=db_path)
                 unchanged_count += 1
                 continue
             Schedule.update(
@@ -449,6 +461,7 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
                 **event_payload,
                 db_path=db_path
             )
+            CalendarEvent.upsert_google_event(user_id, event, schedule_id=existing_schedule.get('id'), db_path=db_path)
             updated_count += 1
             continue
 
@@ -462,10 +475,11 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
                 db_path=db_path
             )
             schedules_by_google_id[event_id] = {**matching_local, **event_payload, 'calendar_event_id': event_id}
+            CalendarEvent.upsert_google_event(user_id, event, schedule_id=matching_local.get('id'), db_path=db_path)
             updated_count += 1
             continue
 
-        Schedule.create(
+        schedule_id = Schedule.create(
             title=event_payload['title'],
             description=event_payload['description'],
             start_time=event_payload['start_time'],
@@ -476,6 +490,7 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
             calendar_event_id=event_id,
             db_path=db_path
         )
+        CalendarEvent.upsert_google_event(user_id, event, schedule_id=schedule_id, db_path=db_path)
         created_count += 1
 
     for schedule in local_schedules:
@@ -490,6 +505,7 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
         exists = calendar_service.event_exists(calendar_event_id)
         if exists is False:
             Schedule.delete(schedule.get('id'), db_path=db_path)
+            CalendarEvent.delete_google_event(user_id, calendar_event_id, db_path=db_path)
             deleted_count += 1
             logger.info(f"Removed local schedule for deleted Google event: {calendar_event_id}")
 
@@ -555,13 +571,21 @@ def sync_schedules():
         now = datetime.now()
         sync_days = min(max(request.args.get('days', _FULL_SYNC_DAYS, type=int), 1), 365)
         sync_end = now + timedelta(days=sync_days)
+        max_results = min(max(request.args.get('max_results', sync_days * 8, type=int), 50), 2500)
+        job_id = SyncJob.start(user_id, 'google_calendar_sync', {
+            'sync_days': sync_days,
+            'max_results': max_results,
+            'sync_start': now.isoformat(),
+            'sync_end': sync_end.isoformat(),
+        }, db_path=db_path)
         sync_result = _sync_google_events_range(
             user_id,
             db_path,
             now.replace(hour=0, minute=0, second=0, microsecond=0),
             sync_end,
-            max_results=min(max(request.args.get('max_results', sync_days * 8, type=int), 50), 2500)
+            max_results=max_results
         )
+        SyncJob.finish(job_id, 'success', sync_result)
         return jsonify({
             'success': True,
             **sync_result,
@@ -571,6 +595,10 @@ def sync_schedules():
         })
     except Exception as e:
         logger.error(f"Error syncing schedules: {e}", exc_info=True)
+        try:
+            SyncJob.finish(locals().get('job_id'), 'failed', error_message=str(e))
+        except Exception:
+            logger.debug("Could not mark sync job as failed", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 

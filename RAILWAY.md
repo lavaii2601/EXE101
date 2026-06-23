@@ -1,7 +1,8 @@
 # Railway Deployment
 
 Railway/Railpack deploys from the repository root, while the Flask app lives in
-`web/backend/app.py`. The `railpack.json` file sets the production start command.
+`web/backend/app.py`. The `railpack.json` file applies the PostgreSQL schema and
+migrations automatically before starting Gunicorn.
 
 ## Required variables
 
@@ -28,6 +29,10 @@ You can use either:
 - or `GMAIL_CREDENTIALS_JSON` with the full Google OAuth client JSON on one line
 
 After changing variables, redeploy the Railway service.
+
+On each deploy, `python scripts/deploy_postgres_schema.py` runs first. It is
+idempotent: existing tables/data are preserved, and only missing schema pieces
+or safe migrations are applied.
 
 To verify the deployed service can see the variables, open:
 

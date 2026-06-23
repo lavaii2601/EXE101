@@ -221,6 +221,8 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     attendees JSONB NOT NULL DEFAULT '[]'::JSONB,
     status TEXT,
     html_link TEXT,
+    etag TEXT,
+    google_updated_at TIMESTAMPTZ,
     raw_event JSONB NOT NULL DEFAULT '{}'::JSONB,
 
     fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -373,6 +375,10 @@ ALTER TABLE chat_messages
 ALTER TABLE history
     ADD COLUMN IF NOT EXISTS chat_session_id UUID REFERENCES chat_sessions(id) ON DELETE SET NULL;
 
+ALTER TABLE calendar_events
+    ADD COLUMN IF NOT EXISTS etag TEXT,
+    ADD COLUMN IF NOT EXISTS google_updated_at TIMESTAMPTZ;
+
 UPDATE chat_sessions
 SET retention_days = 90
 WHERE retention_days IS NULL;
@@ -408,6 +414,8 @@ CREATE INDEX IF NOT EXISTS idx_schedules_calendar_event ON schedules (user_id, c
 
 CREATE INDEX IF NOT EXISTS idx_calendar_events_user_start ON calendar_events (user_id, start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_calendar_events_external ON calendar_events (user_id, provider, external_event_id);
+CREATE INDEX IF NOT EXISTS idx_calendar_events_user_etag ON calendar_events (user_id, provider, external_event_id, etag);
+CREATE INDEX IF NOT EXISTS idx_calendar_events_google_updated ON calendar_events (user_id, google_updated_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_meeting_suggestions_user_status ON meeting_suggestions (user_id, status, COALESCE(start_time, created_at));
 CREATE INDEX IF NOT EXISTS idx_meeting_suggestions_schedule ON meeting_suggestions (schedule_id);

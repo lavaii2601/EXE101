@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.railpack.com",
   "deploy": {
-    "startCommand": "gunicorn --chdir web/backend app:app --bind 0.0.0.0:$PORT --workers 1 --worker-class gthread --threads 4 --timeout 120"
+    "startCommand": "python scripts/deploy_postgres_schema.py && gunicorn --chdir web/backend app:app --bind 0.0.0.0:$PORT --workers 1 --worker-class gthread --threads 4 --timeout 120"
   }
 }
