@@ -8,6 +8,7 @@ import Screen from '../components/Screen';
 import SegmentedControl from '../components/SegmentedControl';
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
+import { filterNewMeetingSuggestions, setPendingAgentNotice } from '../state/agentNotices';
 
 const modes = [
   { label: 'Lịch tổng hợp', value: 'list' },
@@ -73,7 +74,9 @@ export default function ScheduleScreen() {
     setSuggestionsLoading(true);
     try {
       const data = await apiGet('/email/meeting-suggestions');
-      setMeetingSuggestions(data.suggestions || []);
+      const suggestions = data.suggestions || [];
+      setMeetingSuggestions(suggestions);
+      notifyNewMeetingSuggestions(suggestions);
     } catch (error) {
       if (error.status !== 401) Alert.alert('Lỗi tải gợi ý lịch', error.message);
     } finally {
@@ -130,7 +133,9 @@ export default function ScheduleScreen() {
     setSuggestionsLoading(true);
     try {
       const data = await apiPost('/email/meeting-suggestions/scan');
-      setMeetingSuggestions(data.suggestions || []);
+      const suggestions = data.suggestions || [];
+      setMeetingSuggestions(suggestions);
+      notifyNewMeetingSuggestions(suggestions);
       Alert.alert('Đã quét email', `Tìm thấy ${data.count || 0} gợi ý lịch đang chờ.`);
     } catch (error) {
       Alert.alert('Không quét được email', error.message);
@@ -228,8 +233,19 @@ export default function ScheduleScreen() {
     try {
       await apiDelete(`/schedule/${schedule.local_id}`);
       await loadSchedules();
+      return true;
     } catch (error) {
       Alert.alert('Không xóa được lịch', error.message);
+    }
+    return false;
+  };
+
+  const deleteEditingSchedule = async () => {
+    if (!editingSchedule) return;
+    const deleted = await deleteSchedule(editingSchedule);
+    if (deleted) {
+      setEditingSchedule(null);
+      setEditForm(initialForm);
     }
   };
 
@@ -401,11 +417,25 @@ export default function ScheduleScreen() {
             <Field label="Thời lượng (phút)" value={editForm.duration_minutes} onChangeText={(v) => setEditField('duration_minutes', v)} placeholder="60" keyboardType="number-pad" />
             <Field label="Địa điểm"         value={editForm.location}         onChangeText={(v) => setEditField('location', v)}         placeholder="Phòng họp / online" />
             <Field label="Người tham dự"    value={editForm.attendees}        onChangeText={(v) => setEditField('attendees', v)}        placeholder="a@example.com, b@example.com" />
-            <Button title="Lưu thay đổi" onPress={updateSchedule} loading={loading} />
+            <View style={styles.editActions}>
+              <Button title="Xóa lịch hẹn" variant="danger" onPress={deleteEditingSchedule} loading={loading} />
+              <Button title="Lưu thay đổi" onPress={updateSchedule} loading={loading} />
+            </View>
           </Card>
         </Screen>
       </Modal>
     </>
+  );
+}
+
+function notifyNewMeetingSuggestions(suggestions) {
+  const fresh = filterNewMeetingSuggestions(suggestions);
+  if (!fresh.length) return;
+  const first = fresh[0] || {};
+  const title = first.title || first.subject || 'một email liên quan đến cuộc họp';
+  const extra = fresh.length > 1 ? ` và ${fresh.length - 1} email khác` : '';
+  setPendingAgentNotice(
+    `AI Agent phát hiện ${fresh.length} email có thể liên quan đến lịch họp: "${title}"${extra}. Mở tab Lịch để tạo lịch hoặc bỏ qua.`
   );
 }
 
@@ -550,6 +580,7 @@ function makeStyles(colors) {
     description: { marginTop: 8,  color: colors.textMuted, lineHeight: 20 },
     meta:        { marginTop: 6,  color: colors.textMuted },
     actions:     { marginTop: 12, flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+    editActions: { marginTop: 14, flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
     summaryCard: { gap: 12 },
     suggestionCard: { gap: 12 },
     summaryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },

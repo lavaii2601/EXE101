@@ -7,6 +7,7 @@ import { apiGet, apiPost } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 import { getUserMode } from '../config/userModes';
 import ModeBrief from '../components/ModeBrief';
+import { takePendingAgentNotice } from '../state/agentNotices';
 
 function mapHistoryItem(item) {
   return [
@@ -53,7 +54,16 @@ export default function ChatScreen({ userMode = 'worker' }) {
   }, []);
 
   useEffect(() => {
-    loadHistory();
+    (async () => {
+      await loadHistory();
+      const notice = takePendingAgentNotice();
+      if (notice) {
+        setMessages((current) => [
+          ...current,
+          { id: `agent-${Date.now()}`, role: 'assistant', text: notice, badge: 'AI Agent' },
+        ]);
+      }
+    })();
   }, [loadHistory]);
 
   const startNewChat = () => {
@@ -167,6 +177,7 @@ export default function ChatScreen({ userMode = 'worker' }) {
         }
         renderItem={({ item }) => (
           <View style={[styles.messageRow, item.role === 'user' && styles.messageRowUser]}>
+            {item.badge ? <Text style={styles.agentBadge}>{item.badge}</Text> : null}
             <View style={[styles.bubble, item.role === 'user' && styles.bubbleUser]}>
               <Text style={[styles.messageText, item.role === 'user' && styles.messageTextUser]}>
                 {item.text}
@@ -235,6 +246,7 @@ function makeStyles(colors) {
     list:  { padding: 16, gap: 10 },
     messageRow:     { alignItems: 'flex-start' },
     messageRowUser: { alignItems: 'flex-end' },
+    agentBadge: { color: colors.accentText, fontSize: 10, fontWeight: '900', letterSpacing: 0.5, marginBottom: 4 },
     bubble: {
       maxWidth: '86%',
       paddingHorizontal: 14,

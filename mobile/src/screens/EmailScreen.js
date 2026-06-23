@@ -49,6 +49,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
   const [summarizingId, setSummarizingId] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
+  const [cacheMiss, setCacheMiss] = useState(false);
 
   const loadAuth = useCallback(async () => {
     try {
@@ -61,13 +62,23 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
     }
   }, []);
 
-  const loadEmails = useCallback(async () => {
+  const loadEmails = useCallback(async (options = {}) => {
     setLoading(true);
     try {
+      const params = new URLSearchParams({
+        max_results: '20',
+        page: '1',
+        filter,
+        include_read: String(includeRead),
+        search: searchKeyword,
+      });
+      params.set(options.fresh ? 'fresh' : 'cache_only', 'true');
+
       const [, data] = await Promise.all([
         loadAuth(),
-        apiGet(`/email/get-unread?max_results=20&page=1&filter=${filter}&include_read=${includeRead}&search=${encodeURIComponent(searchKeyword)}`),
+        apiGet(`/email/get-unread?${params.toString()}`),
       ]);
+      setCacheMiss(Boolean(data.cache_miss));
       setEmails(data.emails || []);
     } catch (error) {
       if (error.status === 401) setEmails([]);
@@ -76,6 +87,19 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
       setLoading(false);
     }
   }, [filter, includeRead, loadAuth, searchKeyword]);
+
+  const refreshEmailsFromGmail = useCallback(async () => {
+    setLoading(true);
+    try {
+      await apiPost('/email/cache/clear');
+    } catch (error) {
+      setLoading(false);
+      Alert.alert('Không làm mới được email', error.message);
+      return;
+    }
+    await loadEmails({ fresh: true });
+    apiPost('/email/meeting-suggestions/scan').catch(() => {});
+  }, [loadEmails]);
 
   useEffect(() => { loadEmails(); }, [loadEmails]);
   useEffect(() => {
@@ -281,10 +305,20 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
         </View>
       </Card>
       {emails.length === 0 ? (
-        <EmptyState
-          title={auth?.authenticated ? 'Không tìm thấy email' : 'Cần đăng nhập Gmail'}
-          detail={searchKeyword ? `Không có kết quả cho "${searchKeyword}".` : 'Kéo xuống để làm mới hoặc đổi bộ lọc email.'}
-        />
+        cacheMiss ? (
+          <Card style={styles.cacheMissCard}>
+            <Text style={styles.cardTitle}>Chưa có email trong bộ nhớ đệm</Text>
+            <Text style={styles.muted}>
+              FlowMate mở Email bằng cache để tải nhanh. Bấm Làm mới Gmail để quét email mới nhất.
+            </Text>
+            <Button title="Làm mới Gmail" onPress={refreshEmailsFromGmail} loading={loading} style={styles.applyButton} />
+          </Card>
+        ) : (
+          <EmptyState
+            title={auth?.authenticated ? 'Không tìm thấy email' : 'Cần đăng nhập Gmail'}
+            detail={searchKeyword ? `Không có kết quả cho "${searchKeyword}".` : 'Kéo xuống để làm mới hoặc đổi bộ lọc email.'}
+          />
+        )
       ) : (
         emails.map((email) => (
           <Card
@@ -368,7 +402,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
       <Screen
         title="Email"
         refreshing={loading}
-        onRefresh={loadEmails}
+        onRefresh={refreshEmailsFromGmail}
         actions={<Button title="Gmail" variant="secondary" onPress={() => Linking.openURL('https://mail.google.com')} />}
       >
         <ModeBrief
@@ -439,6 +473,7 @@ function makeStyles(colors) {
     authRow:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
     authText: { flex: 1, minWidth: 0 },
     searchCard: { gap: 2 },
+    cacheMissCard: { gap: 8 },
     cardTitle:{ color: colors.text, fontWeight: '800' },
     muted:    { marginTop: 4, color: colors.textMuted },
     switchRow:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
