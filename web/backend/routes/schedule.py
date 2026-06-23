@@ -111,11 +111,17 @@ def _sync_schedule_to_calendar(user_id, schedule_id, schedule_payload, db_path):
                 description=schedule_payload.get('description'),
                 start_time=schedule_payload.get('start_time'),
                 end_time=schedule_payload.get('end_time'),
-                attendees=attendees or None
+                attendees=attendees,
+                location=schedule_payload.get('location', '') or ''
             )
             if success:
                 return calendar_event_id
-            logger.warning(f"Calendar update failed for schedule {schedule_id}, will try recreate")
+            logger.warning(
+                "Calendar update failed for schedule %s with existing event %s; keeping local edit without recreating",
+                schedule_id,
+                calendar_event_id,
+            )
+            return None
 
         new_event_id = calendar_service.create_event(
             title=schedule_payload.get('title'),
@@ -385,6 +391,59 @@ def _prune_local_duplicates_for_google_events(db_path):
     except Exception:
         logger.debug("Could not prune duplicate local schedules", exc_info=True)
         return 0
+
+
+def _prune_stale_duplicate_after_move(user_id, db_path, schedule_id, previous_schedule, updated_schedule):
+    previous_fingerprint = _schedule_fingerprint(previous_schedule or {})
+    updated_fingerprint = _schedule_fingerprint(updated_schedule or {})
+    if not previous_fingerprint or previous_fingerprint == updated_fingerprint:
+        return 0
+
+    previous_google_id = (previous_schedule or {}).get('calendar_event_id') or ''
+    current_google_id = (updated_schedule or {}).get('calendar_event_id') or previous_google_id
+    if not current_google_id:
+        return 0
+
+    deleted = 0
+    calendar_service = None
+    for candidate in Schedule.get_all(limit=1000, db_path=db_path):
+        candidate_id = candidate.get('id')
+        candidate_google_id = candidate.get('calendar_event_id') or ''
+        if str(candidate_id) == str(schedule_id):
+            continue
+        if not candidate_google_id or candidate_google_id == current_google_id:
+            continue
+        if _schedule_fingerprint(candidate) != previous_fingerprint:
+            continue
+
+        if Schedule.delete(candidate_id, db_path=db_path):
+            deleted += 1
+            CalendarEvent.delete_google_event(user_id, candidate_google_id, db_path=db_path)
+            try:
+                calendar_service = calendar_service or _load_calendar_service(user_id)
+                if calendar_service:
+                    calendar_service.delete_event(candidate_google_id)
+            except Exception:
+                logger.debug(
+                    "Could not delete stale duplicate Google event %s after schedule move",
+                    candidate_google_id,
+                    exc_info=True,
+                )
+
+    if deleted:
+        _clear_schedule_cache(db_path)
+        logger.info("Pruned %s stale duplicate schedules after moving schedule %s", deleted, schedule_id)
+    return deleted
+
+
+def _prune_stale_duplicate_after_move_async(user_id, db_path, schedule_id, previous_schedule, updated_schedule):
+    def _bg():
+        try:
+            _prune_stale_duplicate_after_move(user_id, db_path, schedule_id, previous_schedule, updated_schedule)
+        except Exception:
+            logger.debug("Background duplicate cleanup failed for schedule %s", schedule_id, exc_info=True)
+
+    threading.Thread(target=_bg, daemon=True).start()
 
 
 def _unified_schedule_item(schedule):
@@ -833,8 +892,10 @@ def update_schedule(schedule_id):
 
         Schedule.update(schedule_id, db_path=db_path, **update_data)
         _clear_schedule_cache(db_path)
+        updated = Schedule.get_by_id(schedule_id, db_path=db_path)
         
         calendar_sync_pending = _sync_schedule_to_calendar_async(user_id, schedule_id, db_path)
+        _prune_stale_duplicate_after_move_async(user_id, db_path, schedule_id, schedule, updated)
         
         History.create(
             f"Chỉnh sửa lịch hẹn: {schedule.get('title', '')}",
@@ -844,7 +905,6 @@ def update_schedule(schedule_id):
             db_path=db_path
         )
         
-        updated = Schedule.get_by_id(schedule_id, db_path=db_path)
         return jsonify({
             'success': True,
             'schedule': updated,

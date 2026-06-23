@@ -173,7 +173,7 @@ class CalendarService:
             logger.error(f"Error creating calendar event: {str(e)}")
             return None
     
-    def update_event(self, event_id, title=None, description=None, start_time=None, end_time=None, attendees=None):
+    def update_event(self, event_id, title=None, description=None, start_time=None, end_time=None, attendees=None, location=None):
         """Update an existing calendar event"""
         try:
             if not self.service:
@@ -189,8 +189,10 @@ class CalendarService:
             # Update fields
             if title:
                 event['summary'] = title
-            if description:
+            if description is not None:
                 event['description'] = description
+            if location is not None:
+                event['location'] = location
             if start_time:
                 if isinstance(start_time, str):
                     start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
@@ -219,7 +221,7 @@ class CalendarService:
                 }
                 if CALENDAR_TIMEZONE:
                     event['end']['timeZone'] = CALENDAR_TIMEZONE
-            if attendees:
+            if attendees is not None:
                 event['attendees'] = [{'email': email} for email in attendees]
             
             logger.info(f"Updating calendar event: {event_id}")

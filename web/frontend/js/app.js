@@ -4022,7 +4022,7 @@ async function handleEditScheduleSubmit(e) {
         if (response.ok && data.success) {
             showNotification(ui('✓ Đã cập nhật lịch hẹn', '✓ Appointment updated'), 'success');
             closeEditScheduleModal();
-            await refreshLocalScheduleViews();
+            refreshLocalScheduleViews().catch(err => console.warn('Schedule refresh after edit failed:', err));
         } else {
             showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể cập nhật lịch hẹn', 'Unable to update appointment')), 'error');
         }

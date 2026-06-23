@@ -279,6 +279,7 @@ class Schedule:
                 f'{key} = %s::schedule_status' if key == 'status' else f'{key} = %s'
                 for key in updates.keys()
             ]
+            set_parts.append('updated_at = NOW()')
             set_clause = ', '.join(set_parts)
             values = list(updates.values()) + [schedule_id, user_id]
             with pg.connection() as conn:
