@@ -870,18 +870,6 @@ def get_unread_emails():
     """Get unread emails filtered by selected category with caching and parallel fetching."""
     user_id = get_current_user_id(request, session=session)
     logger.info(f"get_unread_emails: user_id = {user_id}")
-    
-    service = _load_gmail_service(user_id)
-    if not service:
-        logger.warning(f"Gmail service not available for user: {user_id}")
-        return jsonify({
-            'error': 'not_authenticated', 
-            'auth_url': url_for('email.gmail_auth_url', _external=True),
-            'debug': {
-                'user_id': user_id,
-                'session_has_email': 'gmail_user_email' in session if session else False
-            }
-        }), 401
 
     try:
         scan_limit = _clamp_scan_limit(request.args.get('max_results', EMAIL_SCAN_DEFAULT))
@@ -890,6 +878,7 @@ def get_unread_emails():
         search = request.args.get('search', '', type=str).strip()
         include_read = request.args.get('include_read', 'false', type=str).lower() == 'true'
         fresh = request.args.get('fresh', 'false', type=str).lower() in {'1', 'true', 'yes'}
+        cache_only = request.args.get('cache_only', 'false', type=str).lower() in {'1', 'true', 'yes'}
         db_path = get_user_db_path(user_id)
         
         cache_key = _get_cache_key(user_id, filter_type, include_read=include_read, scan_limit=scan_limit)
@@ -911,6 +900,47 @@ def get_unread_emails():
                 _cache_emails(cache_key, filtered_emails, total_raw)
                 cache_hit = True
             else:
+                if cache_only:
+                    suggestions = _prune_existing_meeting_suggestions(db_path)
+                    return jsonify({
+                        'success': True,
+                        'filter': filter_type,
+                        'search': search,
+                        'emails': [],
+                        'total_filtered': 0,
+                        'matched_count': 0,
+                        'cache_hit': False,
+                        'cache_miss': True,
+                        'needs_refresh': True,
+                        'fresh': fresh,
+                        'cache_only': cache_only,
+                        'scan_limit': scan_limit,
+                        'debug': {
+                            'raw_email_count': 0,
+                            'filtered_email_count': 0,
+                            'current_page_items': 0
+                        },
+                        'pagination': {
+                            'current_page': 1,
+                            'total_pages': 0,
+                            'per_page': scan_limit,
+                            'total_items': 0
+                        },
+                        'meeting_suggestions': suggestions
+                    })
+
+                service = _load_gmail_service(user_id)
+                if not service:
+                    logger.warning(f"Gmail service not available for user: {user_id}")
+                    return jsonify({
+                        'error': 'not_authenticated',
+                        'auth_url': url_for('email.gmail_auth_url', _external=True),
+                        'debug': {
+                            'user_id': user_id,
+                            'session_has_email': 'gmail_user_email' in session if session else False
+                        }
+                    }), 401
+
                 raw_emails = service.get_emails(
                     max_results=scan_limit,
                     query='is:unread',
@@ -977,6 +1007,7 @@ def get_unread_emails():
             'matched_count': total_emails,
             'cache_hit': cache_hit,
             'fresh': fresh,
+            'cache_only': cache_only,
             'scan_limit': scan_limit,
             'debug': {
                 'raw_email_count': total_raw,

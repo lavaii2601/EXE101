@@ -555,7 +555,7 @@ async function initApp() {
                 console.log(`🔍 Filter changed: ${emailFilterSelect.value}`);
                 updateEmailFilterUI();
                 currentEmailPage = 1;
-                loadEmails();
+                loadEmails(1, { cacheOnly: true });
             });
         }
 
@@ -587,7 +587,7 @@ async function initApp() {
                 clearTimeout(emailSearchTimer);
                 emailSearchTimer = setTimeout(() => {
                     currentEmailPage = 1;
-                    loadEmails(1);
+                    loadEmails(1, { cacheOnly: true });
                 }, 300);
             });
         }
@@ -597,7 +597,7 @@ async function initApp() {
                 if (!emailSearchInput) return;
                 emailSearchInput.value = '';
                 currentEmailPage = 1;
-                loadEmails(1);
+                loadEmails(1, { cacheOnly: true });
                 emailSearchInput.focus();
             });
         }
@@ -630,22 +630,17 @@ async function initApp() {
             includeReadCheckbox.addEventListener('change', () => {
                 console.log(`📬 Include read: ${includeReadCheckbox.checked}`);
                 currentEmailPage = 1;
-                loadEmails();
+                loadEmails(1, { cacheOnly: true });
             });
         }
 
         // Refresh emails
         const refreshEmailsBtn = document.getElementById('refreshEmailsBtn');
-        if (refreshEmailsBtn) {
+        if (refreshEmailsBtn && refreshEmailsBtn.dataset.refreshBound !== 'true') {
+            refreshEmailsBtn.dataset.refreshBound = 'true';
             refreshEmailsBtn.addEventListener('click', () => {
                 console.log('🔄 Refreshing emails');
-                apiFetch(`${API_BASE}/email/cache/clear`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                })
-                    .then(() => loadEmails())
-                    .then(() => scanMeetingSuggestions(true))
-                    .then(() => loadMeetingSuggestions())
+                refreshEmailsFromGmail()
                     .catch(err => console.error('Cache clear error:', err));
             });
         }
@@ -688,7 +683,7 @@ async function initApp() {
                         } else {
                             showWorkspace();
                             if (currentPage === 'emails') {
-                                setTimeout(() => loadEmails(), 300);
+                                setTimeout(() => loadEmails(1, { cacheOnly: true }), 300);
                             }
                         }
                     });
@@ -730,7 +725,7 @@ async function initApp() {
     // Auto-load emails if user is on emails page and authenticated
     if (currentPage === 'emails') {
         console.log('📧 Auto-loading emails on init...');
-        setTimeout(() => loadEmails(), 500);
+        setTimeout(() => loadEmails(1, { cacheOnly: true }), 500);
     }
     
     console.log('✅ App initialized');
@@ -1084,7 +1079,7 @@ async function refreshWorkspaceTargets(targets = []) {
         await refreshCalendarScheduleData({ silent: true, continueOnError: true });
     }
     if (uniqueTargets.includes('email')) {
-        try { await loadEmails(currentEmailPage || 1); } catch (e) { /* ignore refresh errors */ }
+        try { await loadEmails(currentEmailPage || 1, { cacheOnly: true }); } catch (e) { /* ignore refresh errors */ }
     }
     if (uniqueTargets.includes('history')) {
         try { await loadActivityHistory(); } catch (e) { /* ignore refresh errors */ }
@@ -1416,7 +1411,7 @@ function setupEventListeners() {
         emailFilterSelect.addEventListener('change', () => {
             console.log(`🔍 Filter changed: ${emailFilterSelect.value}`);
             currentEmailPage = 1;
-            loadEmails();
+            loadEmails(1, { cacheOnly: true });
         });
     }
     
@@ -1426,23 +1421,17 @@ function setupEventListeners() {
         includeReadCheckbox.addEventListener('change', () => {
             console.log(`📬 Include read: ${includeReadCheckbox.checked}`);
             currentEmailPage = 1;
-            loadEmails();
+            loadEmails(1, { cacheOnly: true });
         });
     }
     
     // Refresh emails
     const refreshBtn = document.getElementById('refreshEmailsBtn');
-    if (refreshBtn) {
+    if (refreshBtn && refreshBtn.dataset.refreshBound !== 'true') {
+        refreshBtn.dataset.refreshBound = 'true';
         refreshBtn.addEventListener('click', () => {
             console.log('🔄 Refreshing emails');
-            // Clear cache before loading
-            apiFetch(`${API_BASE}/email/cache/clear`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            })
-                .then(() => loadEmails())
-                .then(() => scanMeetingSuggestions(true))
-                .then(() => loadMeetingSuggestions())
+            refreshEmailsFromGmail()
                 .catch(err => console.error('Cache clear error:', err));
         });
     }
@@ -1484,7 +1473,7 @@ function setupEventListeners() {
                 refreshAuthButtons();
                 loadUserProfile();
                 if (currentPage === 'emails') {
-                    setTimeout(() => loadEmails(), 300);
+                    setTimeout(() => loadEmails(1, { cacheOnly: true }), 300);
                 }
             }
         } catch (e) {
@@ -1643,8 +1632,7 @@ async function handlePageChange(btn) {
             // Fallback to attempting to load emails — loadEmails will handle errors
         }
 
-        loadEmails()
-            .then(() => scanMeetingSuggestions())
+        loadEmails(1, { cacheOnly: true })
             .then(() => loadMeetingSuggestions())
             .catch(err => console.error('Email load error:', err));
     } else if (page === 'schedule') {
@@ -2613,7 +2601,7 @@ async function toggleEmailReadStatus(emailId, isUnread) {
             const action = isUnread ? ui('đã đọc', 'read') : ui('chưa đọc', 'unread');
             showNotification(ui(`✅ Đã đánh dấu email ${action}`, `✅ Email marked as ${action}`), 'success');
             // Reload emails to reflect the change
-            await loadEmails(currentEmailPage);
+            await loadEmails(currentEmailPage, { cacheOnly: true });
         } else {
             showNotification(`${ui('❌ Lỗi', '❌ Error')}: ${data.error || ui('Không thể đánh dấu email', 'Unable to update email')}`, 'error');
         }
@@ -2641,7 +2629,17 @@ async function checkRuntimeConfig() {
     }
 }
 
-async function loadEmails(page = 1) {
+async function refreshEmailsFromGmail(page = 1) {
+    await apiFetch(`${API_BASE}/email/cache/clear`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    });
+    await loadEmails(page, { fresh: true });
+    await scanMeetingSuggestions(true);
+    await loadMeetingSuggestions();
+}
+
+async function loadEmails(page = 1, options = {}) {
     const emailsList = document.getElementById('emailsList');
     if (!emailsList) {
         console.error('❌ emailsList element not found');
@@ -2658,7 +2656,16 @@ async function loadEmails(page = 1) {
     
     try {
         const search = emailSearchInput ? emailSearchInput.value.trim() : '';
-        const url = `${API_BASE}/email/get-unread?max_results=20&page=${page}&filter=${encodeURIComponent(selectedFilter)}&include_read=${includeRead}&search=${encodeURIComponent(search)}`;
+        const params = new URLSearchParams({
+            max_results: '20',
+            page: String(page),
+            filter: selectedFilter,
+            include_read: String(includeRead),
+            search
+        });
+        if (options.fresh) params.set('fresh', 'true');
+        if (options.cacheOnly) params.set('cache_only', 'true');
+        const url = `${API_BASE}/email/get-unread?${params.toString()}`;
         console.log(`📧 Loading emails: ${url}`);
         console.log(`🔍 Filter: ${selectedFilter}, Page: ${page}, Include read: ${includeRead}`);
         
@@ -2688,7 +2695,7 @@ async function loadEmails(page = 1) {
             emailsList.innerHTML = `
                 <div style="padding: 20px; background: #FFEBEE; border-radius: 8px; margin: 20px;">
                     <p style="color: #C62828; font-weight: bold;">❌ Lỗi: ${escapeHtml(data.error || 'Unknown error')}</p>
-                        <button onclick="loadEmails(1)" class="btn-primary" style="margin-top: 10px;">${ui('🔄 Thử lại', '🔄 Try again')}</button>
+                        <button onclick="loadEmails(1, { cacheOnly: true })" class="btn-primary" style="margin-top: 10px;">${ui('🔄 Thử lại', '🔄 Try again')}</button>
                 </div>
             `;
             return;
@@ -2696,6 +2703,19 @@ async function loadEmails(page = 1) {
 
         notifyMeetingSuggestions(data.meeting_suggestions || []);
         
+        if ((data.needs_refresh || data.cache_miss) && (!data.emails || data.emails.length === 0)) {
+            emailsList.innerHTML = `
+                <div style="padding: 30px; text-align: center; background: #EEF2FF; border-radius: 8px; margin: 20px;">
+                    <p style="font-size: 16px; color: #312E81; margin-bottom: 10px;">${ui('Chưa có email trong bộ nhớ đệm', 'No cached email yet')}</p>
+                    <p style="color: #666; font-size: 14px; margin-bottom: 15px;">
+                        ${ui('FlowMate đã mở Email bằng cache để tải nhanh. Bấm Làm mới để quét Gmail và cập nhật dữ liệu mới nhất.', 'FlowMate opened Email from cache for speed. Refresh to scan Gmail and update the latest data.')}
+                    </p>
+                    <button onclick="refreshEmailsFromGmail(1)" class="btn-primary">${ui('Làm mới Gmail', 'Refresh Gmail')}</button>
+                </div>
+            `;
+            return;
+        }
+
         if (!data.emails || data.emails.length === 0) {
             console.warn('⚠️ No emails found');
             emailsList.innerHTML = `
@@ -2706,8 +2726,8 @@ async function loadEmails(page = 1) {
                         ${data.debug ? `${ui('Tổng email quét', 'Email scanned')}: ${data.debug.raw_email_count || 0}` : ''}
                     </p>
                     <div style="display: flex; gap: 10px; justify-content: center;">
-                        <button onclick="emailFilterSelect.value='all'; updateEmailFilterUI(); loadEmails(1);" class="btn-primary">${ui('🔍 Xem tất cả', '🔍 View all')}</button>
-                        <button onclick="loadEmails(1)" class="btn-secondary">${ui('🔄 Làm mới', '🔄 Refresh')}</button>
+                        <button onclick="emailFilterSelect.value='all'; updateEmailFilterUI(); loadEmails(1, { cacheOnly: true });" class="btn-primary">${ui('🔍 Xem tất cả', '🔍 View all')}</button>
+                        <button onclick="refreshEmailsFromGmail(1)" class="btn-secondary">${ui('🔄 Làm mới', '🔄 Refresh')}</button>
                     </div>
                 </div>
             `;
