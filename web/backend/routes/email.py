@@ -265,7 +265,19 @@ def _extract_times(normalized_text):
             seen_spans.append(span)
         times.append((hour, minute))
 
+    for match in re.finditer(r'(?<!\d)((?:[01]?\d|2[0-3]))(?::(\d{2}))?\s*(am|pm)(?![a-z])', normalized_text):
+        hour = int(match.group(1))
+        minute = int(match.group(2) or 0)
+        meridiem = match.group(3)
+        if meridiem == 'pm' and 1 <= hour <= 11:
+            hour += 12
+        elif meridiem == 'am' and hour == 12:
+            hour = 0
+        add_time(hour, minute, match.span())
+
     for match in re.finditer(r'(?<!\d)((?:[01]?\d|2[0-3]))[:h](\d{2})(?!\d)', normalized_text):
+        if any(match.start() >= start and match.end() <= end for start, end in seen_spans):
+            continue
         add_time(match.group(1), match.group(2), match.span())
 
     for match in re.finditer(
@@ -277,6 +289,20 @@ def _extract_times(normalized_text):
         add_time(match.group(1), match.group(2) or 0, match.span(), match.group(3) or '')
 
     return times
+
+
+def _is_google_calendar_notification(email_or_suggestion):
+    sender = _normalize_search_text((email_or_suggestion or {}).get('sender', ''))
+    subject = _normalize_search_text((email_or_suggestion or {}).get('subject', ''))
+    snippet = _normalize_search_text((email_or_suggestion or {}).get('snippet', ''))
+    source = ' '.join([sender, subject, snippet])
+    return (
+        'calendar-notification@google.com' in source
+        or 'lich google' in source
+        or 'google calendar' in source
+        or subject.startswith('loi nhac:')
+        or subject.startswith('reminder:')
+    )
 
 
 def _hydrate_email_for_list(email, user_id, cached_entries=None):
@@ -427,11 +453,33 @@ def _load_schedule_match_index(db_path):
             'start_time': schedule_dt,
             'end_time': end_dt,
             'title': _normalize_search_text(schedule.get('title', '')),
+            'attendees': _normalize_search_text(schedule.get('attendees', '')),
         })
     return index
 
 
+def _token_set(value):
+    tokens = re.findall(r'[a-z0-9]+', _normalize_search_text(value))
+    ignored = {
+        'loi', 'nhac', 'reminder', 'calendar', 'lich', 'google', 'meeting',
+        'event', 'cuoc', 'hop', 'hen', 'vao', 'luc', 'thu', 'thang', 'nam',
+        'gmt', 'am', 'pm'
+    }
+    return {token for token in tokens if len(token) >= 3 and token not in ignored}
+
+
+def _token_overlap(left, right):
+    left_tokens = _token_set(left)
+    right_tokens = _token_set(right)
+    if not left_tokens or not right_tokens:
+        return 0
+    return len(left_tokens & right_tokens) / max(1, min(len(left_tokens), len(right_tokens)))
+
+
 def _meeting_suggestion_exists_in_schedule(suggestion, schedule_index):
+    if _is_google_calendar_notification(suggestion):
+        return True
+
     suggested_start = suggestion.get('start_time')
     if not suggested_start:
         return False
@@ -444,14 +492,24 @@ def _meeting_suggestion_exists_in_schedule(suggestion, schedule_index):
         suggested_dt = suggested_dt.replace(tzinfo=None)
 
     subject = _normalize_search_text(suggestion.get('subject', ''))
+    suggestion_title = _normalize_search_text(suggestion.get('title', ''))
+    suggestion_attendees = _normalize_search_text(suggestion.get('attendees', ''))
     for schedule in schedule_index:
         schedule_dt = schedule.get('start_time')
         schedule_end = schedule.get('end_time')
         if schedule_end and schedule_dt <= suggested_dt <= schedule_end:
             return True
+        same_day = schedule_dt.date() == suggested_dt.date()
+        title = schedule.get('title', '')
+        attendees = schedule.get('attendees', '')
+        if same_day and (
+            _token_overlap(title, subject) >= 0.45
+            or _token_overlap(title, suggestion_title) >= 0.45
+            or (suggestion_attendees and attendees and _token_overlap(attendees, suggestion_attendees) >= 0.5)
+        ):
+            return True
         if abs((schedule_dt - suggested_dt).total_seconds()) > 300:
             continue
-        title = schedule.get('title', '')
         if not title or title in subject or subject in title:
             return True
     return False
@@ -467,6 +525,9 @@ def _store_meeting_suggestions(emails, db_path):
                 continue
             suggestion = _extract_meeting_suggestion(email)
             if not suggestion:
+                continue
+            if _is_google_calendar_notification(email) or _is_google_calendar_notification(suggestion):
+                MeetingSuggestion.dismiss_email(email_id, db_path=db_path)
                 continue
             if schedule_index is None:
                 schedule_index = _load_schedule_match_index(db_path)

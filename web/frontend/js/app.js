@@ -2588,6 +2588,15 @@ async function gmailLogin() {
 // Client-side email cache for fallback pagination
 let emailsCache = [];
 const notifiedMeetingSuggestionIds = new Set();
+function loadAgentNotifiedMeetingSuggestionIds() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem('flowmate-agent-meeting-suggestions') || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        return [];
+    }
+}
+const agentNotifiedMeetingSuggestionIds = new Set(loadAgentNotifiedMeetingSuggestionIds());
 let lastMeetingSuggestionScanAt = 0;
 let meetingSuggestionRefreshTimer = null;
 
@@ -3679,6 +3688,34 @@ function notifyMeetingSuggestions(suggestions) {
         ),
         'info'
     );
+    notifyMeetingSuggestionsInChat(fresh);
+}
+
+function rememberAgentMeetingSuggestions(items) {
+    items.forEach((item) => agentNotifiedMeetingSuggestionIds.add(String(item.id)));
+    const compact = Array.from(agentNotifiedMeetingSuggestionIds).slice(-200);
+    localStorage.setItem('flowmate-agent-meeting-suggestions', JSON.stringify(compact));
+}
+
+function notifyMeetingSuggestionsInChat(suggestions = []) {
+    if (currentPage === 'schedule' || !chatMessages) return;
+    const fresh = suggestions.filter((item) => {
+        const id = String(item.id || '');
+        return id && !agentNotifiedMeetingSuggestionIds.has(id);
+    });
+    if (!fresh.length) return;
+
+    rememberAgentMeetingSuggestions(fresh);
+    const first = fresh[0] || {};
+    const title = first.title || first.subject || ui('một email liên quan đến cuộc họp', 'a meeting-related email');
+    const extra = fresh.length > 1
+        ? ui(` và ${fresh.length - 1} email khác`, ` and ${fresh.length - 1} more email${fresh.length > 2 ? 's' : ''}`)
+        : '';
+    const message = ui(
+        `AI Agent phát hiện ${fresh.length} email có thể liên quan đến lịch họp: "${title}"${extra}. Mình đã để gợi ý trong tab Lịch để bạn tạo lịch hoặc bỏ qua.`,
+        `AI Agent found ${fresh.length} email${fresh.length > 1 ? 's' : ''} that may relate to meetings: "${title}"${extra}. I put the suggestion in Calendar so you can create or dismiss it.`
+    );
+    addMessage(message, 'assistant', '<span class="provider-badge workspace-source-badge">AI Agent</span>');
 }
 
 async function scanMeetingSuggestions(force = false) {
