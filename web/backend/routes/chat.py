@@ -13,7 +13,7 @@ from services.gmail_service import GmailService
 from services.intent_orchestrator import IntentOrchestrator
 from services.schedule_service import ScheduleService
 from models.history import History
-from models.schedule import Schedule
+from models.schedule import Schedule, LOCAL_TZ
 from models.user import User
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from services.calendar_service import CalendarService
@@ -213,25 +213,46 @@ def _parse_schedule_datetime(value):
     try:
         parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=datetime.now().astimezone().tzinfo)
-        return parsed.astimezone()
+            parsed = parsed.replace(tzinfo=LOCAL_TZ)
+        return parsed.astimezone(LOCAL_TZ)
     except (TypeError, ValueError):
         return None
+
+
+def _schedule_response_key(title, start_value):
+    start_dt = _parse_schedule_datetime(start_value)
+    normalized_title = ' '.join(str(title or '').strip().lower().split())
+    normalized_start = start_dt.strftime('%Y-%m-%dT%H:%M') if start_dt else str(start_value or '').strip()
+    return normalized_title, normalized_start
+
+
+def _format_schedule_response_time(start_value, end_value):
+    start_dt = _parse_schedule_datetime(start_value)
+    end_dt = _parse_schedule_datetime(end_value)
+    if not start_dt:
+        return 'Khong xac dinh'
+    date_text = start_dt.strftime('%d/%m/%Y')
+    start_text = start_dt.strftime('%H:%M')
+    if end_dt:
+        if end_dt.date() == start_dt.date():
+            return f'{date_text}, {start_text} - {end_dt.strftime("%H:%M")} (GMT+7)'
+        return f'{date_text}, {start_text} - {end_dt.strftime("%d/%m/%Y %H:%M")} (GMT+7)'
+    return f'{date_text}, {start_text} (GMT+7)'
 
 
 def _format_calendar_context(message, user_id, db_path):
     window_start, window_end, window_label = _calendar_window(message)
     lines = [
-        f"LỊCH VÀ SỰ KIỆN {window_label}",
-        f"Khoảng thời gian: {window_start.date().isoformat()} đến {(window_end - timedelta(days=1)).date().isoformat()}",
+        f"LICH VA SU KIEN {window_label}",
+        f"Khoang thoi gian: {window_start.date().isoformat()} den {(window_end - timedelta(days=1)).date().isoformat()}",
     ]
     token_file = get_user_token_file(user_id)
     google_events = []
     if token_file and os.path.exists(token_file):
         google_events = CalendarService(token_file=token_file).get_events(
             max_results=50,
-            time_min=window_start.isoformat(),
-            time_max=window_end.isoformat()
+            time_min=window_start.replace(tzinfo=LOCAL_TZ).isoformat(),
+            time_max=window_end.replace(tzinfo=LOCAL_TZ).isoformat()
         )
 
     local_schedules = Schedule.get_between(
@@ -242,40 +263,53 @@ def _format_calendar_context(message, user_id, db_path):
     )
 
     if not google_events and not local_schedules:
-        return "\n".join(lines + [f"Không có lịch hoặc sự kiện trong {window_label.lower()}."])
+        return "\n".join(lines + [f"Khong co lich hoac su kien trong {window_label.lower()}."])
 
-    seen = set()
-    item_index = 1
+    items_by_key = {}
     for event in google_events:
-        fingerprint = (
-            str(event.get('title') or '').strip().lower(),
-            str(event.get('start') or '').strip()
-        )
-        seen.add(fingerprint)
-        lines.extend([
-            f"{item_index}. {event.get('title') or '(Không có tiêu đề)'}",
-            f"   Bắt đầu: {event.get('start') or 'Không xác định'}",
-            f"   Kết thúc: {event.get('end') or 'Không xác định'}",
-            f"   Địa điểm: {event.get('location') or 'Không có'}",
-        ])
-        item_index += 1
+        key = _schedule_response_key(event.get('title'), event.get('start'))
+        if key not in items_by_key:
+            items_by_key[key] = {
+                'title': event.get('title') or '(Khong co tieu de)',
+                'start': event.get('start'),
+                'end': event.get('end'),
+                'location': event.get('location') or '',
+                'status': '',
+            }
 
     for schedule in local_schedules:
-        fingerprint = (
-            str(schedule.get('title') or '').strip().lower(),
-            str(schedule.get('start_time') or '').strip()
-        )
-        if fingerprint in seen:
+        key = _schedule_response_key(schedule.get('title'), schedule.get('start_time'))
+        if key in items_by_key:
+            existing = items_by_key[key]
+            existing['status'] = existing.get('status') or schedule.get('status') or ''
+            existing['location'] = existing.get('location') or schedule.get('location') or ''
             continue
-        lines.extend([
-            f"{item_index}. {schedule.get('title') or '(Không có tiêu đề)'}",
-            f"   Bắt đầu: {schedule.get('start_time') or 'Không xác định'}",
-            f"   Kết thúc: {schedule.get('end_time') or 'Không xác định'}",
-            f"   Trạng thái: {schedule.get('status') or 'pending'}",
-        ])
-        item_index += 1
-    return "\n".join(lines)
+        items_by_key[key] = {
+            'title': schedule.get('title') or '(Khong co tieu de)',
+            'start': schedule.get('start_time'),
+            'end': schedule.get('end_time'),
+            'location': schedule.get('location') or '',
+            'status': schedule.get('status') or '',
+        }
 
+    items = sorted(
+        items_by_key.values(),
+        key=lambda item: (
+            _parse_schedule_datetime(item.get('start')) or datetime.max.replace(tzinfo=LOCAL_TZ),
+            item.get('title') or ''
+        )
+    )
+    if not items:
+        return "\n".join(lines + [f"Khong co lich hoac su kien trong {window_label.lower()}."])
+
+    for item_index, item in enumerate(items, start=1):
+        lines.append(f"{item_index}. {item.get('title')}")
+        lines.append(f"   Thoi gian: {_format_schedule_response_time(item.get('start'), item.get('end'))}")
+        if item.get('location'):
+            lines.append(f"   Dia diem: {item.get('location')}")
+        if item.get('status') and item.get('status') != 'pending':
+            lines.append(f"   Trang thai: {item.get('status')}")
+    return "\n".join(lines)
 
 def _format_history_context(db_path):
     records = History.get_recent(limit=10, db_path=db_path)
