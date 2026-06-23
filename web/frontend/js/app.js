@@ -3586,6 +3586,11 @@ function bindEditScheduleModal() {
         el.addEventListener('click', closeEditScheduleModal);
     });
 
+    const deleteButton = document.getElementById('deleteEditScheduleBtn');
+    if (deleteButton) {
+        deleteButton.addEventListener('click', handleDeleteEditSchedule);
+    }
+
     modal.addEventListener('click', (event) => {
         if (event.target === modal) closeEditScheduleModal();
     });
@@ -4066,14 +4071,32 @@ async function deleteSchedule(scheduleId) {
         if (data.success) {
             showNotification(ui('🗑️ Đã xóa', '🗑️ Deleted'), 'success');
             invalidateScheduleCaches();
-            await loadSchedules();
-            await loadWeekSchedule();
-            refreshQuickScheduleSummary();
+            refreshLocalScheduleViews().catch(err => console.warn('Schedule refresh after delete failed:', err));
+            return true;
         } else {
             showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể xóa lịch hẹn', 'Unable to delete appointment')), 'error');
         }
     } catch (error) {
         showNotification(ui('❌ Lỗi: ', '❌ Error: ') + error.message, 'error');
+    }
+    return false;
+}
+
+async function handleDeleteEditSchedule() {
+    const editForm = document.getElementById('editScheduleForm');
+    const scheduleId = editForm?.dataset.scheduleId;
+    const deleteButton = document.getElementById('deleteEditScheduleBtn');
+    if (!scheduleId) {
+        showNotification(ui('Khong tim thay lich can xoa', 'Appointment ID is missing'), 'error');
+        return;
+    }
+
+    if (deleteButton) deleteButton.disabled = true;
+    try {
+        const deleted = await deleteSchedule(scheduleId);
+        if (deleted) closeEditScheduleModal();
+    } finally {
+        if (deleteButton) deleteButton.disabled = false;
     }
 }
 
