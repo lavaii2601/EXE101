@@ -921,11 +921,21 @@ function invalidateScheduleCaches() {
     clearRuntimeCache('schedule:');
 }
 
+async function refreshLocalScheduleViews() {
+    invalidateScheduleCaches();
+    await Promise.allSettled([
+        loadSchedules(),
+        loadWeekSchedule(),
+        refreshQuickScheduleSummary()
+    ]);
+}
+
 async function refreshCalendarScheduleData(options = {}) {
     invalidateScheduleCaches();
     let syncedGoogle = false;
     try {
-        const response = await apiFetch(`${API_BASE}/schedule/sync`, { method: 'POST' });
+        const syncDays = Number.isFinite(options.days) ? options.days : 90;
+        const response = await apiFetch(`${API_BASE}/schedule/sync?days=${syncDays}`, { method: 'POST' });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || (data && data.success === false)) {
             if (data.error === 'not_authenticated') {
@@ -3955,7 +3965,7 @@ async function handleEditScheduleSubmit(e) {
         if (response.ok && data.success) {
             showNotification(ui('✓ Đã cập nhật lịch hẹn', '✓ Appointment updated'), 'success');
             closeEditScheduleModal();
-            await refreshCalendarScheduleData({ silent: true, continueOnError: true });
+            await refreshLocalScheduleViews();
         } else {
             showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể cập nhật lịch hẹn', 'Unable to update appointment')), 'error');
         }
@@ -4056,7 +4066,7 @@ async function handleScheduleSubmit(e) {
             }
             scheduleForm.reset();
             closeNewScheduleModal();
-            await refreshCalendarScheduleData({ silent: true, continueOnError: true });
+            await refreshLocalScheduleViews();
 
             // If calendar_event_id not present, poll for status in background
             if (!data.calendar_event_id && sid) {
@@ -4066,10 +4076,7 @@ async function handleScheduleSubmit(e) {
                     } else {
                         showNotification(ui('⚠️ Đồng bộ lịch hẹn chưa hoàn tất - thử lại sau', '⚠️ Appointment sync is not complete - try again later'), 'info');
                     }
-                    loadSchedules();
-                    loadCalendarEvents();
-                    loadWeekSchedule();
-                    refreshQuickScheduleSummary();
+                    refreshLocalScheduleViews();
                 }).catch(err => {
                     console.warn('Poll schedule sync error', err);
                 });

@@ -1,4 +1,5 @@
 import os
+import sys
 from contextlib import contextmanager
 from datetime import date, datetime
 
@@ -11,7 +12,15 @@ except ImportError:  # Local SQLite-only development can run before pip install.
     dict_row = None
     Json = None
 
+try:
+    from psycopg_pool import ConnectionPool
+except ImportError:
+    ConnectionPool = None
+
 from config import Config
+
+_pool = None
+_pool_url = None
 
 
 def database_url():
@@ -53,15 +62,41 @@ def initialize_schema():
 def connection():
     if psycopg is None:
         raise RuntimeError("psycopg is required when DATABASE_URL is configured")
-    conn = psycopg.connect(database_url(), row_factory=dict_row)
+    pool = _connection_pool()
+    if pool:
+        conn_ctx = pool.connection()
+    else:
+        conn_ctx = psycopg.connect(database_url(), row_factory=dict_row)
+    conn = conn_ctx.__enter__()
+    exc_info = (None, None, None)
     try:
         yield conn
         conn.commit()
     except Exception:
+        exc_info = sys.exc_info()
         conn.rollback()
         raise
     finally:
-        conn.close()
+        conn_ctx.__exit__(*exc_info)
+
+
+def _connection_pool():
+    """Reuse PostgreSQL connections on Railway instead of reconnecting per query."""
+    global _pool, _pool_url
+    if ConnectionPool is None:
+        return None
+    url = database_url()
+    if not url:
+        return None
+    if _pool is None or _pool_url != url:
+        _pool_url = url
+        _pool = ConnectionPool(
+            conninfo=url,
+            min_size=int(os.getenv("POSTGRES_POOL_MIN", "1")),
+            max_size=int(os.getenv("POSTGRES_POOL_MAX", "8")),
+            kwargs={"row_factory": dict_row},
+        )
+    return _pool
 
 
 def user_id_from_db_path(db_path):

@@ -108,7 +108,7 @@ export default function ScheduleScreen() {
       await apiPost('/schedule/create', payload);
       setForm(initialForm);
       setMode('list');
-      await loadSchedules({ syncGoogle: true, silentSync: true });
+      await loadSchedules();
       Alert.alert('Đã tạo lịch');
     } catch (error) {
       Alert.alert('Không tạo được lịch', error.message);
@@ -175,7 +175,7 @@ export default function ScheduleScreen() {
         attendees: splitAttendees(suggestion.attendees || ''),
       });
       await updateMeetingSuggestionStatus(suggestion.id, 'created', data.schedule_id);
-      await loadSchedules({ syncGoogle: true, silentSync: true });
+      await loadSchedules();
       Alert.alert('Đã tạo lịch từ email');
     } catch (error) {
       Alert.alert('Không tạo được lịch', error.message);
@@ -215,7 +215,7 @@ export default function ScheduleScreen() {
       });
       setEditingSchedule(null);
       setEditForm(initialForm);
-      await loadSchedules({ syncGoogle: true, silentSync: true });
+      await loadSchedules();
       Alert.alert('Đã cập nhật lịch');
     } catch (error) {
       Alert.alert('Không cập nhật được lịch', error.message);

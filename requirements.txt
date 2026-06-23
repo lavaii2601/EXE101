@@ -7,4 +7,5 @@ google-auth>=2.55,<3
 google-auth-oauthlib>=1.4,<2
 python-dotenv>=1.2.2,<2
 psycopg[binary]>=3.2,<4
+psycopg-pool>=3.2,<4
 requests>=2.34.2,<3

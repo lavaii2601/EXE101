@@ -25,7 +25,7 @@ _week_sync_inflight = set()
 _week_sync_recent = {}
 _WEEK_SYNC_TTL_SECONDS = 90
 _SCHEDULE_CACHE_TTL_SECONDS = 15
-_FULL_SYNC_DAYS = 365
+_FULL_SYNC_DAYS = int(os.getenv('SCHEDULE_FULL_SYNC_DAYS', '90'))
 _LOCAL_EDIT_SYNC_GRACE_SECONDS = 180
 
 
@@ -188,40 +188,7 @@ def create_schedule():
         event_end = created_schedule.get('end_time') if created_schedule else end_time
         calendar_event_id = created_schedule.get('calendar_event_id') if created_schedule else None
         
-        # Trigger background sync to Google Calendar (non-blocking)
-        try:
-            # Spawn a background worker via internal endpoint
-            from threading import Thread
-            def _bg():
-                try:
-                    schedule = Schedule.get_by_id(schedule_id, db_path=db_path)
-                    cal = _load_calendar_service(user_id)
-                    if cal and getattr(cal, 'service', None):
-                        if schedule.get('calendar_event_id'):
-                            cal.update_event(
-                                event_id=schedule.get('calendar_event_id'),
-                                title=schedule.get('title'),
-                                description=schedule.get('description'),
-                                start_time=schedule.get('start_time'),
-                                end_time=schedule.get('end_time'),
-                                attendees=[a.strip() for a in (schedule.get('attendees') or '').split(',') if a.strip()]
-                            )
-                        else:
-                            event_id = cal.create_event(
-                                title=schedule.get('title'),
-                                description=schedule.get('description'),
-                                start_time=schedule.get('start_time'),
-                                end_time=schedule.get('end_time'),
-                                attendees=[a.strip() for a in (schedule.get('attendees') or '').split(',') if a.strip()]
-                            )
-                            if event_id:
-                                Schedule.update(schedule_id, calendar_event_id=event_id, db_path=db_path)
-                                _clear_schedule_cache(db_path)
-                except Exception:
-                    pass
-            Thread(target=_bg, daemon=True).start()
-        except Exception:
-            pass
+        calendar_sync_pending = _sync_schedule_to_calendar_async(user_id, schedule_id, db_path)
         
         # Save to history
         attendee_list = ', '.join(attendees) if attendees else 'Không có người tham dự'
@@ -239,6 +206,7 @@ def create_schedule():
             'schedule_id': schedule_id,
             'calendar_event_id': calendar_event_id,
             'synced_to_calendar': bool(calendar_event_id),
+            'calendar_sync_pending': calendar_sync_pending,
             'start_time': event_start,
             'end_time': event_end,
             'message': 'Lịch hẹn đã được tạo' + (' và đồng bộ với Google Calendar' if calendar_event_id else '')
@@ -400,13 +368,24 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
     time_max = end_time.replace(tzinfo=LOCAL_TZ).isoformat()
     gcal_events = calendar_service.get_events(max_results=max_results, time_min=time_min, time_max=time_max)
     live_google_ids = {event.get('id') for event in gcal_events if event.get('id')}
+    local_schedules = Schedule.get_all(limit=1000, db_path=db_path)
+    schedules_by_google_id = {
+        schedule.get('calendar_event_id'): schedule
+        for schedule in local_schedules
+        if schedule.get('calendar_event_id')
+    }
+    local_by_fingerprint = {
+        _schedule_fingerprint(schedule): schedule
+        for schedule in local_schedules
+        if not schedule.get('calendar_event_id')
+    }
     created_count = 0
 
     for event in gcal_events:
         event_id = event.get('id')
         if not event_id:
             continue
-        existing_schedule = Schedule.get_by_calendar_event_id(event_id, db_path=db_path)
+        existing_schedule = schedules_by_google_id.get(event_id)
         event_payload = {
             'title': event.get('title') or 'Untitled',
             'description': event.get('description') or '',
@@ -430,10 +409,7 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
             continue
 
         event_fingerprint = _event_fingerprint(event_payload['title'], event_payload['start_time'])
-        matching_local = next((
-            schedule for schedule in Schedule.get_all(limit=1000, db_path=db_path)
-            if not schedule.get('calendar_event_id') and _schedule_fingerprint(schedule) == event_fingerprint
-        ), None)
+        matching_local = local_by_fingerprint.get(event_fingerprint)
         if matching_local:
             Schedule.update(
                 matching_local.get('id'),
@@ -441,6 +417,7 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
                 calendar_event_id=event_id,
                 db_path=db_path
             )
+            schedules_by_google_id[event_id] = {**matching_local, **event_payload, 'calendar_event_id': event_id}
             continue
 
         Schedule.create(
@@ -456,7 +433,7 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
         )
         created_count += 1
 
-    for schedule in Schedule.get_all(limit=1000, db_path=db_path):
+    for schedule in local_schedules:
         calendar_event_id = schedule.get('calendar_event_id')
         if not calendar_event_id or calendar_event_id in live_google_ids:
             continue
@@ -522,19 +499,21 @@ def sync_schedules():
 
     try:
         now = datetime.now()
-        sync_end = now + timedelta(days=_FULL_SYNC_DAYS)
+        sync_days = min(max(request.args.get('days', _FULL_SYNC_DAYS, type=int), 1), 365)
+        sync_end = now + timedelta(days=sync_days)
         created_count = _sync_google_events_range(
             user_id,
             db_path,
             now.replace(hour=0, minute=0, second=0, microsecond=0),
             sync_end,
-            max_results=2500
+            max_results=min(max(request.args.get('max_results', sync_days * 8, type=int), 50), 2500)
         )
         return jsonify({
             'success': True,
             'created_count': created_count,
             'sync_start': now.isoformat(),
             'sync_end': sync_end.isoformat(),
+            'sync_days': sync_days,
         })
     except Exception as e:
         logger.error(f"Error syncing schedules: {e}", exc_info=True)
