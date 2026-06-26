@@ -23,6 +23,12 @@ const filters = [
   { label: 'Khác',       value: 'other' },
 ];
 
+const sourceFilters = [
+  { label: 'Tất cả', value: 'all' },
+  { label: 'Gmail', value: 'gmail' },
+  { label: 'Outlook', value: 'outlook' },
+];
+
 const modes = [
   { label: 'Hộp thư',  value: 'inbox' },
   { label: 'Báo cáo',  value: 'report' },
@@ -34,6 +40,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [mode, setMode] = useState('inbox');
+  const [source, setSource] = useState('all');
   const [filter, setFilter] = useState('all');
   const [includeRead, setIncludeRead] = useState(true);
   const [emails, setEmails] = useState([]);
@@ -74,19 +81,38 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
       });
       params.set(options.fresh ? 'fresh' : 'cache_only', 'true');
 
-      const [, data] = await Promise.all([
-        loadAuth(),
-        apiGet(`/email/get-unread?${params.toString()}`),
-      ]);
+      let data;
+      const authPromise = loadAuth();
+      try {
+        const unifiedParams = new URLSearchParams(params);
+        unifiedParams.set('source', source);
+        data = await apiGet(`/email/unified?${unifiedParams.toString()}`);
+      } catch (error) {
+        if (source === 'outlook') {
+          setEmails([]);
+          setCacheMiss(false);
+          await authPromise;
+          return;
+        }
+        data = await apiGet(`/email/get-unread?${params.toString()}`);
+      }
+      await authPromise;
       setCacheMiss(Boolean(data.cache_miss));
-      setEmails(data.emails || []);
+      const nextEmails = (data.emails || data.items || []).map(normalizeEmailProvider);
+      if ((data.needs_refresh || data.cache_miss) && nextEmails.length === 0 && !options.fresh && !options.autoRefreshAttempted && source !== 'outlook') {
+        setCacheMiss(true);
+        await loadEmails({ fresh: true, autoRefreshAttempted: true });
+        apiPost('/email/meeting-suggestions/scan').catch(() => {});
+        return;
+      }
+      setEmails(nextEmails);
     } catch (error) {
       if (error.status === 401) setEmails([]);
       else Alert.alert('Lỗi tải email', error.message);
     } finally {
       setLoading(false);
     }
-  }, [filter, includeRead, loadAuth, searchKeyword]);
+  }, [filter, includeRead, loadAuth, searchKeyword, source]);
 
   const refreshEmailsFromGmail = useCallback(async () => {
     setLoading(true);
@@ -142,7 +168,9 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
     setEmailBody('');
     setSummary(email.summary || '');
     try {
-      const data = await apiGet(`/email/get-email-body/${email.id}`);
+      const data = email.provider && email.provider !== 'gmail'
+        ? await apiGet(`/email/unified/${email.provider}/${encodeURIComponent(email.external_id || email.id)}`)
+        : await apiGet(`/email/get-email-body/${email.id}`);
       setEmailBody(data.body || '');
     } catch (error) {
       setEmailBody(error.message);
@@ -154,7 +182,9 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
     setSelectedEmail(email);
     setSummarizingId(email.id);
     try {
-      const data = await apiPost(`/email/summary/${email.id}`);
+      const data = email.provider && email.provider !== 'gmail'
+        ? await apiPost(`/email/unified/${email.provider}/${encodeURIComponent(email.external_id || email.id)}/summary`)
+        : await apiPost(`/email/summary/${email.id}`);
       email.summary = data.summary || '';
       setSummary(data.summary || '');
       setEmails((current) => current.map((item) => (
@@ -298,6 +328,8 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
         ) : null}
       </Card>
       <SegmentedControl options={filters} value={filter} onChange={setFilter} />
+      <Text style={styles.filterLabel}>Nguồn email</Text>
+      <SegmentedControl options={sourceFilters} value={source} onChange={setSource} />
       <Card>
         <View style={styles.switchRow}>
           <Text style={styles.cardTitle}>Giữ email đã đọc trong hộp thư</Text>
@@ -309,7 +341,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
           <Card style={styles.cacheMissCard}>
             <Text style={styles.cardTitle}>Chưa có email trong bộ nhớ đệm</Text>
             <Text style={styles.muted}>
-              FlowMate mở Email bằng cache để tải nhanh. Bấm Làm mới Gmail để quét email mới nhất.
+              FlowMate sẽ tự quét Gmail khi cache trống. Nếu vẫn chưa thấy dữ liệu, bạn có thể làm mới lại.
             </Text>
             <Button title="Làm mới Gmail" onPress={refreshEmailsFromGmail} loading={loading} style={styles.applyButton} />
           </Card>
@@ -329,6 +361,9 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
               <View style={styles.rowBetween}>
                 <Text style={styles.subject} numberOfLines={2}>{email.subject || '(Không tiêu đề)'}</Text>
                 <View style={styles.badges}>
+                  <Text style={[styles.providerBadge, email.provider === 'outlook' ? styles.outlookBadge : styles.gmailBadge]}>
+                    {email.provider_label || providerLabel(email.provider)}
+                  </Text>
                   <Text style={[styles.readBadge, email.is_unread ? styles.unreadBadge : styles.readBadgeDone]}>
                     {email.is_unread ? 'CHƯA ĐỌC' : 'ĐÃ ĐỌC'}
                   </Text>
@@ -410,7 +445,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
           stats={[
             { value: emails.length, label: 'Email hiển thị' },
             { value: emails.filter((email) => email.is_unread).length, label: 'Chưa đọc' },
-            { value: emails.filter((email) => email.tag === 'meeting').length, label: 'Cuộc họp' },
+            { value: emails.filter((email) => email.provider === 'outlook').length, label: 'Outlook' },
           ]}
         />
         <SegmentedControl options={modes} value={mode} onChange={setMode} />
@@ -468,6 +503,21 @@ function extractEmailAddress(value) {
   return match ? match[1] : String(value || '').trim();
 }
 
+function providerLabel(provider) {
+  if (provider === 'outlook' || provider === 'microsoft') return 'Outlook';
+  return 'Gmail';
+}
+
+function normalizeEmailProvider(email) {
+  const provider = email.provider === 'microsoft' ? 'outlook' : (email.provider || 'gmail');
+  return {
+    ...email,
+    provider,
+    provider_label: email.provider_label || providerLabel(provider),
+    external_id: email.external_id || email.gmail_message_id || email.outlook_message_id || email.id,
+  };
+}
+
 function makeStyles(colors) {
   return StyleSheet.create({
     authRow:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -476,6 +526,7 @@ function makeStyles(colors) {
     cacheMissCard: { gap: 8 },
     cardTitle:{ color: colors.text, fontWeight: '800' },
     muted:    { marginTop: 4, color: colors.textMuted },
+    filterLabel: { color: colors.textMuted, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
     switchRow:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     emailCard: { borderLeftWidth: 4 },
     emailUnread: {
@@ -498,6 +549,16 @@ function makeStyles(colors) {
     },
     unreadBadge: { color: colors.accentText, backgroundColor: colors.primarySoft },
     readBadgeDone: { color: '#5eead4', backgroundColor: 'rgba(13,148,136,0.22)' },
+    providerBadge: {
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 999,
+      fontSize: 9,
+      fontWeight: '900',
+      overflow: 'hidden',
+    },
+    gmailBadge: { color: colors.primary, backgroundColor: `${colors.primary}18` },
+    outlookBadge: { color: '#0369a1', backgroundColor: 'rgba(14,165,233,0.16)' },
     subject:  { flex: 1, color: colors.text, fontWeight: '800', lineHeight: 21 },
     tag:      { color: colors.primary, fontSize: 12, fontWeight: '800' },
     sender:   { marginTop: 6, color: colors.textMuted },

@@ -2211,6 +2211,11 @@ select:focus {
     background: #e8f0fe;
 }
 
+.schedule-source-badge.outlook {
+    color: #0369a1;
+    background: rgba(14, 165, 233, 0.16);
+}
+
 .schedule-source-badge.local {
     color: #8a4b08;
     background: #fff3e0;

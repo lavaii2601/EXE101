@@ -30,6 +30,7 @@ export default function ScheduleScreen() {
   const [weekSummary, setWeekSummary] = useState({ current: [], next: [] });
   const [meetingSuggestions, setMeetingSuggestions] = useState([]);
   const [calendarConnected, setCalendarConnected] = useState(false);
+  const [connectedCalendars, setConnectedCalendars] = useState([]);
   const [form, setForm] = useState(initialForm);
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [editForm, setEditForm] = useState(initialForm);
@@ -58,7 +59,11 @@ export default function ScheduleScreen() {
       ]);
 
       setSchedules(data.items || []);
-      setCalendarConnected(Boolean(data.calendar_connected));
+      const nextConnectedCalendars = [];
+      if (data.calendar_connected || data.google_calendar_connected) nextConnectedCalendars.push('Google');
+      if (data.outlook_calendar_connected) nextConnectedCalendars.push('Outlook');
+      setConnectedCalendars(nextConnectedCalendars);
+      setCalendarConnected(nextConnectedCalendars.length > 0);
       setWeekSummary({
         current: flattenWeekSchedules(currentWeek.days),
         next: flattenWeekSchedules(nextWeek.days),
@@ -318,7 +323,7 @@ export default function ScheduleScreen() {
       </Card>
 
       {schedules.length === 0 ? (
-        <EmptyState title="Chưa có lịch sắp tới" detail="Tạo lịch mới hoặc đăng nhập Gmail để đồng bộ Google Calendar." />
+        <EmptyState title="Chưa có lịch sắp tới" detail="Tạo lịch mới hoặc kết nối Google/Outlook để đồng bộ lịch." />
       ) : (
         schedules.map((schedule) => (
           <Card key={schedule.id}>
@@ -326,9 +331,9 @@ export default function ScheduleScreen() {
               <Text style={styles.title}>{schedule.title}</Text>
               <Text style={[
                 styles.source,
-                schedule.source === 'synced' ? styles.sourceSynced : styles.sourceDefault,
+                sourceStyle(schedule, styles),
               ]}>
-                {sourceLabel(schedule.source)}
+                {sourceLabel(schedule)}
               </Text>
             </View>
             <Text style={styles.time}>
@@ -346,9 +351,11 @@ export default function ScheduleScreen() {
                   <Button title="Hủy" variant="secondary" onPress={() => updateStatus(schedule, 'cancelled')} />
                   <Button title="Xóa" variant="danger" onPress={() => deleteSchedule(schedule)} />
                 </>
-              ) : (
+              ) : schedule.google_event_id ? (
                 <Button title="Xóa khỏi Google" variant="danger" onPress={() => deleteEvent(schedule)} />
-              )}
+              ) : schedule.html_link || schedule.web_link ? (
+                <Button title="Mở lịch" variant="secondary" onPress={() => Linking.openURL(schedule.html_link || schedule.web_link)} />
+              ) : null}
             </View>
           </Card>
         ))
@@ -400,7 +407,11 @@ export default function ScheduleScreen() {
         actions={
           <>
             <Button title="Cập nhật" variant="secondary" onPress={() => loadSchedules({ syncGoogle: true })} loading={loading} />
-            <Button title={calendarConnected ? 'Đã kết nối Google' : 'Kết nối Google'} variant="secondary" onPress={() => Linking.openURL('https://calendar.google.com')} />
+            <Button
+              title={calendarConnected ? `Đã kết nối ${connectedCalendars.join(' + ')}` : 'Kết nối lịch'}
+              variant="secondary"
+              onPress={() => Linking.openURL('https://calendar.google.com')}
+            />
           </>
         }
       >
@@ -505,10 +516,23 @@ function dedupeSchedules(schedules = []) {
   return result;
 }
 
-function sourceLabel(source) {
-  if (source === 'synced') return 'Đã đồng bộ';
-  if (source === 'google') return 'Google';
+function scheduleProvider(schedule) {
+  return schedule?.provider || schedule?.source || '';
+}
+
+function sourceLabel(schedule) {
+  const provider = scheduleProvider(schedule);
+  if (provider === 'outlook' || provider === 'microsoft') return 'Outlook';
+  if (schedule?.source === 'synced') return 'Đã đồng bộ';
+  if (schedule?.source === 'google' || provider === 'google') return 'Google';
   return 'FlowMate';
+}
+
+function sourceStyle(schedule, styles) {
+  const provider = scheduleProvider(schedule);
+  if (provider === 'outlook' || provider === 'microsoft') return styles.sourceOutlook;
+  if (schedule?.source === 'synced') return styles.sourceSynced;
+  return styles.sourceDefault;
 }
 
 function formatDate(value) {
@@ -576,6 +600,7 @@ function makeStyles(colors) {
     source: { overflow: 'hidden', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4, fontSize: 11, fontWeight: '800' },
     sourceSynced: { color: colors.success, backgroundColor: `${colors.success}18` },
     sourceDefault: { color: colors.primary, backgroundColor: `${colors.primary}18` },
+    sourceOutlook: { color: '#0369a1', backgroundColor: 'rgba(14,165,233,0.16)' },
     time:  { marginTop: 6, color: colors.primary, fontWeight: '700' },
     description: { marginTop: 8,  color: colors.textMuted, lineHeight: 20 },
     meta:        { marginTop: 6,  color: colors.textMuted },

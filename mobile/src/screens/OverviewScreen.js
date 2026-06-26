@@ -57,6 +57,7 @@ export default function OverviewScreen() {
   const openTasks = schedules.filter((item) => item.status !== 'completed');
   const meetingEmails = emails.filter((item) => item.is_meeting);
   const insight = buildInsight({ emails, schedules, date });
+  const sourceText = buildSourceText({ emails, schedules });
 
   return (
     <Screen
@@ -69,6 +70,7 @@ export default function OverviewScreen() {
         <Text style={styles.kicker}>FLOWMATE AI</Text>
         <Text style={styles.heroTitle}>{formatReportDate(date)}</Text>
         <Text style={styles.heroText}>{insight}</Text>
+        <Text style={styles.sourceText}>{sourceText}</Text>
       </Card>
 
       <Card style={styles.dateCard}>
@@ -103,7 +105,10 @@ export default function OverviewScreen() {
               <Text style={styles.itemMeta}>{formatScheduleTime(item.start_time, item.end_time)}</Text>
               {item.description ? <Text style={styles.itemPreview} numberOfLines={3}>{stripHtml(item.description)}</Text> : null}
             </View>
-            <Text style={styles.chip}>{priorityLabel(item)}</Text>
+            <View style={styles.chipStack}>
+              <Text style={styles.chip}>{priorityLabel(item)}</Text>
+              <Text style={[styles.chip, providerStyle(item.provider || item.source, styles)]}>{providerLabel(item.provider || item.source)}</Text>
+            </View>
           </View>
         ))}
       </Card>
@@ -124,7 +129,10 @@ export default function OverviewScreen() {
               <Text style={styles.itemMeta} numberOfLines={1}>{item.sender || 'Người gửi'}</Text>
               <Text style={styles.itemPreview} numberOfLines={4}>{item.summary || 'Chưa có tóm tắt.'}</Text>
             </View>
-            {item.is_meeting ? <Text style={[styles.chip, styles.meetingChip]}>Họp</Text> : null}
+            <View style={styles.chipStack}>
+              <Text style={[styles.chip, providerStyle(item.provider, styles)]}>{providerLabel(item.provider)}</Text>
+              {item.is_meeting ? <Text style={[styles.chip, styles.meetingChip]}>Họp</Text> : null}
+            </View>
           </View>
         ))}
       </Card>
@@ -154,6 +162,26 @@ function buildInsight({ emails, schedules, date }) {
   if (firstSchedule) parts.push(`Ưu tiên đầu tiên: ${firstSchedule.title || 'Sự kiện'} lúc ${formatScheduleTime(firstSchedule.start_time, firstSchedule.end_time)}.`);
   if (firstEmail) parts.push(`Email nên xem trước: ${firstEmail.subject || 'Không tiêu đề'}.`);
   return parts.join(' ');
+}
+
+function providerLabel(provider) {
+  if (provider === 'outlook' || provider === 'microsoft') return 'Outlook';
+  if (provider === 'google') return 'Google';
+  return 'Gmail';
+}
+
+function providerStyle(provider, styles) {
+  return provider === 'outlook' || provider === 'microsoft'
+    ? styles.outlookChip
+    : styles.gmailChip;
+}
+
+function buildSourceText({ emails, schedules }) {
+  const providers = new Set();
+  emails.forEach((item) => providers.add(providerLabel(item.provider || 'gmail')));
+  schedules.forEach((item) => providers.add(providerLabel(item.provider || item.source || 'google')));
+  if (!providers.size) providers.add('Gmail');
+  return `Nguồn: ${Array.from(providers).join(', ')}`;
 }
 
 function formatDateForApi(value) {
@@ -234,6 +262,7 @@ function makeStyles(colors) {
     },
     heroTitle: { color: colors.text, fontSize: 22, fontWeight: '900' },
     heroText: { color: colors.textMuted, lineHeight: 21 },
+    sourceText: { marginTop: 4, color: colors.textMuted, fontSize: 12, fontWeight: '800' },
     dateCard: { gap: 10 },
     statsGrid: {
       flexDirection: 'row',
@@ -281,6 +310,15 @@ function makeStyles(colors) {
       color: '#0f766e',
       fontSize: 10,
       fontWeight: '900',
+    },
+    chipStack: { alignItems: 'flex-end', gap: 5 },
+    gmailChip: {
+      color: colors.primary,
+      backgroundColor: `${colors.primary}18`,
+    },
+    outlookChip: {
+      color: '#0369a1',
+      backgroundColor: 'rgba(14,165,233,0.16)',
     },
     meetingChip: {
       backgroundColor: 'rgba(245,158,11,0.16)',

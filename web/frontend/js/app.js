@@ -2933,11 +2933,25 @@ async function loadEmails(page = 1, options = {}) {
         notifyMeetingSuggestions(data.meeting_suggestions || []);
         
         if ((data.needs_refresh || data.cache_miss) && (!data.emails || data.emails.length === 0)) {
+            if (!options.fresh && !options.autoRefreshAttempted) {
+                emailsList.innerHTML = `
+                    <div style="padding: 30px; text-align: center; background: #EEF2FF; border-radius: 8px; margin: 20px;">
+                        <p style="font-size: 16px; color: #312E81; margin-bottom: 10px;">${ui('Đang quét Gmail lần đầu...', 'Scanning Gmail for the first time...')}</p>
+                        <p style="color: #666; font-size: 14px; margin-bottom: 0;">
+                            ${ui('Cache chưa có dữ liệu nên FlowMate đang tự làm mới. Bạn không cần bấm nút làm mới.', 'No cached email was found, so FlowMate is refreshing automatically. No manual refresh needed.')}
+                        </p>
+                    </div>
+                `;
+                await loadEmails(page, { fresh: true, autoRefreshAttempted: true });
+                scanMeetingSuggestions(true).catch(err => console.warn('Auto meeting scan failed:', err));
+                return;
+            }
+
             emailsList.innerHTML = `
                 <div style="padding: 30px; text-align: center; background: #EEF2FF; border-radius: 8px; margin: 20px;">
                     <p style="font-size: 16px; color: #312E81; margin-bottom: 10px;">${ui('Chưa có email trong bộ nhớ đệm', 'No cached email yet')}</p>
                     <p style="color: #666; font-size: 14px; margin-bottom: 15px;">
-                        ${ui('FlowMate đã mở Email bằng cache để tải nhanh. Bấm Làm mới để quét Gmail và cập nhật dữ liệu mới nhất.', 'FlowMate opened Email from cache for speed. Refresh to scan Gmail and update the latest data.')}
+                        ${ui('FlowMate đã thử tự quét Gmail nhưng chưa lấy được dữ liệu. Bạn có thể thử làm mới lại.', 'FlowMate tried scanning Gmail automatically but could not load data yet. You can try refreshing again.')}
                     </p>
                     <button onclick="refreshEmailsFromGmail(1)" class="btn-primary">${ui('Làm mới Gmail', 'Refresh Gmail')}</button>
                 </div>
@@ -3845,8 +3859,11 @@ async function loadSchedules(options = {}) {
 
         const calendarStatus = document.getElementById('calendarStatus');
         if (calendarStatus) {
-            calendarStatus.textContent = data.calendar_connected
-                ? ui(`Đã kết nối - ${data.count || 0} sự kiện`, `Connected - ${data.count || 0} events`)
+            const connectedSources = [];
+            if (data.calendar_connected || data.google_calendar_connected) connectedSources.push('Google');
+            if (data.outlook_calendar_connected) connectedSources.push('Outlook');
+            calendarStatus.textContent = connectedSources.length
+                ? ui(`Đã kết nối ${connectedSources.join(' + ')} - ${data.count || 0} sự kiện`, `Connected ${connectedSources.join(' + ')} - ${data.count || 0} events`)
                 : ui('Lịch FlowMate', 'FlowMate Calendar');
         }
 
@@ -3863,16 +3880,22 @@ async function loadSchedules(options = {}) {
                     ? ui('Đã hoàn thành', 'Completed')
                     : ui('Chưa hoàn thành', 'Pending');
                 const isLocal = schedule.local_id !== null && schedule.local_id !== undefined;
-                const sourceText = schedule.source === 'synced'
+                const sourceValue = schedule.provider || schedule.source || '';
+                const sourceText = sourceValue === 'outlook' || sourceValue === 'microsoft'
+                    ? 'Outlook Calendar'
+                    : schedule.source === 'synced'
                     ? 'FlowMate + Google'
                     : schedule.source === 'google' ? 'Google Calendar' : 'FlowMate';
-                const sourceClass = schedule.source === 'synced'
+                const sourceClass = sourceValue === 'outlook' || sourceValue === 'microsoft'
+                    ? 'outlook'
+                    : schedule.source === 'synced'
                     ? 'synced'
                     : schedule.source === 'google' ? 'google' : 'local';
                 const attendees = Array.isArray(schedule.attendees)
                     ? schedule.attendees.join(', ')
                     : String(schedule.attendees || '');
                 const description = plainTextFromHtml(schedule.description || '');
+                const externalLink = schedule.html_link || schedule.web_link || schedule.calendar_event_link || '';
                 const localActions = isLocal
                     ? `
                         ${schedule.status === 'completed'
@@ -3881,7 +3904,11 @@ async function loadSchedules(options = {}) {
                         <button class="btn-edit" onclick="openEditSchedule(${schedule.local_id})">${ui('Sửa', 'Edit')}</button>
                         <button class="btn-delete" onclick="deleteSchedule(${schedule.local_id})">${ui('Xóa', 'Delete')}</button>
                     `
-                    : `<button class="btn-delete" data-google-event-id="${escapeHtml(schedule.google_event_id || '')}">${ui('Xóa khỏi Google', 'Delete from Google')}</button>`;
+                    : sourceClass === 'google' && schedule.google_event_id
+                        ? `<button class="btn-delete" data-google-event-id="${escapeHtml(schedule.google_event_id || '')}">${ui('Xóa khỏi Google', 'Delete from Google')}</button>`
+                        : externalLink
+                            ? `<button class="btn-secondary" data-open-event-link="${escapeHtml(externalLink)}">${ui('Mở lịch', 'Open event')}</button>`
+                            : '';
 
                 scheduleDiv.innerHTML = `
                     <div class="schedule-item-main">
@@ -3913,6 +3940,10 @@ async function loadSchedules(options = {}) {
                     deleteGoogleButton.addEventListener('click', () => {
                         deleteCalendarEvent(deleteGoogleButton.dataset.googleEventId);
                     });
+                }
+                const openEventButton = scheduleDiv.querySelector('[data-open-event-link]');
+                if (openEventButton) {
+                    openEventButton.addEventListener('click', () => openExternalUrl(openEventButton.dataset.openEventLink));
                 }
                 schedulesList.appendChild(scheduleDiv);
             });

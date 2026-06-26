@@ -174,6 +174,87 @@ Behavior:
 - Add `provider` and `provider_label` to every item.
 - Keep old Gmail endpoints for backward compatibility while migrating UI.
 
+## Outlook Calendar Integration
+
+Outlook Calendar should be integrated through the same provider model as email.
+The initial Outlook release uses read-only calendar access through:
+
+```text
+GET https://graph.microsoft.com/v1.0/me/calendarView
+```
+
+Required query parameters:
+
+```text
+startDateTime=<ISO datetime>
+endDateTime=<ISO datetime>
+```
+
+Recommended Graph select fields:
+
+```text
+$select=id,subject,bodyPreview,start,end,location,attendees,webLink,lastModifiedDateTime,isCancelled
+```
+
+Server routes:
+
+```text
+GET /api/outlook/events?start=<iso>&end=<iso>
+```
+
+Schedule unified behavior:
+
+```text
+GET /api/schedule/unified
+GET /api/schedule/week
+POST /api/schedule/sync
+```
+
+should eventually include Outlook Calendar events when Outlook is connected.
+
+Response flags:
+
+```json
+{
+  "calendar_connected": true,
+  "google_calendar_connected": true,
+  "outlook_calendar_connected": true,
+  "items": []
+}
+```
+
+Normalized Outlook calendar item:
+
+```json
+{
+  "provider": "outlook",
+  "source": "outlook",
+  "local_id": null,
+  "outlook_event_id": "<graph-event-id>",
+  "title": "Team meeting",
+  "description": "Agenda preview",
+  "start_time": "2026-06-27T09:00:00+07:00",
+  "end_time": "2026-06-27T10:00:00+07:00",
+  "location": "Microsoft Teams",
+  "attendees": ["a@example.com"],
+  "html_link": "https://outlook.office.com/..."
+}
+```
+
+Read/write policy:
+
+- With `Calendars.Read`, Outlook events are read-only in FlowMate.
+- Show "Open event" instead of edit/delete for Outlook-only events.
+- Only add `Calendars.ReadWrite` when FlowMate supports creating or deleting
+  Outlook events from the app.
+
+Storage:
+
+- The existing `calendar_events` table already has a generic `provider` column.
+- Store Outlook events with `provider = 'outlook'`.
+- Use `external_event_id = Graph event id`.
+- Keep `calendar_id = 'primary'` unless multi-calendar support is added.
+
 ## Settings UI
 
 Settings should own provider connection management.
@@ -240,6 +321,53 @@ Do not split the main overview by provider. Split by priority:
 - Email needing attention
 - Meetings
 - Open tasks
+
+## Mobile Parity
+
+The mobile app should expose the same Outlook model as web.
+
+Settings mobile:
+
+- Add `Outlook Mail & Calendar` under service connections.
+- Call `/api/outlook/auth-status` on screen load.
+- Call `/api/outlook/auth-url` and open the returned URL with Expo WebBrowser.
+- Call `/api/outlook/logout` to disconnect.
+- If the endpoint is not deployed yet, show "Outlook is not configured on this deployment."
+
+Email mobile:
+
+- Keep one Email screen.
+- Add source filter:
+
+```text
+Tất cả | Gmail | Outlook
+```
+
+- Prefer `/api/email/unified`.
+- Fallback to the existing Gmail endpoint while the unified server endpoint is
+  not available.
+- Show small provider badges on every email card.
+
+Overview mobile:
+
+- Continue showing one daily overview.
+- Display a quiet source line such as:
+
+```text
+Nguồn: Gmail, Google, Outlook
+```
+
+- Show provider badges beside individual email/calendar items only as metadata,
+  not as separate sections.
+
+Schedule mobile:
+
+- Treat Outlook Calendar as a read-only external calendar until
+  `Calendars.ReadWrite` is enabled.
+- Show source badges: `FlowMate`, `Google`, `Outlook`.
+- For Outlook-only events, show `Mở lịch` when `html_link` or `web_link` is
+  available.
+- Do not call the Google delete endpoint for Outlook events.
 
 ## Database Migration Later
 

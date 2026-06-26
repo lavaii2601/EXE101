@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Image,
@@ -9,10 +9,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import Button from '../components/Button';
 import { ACCENTS, useTheme } from '../theme/ThemeContext';
 import { getUserMode } from '../config/userModes';
-import { apiPost } from '../api/client';
+import { apiGet, apiPost } from '../api/client';
 
 const ACCENT_OPTIONS = [
   { key: 'charcoal', hex: '#242423' },
@@ -31,6 +32,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const [reminderNotif, setReminderNotif] = useState(true);
   const [biometric,     setBiometric]     = useState(false);
   const [twoFactor,     setTwoFactor]     = useState(false);
+  const [outlook,       setOutlook]       = useState({ configured: false, connected: false });
+  const [outlookLoading, setOutlookLoading] = useState(false);
 
   const name     = profile?.name || profile?.gmail_name || 'Người dùng';
   const email    = profile?.gmail_email || profile?.email || 'Chưa kết nối Gmail';
@@ -38,6 +41,21 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const gmailOk  = status?.gmail_configured;
   const initials = name.charAt(0).toUpperCase();
   const mode = getUserMode(userMode);
+
+  const loadOutlookStatus = useCallback(async () => {
+    try {
+      const data = await apiGet('/outlook/auth-status');
+      setOutlook({
+        configured: Boolean(data.configured),
+        connected: Boolean(data.connected || data.authenticated),
+        email: data.email || data.account_email || '',
+      });
+    } catch {
+      setOutlook({ configured: false, connected: false });
+    }
+  }, []);
+
+  useEffect(() => { loadOutlookStatus(); }, [loadOutlookStatus]);
 
   const confirmLogout = () => {
     Alert.alert('Đăng xuất', 'Bạn có chắc muốn đăng xuất?', [
@@ -61,6 +79,48 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             Alert.alert('Đã xóa dữ liệu', `${data.deleted_count || 0} mục đã được xóa.`);
           } catch (error) {
             Alert.alert('Không xóa được dữ liệu', error.message);
+          }
+        },
+      },
+    ]);
+  };
+
+  const connectOutlook = async () => {
+    setOutlookLoading(true);
+    try {
+      const data = await apiGet('/outlook/auth-url');
+      if (!data.auth_url) throw new Error('Server chưa trả về đường dẫn đăng nhập Outlook.');
+      await WebBrowser.openBrowserAsync(data.auth_url);
+      await loadOutlookStatus();
+      onRefresh?.();
+    } catch (error) {
+      Alert.alert(
+        outlook.configured ? 'Không mở được Outlook OAuth' : 'Outlook chưa được cấu hình',
+        outlook.configured
+          ? error.message
+          : 'Thêm MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET và MICROSOFT_REDIRECT_URI trên Railway trước.'
+      );
+    } finally {
+      setOutlookLoading(false);
+    }
+  };
+
+  const disconnectOutlook = () => {
+    Alert.alert('Ngắt Outlook', 'Bạn có chắc muốn ngắt kết nối Outlook khỏi FlowMate?', [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Ngắt kết nối',
+        style: 'destructive',
+        onPress: async () => {
+          setOutlookLoading(true);
+          try {
+            await apiPost('/outlook/logout');
+            await loadOutlookStatus();
+            onRefresh?.();
+          } catch (error) {
+            Alert.alert('Không ngắt được Outlook', error.message);
+          } finally {
+            setOutlookLoading(false);
           }
         },
       },
@@ -145,6 +205,48 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
               </TouchableOpacity>
             ))}
           </View>
+        </View>
+      </View>
+
+      {/* ── Connections ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>KẾT NỐI DỊCH VỤ</Text>
+
+        <View style={styles.settingRow}>
+          <View style={[styles.iconWrap, { backgroundColor: '#dbeafe' }]}>
+            <Text style={styles.settingIcon}>G</Text>
+          </View>
+          <View style={styles.settingInfo}>
+            <Text style={styles.settingTitle}>Gmail & Google Calendar</Text>
+            <Text style={styles.settingSub}>{gmailOk ? 'Đã sẵn sàng cho email và lịch Google' : 'Chưa cấu hình hoặc chưa kết nối Gmail'}</Text>
+          </View>
+          <View style={[styles.statusPill, gmailOk ? styles.statusOk : styles.statusWarn]}>
+            <Text style={styles.statusText}>{gmailOk ? 'Đã bật' : 'Chưa bật'}</Text>
+          </View>
+        </View>
+
+        <View style={styles.divider} />
+
+        <View style={styles.settingRow}>
+          <View style={[styles.iconWrap, { backgroundColor: '#e0f2fe' }]}>
+            <Text style={styles.settingIcon}>O</Text>
+          </View>
+          <View style={styles.settingInfo}>
+            <Text style={styles.settingTitle}>Outlook Mail & Calendar</Text>
+            <Text style={styles.settingSub} numberOfLines={2}>
+              {outlook.connected
+                ? `Đã kết nối ${outlook.email || 'Outlook'}`
+                : outlook.configured
+                  ? 'Tùy chọn thêm để tổng hợp mail và lịch Outlook'
+                  : 'Chưa cấu hình trên Railway'}
+            </Text>
+          </View>
+          <Button
+            title={outlook.connected ? 'Ngắt' : 'Kết nối'}
+            variant={outlook.connected ? 'secondary' : 'primary'}
+            onPress={outlook.connected ? disconnectOutlook : connectOutlook}
+            loading={outlookLoading}
+          />
         </View>
       </View>
 
@@ -378,6 +480,14 @@ function makeStyles(colors) {
     badgeOk:   { backgroundColor: colors.success },
     badgeWarn: { backgroundColor: colors.warning },
     badgeText: { color: '#ffffff', fontWeight: '700', fontSize: 11 },
+    statusPill: {
+      borderRadius: 999,
+      paddingHorizontal: 9,
+      paddingVertical: 4,
+    },
+    statusOk: { backgroundColor: `${colors.success}22` },
+    statusWarn: { backgroundColor: `${colors.warning}22` },
+    statusText: { color: colors.text, fontSize: 11, fontWeight: '800' },
 
     /* Section */
     section: {
