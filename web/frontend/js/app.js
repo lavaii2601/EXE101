@@ -71,6 +71,7 @@ function persistChatSessionTitle() {
 const I18N = {
     vi: {
         'nav.chat': 'Chat',
+        'nav.overview': 'Tổng hợp',
         'nav.email': 'Email',
         'nav.calendar': 'Lịch',
         'nav.history': 'Lịch sử',
@@ -86,6 +87,9 @@ const I18N = {
         'chat.noSaved': 'Chưa có đoạn chat cũ.',
         'common.clear': 'Xóa',
         'common.refresh': 'Làm mới',
+        'overview.title': 'Tổng hợp thông tin',
+        'overview.subtitle': 'AI tự động gom deadline, email và task trong ngày được chọn.',
+        'overview.refresh': 'Tổng hợp ngày này',
         'email.title': 'Quản lý Email',
         'email.search': 'Tìm theo người gửi, tiêu đề hoặc nội dung...',
         'email.includeRead': 'Giữ email đã đọc',
@@ -112,6 +116,7 @@ const I18N = {
     },
     en: {
         'nav.chat': 'Chat',
+        'nav.overview': 'Overview',
         'nav.email': 'Email',
         'nav.calendar': 'Calendar',
         'nav.history': 'Activity',
@@ -127,6 +132,9 @@ const I18N = {
         'chat.noSaved': 'No saved chats yet.',
         'common.clear': 'Clear',
         'common.refresh': 'Refresh',
+        'overview.title': 'Daily overview',
+        'overview.subtitle': 'AI automatically summarizes deadlines, email, and tasks for the selected day.',
+        'overview.refresh': 'Summarize day',
         'email.title': 'Email Management',
         'email.search': 'Search sender, subject, or content...',
         'email.includeRead': 'Include read email',
@@ -454,6 +462,18 @@ async function initApp() {
         tabBtns.forEach(btn => {
             btn.addEventListener('click', () => handleTabChange(btn));
         });
+
+        const refreshOverviewBtn = document.getElementById('refreshOverviewBtn');
+        const overviewDate = document.getElementById('overviewDate');
+        if (overviewDate && !overviewDate.value) {
+            overviewDate.value = formatDateForApi(new Date());
+        }
+        if (refreshOverviewBtn) {
+            refreshOverviewBtn.addEventListener('click', () => loadOverviewPage({ force: true }));
+        }
+        if (overviewDate) {
+            overviewDate.addEventListener('change', () => loadOverviewPage({ force: true }));
+        }
 
         // New schedule form submit
         if (scheduleForm) {
@@ -974,6 +994,17 @@ const QUICK_ACTIONS = {
             { icon: '▣', label: 'Mở lịch tuần', detail: 'Kiểm tra lịch và cuộc họp', action: 'open-calendar' }
         ]
     },
+    overview: {
+        icon: 'AI',
+        title: 'Tổng hợp',
+        description: 'Xem nhanh email, deadline và task quan trọng trong ngày.',
+        tip: 'Mở Tổng hợp vào đầu ngày để biết việc cần ưu tiên trước khi vào Chat.',
+        actions: [
+            { icon: '↻', label: 'Tổng hợp lại', detail: 'Cập nhật dữ liệu hôm nay', action: 'refresh-overview' },
+            { icon: '✉', label: 'Xem email', detail: 'Mở hộp thư đến', action: 'open-email' },
+            { icon: '▣', label: 'Xem lịch', detail: 'Mở lịch tuần', action: 'open-calendar' }
+        ]
+    },
     emails: {
         icon: '✉',
         title: 'Email',
@@ -1060,6 +1091,7 @@ async function runQuickAction(action) {
     if (action === 'new-chat') return startNewChat();
     if (action === 'open-email') return handlePageChange(pageButton('emails'));
     if (action === 'open-calendar') return handlePageChange(pageButton('schedule'));
+    if (action === 'refresh-overview') return loadOverviewPage({ force: true });
     if (action === 'refresh-email') return document.getElementById('refreshEmailsBtn')?.click();
     if (action === 'daily-report') return document.querySelector('#emails-page [data-tab="daily-report"]')?.click();
     if (action === 'compose-email') return document.querySelector('#emails-page [data-tab="compose"]')?.click();
@@ -1215,6 +1247,201 @@ function refreshQuickScheduleSummary() {
     if (currentPage === 'schedule' && container) {
         container.innerHTML = `<div class="quick-schedule-loading">${ui('Đang tổng hợp lịch...', 'Loading schedule summary...')}</div>`;
         loadQuickScheduleSummary(container);
+    }
+}
+
+function formatOverviewDateForReport(value) {
+    const date = value ? new Date(`${value}T00:00:00`) : new Date();
+    if (Number.isNaN(date.getTime())) return '';
+    return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+}
+
+function isSameOverviewDay(value, selectedDate) {
+    if (!value || !selectedDate) return false;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return false;
+    return formatDateForApi(date) === selectedDate;
+}
+
+function getOverviewPriority(schedule) {
+    const text = `${schedule?.title || ''} ${schedule?.description || ''}`.toLowerCase();
+    if (/(deadline|hạn|nộp|due|submit|bàn giao)/i.test(text)) return ui('Deadline', 'Deadline');
+    if (schedule?.status === 'completed') return ui('Đã xong', 'Done');
+    return ui('Task', 'Task');
+}
+
+function buildOverviewInsight({ schedules, emails, selectedDate }) {
+    const deadlines = schedules.filter((item) => getOverviewPriority(item) === ui('Deadline', 'Deadline'));
+    const pendingTasks = schedules.filter((item) => item.status !== 'completed');
+    const meetingEmails = emails.filter((item) => item.is_meeting);
+    const firstSchedule = schedules[0];
+    const firstEmail = emails[0];
+
+    if (!schedules.length && !emails.length) {
+        return ui(
+            `Ngày ${formatOverviewDateForReport(selectedDate)} chưa có email, deadline hoặc task nổi bật. Bạn có thể dùng thời gian này để xử lý việc tồn đọng hoặc lên kế hoạch trước.`,
+            `No notable email, deadlines, or tasks were found for ${formatOverviewDateForReport(selectedDate)}. You can use the space to clear backlog or plan ahead.`
+        );
+    }
+
+    const parts = [];
+    parts.push(ui(
+        `Ngày này có ${emails.length} email được tổng hợp, ${schedules.length} mục lịch/task và ${deadlines.length} deadline cần chú ý.`,
+        `This day has ${emails.length} summarized emails, ${schedules.length} calendar/task items, and ${deadlines.length} deadlines to watch.`
+    ));
+    if (firstSchedule) {
+        const range = formatScheduleRange(firstSchedule.start_time, firstSchedule.end_time);
+        parts.push(ui(
+            `Ưu tiên đầu tiên là "${firstSchedule.title || 'Sự kiện'}" vào ${range.time || range.date}.`,
+            `First priority is "${firstSchedule.title || 'Event'}" at ${range.time || range.date}.`
+        ));
+    }
+    if (firstEmail) {
+        parts.push(ui(
+            `Email đáng xem trước: "${firstEmail.subject || 'Không tiêu đề'}"${firstEmail.is_meeting ? ' vì có khả năng liên quan đến lịch hẹn' : ''}.`,
+            `Email to review first: "${firstEmail.subject || 'No subject'}"${firstEmail.is_meeting ? ' because it may affect scheduling' : ''}.`
+        ));
+    }
+    if (pendingTasks.length) {
+        parts.push(ui(
+            `Còn ${pendingTasks.length} task chưa đánh dấu hoàn thành.`,
+            `${pendingTasks.length} tasks are not marked done.`
+        ));
+    }
+    if (meetingEmails.length) {
+        parts.push(ui(
+            `${meetingEmails.length} email có tín hiệu cuộc họp, nên kiểm tra để tạo lịch nếu cần.`,
+            `${meetingEmails.length} emails look meeting-related, so review them for possible calendar events.`
+        ));
+    }
+    return parts.join(' ');
+}
+
+function renderOverviewList(items, type) {
+    if (!items.length) {
+        return `<div class="overview-empty">${type === 'email'
+            ? ui('Không có email nổi bật trong ngày này.', 'No notable emails for this day.')
+            : ui('Không có deadline hoặc task trong ngày này.', 'No deadlines or tasks for this day.')
+        }</div>`;
+    }
+
+    return items.slice(0, 6).map((item, index) => {
+        if (type === 'email') {
+            return `
+                <article class="overview-list-item">
+                    <span class="overview-item-index">${index + 1}</span>
+                    <div>
+                        <strong>${escapeHtml(item.subject || ui('Email không tiêu đề', 'Untitled email'))}</strong>
+                        <small>${escapeHtml(item.sender || '')}</small>
+                        <p>${escapeHtml(item.summary || ui('Chưa có tóm tắt.', 'No summary available.'))}</p>
+                    </div>
+                    ${item.is_meeting ? `<span class="overview-chip is-meeting">${ui('Cuộc họp', 'Meeting')}</span>` : ''}
+                </article>
+            `;
+        }
+
+        const range = formatScheduleRange(item.start_time, item.end_time);
+        const priority = getOverviewPriority(item);
+        return `
+            <article class="overview-list-item">
+                <span class="overview-item-index">${index + 1}</span>
+                <div>
+                    <strong>${escapeHtml(item.title || ui('Task không tiêu đề', 'Untitled task'))}</strong>
+                    <small>${escapeHtml(range.time || range.date || ui('Chưa rõ thời gian', 'Time unknown'))}</small>
+                    ${item.description ? `<p>${escapeHtml(plainTextFromHtml(item.description))}</p>` : ''}
+                </div>
+                <span class="overview-chip">${escapeHtml(priority)}</span>
+            </article>
+        `;
+    }).join('');
+}
+
+async function loadOverviewPage(options = {}) {
+    const container = document.getElementById('overviewContent');
+    const dateInput = document.getElementById('overviewDate');
+    const refreshBtn = document.getElementById('refreshOverviewBtn');
+    if (!container) return;
+
+    if (dateInput && !dateInput.value) {
+        dateInput.value = formatDateForApi(new Date());
+    }
+    const selectedDate = dateInput?.value || formatDateForApi(new Date());
+    const reportDate = formatOverviewDateForReport(selectedDate);
+
+    container.innerHTML = `<div class="overview-loading">${ui('Đang để AI tổng hợp dữ liệu trong ngày...', 'AI is summarizing your day...')}</div>`;
+    if (refreshBtn) refreshBtn.disabled = true;
+
+    try {
+        if (options.force) {
+            clearRuntimeCache('schedule:');
+        }
+
+        const [scheduleResult, emailResult] = await Promise.allSettled([
+            apiFetch(`${API_BASE}/schedule/unified?max_results=100&live=0`).then((response) => response.json()),
+            apiFetch(`${API_BASE}/email/summarize-by-date`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: reportDate, max_results: 50 })
+            }).then((response) => response.json())
+        ]);
+
+        const scheduleData = scheduleResult.status === 'fulfilled' ? scheduleResult.value : {};
+        const emailData = emailResult.status === 'fulfilled' ? emailResult.value : {};
+        const schedules = dedupeSchedules(Array.isArray(scheduleData.items) ? scheduleData.items : [])
+            .filter((item) => isSameOverviewDay(item.start_time, selectedDate))
+            .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+        const emails = Array.isArray(emailData.rows) ? emailData.rows : [];
+        const deadlines = schedules.filter((item) => getOverviewPriority(item) === ui('Deadline', 'Deadline'));
+        const openTasks = schedules.filter((item) => item.status !== 'completed');
+        const meetingEmails = emails.filter((item) => item.is_meeting);
+        const insight = buildOverviewInsight({ schedules, emails, selectedDate });
+
+        container.innerHTML = `
+            <section class="overview-hero">
+                <div>
+                    <span class="overview-kicker">${ui('TÓM TẮT AI', 'AI SUMMARY')}</span>
+                    <h3>${escapeHtml(reportDate)}</h3>
+                    <p>${escapeHtml(insight)}</p>
+                </div>
+                <div class="overview-score">
+                    <strong>${openTasks.length + emails.length}</strong>
+                    <span>${ui('điểm cần xem', 'items to review')}</span>
+                </div>
+            </section>
+
+            <div class="overview-stat-grid">
+                <article><strong>${deadlines.length}</strong><span>${ui('Deadline', 'Deadlines')}</span></article>
+                <article><strong>${emails.length}</strong><span>Email</span></article>
+                <article><strong>${openTasks.length}</strong><span>${ui('Task mở', 'Open tasks')}</span></article>
+                <article><strong>${meetingEmails.length}</strong><span>${ui('Mail họp', 'Meeting mail')}</span></article>
+            </div>
+
+            <div class="overview-grid">
+                <section class="overview-panel">
+                    <div class="overview-panel-head">
+                        <span class="overview-kicker">${ui('DEADLINE & TASK', 'DEADLINES & TASKS')}</span>
+                        <strong>${ui('Việc cần xử lý hôm nay', 'Today’s work')}</strong>
+                    </div>
+                    <div class="overview-list">${renderOverviewList(schedules, 'task')}</div>
+                </section>
+                <section class="overview-panel">
+                    <div class="overview-panel-head">
+                        <span class="overview-kicker">EMAIL</span>
+                        <strong>${ui('Mail quan trọng trong ngày', 'Important mail today')}</strong>
+                    </div>
+                    <div class="overview-list">${renderOverviewList(emails, 'email')}</div>
+                </section>
+            </div>
+        `;
+    } catch (error) {
+        container.innerHTML = `
+            <div class="overview-error">
+                <strong>${ui('Không thể tổng hợp dữ liệu', 'Unable to build overview')}</strong>
+                <p>${escapeHtml(error.message || ui('Vui lòng thử lại sau.', 'Please try again later.'))}</p>
+            </div>
+        `;
+    } finally {
+        if (refreshBtn) refreshBtn.disabled = false;
     }
 }
 
@@ -1608,6 +1835,8 @@ async function handlePageChange(btn) {
     if (page === 'chat') {
         loadChatSessions().catch(err => console.error('Chat sessions load error:', err));
         loadChatHistory().catch(err => console.error('Chat history load error:', err));
+    } else if (page === 'overview') {
+        loadOverviewPage().catch(err => console.error('Overview load error:', err));
     } else if (page === 'emails') {
         // Check Gmail auth status first to avoid 401 errors
         try {

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import ChatScreen from './src/screens/ChatScreen';
+import OverviewScreen from './src/screens/OverviewScreen';
 import EmailScreen from './src/screens/EmailScreen';
 import ScheduleScreen from './src/screens/ScheduleScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
@@ -13,6 +14,7 @@ import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 
 const tabs = [
   { key: 'chat',     icon: '💬', label: 'Chat' },
+  { key: 'overview', icon: 'AI', label: 'Tổng hợp' },
   { key: 'emails',   icon: '✉',  label: 'Email' },
   { key: 'schedule', icon: '📅', label: 'Lịch' },
   { key: 'history',  icon: '🕐', label: 'Lịch sử' },
@@ -76,6 +78,7 @@ function AppShell() {
   }, [profile]);
 
   const renderScreen = () => {
+    if (activeTab === 'overview') return <OverviewScreen />;
     if (activeTab === 'emails')   return <EmailScreen userMode={userMode || 'worker'} onAuthChanged={refreshShell} />;
     if (activeTab === 'schedule') return <ScheduleScreen />;
     if (activeTab === 'history')  return <HistoryScreen />;
