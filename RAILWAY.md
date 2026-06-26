@@ -21,6 +21,13 @@ POSTGRES_POOL_MAX=8
 GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
 GMAIL_CREDENTIALS_JSON=
+
+# Optional Outlook / Microsoft Graph provider
+MICROSOFT_CLIENT_ID=
+MICROSOFT_CLIENT_SECRET=
+MICROSOFT_TENANT=common
+MICROSOFT_REDIRECT_URI=https://exe101.up.railway.app/api/outlook/oauth2callback
+MICROSOFT_SCOPES=openid profile email offline_access User.Read Mail.Read Calendars.Read
 ```
 
 You can use either:
@@ -69,4 +76,34 @@ In Google Cloud OAuth Client, add:
 
 ```text
 https://exe101.up.railway.app/api/email/oauth2callback
+```
+
+## Outlook / Microsoft OAuth redirect URI
+
+Outlook is designed as an optional provider that users connect later from
+Settings. Register a Microsoft Entra app and add this redirect URI:
+
+```text
+https://exe101.up.railway.app/api/outlook/oauth2callback
+```
+
+For local development, also add:
+
+```text
+http://127.0.0.1:5000/api/outlook/oauth2callback
+```
+
+Use delegated Microsoft Graph permissions. Start with read-only scopes:
+
+```text
+openid profile email offline_access User.Read Mail.Read Calendars.Read
+```
+
+Only add `Mail.Send` or `Calendars.ReadWrite` when FlowMate actually supports
+sending Outlook mail or creating Outlook calendar events.
+
+The implementation plan is documented in:
+
+```text
+OUTLOOK_RAILWAY_DESIGN.md
 ```
