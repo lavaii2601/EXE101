@@ -32,7 +32,7 @@ let emailSearchInput;
 let emailSearchTimer;
 
 // State
-let currentPage = 'chat';
+let currentPage = 'overview';
 let currentEmailPage = 1;
 let currentWeekStart = getMonday(new Date());
 let currentDetailEmail = null;
@@ -699,7 +699,7 @@ async function initApp() {
                     refreshAuthButtons();
                     loadUserProfile().then(() => {
                         if (userModeRequired) {
-                            pendingPageAfterMode = 'chat';
+                            pendingPageAfterMode = 'overview';
                         } else {
                             showWorkspace();
                             if (currentPage === 'emails') {
@@ -1524,14 +1524,14 @@ async function checkOAuthCallback() {
 
             showNotification(ui('✅ Gmail đã kết nối thành công!', '✅ Gmail connected successfully!'), 'success');
             if (userModeRequired) {
-                pendingPageAfterMode = 'chat';
+                pendingPageAfterMode = 'overview';
                 return;
             }
 
             showWorkspace();
-            const chatNavBtn = document.querySelector('[data-page="chat"]');
-            if (chatNavBtn) {
-                await handlePageChange(chatNavBtn);
+            const overviewNavBtn = document.querySelector('[data-page="overview"]');
+            if (overviewNavBtn) {
+                await handlePageChange(overviewNavBtn);
             }
         } catch (error) {
             console.error('OAuth completion refresh failed:', error);

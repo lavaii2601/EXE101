@@ -13,8 +13,8 @@ import { apiGet, apiPost } from './src/api/client';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 
 const tabs = [
-  { key: 'chat',     icon: '💬', label: 'Chat' },
   { key: 'overview', icon: 'AI', label: 'Tổng hợp' },
+  { key: 'chat',     icon: '💬', label: 'Chat' },
   { key: 'emails',   icon: '✉',  label: 'Email' },
   { key: 'schedule', icon: '📅', label: 'Lịch' },
   { key: 'history',  icon: '🕐', label: 'Lịch sử' },
@@ -31,7 +31,7 @@ export default function App() {
 
 function AppShell() {
   const { colors, isDark } = useTheme();
-  const [activeTab, setActiveTab] = useState('chat');
+  const [activeTab, setActiveTab] = useState('overview');
   const [profile, setProfile] = useState(null);
   const [status, setStatus] = useState(null);
   const [userMode, setUserMode] = useState(null);
@@ -60,7 +60,7 @@ function AppShell() {
     try { await apiPost('/email/logout'); } catch { /* ignore */ }
     setProfile(null);
     setStatus(null);
-    setActiveTab('chat');
+    setActiveTab('overview');
   }, []);
 
   const saveUserMode = useCallback(async (mode) => {
