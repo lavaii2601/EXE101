@@ -135,7 +135,9 @@ User.init_db()
 @app.route('/')
 def serve_frontend():
     """Serve frontend index.html"""
-    return send_from_directory('../frontend', 'index.html')
+    response = send_from_directory('../frontend', 'index.html')
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
 
 @app.route('/<path:path>')
 def serve_static(path):
@@ -144,7 +146,9 @@ def serve_static(path):
         # Safe to cache for a year: filenames are version-tagged via ?v= query
         # string, so a new deploy is requested under a new URL automatically.
         return send_from_directory('../frontend', path, max_age=31536000)
-    return send_from_directory('../frontend', 'index.html')
+    response = send_from_directory('../frontend', 'index.html')
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
