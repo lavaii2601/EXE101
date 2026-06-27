@@ -23,7 +23,7 @@ const ACCENT_OPTIONS = [
   { key: 'orange',   hex: '#ea580c' },
 ];
 
-export default function SettingsScreen({ profile, status, userMode, onChangeMode, onRefresh, onLogout }) {
+export default function SettingsScreen({ profile, status, userMode, onChangeMode, onRefresh, onLogout, onAgentSync, syncEvent }) {
   const { colors, isDark, accent, toggleTheme, setAccent } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -56,6 +56,13 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   }, []);
 
   useEffect(() => { loadOutlookStatus(); }, [loadOutlookStatus]);
+  useEffect(() => {
+    if (!syncEvent?.id) return;
+    if (hasSyncTarget(syncEvent, ['settings', 'profile', 'providers'])) {
+      loadOutlookStatus();
+      onRefresh?.();
+    }
+  }, [loadOutlookStatus, onRefresh, syncEvent]);
 
   const confirmLogout = () => {
     Alert.alert('Đăng xuất', 'Bạn có chắc muốn đăng xuất?', [
@@ -77,6 +84,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
           try {
             const data = await apiPost('/chat/clear-all');
             Alert.alert('Đã xóa dữ liệu', `${data.deleted_count || 0} mục đã được xóa.`);
+            onAgentSync?.(['history', 'chat', 'overview']);
           } catch (error) {
             Alert.alert('Không xóa được dữ liệu', error.message);
           }
@@ -93,6 +101,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
       await WebBrowser.openBrowserAsync(data.auth_url);
       await loadOutlookStatus();
       onRefresh?.();
+      onAgentSync?.(['settings', 'profile', 'email', 'schedule', 'overview']);
     } catch (error) {
       Alert.alert(
         outlook.configured ? 'Không mở được Outlook OAuth' : 'Outlook chưa được cấu hình',
@@ -117,6 +126,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             await apiPost('/outlook/logout');
             await loadOutlookStatus();
             onRefresh?.();
+            onAgentSync?.(['settings', 'profile', 'email', 'schedule', 'overview']);
           } catch (error) {
             Alert.alert('Không ngắt được Outlook', error.message);
           } finally {
@@ -437,6 +447,11 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
     </ScrollView>
   );
+}
+
+function hasSyncTarget(syncEvent, targets) {
+  const currentTargets = Array.isArray(syncEvent?.targets) ? syncEvent.targets : [];
+  return targets.some((target) => currentTargets.includes(target));
 }
 
 function makeStyles(colors) {

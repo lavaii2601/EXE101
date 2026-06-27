@@ -8,7 +8,7 @@ import Screen from '../components/Screen';
 import { apiGet, apiPut } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 
-export default function OverviewScreen() {
+export default function OverviewScreen({ syncEvent }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -58,6 +58,12 @@ export default function OverviewScreen() {
   }, [date]);
 
   useEffect(() => { loadOverview(); }, [loadOverview]);
+  useEffect(() => {
+    if (!syncEvent?.id) return;
+    if (hasSyncTarget(syncEvent, ['overview', 'email', 'schedule', 'calendar', 'history'])) {
+      loadOverview({ force: hasSyncTarget(syncEvent, ['email']) });
+    }
+  }, [loadOverview, syncEvent]);
 
   const deadlines = schedules.filter((item) => priorityLabel(item) === 'Deadline');
   const openTasks = schedules.filter((item) => item.status !== 'completed');
@@ -212,6 +218,11 @@ function StatCard({ label, value, styles }) {
       <Text style={styles.statLabel}>{label}</Text>
     </Card>
   );
+}
+
+function hasSyncTarget(syncEvent, targets) {
+  const currentTargets = Array.isArray(syncEvent?.targets) ? syncEvent.targets : [];
+  return targets.some((target) => currentTargets.includes(target));
 }
 
 function normalizeChecklistState(value) {

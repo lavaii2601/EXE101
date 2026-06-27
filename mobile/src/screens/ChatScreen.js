@@ -51,7 +51,7 @@ function formatAgentMeta(data) {
   return parts.join(' · ');
 }
 
-export default function ChatScreen({ userMode = 'worker' }) {
+export default function ChatScreen({ userMode = 'worker', agentProfile = null, onAgentSync }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -121,6 +121,7 @@ export default function ChatScreen({ userMode = 'worker' }) {
         meta: formatAgentMeta(data),
       };
       setMessages((current) => [...current, assistantMessage]);
+      onAgentSync?.(data.refresh_targets || [], data);
       if (data.schedule_suggestion) setSuggestion(data.schedule_suggestion);
       if (data.schedule_created) Alert.alert('Đã tạo lịch', data.schedule_created.title || 'Lịch hẹn mới');
     } catch (error) {
@@ -147,6 +148,7 @@ export default function ChatScreen({ userMode = 'worker' }) {
       if (data.success) {
         Alert.alert('Đã tạo lịch', data.message || 'Lịch hẹn đã được tạo.');
         setSuggestion(null);
+        onAgentSync?.(['schedule', 'calendar', 'overview', 'history'], data);
       }
     } catch (error) {
       Alert.alert('Không tạo được lịch', error.message);
@@ -161,6 +163,7 @@ export default function ChatScreen({ userMode = 'worker' }) {
       setMessages([]);
       setSuggestion(null);
       setSessionId(createSessionId());
+      onAgentSync?.(['chat', 'history']);
     } catch (error) {
       Alert.alert('Không xóa được lịch sử', error.message);
     }
@@ -187,7 +190,7 @@ export default function ChatScreen({ userMode = 'worker' }) {
         stats={[
           { value: messages.filter((item) => item.role === 'assistant').length, label: 'AI phản hồi' },
           { value: suggestion ? 1 : 0, label: 'Gợi ý lịch' },
-          { value: mode.prompts.length, label: 'Lệnh agent' },
+          { value: agentProfile?.capabilities?.length || mode.prompts.length, label: 'Năng lực' },
         ]}
       />
 

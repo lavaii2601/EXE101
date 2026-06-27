@@ -35,7 +35,7 @@ const modes = [
   { label: 'Soạn thư', value: 'compose' },
 ];
 
-export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
+export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, userMode = 'worker' }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -129,6 +129,12 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
 
   useEffect(() => { loadEmails(); }, [loadEmails]);
   useEffect(() => {
+    if (!syncEvent?.id) return;
+    if (hasSyncTarget(syncEvent, ['email', 'profile', 'settings'])) {
+      loadEmails({ fresh: hasSyncTarget(syncEvent, ['email']) });
+    }
+  }, [loadEmails, syncEvent]);
+  useEffect(() => {
     const timer = setTimeout(() => setSearchKeyword(searchInput.trim()), 350);
     return () => clearTimeout(timer);
   }, [searchInput]);
@@ -140,6 +146,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
         await WebBrowser.openBrowserAsync(data.auth_url);
         await loadAuth();
         onAuthChanged?.();
+        onAgentSync?.(['profile', 'settings', 'email']);
       }
     } catch (error) {
       Alert.alert('Không mở được Gmail OAuth', error.message);
@@ -150,6 +157,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
     setMobileUserId(userIdInput);
     await loadEmails();
     onAuthChanged?.();
+    onAgentSync?.(['profile', 'email']);
   };
 
   const logout = async () => {
@@ -158,6 +166,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
       setAuth({ authenticated: false });
       setEmails([]);
       onAuthChanged?.();
+      onAgentSync?.(['profile', 'settings', 'email']);
     } catch (error) {
       Alert.alert('Không đăng xuất được', error.message);
     }
@@ -190,6 +199,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
       setEmails((current) => current.map((item) => (
         item.id === email.id ? { ...item, summary: data.summary || '' } : item
       )));
+      onAgentSync?.(['email', 'overview', 'history'], data);
     } catch (error) {
       Alert.alert('Không tóm tắt được', error.message);
     } finally {
@@ -215,6 +225,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
       setSelectedEmail(null);
       setMode('compose');
       Alert.alert('Đã tạo bản nháp', 'Vui lòng kiểm tra nội dung trước khi gửi.');
+      onAgentSync?.(['history'], data);
     } catch (error) {
       Alert.alert('Không tạo được trả lời', error.message);
     } finally {
@@ -232,6 +243,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
       if (selectedEmail?.id === email.id) {
         setSelectedEmail((current) => ({ ...current, is_unread: !wasUnread }));
       }
+      onAgentSync?.(['email', 'overview', 'history']);
     } catch (error) {
       Alert.alert('Không cập nhật được email', error.message);
     }
@@ -247,6 +259,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
       await apiPost('/email/send-reply', compose);
       setCompose({ to: '', subject: '', body: '' });
       Alert.alert('Đã gửi email');
+      onAgentSync?.(['email', 'overview', 'history']);
     } catch (error) {
       Alert.alert('Không gửi được email', error.message);
     } finally {
@@ -263,6 +276,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
     try {
       const data = await apiPost('/email/summarize-by-date', { date: reportDate, max_results: 50 });
       setReport(data);
+      onAgentSync?.(['email', 'overview', 'history'], data);
     } catch (error) {
       Alert.alert('Không tạo được báo cáo', error.message);
     } finally {
@@ -281,6 +295,7 @@ export default function EmailScreen({ onAuthChanged, userMode = 'worker' }) {
         attendees: [],
       });
       Alert.alert('Đã tạo lịch');
+      onAgentSync?.(['schedule', 'calendar', 'overview', 'history']);
     } catch (error) {
       Alert.alert('Không tạo được lịch', error.message);
     }
@@ -484,6 +499,11 @@ function buildReportStart(reportDate) {
   const [dd, mm, yyyy] = reportDate.split('/');
   if (!dd || !mm || !yyyy) return new Date().toISOString();
   return `${yyyy}-${mm}-${dd}T09:00:00`;
+}
+
+function hasSyncTarget(syncEvent, targets) {
+  const currentTargets = Array.isArray(syncEvent?.targets) ? syncEvent.targets : [];
+  return targets.some((target) => currentTargets.includes(target));
 }
 
 function buildReportEnd(startValue) {

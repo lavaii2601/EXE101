@@ -20,7 +20,7 @@ const initialForm = {
   duration_minutes: '60', location: '', attendees: '',
 };
 
-export default function ScheduleScreen() {
+export default function ScheduleScreen({ onAgentSync, syncEvent }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -93,6 +93,18 @@ export default function ScheduleScreen() {
     loadSchedules();
   }, [loadSchedules]);
   useEffect(() => { loadMeetingSuggestions(); }, [loadMeetingSuggestions]);
+  useEffect(() => {
+    if (!syncEvent?.id) return;
+    if (hasSyncTarget(syncEvent, ['schedule', 'calendar'])) {
+      loadSchedules({
+        syncGoogle: hasSyncTarget(syncEvent, ['calendar']),
+        silentSync: true,
+      });
+    }
+    if (hasSyncTarget(syncEvent, ['email'])) {
+      loadMeetingSuggestions();
+    }
+  }, [loadMeetingSuggestions, loadSchedules, syncEvent]);
 
   const setField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const setEditField = (key, value) => setEditForm((current) => ({ ...current, [key]: value }));
@@ -117,6 +129,7 @@ export default function ScheduleScreen() {
       setForm(initialForm);
       setMode('list');
       await loadSchedules();
+      onAgentSync?.(['schedule', 'calendar', 'overview', 'history']);
       Alert.alert('Đã tạo lịch');
     } catch (error) {
       Alert.alert('Không tạo được lịch', error.message);
@@ -129,6 +142,7 @@ export default function ScheduleScreen() {
     try {
       await apiPatch(`/schedule/${schedule.local_id}/update-status`, { status });
       await loadSchedules();
+      onAgentSync?.(['schedule', 'calendar', 'overview', 'history']);
     } catch (error) {
       Alert.alert('Không cập nhật được lịch', error.message);
     }
@@ -141,6 +155,7 @@ export default function ScheduleScreen() {
       const suggestions = data.suggestions || [];
       setMeetingSuggestions(suggestions);
       notifyNewMeetingSuggestions(suggestions);
+      onAgentSync?.(['email', 'schedule', 'overview']);
       Alert.alert('Đã quét email', `Tìm thấy ${data.count || 0} gợi ý lịch đang chờ.`);
     } catch (error) {
       Alert.alert('Không quét được email', error.message);
@@ -155,6 +170,7 @@ export default function ScheduleScreen() {
       schedule_id: scheduleId,
     });
     await loadMeetingSuggestions();
+    onAgentSync?.(['email', 'schedule', 'overview', 'history']);
   };
 
   const createScheduleFromSuggestion = async (suggestion) => {
@@ -186,6 +202,7 @@ export default function ScheduleScreen() {
       });
       await updateMeetingSuggestionStatus(suggestion.id, 'created', data.schedule_id);
       await loadSchedules();
+      onAgentSync?.(['schedule', 'calendar', 'overview', 'history']);
       Alert.alert('Đã tạo lịch từ email');
     } catch (error) {
       Alert.alert('Không tạo được lịch', error.message);
@@ -226,6 +243,7 @@ export default function ScheduleScreen() {
       setEditingSchedule(null);
       setEditForm(initialForm);
       await loadSchedules();
+      onAgentSync?.(['schedule', 'calendar', 'overview', 'history']);
       Alert.alert('Đã cập nhật lịch');
     } catch (error) {
       Alert.alert('Không cập nhật được lịch', error.message);
@@ -238,6 +256,7 @@ export default function ScheduleScreen() {
     try {
       await apiDelete(`/schedule/${schedule.local_id}`);
       await loadSchedules();
+      onAgentSync?.(['schedule', 'calendar', 'overview', 'history']);
       return true;
     } catch (error) {
       Alert.alert('Không xóa được lịch', error.message);
@@ -258,6 +277,7 @@ export default function ScheduleScreen() {
     try {
       await apiDelete(`/calendar/delete/${event.google_event_id}`);
       await loadSchedules();
+      onAgentSync?.(['schedule', 'calendar', 'overview', 'history']);
     } catch (error) {
       Alert.alert('Không xóa được sự kiện', error.message);
     }
@@ -448,6 +468,11 @@ function notifyNewMeetingSuggestions(suggestions) {
   setPendingAgentNotice(
     `AI Agent phát hiện ${fresh.length} email có thể liên quan đến lịch họp: "${title}"${extra}. Mở tab Lịch để tạo lịch hoặc bỏ qua.`
   );
+}
+
+function hasSyncTarget(syncEvent, targets) {
+  const currentTargets = Array.isArray(syncEvent?.targets) ? syncEvent.targets : [];
+  return targets.some((target) => currentTargets.includes(target));
 }
 
 function splitAttendees(value) {

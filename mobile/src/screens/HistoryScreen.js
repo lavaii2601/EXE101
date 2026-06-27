@@ -20,7 +20,7 @@ const labels = {
   calendar_event_deleted: 'Xóa Google Calendar',
 };
 
-export default function HistoryScreen() {
+export default function HistoryScreen({ syncEvent }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -42,6 +42,12 @@ export default function HistoryScreen() {
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
+  useEffect(() => {
+    if (!syncEvent?.id) return;
+    if (hasSyncTarget(syncEvent, ['history', 'chat', 'email', 'schedule', 'calendar', 'settings'])) {
+      loadHistory();
+    }
+  }, [loadHistory, syncEvent]);
 
   const clearAll = async () => {
     try {
@@ -83,6 +89,11 @@ function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString('vi-VN');
+}
+
+function hasSyncTarget(syncEvent, targets) {
+  const currentTargets = Array.isArray(syncEvent?.targets) ? syncEvent.targets : [];
+  return targets.some((target) => currentTargets.includes(target));
 }
 
 function makeStyles(colors) {

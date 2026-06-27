@@ -111,6 +111,7 @@ function AppShell() {
         onChangeMode={() => setModePickerOpen(true)}
         onRefresh={refreshShell}
         onLogout={handleLogout}
+        onAgentSync={handleAgentSync}
         syncEvent={syncEvent}
       />
     );
