@@ -1,3 +1,5 @@
+import json
+import logging
 import re
 import unicodedata
 from datetime import datetime, timedelta
@@ -7,9 +9,20 @@ from models.schedule import Schedule
 from models.user import User
 from services.schedule_service import ScheduleService
 
+logger = logging.getLogger(__name__)
+
 
 class IntentOrchestrator:
     """Normalize user prompts into canonical workspace actions."""
+
+    AI_INTENTS = (
+        "email.latest_summary", "email.search", "schedule.create", "schedule.list",
+        "history.list", "settings.update_mode", "chat.freeform",
+    )
+
+    WEEKDAY_NAMES_VN = (
+        "Thu Hai", "Thu Ba", "Thu Tu", "Thu Nam", "Thu Sau", "Thu Bay", "Chu Nhat",
+    )
 
     MODE_ALIASES = {
         "student": ("student", "sinh vien", "hoc sinh", "di hoc"),
@@ -33,12 +46,12 @@ class IntentOrchestrator:
             intent = "email.latest_summary"
             confidence = 0.93
             entities["count"] = self._latest_email_count(text)
-            refresh_targets = ["email", "history"]
+            refresh_targets = ["email", "overview", "history"]
         elif self._is_mode_update(text):
             intent = "settings.update_mode"
             confidence = 0.9
             entities["mode"] = self._mode_from_text(text)
-            refresh_targets = ["settings", "history"]
+            refresh_targets = ["settings", "profile", "history"]
         elif self._is_history_lookup(text):
             intent = "history.list"
             confidence = 0.86
@@ -49,16 +62,16 @@ class IntentOrchestrator:
             confidence = 0.88
             entities["schedule"] = self.extract_schedule(message)
             requires_confirmation = True
-            refresh_targets = ["schedule", "history"]
+            refresh_targets = ["schedule", "calendar", "overview", "history"]
         elif self._is_schedule_lookup(text):
             intent = "schedule.list"
             confidence = 0.82
             entities["window"] = self._calendar_window(text)
-            refresh_targets = ["schedule", "history"]
+            refresh_targets = ["schedule", "calendar", "overview", "history"]
         elif self._is_email_lookup(text):
             intent = "email.search"
             confidence = 0.74
-            refresh_targets = ["email", "history"]
+            refresh_targets = ["email", "overview", "history"]
 
         return {
             "intent": intent,
@@ -67,6 +80,224 @@ class IntentOrchestrator:
             "requires_confirmation": requires_confirmation,
             "refresh_targets": refresh_targets,
         }
+
+    def detect_with_ai(self, message, ai_service, user_id=None, confidence_threshold=0.6):
+        """Run the deterministic rules first; only ask the AI to read the
+        message when the rules aren't confident (i.e. it fell through to
+        chat.freeform). This keeps clear-cut requests fast and free while
+        letting paraphrased/indirect requests still get recognized.
+        """
+        result = self.detect(message)
+        if result.get("confidence", 0) >= confidence_threshold or not ai_service:
+            return result
+        try:
+            ai_result = self._detect_via_ai(message, ai_service, user_id=user_id)
+        except Exception:
+            logger.warning("AI-assisted intent detection failed", exc_info=True)
+            ai_result = None
+        return ai_result or result
+
+    def _detect_via_ai(self, message, ai_service, user_id=None):
+        now = datetime.now()
+        raw = ai_service.generate_response(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Ban la bo phan loai y dinh cho mot tro ly cong viec. Doc cau nhan tu "
+                        "nguoi dung va TRA VE DUY NHAT mot JSON object hop le theo dung cau truc "
+                        "duoc yeu cau, khong giai thich them, khong dung markdown."
+                    ),
+                },
+                {"role": "user", "content": self._build_ai_classification_prompt(message, now)},
+            ],
+            max_tokens=320,
+            task="intent_classification",
+            user_id=user_id,
+        )
+        data = self._parse_ai_json(raw)
+        if not data:
+            return None
+        return self._coerce_ai_result(data, message)
+
+    def _build_ai_classification_prompt(self, message, now):
+        weekday = self.WEEKDAY_NAMES_VN[now.weekday()]
+        return (
+            f"THOI DIEM HIEN TAI: {now.strftime('%Y-%m-%d %H:%M')} ({weekday}), GMT+7\n\n"
+            "Cac loai y dinh hop le (chon dung 1 gia tri cho truong \"intent\"):\n"
+            "- schedule.create: muon tao lich hen/su kien/nhac nho moi\n"
+            "- schedule.list: muon xem lich/su kien da co\n"
+            "- email.latest_summary: muon tom tat (cac) email moi nhat trong hop thu\n"
+            "- email.search: muon tim/xem email theo tu khoa hoac nguoi gui\n"
+            "- history.list: muon xem lich su hoat dong/da lam gi\n"
+            "- settings.update_mode: muon doi che do lam viec "
+            "(student, worker, freelancer, creator, business, mentor, teacher)\n"
+            "- chat.freeform: tat ca truong hop khac (hoi dap thong thuong)\n\n"
+            "Tra ve CHINH XAC mot JSON object theo cau truc:\n"
+            "{\n"
+            '  "intent": "<mot trong cac gia tri tren>",\n'
+            '  "confidence": <so tu 0 den 1>,\n'
+            '  "schedule": {"title": "", "description": "", "start_time": "YYYY-MM-DDTHH:MM:SS", '
+            '"end_time": "YYYY-MM-DDTHH:MM:SS hoac null", "attendees": [], "location": ""},\n'
+            '  "window": {"label": "today|yesterday|this_week|next_week|last_week|custom", '
+            '"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"},\n'
+            '  "email_count": <1-5>,\n'
+            '  "email_query": {"sender": "", "keyword": "", "unread_only": false},\n'
+            '  "history_limit": <1-20>,\n'
+            '  "mode": "<student|worker|freelancer|creator|business|mentor|teacher hoac null>"\n'
+            "}\n"
+            "Chi dien cac truong lien quan toi intent da chon, cac truong khac de null/bo qua. "
+            "Neu intent la schedule.create, BAT BUOC tinh start_time tuyet doi (ngay+gio cu the) "
+            "dua vao THOI DIEM HIEN TAI o tren khi cau co nhac thoi gian (vd 'chieu mai', "
+            "'thu 5 tuan sau', 'trong 2 tieng nua'). Khong bia dat thong tin ma nguoi dung khong "
+            "cung cap.\n\n"
+            f"CAU NHAN TU NGUOI DUNG: \"{message}\""
+        )
+
+    @staticmethod
+    def _parse_ai_json(raw):
+        if not raw:
+            return None
+        cleaned = str(raw).strip()
+        if "```json" in cleaned:
+            cleaned = cleaned.split("```json", 1)[1].split("```", 1)[0].strip()
+        elif "```" in cleaned:
+            cleaned = cleaned.split("```", 1)[1].split("```", 1)[0].strip()
+        try:
+            data = json.loads(cleaned)
+        except (TypeError, ValueError):
+            return None
+        return data if isinstance(data, dict) else None
+
+    def _coerce_ai_result(self, data, message):
+        intent = str(data.get("intent") or "").strip()
+        if intent not in self.AI_INTENTS:
+            return None
+
+        try:
+            confidence = float(data.get("confidence", 0.6))
+        except (TypeError, ValueError):
+            confidence = 0.6
+        confidence = max(0.5, min(confidence, 0.97))
+
+        entities = {}
+        requires_confirmation = False
+        refresh_targets = []
+
+        if intent == "schedule.create":
+            schedule = self._coerce_ai_schedule(data.get("schedule") or {}, message)
+            if not schedule.get("start_time"):
+                return None
+            entities["schedule"] = schedule
+            requires_confirmation = True
+            refresh_targets = ["schedule", "calendar", "overview", "history"]
+        elif intent == "schedule.list":
+            window = self._coerce_ai_window(data.get("window") or {})
+            if not window:
+                return None
+            entities["window"] = window
+            refresh_targets = ["schedule", "calendar", "overview", "history"]
+        elif intent == "email.latest_summary":
+            entities["count"] = self._coerce_int(data.get("email_count"), default=1, minimum=1, maximum=5)
+            refresh_targets = ["email", "overview", "history"]
+        elif intent == "email.search":
+            query = data.get("email_query")
+            if isinstance(query, dict):
+                entities["query"] = {
+                    "sender": str(query.get("sender") or "").strip(),
+                    "keyword": str(query.get("keyword") or "").strip(),
+                    "unread_only": bool(query.get("unread_only")),
+                }
+            refresh_targets = ["email", "overview", "history"]
+        elif intent == "history.list":
+            entities["limit"] = self._coerce_int(data.get("history_limit"), default=8, minimum=1, maximum=20)
+            refresh_targets = ["history"]
+        elif intent == "settings.update_mode":
+            mode = str(data.get("mode") or "").strip().lower()
+            if mode not in self.MODE_ALIASES:
+                return None
+            entities["mode"] = mode
+            refresh_targets = ["settings", "profile", "history"]
+        else:
+            return {
+                "intent": "chat.freeform",
+                "confidence": min(confidence, 0.5),
+                "entities": {},
+                "requires_confirmation": False,
+                "refresh_targets": [],
+                "ai_assisted": True,
+            }
+
+        return {
+            "intent": intent,
+            "confidence": confidence,
+            "entities": entities,
+            "requires_confirmation": requires_confirmation,
+            "refresh_targets": refresh_targets,
+            "ai_assisted": True,
+        }
+
+    def _coerce_ai_schedule(self, schedule, message):
+        if not isinstance(schedule, dict):
+            schedule = {}
+        start_time = self._coerce_ai_datetime(schedule.get("start_time"))
+        end_time = self._coerce_ai_datetime(schedule.get("end_time"))
+        if start_time and end_time and end_time <= start_time:
+            end_time = None
+
+        attendees = schedule.get("attendees")
+        if not isinstance(attendees, list):
+            attendees = []
+        attendees = sorted({str(item).strip() for item in attendees if str(item or "").strip()})
+        if not attendees:
+            attendees = sorted(set(re.findall(r"[\w\.-]+@[\w\.-]+\.\w+", message or "")))
+
+        title = str(schedule.get("title") or "").strip() or self._schedule_title(message)
+        return {
+            "title": title[:150],
+            "description": str(schedule.get("description") or message or "").strip(),
+            "start_time": start_time,
+            "end_time": end_time,
+            "attendees": attendees,
+            "location": str(schedule.get("location") or "").strip(),
+        }
+
+    @staticmethod
+    def _coerce_ai_datetime(value):
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+        if parsed.tzinfo is not None:
+            parsed = parsed.replace(tzinfo=None)
+        return parsed.isoformat()
+
+    @staticmethod
+    def _coerce_ai_window(window):
+        if not isinstance(window, dict):
+            return None
+        try:
+            start = datetime.fromisoformat(str(window.get("start"))).date()
+            end = datetime.fromisoformat(str(window.get("end"))).date()
+        except (TypeError, ValueError):
+            return None
+        if end < start:
+            return None
+        label = str(window.get("label") or "custom").strip() or "custom"
+        return {
+            "label": label,
+            "start": datetime.combine(start, datetime.min.time()).isoformat(),
+            "end": datetime.combine(end + timedelta(days=1), datetime.min.time()).isoformat(),
+        }
+
+    @staticmethod
+    def _coerce_int(value, default, minimum, maximum):
+        try:
+            return max(minimum, min(int(value), maximum))
+        except (TypeError, ValueError):
+            return default
 
     def execute_direct(self, intent_result, user_id, db_path):
         intent = intent_result.get("intent")
@@ -94,7 +325,7 @@ class IntentOrchestrator:
             return {
                 "response": f"Da cap nhat che do lam viec sang {labels.get(mode, mode)}.",
                 "workspace_sources": ["profile"],
-                "refresh_targets": ["settings", "history"],
+                "refresh_targets": ["settings", "profile", "history"],
                 "action_type": "settings_updated",
             }
 
@@ -125,7 +356,7 @@ class IntentOrchestrator:
                     "response": "Minh co the tao lich, nhung ban cho minh them ngay/gio cu the nhe.",
                     "schedule_suggestion": schedule,
                     "workspace_sources": ["calendar"],
-                    "refresh_targets": ["schedule", "history"],
+                    "refresh_targets": ["schedule", "calendar", "overview", "history"],
                     "action_type": "chat",
                 }
             return {
@@ -135,7 +366,7 @@ class IntentOrchestrator:
                 ),
                 "schedule_suggestion": schedule,
                 "workspace_sources": ["calendar"],
-                "refresh_targets": ["schedule", "history"],
+                "refresh_targets": ["schedule", "calendar", "overview", "history"],
                 "action_type": "chat",
             }
 
@@ -153,6 +384,7 @@ class IntentOrchestrator:
             start_time=schedule.get("start_time"),
             end_time=schedule.get("end_time"),
             attendees=schedule.get("attendees") or [],
+            location=schedule.get("location") or None,
             db_path=db_path,
         )
         return {

@@ -35,13 +35,16 @@ function AppShell() {
   const [profile, setProfile] = useState(null);
   const [status, setStatus] = useState(null);
   const [userMode, setUserMode] = useState(null);
+  const [agentProfile, setAgentProfile] = useState(null);
+  const [syncEvent, setSyncEvent] = useState({ id: 0, targets: [] });
   const [savingMode, setSavingMode] = useState(false);
   const [modePickerOpen, setModePickerOpen] = useState(false);
 
   const refreshShell = useCallback(async () => {
-    const [profileResult, statusResult] = await Promise.allSettled([
+    const [profileResult, statusResult, agentResult] = await Promise.allSettled([
       apiGet('/user/profile'),
       apiGet('/status'),
+      apiGet('/chat/agent-profile'),
     ]);
     if (profileResult.status === 'fulfilled' && profileResult.value.success) {
       setProfile(profileResult.value.user);
@@ -49,6 +52,9 @@ function AppShell() {
     }
     if (statusResult.status === 'fulfilled') {
       setStatus(statusResult.value);
+    }
+    if (agentResult.status === 'fulfilled' && agentResult.value.success) {
+      setAgentProfile(agentResult.value.agent || null);
     }
   }, []);
 
@@ -77,11 +83,26 @@ function AppShell() {
     }
   }, [profile]);
 
+  const handleAgentSync = useCallback((targets = [], metadata = {}) => {
+    const normalizedTargets = Array.from(new Set((Array.isArray(targets) ? targets : [])
+      .filter(Boolean)));
+    if (!normalizedTargets.length) return;
+    setSyncEvent((current) => ({
+      id: current.id + 1,
+      targets: normalizedTargets,
+      trace: metadata.agent_trace || null,
+      at: Date.now(),
+    }));
+    if (normalizedTargets.some((target) => ['settings', 'profile', 'providers'].includes(target))) {
+      refreshShell();
+    }
+  }, [refreshShell]);
+
   const renderScreen = () => {
-    if (activeTab === 'overview') return <OverviewScreen />;
-    if (activeTab === 'emails')   return <EmailScreen userMode={userMode || 'worker'} onAuthChanged={refreshShell} />;
-    if (activeTab === 'schedule') return <ScheduleScreen />;
-    if (activeTab === 'history')  return <HistoryScreen />;
+    if (activeTab === 'overview') return <OverviewScreen syncEvent={syncEvent} />;
+    if (activeTab === 'emails')   return <EmailScreen userMode={userMode || 'worker'} onAuthChanged={refreshShell} onAgentSync={handleAgentSync} syncEvent={syncEvent} />;
+    if (activeTab === 'schedule') return <ScheduleScreen onAgentSync={handleAgentSync} syncEvent={syncEvent} />;
+    if (activeTab === 'history')  return <HistoryScreen syncEvent={syncEvent} />;
     if (activeTab === 'settings') return (
       <SettingsScreen
         profile={profile}
@@ -90,9 +111,10 @@ function AppShell() {
         onChangeMode={() => setModePickerOpen(true)}
         onRefresh={refreshShell}
         onLogout={handleLogout}
+        syncEvent={syncEvent}
       />
     );
-    return <ChatScreen userMode={userMode || 'worker'} />;
+    return <ChatScreen userMode={userMode || 'worker'} agentProfile={agentProfile} onAgentSync={handleAgentSync} />;
   };
 
   const styles = useMemo(() => makeStyles(colors), [colors]);

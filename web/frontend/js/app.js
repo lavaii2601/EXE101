@@ -44,6 +44,7 @@ let isAuthenticated = false;
 let currentLanguage = localStorage.getItem('flowmate-language') === 'en' ? 'en' : 'vi';
 let activeChatSessionId = localStorage.getItem('flowmate-active-chat-session') || createChatSessionId();
 let activeChatSessionTitle = localStorage.getItem('flowmate-active-chat-title') || '';
+let agentProfile = null;
 
 function createChatSessionId() {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -744,6 +745,7 @@ async function initApp() {
     }
     await refreshAuthButtons();
     checkRuntimeConfig();
+    loadAgentProfile();
     
     // Auto-load emails if user is on emails page and authenticated
     if (currentPage === 'emails') {
@@ -1110,7 +1112,13 @@ async function refreshWorkspaceTargets(targets = []) {
     const uniqueTargets = Array.from(new Set(Array.isArray(targets) ? targets : []));
     if (!uniqueTargets.length) return;
 
+    if (uniqueTargets.includes('overview')) {
+        try { await loadOverviewPage({ force: false }); } catch (e) { /* ignore refresh errors */ }
+    }
     if (uniqueTargets.includes('schedule')) {
+        await refreshCalendarScheduleData({ silent: true, continueOnError: true });
+    }
+    if (uniqueTargets.includes('calendar') && !uniqueTargets.includes('schedule')) {
         await refreshCalendarScheduleData({ silent: true, continueOnError: true });
     }
     if (uniqueTargets.includes('email')) {
@@ -1119,9 +1127,49 @@ async function refreshWorkspaceTargets(targets = []) {
     if (uniqueTargets.includes('history')) {
         try { await loadActivityHistory(); } catch (e) { /* ignore refresh errors */ }
     }
-    if (uniqueTargets.includes('settings')) {
+    if (uniqueTargets.includes('settings') || uniqueTargets.includes('profile')) {
         try { await loadSettingsPage(); } catch (e) { /* ignore refresh errors */ }
+        try { await loadUserProfile(); } catch (e) { /* ignore refresh errors */ }
     }
+    if (uniqueTargets.includes('providers')) {
+        try { await checkRuntimeConfig(); } catch (e) { /* ignore refresh errors */ }
+        try { await loadAgentProfile(); } catch (e) { /* ignore refresh errors */ }
+    }
+}
+
+async function loadAgentProfile() {
+    try {
+        const response = await apiFetch(`${API_BASE}/chat/agent-profile`);
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || response.statusText);
+        agentProfile = data.agent || null;
+        renderAgentStatus(data.agent, data.providers);
+        return data;
+    } catch (error) {
+        console.warn('Agent profile load failed:', error);
+        renderAgentStatus(null, null);
+        return null;
+    }
+}
+
+function renderAgentStatus(agent, providers) {
+    const el = document.getElementById('providerStatus');
+    if (!el) return;
+    if (!agent) {
+        el.textContent = '';
+        return;
+    }
+    const capabilityCount = Array.isArray(agent.capabilities) ? agent.capabilities.length : 0;
+    const providerText = providers?.demo_mode
+        ? ui('Demo provider', 'Demo provider')
+        : ui('Provider sẵn sàng', 'Provider ready');
+    el.innerHTML = `
+        <span class="agent-pill">AI Agent</span>
+        <span>${escapeHtml(agent.version || '')}</span>
+        <span>${capabilityCount} ${ui('năng lực', 'capabilities')}</span>
+        <span>${escapeHtml(providerText)}</span>
+        <span>${ui('Web/Mobile đồng bộ', 'Web/Mobile synced')}</span>
+    `;
 }
 
 function formatDateForApi(date) {

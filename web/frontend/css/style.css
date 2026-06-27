@@ -1198,7 +1198,10 @@ button {
 }
 
 .provider-status-bar:not(:empty) {
-    display: block;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
 }
 
 textarea,

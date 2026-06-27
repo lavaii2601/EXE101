@@ -26,6 +26,103 @@ chat_bp = Blueprint('chat', __name__, url_prefix='/api/chat')
 ai_service = AIService()
 intent_orchestrator = IntentOrchestrator()
 
+AGENT_CAPABILITIES = [
+    {
+        'id': 'overview.daily_brief',
+        'label': 'Tổng hợp ngày',
+        'description': 'Gom email, lịch, deadline, task và checklist thành bức tranh ưu tiên trong ngày.',
+        'workspace_sources': ['email', 'calendar', 'history'],
+        'refresh_targets': ['overview', 'email', 'schedule', 'history'],
+        'confirmation_required': False,
+    },
+    {
+        'id': 'email.inbox_triage',
+        'label': 'Phân loại email',
+        'description': 'Đọc inbox Gmail/Outlook đã kết nối, tìm email quan trọng, email chưa đọc, email cần phản hồi.',
+        'workspace_sources': ['email'],
+        'refresh_targets': ['email', 'overview', 'history'],
+        'confirmation_required': False,
+    },
+    {
+        'id': 'email.summary_reply',
+        'label': 'Tóm tắt và soạn trả lời',
+        'description': 'Tóm tắt nội dung email, tạo nháp trả lời lịch sự và chỉ gửi email khi người dùng xác nhận.',
+        'workspace_sources': ['email'],
+        'refresh_targets': ['email', 'history'],
+        'confirmation_required': True,
+    },
+    {
+        'id': 'email.meeting_scan',
+        'label': 'Quét lịch hẹn từ email',
+        'description': 'Phát hiện email có tín hiệu họp/lịch hẹn và biến thành gợi ý lịch cần xác nhận.',
+        'workspace_sources': ['email', 'calendar'],
+        'refresh_targets': ['email', 'schedule', 'overview', 'history'],
+        'confirmation_required': True,
+    },
+    {
+        'id': 'schedule.manage',
+        'label': 'Quản lý lịch',
+        'description': 'Tạo, sửa, hủy, xóa lịch FlowMate và đồng bộ Google/Outlook Calendar khi có kết nối.',
+        'workspace_sources': ['calendar'],
+        'refresh_targets': ['schedule', 'calendar', 'overview', 'history'],
+        'confirmation_required': True,
+    },
+    {
+        'id': 'calendar.sync',
+        'label': 'Đồng bộ calendar',
+        'description': 'Đọc lịch Google/Outlook, hợp nhất với lịch FlowMate và tránh hiển thị trùng sự kiện.',
+        'workspace_sources': ['calendar'],
+        'refresh_targets': ['schedule', 'calendar', 'overview'],
+        'confirmation_required': False,
+    },
+    {
+        'id': 'history.audit',
+        'label': 'Tra cứu lịch sử',
+        'description': 'Tóm tắt các lần chat, email, lịch và thao tác agent đã thực hiện.',
+        'workspace_sources': ['history'],
+        'refresh_targets': ['history'],
+        'confirmation_required': False,
+    },
+    {
+        'id': 'settings.profile_mode',
+        'label': 'Hồ sơ và chế độ làm việc',
+        'description': 'Đọc hồ sơ, kết nối dịch vụ, đổi chế độ làm việc và áp dụng cùng một mode cho web/mobile.',
+        'workspace_sources': ['profile'],
+        'refresh_targets': ['settings', 'profile', 'history'],
+        'confirmation_required': True,
+    },
+    {
+        'id': 'provider.status',
+        'label': 'Trạng thái AI provider',
+        'description': 'Theo dõi provider AI, demo mode và fallback để người dùng biết phản hồi đến từ đâu.',
+        'workspace_sources': ['profile'],
+        'refresh_targets': ['providers', 'settings'],
+        'confirmation_required': False,
+    },
+]
+
+AGENT_SYNC_TARGETS = {
+    'overview': 'Tải lại tổng hợp ngày và checklist.',
+    'email': 'Tải lại inbox, cache email và gợi ý họp.',
+    'schedule': 'Tải lại lịch FlowMate, Google/Outlook Calendar và tuần hiện tại.',
+    'calendar': 'Tải lại dữ liệu calendar hợp nhất.',
+    'history': 'Tải lại lịch sử hoạt động/chat.',
+    'settings': 'Tải lại cài đặt và kết nối dịch vụ.',
+    'profile': 'Tải lại hồ sơ và mode người dùng.',
+    'providers': 'Tải lại trạng thái AI provider.',
+    'chat': 'Tải lại phiên chat hiện tại.',
+}
+
+AGENT_CONFIRMATION_REQUIRED = [
+    'send_email',
+    'create_schedule',
+    'update_schedule',
+    'delete_schedule',
+    'change_user_mode',
+    'disconnect_account',
+    'clear_history',
+]
+
 
 def _load_gmail_service(token_file):
     """Return a cached GmailService instance instead of re-authenticating per call."""
@@ -248,8 +345,11 @@ def _format_schedule_response_time(start_value, end_value):
     return f'{date_text}, {start_text} (GMT+7)'
 
 
-def _format_calendar_context(message, user_id, db_path):
-    window_start, window_end, window_label = _calendar_window(message)
+def _format_calendar_context(message, user_id, db_path, window_override=None):
+    if window_override:
+        window_start, window_end, window_label = window_override
+    else:
+        window_start, window_end, window_label = _calendar_window(message)
     lines = [
         f"LICH VA SU KIEN {window_label}",
         f"Khoang thoi gian: {window_start.date().isoformat()} den {(window_end - timedelta(days=1)).date().isoformat()}",
@@ -348,13 +448,41 @@ def _format_profile_context(user_id):
     ])
 
 
-def _direct_schedule_list_response(message, user_id, db_path):
-    context = _format_calendar_context(message, user_id, db_path)
+def _direct_schedule_list_response(message, user_id, db_path, window_override=None):
+    context = _format_calendar_context(message, user_id, db_path, window_override=window_override)
     return (
         context
         + "\n\nMình chỉ liệt kê dữ liệu lịch đang có trong Calendar/FlowMate, "
         "không tự suy đoán thêm sự kiện ngoài dữ liệu này."
     )
+
+
+WINDOW_LABELS_VN = {
+    'today': 'HÔM NAY',
+    'yesterday': 'HÔM QUA',
+    'this_week': 'TUẦN NÀY',
+    'next_week': 'TUẦN SAU',
+    'last_week': 'TUẦN TRƯỚC',
+}
+
+
+def _window_override_from_entities(entities):
+    """Turn an AI-classified `window` entity into the (start, end, label) tuple
+    that _format_calendar_context expects, so an AI-assisted schedule.list
+    intent actually changes which range gets queried -- not just the label.
+    """
+    window = (entities or {}).get('window')
+    if not isinstance(window, dict):
+        return None
+    try:
+        start = datetime.fromisoformat(str(window.get('start'))).replace(tzinfo=LOCAL_TZ)
+        end = datetime.fromisoformat(str(window.get('end'))).replace(tzinfo=LOCAL_TZ)
+    except (TypeError, ValueError):
+        return None
+    if end <= start:
+        return None
+    label = WINDOW_LABELS_VN.get(window.get('label'), 'KHOẢNG THỜI GIAN ĐÃ CHỌN')
+    return start, end, label
 
 
 def _email_lookup_query(message):
@@ -373,12 +501,37 @@ def _email_lookup_query(message):
     return query, include_read
 
 
-def _direct_email_search_response(message, user_id, limit=8):
+def _query_override_from_entities(entities):
+    """Build a Gmail query from an AI-classified `query` entity (sender/keyword/
+    unread_only) instead of re-parsing the raw message text with regex.
+    """
+    query_info = (entities or {}).get('query')
+    if not isinstance(query_info, dict):
+        return None
+    unread_only = bool(query_info.get('unread_only'))
+    include_read = not unread_only
+    parts = ['is:unread' if unread_only else 'in:inbox']
+
+    sender = str(query_info.get('sender') or '').strip()
+    keyword = str(query_info.get('keyword') or '').strip()
+    if sender and re.match(r'^[\w.+-]+@[\w.-]+\.\w+$', sender):
+        parts.append(f'from:{sender}')
+    elif sender:
+        keyword = f'{sender} {keyword}'.strip()
+    if keyword:
+        parts.append(f'"{keyword[:80]}"')
+
+    if len(parts) == 1:
+        return None
+    return ' '.join(parts), include_read
+
+
+def _direct_email_search_response(message, user_id, limit=8, query_override=None):
     token_file = get_user_token_file(user_id)
     if not token_file or not os.path.exists(token_file):
         return "Gmail chưa được kết nối, nên mình chưa thể xem email thật của bạn."
 
-    query, include_read = _email_lookup_query(message)
+    query, include_read = query_override or _email_lookup_query(message)
     emails = _load_gmail_service(token_file).get_emails(
         max_results=max(1, min(limit, 10)),
         query=query,
@@ -418,6 +571,33 @@ def _build_workspace_context(message, user_id, db_path):
     return sources, "\n\n".join(context_parts)
 
 
+def _agent_profile():
+    return {
+        'name': 'FlowMate AI Agent',
+        'version': '2026-06-agent-sync',
+        'channels': ['web', 'mobile'],
+        'capabilities': AGENT_CAPABILITIES,
+        'sync_targets': AGENT_SYNC_TARGETS,
+        'confirmation_required_actions': AGENT_CONFIRMATION_REQUIRED,
+        'rules': [
+            'Dùng dữ liệu workspace thật khi trả lời về email, lịch, lịch sử, hồ sơ.',
+            'Không bịa email, người gửi, ngày giờ, deadline hoặc hành động đã hoàn tất.',
+            'Chỉ thực hiện hành động ghi dữ liệu sau khi người dùng xác nhận.',
+            'Luôn trả refresh_targets để web/mobile đồng bộ màn liên quan.',
+        ],
+    }
+
+
+def _capability_prompt_lines():
+    lines = []
+    for item in AGENT_CAPABILITIES:
+        confirmation = 'requires confirmation' if item.get('confirmation_required') else 'read/analysis'
+        lines.append(
+            f"- {item['id']}: {item['description']} ({confirmation}; refresh: {', '.join(item.get('refresh_targets') or [])})"
+        )
+    return "\n".join(lines)
+
+
 def _build_agent_system_prompt(mode_prompt):
     return (
         "You are FlowMate AI Agent, a workspace agent for email, calendar, schedules, "
@@ -432,7 +612,9 @@ def _build_agent_system_prompt(mode_prompt):
         "If data is missing, say exactly what is missing and give the smallest useful next step. "
         "Do not invent senders, dates, deadlines, meetings, completed actions, or external facts. "
         "Classify useful information as meetings, deadlines, tasks, reminders, important information, or low priority. "
-        "Keep responses concise, clear, action-focused, and include a next action when helpful."
+        "Keep responses concise, clear, action-focused, and include a next action when helpful. "
+        "Your trained capabilities are:\n"
+        + _capability_prompt_lines()
     )
 
 
@@ -467,7 +649,11 @@ def _build_agent_trace(intent_result, workspace_sources=None, refresh_targets=No
         'workspace_sources': sources,
         'refresh_targets': sorted(set(refresh_targets or [])),
         'steps': steps,
-        'capabilities': ['email', 'calendar', 'schedule', 'history', 'settings'],
+        'capabilities': [item['id'] for item in AGENT_CAPABILITIES],
+        'sync_contract': {
+            'targets': AGENT_SYNC_TARGETS,
+            'web_mobile_parity': True,
+        },
     }
 
 
@@ -636,7 +822,7 @@ def send_message():
             chat_session_id=chat_session_id if action_type == 'chat' else None,
         )
 
-    intent_result = intent_orchestrator.detect(user_message)
+    intent_result = intent_orchestrator.detect_with_ai(user_message, ai_service, user_id=user_id)
     refresh_targets = list(intent_result.get('refresh_targets') or [])
 
     if intent_result.get('intent') == 'email.latest_summary':
@@ -749,7 +935,8 @@ def send_message():
         })
 
     if intent_result.get('intent') == 'schedule.list':
-        response = _direct_schedule_list_response(user_message, user_id, db_path)
+        window_override = _window_override_from_entities(intent_result.get('entities'))
+        response = _direct_schedule_list_response(user_message, user_id, db_path, window_override=window_override)
         save_chat_history(user_message, response)
         return jsonify({
             'success': True,
@@ -773,7 +960,8 @@ def send_message():
         })
 
     if intent_result.get('intent') == 'email.search':
-        response = _direct_email_search_response(user_message, user_id)
+        query_override = _query_override_from_entities(intent_result.get('entities'))
+        response = _direct_email_search_response(user_message, user_id, query_override=query_override)
         save_chat_history(user_message, response)
         return jsonify({
             'success': True,
@@ -1110,6 +1298,16 @@ def get_ai_providers():
     return jsonify({
         'success': True,
         'providers': ai_service.get_provider_status()
+    })
+
+
+@chat_bp.route('/agent-profile', methods=['GET'])
+def get_agent_profile():
+    """Return the shared agent contract used by web and mobile clients."""
+    return jsonify({
+        'success': True,
+        'agent': _agent_profile(),
+        'providers': ai_service.get_provider_status(),
     })
 
 @chat_bp.route('/clear', methods=['POST'])
