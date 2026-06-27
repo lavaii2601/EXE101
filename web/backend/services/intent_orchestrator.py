@@ -99,16 +99,53 @@ class IntentOrchestrator:
         "- 'Ban nghi gi ve lam viec tu xa' => chat.freeform (khong khop muc nao tren).\n"
     )
 
+    # Domain words for any of the recognizable intents. If a message has none
+    # of these (and no time/date signal either -- schedule requests almost
+    # always carry one even without saying "lich"), it is overwhelmingly
+    # likely to be plain chat, so we skip the extra AI classification
+    # round-trip entirely instead of paying its latency just to confirm
+    # "chat.freeform" -- the main chat reply already handles that message
+    # right after.
+    ACTIONABLE_HINTS = (
+        "lich", "hen", "hop", "su kien", "gap mat", "gap nhau", "nhac", "remind",
+        "meeting", "appointment", "calendar", "book", "dat lich", "dat cho",
+        "goi lai", "goi cho", "goi dien",
+        "email", "mail", "gmail", "hop thu", "inbox", "thu tu",
+        "lich su", "hoat dong", "history", "activity",
+        "da lam gi", "lam gi roi", "nho lai", "nhac lai", "vua nay", "vua roi",
+        "mode", "che do lam viec", "doi che do", "chuyen che do",
+    )
+
+    TIME_HINT_PATTERN = re.compile(
+        r"(?<!\d)\d{1,2}\s*(?:gio|h)(?::?\d{2})?(?!\d)"
+        r"|ngay mai|hom nay|hom qua|sang nay|chieu nay|toi nay|sang mai|chieu mai|toi mai"
+        r"|tuan nay|tuan sau|tuan toi|tuan truoc"
+        r"|thu hai|thu ba|thu tu|thu nam|thu sau|thu bay|chu nhat"
+        r"|\d{1,3}\s*(?:phut|gio|tieng)\s*nua"
+    )
+
+    def _has_actionable_hint(self, message):
+        text = self.normalize(message)
+        if any(hint in text for hint in self.ACTIONABLE_HINTS):
+            return True
+        if any(alias in text for aliases in self.MODE_ALIASES.values() for alias in aliases):
+            return True
+        return bool(self.TIME_HINT_PATTERN.search(text))
+
     def detect_with_ai(self, message, ai_service, user_id=None, db_path=None,
                         chat_session_id=None, confidence_threshold=0.6):
         """Run the deterministic rules first; only ask the AI to read the
         message when the rules aren't confident (i.e. it fell through to
-        chat.freeform). This keeps clear-cut requests fast and free while
-        letting paraphrased/indirect requests -- including follow-ups that
-        only make sense given recent chat turns -- still get recognized.
+        chat.freeform) AND the message at least hints at a recognizable
+        domain. This keeps clear-cut requests AND plain chit-chat fast and
+        free, while letting paraphrased/indirect action requests -- including
+        follow-ups that only make sense given recent chat turns -- still get
+        recognized.
         """
         result = self.detect(message)
         if result.get("confidence", 0) >= confidence_threshold or not ai_service:
+            return result
+        if not self._has_actionable_hint(message):
             return result
         try:
             ai_result = self._detect_via_ai(
