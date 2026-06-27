@@ -1,13 +1,16 @@
 import { API_BASE } from './config';
-import { getMobileUserId } from './session';
+import { getMobileAccessToken, getMobileUserId } from './session';
 
 async function request(path, options = {}) {
+  const accessToken = getMobileAccessToken();
+  const mobileUserId = getMobileUserId();
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...(getMobileUserId() ? { 'X-User-Id': getMobileUserId() } : {}),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(mobileUserId ? { 'X-User-Id': mobileUserId } : {}),
       ...(options.headers || {})
     }
   });

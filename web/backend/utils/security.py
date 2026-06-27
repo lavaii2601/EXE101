@@ -40,8 +40,17 @@ def bearer_user_id():
     return verify_mobile_token(authorization[7:].strip())
 
 
+def header_user_id():
+    if not current_app.config.get("MOBILE_USER_HEADER_ENABLED", False):
+        return None
+    value = (request.headers.get("X-User-Id") or "").strip()
+    if not value or len(value) > 256:
+        return None
+    return value
+
+
 def authenticated_user_id():
-    return bearer_user_id() or session.get("gmail_user_email") or session.get("user_id")
+    return bearer_user_id() or session.get("gmail_user_email") or session.get("user_id") or header_user_id()
 
 
 def enforce_rate_limit():
@@ -52,7 +61,7 @@ def enforce_rate_limit():
     if request.path.startswith("/api/chat/") or request.path.startswith("/api/email/summary"):
         limit = current_app.config.get("AI_RATE_LIMIT_PER_MINUTE", 30)
 
-    identity = bearer_user_id() or request.remote_addr or "unknown"
+    identity = bearer_user_id() or header_user_id() or request.remote_addr or "unknown"
     key = (identity, request.path)
     now = time.monotonic()
     bucket = _request_buckets[key]
@@ -67,7 +76,7 @@ def enforce_rate_limit():
 def valid_request_origin():
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return True
-    if bearer_user_id():
+    if bearer_user_id() or header_user_id():
         return True
     if request.path == "/api/email/google-auth":
         return True

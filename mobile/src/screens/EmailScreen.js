@@ -8,7 +8,7 @@ import Field from '../components/Field';
 import Screen from '../components/Screen';
 import SegmentedControl from '../components/SegmentedControl';
 import { apiGet, apiPost } from '../api/client';
-import { setMobileUserId } from '../api/session';
+import { setMobileSession, setMobileUserId } from '../api/session';
 import { useTheme } from '../theme/ThemeContext';
 import ModeBrief from '../components/ModeBrief';
 
@@ -142,6 +142,10 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
   const login = async () => {
     try {
       const data = await apiGet('/email/auth_url');
+      if (data.access_token || data.user_id) {
+        await applyNativeAuth(data);
+        return;
+      }
       if (data.auth_url) {
         await WebBrowser.openBrowserAsync(data.auth_url);
         await loadAuth();
@@ -158,6 +162,16 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
     await loadEmails();
     onAuthChanged?.();
     onAgentSync?.(['profile', 'email']);
+  };
+
+  const applyNativeAuth = async (data) => {
+    setMobileSession({
+      userId: data?.user_id || data?.email || userIdInput,
+      accessToken: data?.access_token || '',
+    });
+    await loadEmails();
+    onAuthChanged?.();
+    onAgentSync?.(['profile', 'settings', 'email']);
   };
 
   const logout = async () => {
