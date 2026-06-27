@@ -1154,6 +1154,28 @@ button {
     border-color: var(--primary);
 }
 
+.agent-trace {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-top: 10px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.agent-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 20px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.12);
+    color: var(--primary);
+    border: 1px solid rgba(37, 99, 235, 0.22);
+}
+
 .chat-input-area {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;

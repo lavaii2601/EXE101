@@ -27,6 +27,30 @@ function createSessionId() {
   });
 }
 
+function formatAgentMeta(data) {
+  const trace = data?.agent_trace || {};
+  const sources = Array.isArray(trace.workspace_sources) && trace.workspace_sources.length
+    ? trace.workspace_sources
+    : (Array.isArray(data?.workspace_sources) ? data.workspace_sources : []);
+  const sourceLabels = {
+    email: 'Email',
+    calendar: 'Lịch',
+    history: 'Lịch sử',
+    profile: 'Hồ sơ',
+  };
+  const parts = [];
+  if (trace.intent || data?.intent?.intent) {
+    parts.push(trace.intent || data.intent.intent);
+  }
+  if (sources.length) {
+    parts.push(`Nguồn: ${sources.map((source) => sourceLabels[source] || source).join(' + ')}`);
+  }
+  if (trace.requires_confirmation || data?.schedule_suggestion) {
+    parts.push('Cần xác nhận');
+  }
+  return parts.join(' · ');
+}
+
 export default function ChatScreen({ userMode = 'worker' }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -93,6 +117,8 @@ export default function ChatScreen({ userMode = 'worker' }) {
         id: `a-${Date.now()}`,
         role: 'assistant',
         text: data.response || 'Không có phản hồi.',
+        badge: 'AI Agent',
+        meta: formatAgentMeta(data),
       };
       setMessages((current) => [...current, assistantMessage]);
       if (data.schedule_suggestion) setSuggestion(data.schedule_suggestion);
@@ -149,7 +175,7 @@ export default function ChatScreen({ userMode = 'worker' }) {
       <View style={styles.header}>
         <View>
           <Text style={styles.kicker}>{mode.shortLabel.toUpperCase()} MODE</Text>
-          <Text style={styles.title}>FlowMate AI</Text>
+          <Text style={styles.title}>FlowMate Agent</Text>
         </View>
         <View style={styles.headerActions}>
           <Button title="Chat mới" variant="secondary" onPress={startNewChat} />
@@ -161,7 +187,7 @@ export default function ChatScreen({ userMode = 'worker' }) {
         stats={[
           { value: messages.filter((item) => item.role === 'assistant').length, label: 'AI phản hồi' },
           { value: suggestion ? 1 : 0, label: 'Gợi ý lịch' },
-          { value: mode.prompts.length, label: 'Prompt nhanh' },
+          { value: mode.prompts.length, label: 'Lệnh agent' },
         ]}
       />
 
@@ -173,7 +199,7 @@ export default function ChatScreen({ userMode = 'worker' }) {
         refreshing={refreshing}
         onRefresh={loadHistory}
         ListEmptyComponent={
-          <EmptyState title="Bắt đầu với FlowMate AI" detail="Hỏi về email, lịch hẹn, công việc hoặc kế hoạch của bạn." />
+          <EmptyState title="Bắt đầu với FlowMate Agent" detail="Giao việc để agent đọc email, kiểm tra lịch, tóm tắt công việc hoặc chuẩn bị lịch hẹn." />
         }
         renderItem={({ item }) => (
           <View style={[styles.messageRow, item.role === 'user' && styles.messageRowUser]}>
@@ -182,6 +208,7 @@ export default function ChatScreen({ userMode = 'worker' }) {
               <Text style={[styles.messageText, item.role === 'user' && styles.messageTextUser]}>
                 {item.text}
               </Text>
+              {item.meta ? <Text style={styles.agentMeta}>{item.meta}</Text> : null}
             </View>
           </View>
         )}
@@ -247,6 +274,7 @@ function makeStyles(colors) {
     messageRow:     { alignItems: 'flex-start' },
     messageRowUser: { alignItems: 'flex-end' },
     agentBadge: { color: colors.accentText, fontSize: 10, fontWeight: '900', letterSpacing: 0.5, marginBottom: 4 },
+    agentMeta: { marginTop: 8, color: colors.textMuted, fontSize: 10, fontWeight: '700' },
     bubble: {
       maxWidth: '86%',
       paddingHorizontal: 14,

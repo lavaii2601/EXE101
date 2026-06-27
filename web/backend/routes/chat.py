@@ -418,6 +418,59 @@ def _build_workspace_context(message, user_id, db_path):
     return sources, "\n\n".join(context_parts)
 
 
+def _build_agent_system_prompt(mode_prompt):
+    return (
+        "You are FlowMate AI Agent, a workspace agent for email, calendar, schedules, "
+        "history, and user settings. " + mode_prompt
+        + " Answer in Vietnamese unless the user asks otherwise. "
+        "Operate like an agent: identify the user's goal, inspect available workspace context, "
+        "decide the next best action, and produce a useful result. "
+        "When a supported direct action is needed, rely on the app tools/orchestrator instead of pretending. "
+        "For sensitive or persistent actions such as creating schedules, changing settings, sending messages, "
+        "or modifying external data, ask for or respect explicit confirmation before claiming completion. "
+        "Use only provided workspace context for facts about the user's email, calendar, history, or account. "
+        "If data is missing, say exactly what is missing and give the smallest useful next step. "
+        "Do not invent senders, dates, deadlines, meetings, completed actions, or external facts. "
+        "Classify useful information as meetings, deadlines, tasks, reminders, important information, or low priority. "
+        "Keep responses concise, clear, action-focused, and include a next action when helpful."
+    )
+
+
+def _build_agent_trace(intent_result, workspace_sources=None, refresh_targets=None, ai_used=False, action=None):
+    intent = intent_result.get('intent') if intent_result else 'chat.freeform'
+    entities = (intent_result or {}).get('entities') or {}
+    schedule = entities.get('schedule') if isinstance(entities, dict) else None
+    steps = ["Hiểu yêu cầu"]
+    sources = sorted(set(workspace_sources or []))
+    if sources:
+        labels = {
+            'email': 'email',
+            'calendar': 'lịch',
+            'history': 'lịch sử',
+            'profile': 'hồ sơ',
+        }
+        steps.append("Kiểm tra " + ", ".join(labels.get(source, source) for source in sources))
+    if intent and intent != 'chat.freeform':
+        steps.append(f"Nhận diện intent: {intent}")
+    if action:
+        steps.append(action)
+    elif schedule:
+        steps.append("Chuẩn bị gợi ý lịch cần xác nhận")
+    elif ai_used:
+        steps.append("Soạn phản hồi bằng AI")
+
+    return {
+        'mode': 'agent',
+        'intent': intent,
+        'confidence': (intent_result or {}).get('confidence'),
+        'requires_confirmation': bool((intent_result or {}).get('requires_confirmation')),
+        'workspace_sources': sources,
+        'refresh_targets': sorted(set(refresh_targets or [])),
+        'steps': steps,
+        'capabilities': ['email', 'calendar', 'schedule', 'history', 'settings'],
+    }
+
+
 def extract_schedule_from_response(response, user_message):
     """
     Detect if AI response contains scheduling information
@@ -603,6 +656,13 @@ def send_message():
                 'workspace_sources': ['email'],
                 'intent': intent_result,
                 'refresh_targets': refresh_targets,
+                'agent_trace': _build_agent_trace(
+                    intent_result,
+                    workspace_sources=['email'],
+                    refresh_targets=refresh_targets,
+                    ai_used=True,
+                    action='Tóm tắt email mới nhất'
+                ),
                 'email_source': {
                     'id': source_email.get('id'),
                     'sender': source_email.get('sender'),
@@ -632,6 +692,12 @@ def send_message():
                 'schedule_suggestion': None,
                 'intent': intent_result,
                 'refresh_targets': refresh_targets,
+                'agent_trace': _build_agent_trace(
+                    intent_result,
+                    workspace_sources=['email'],
+                    refresh_targets=refresh_targets,
+                    action='Không lấy được Gmail'
+                ),
                 'grounded': True,
                 'ai_used': False
             })
@@ -672,6 +738,12 @@ def send_message():
             'workspace_sources': ['calendar'],
             'intent': intent_result,
             'refresh_targets': ['schedule', 'history'],
+            'agent_trace': _build_agent_trace(
+                intent_result,
+                workspace_sources=['calendar'],
+                refresh_targets=['schedule', 'history'],
+                action='Tạo lịch sau xác nhận' if schedule_created else 'Cần bổ sung thông tin lịch'
+            ),
             'grounded': True,
             'ai_used': False
         })
@@ -690,6 +762,12 @@ def send_message():
             'workspace_sources': ['calendar'],
             'intent': intent_result,
             'refresh_targets': refresh_targets,
+            'agent_trace': _build_agent_trace(
+                intent_result,
+                workspace_sources=['calendar'],
+                refresh_targets=refresh_targets,
+                action='Liệt kê lịch từ dữ liệu thật'
+            ),
             'grounded': True,
             'ai_used': False
         })
@@ -708,6 +786,12 @@ def send_message():
             'workspace_sources': ['email'],
             'intent': intent_result,
             'refresh_targets': refresh_targets,
+            'agent_trace': _build_agent_trace(
+                intent_result,
+                workspace_sources=['email'],
+                refresh_targets=refresh_targets,
+                action='Tìm email trong Gmail'
+            ),
             'grounded': True,
             'ai_used': False
         })
@@ -727,6 +811,12 @@ def send_message():
             'workspace_sources': direct_result.get('workspace_sources') or [],
             'intent': intent_result,
             'refresh_targets': direct_result.get('refresh_targets') or refresh_targets,
+            'agent_trace': _build_agent_trace(
+                intent_result,
+                workspace_sources=direct_result.get('workspace_sources') or [],
+                refresh_targets=direct_result.get('refresh_targets') or refresh_targets,
+                action='Thực hiện hành động trực tiếp'
+            ),
             'grounded': True,
             'ai_used': False
         })
@@ -734,15 +824,7 @@ def send_message():
     # Build messages for AI with recent chat context for smarter responses
     messages = [{
         "role": "system",
-        "content": (
-            "You are FlowMate. " + mode_prompt
-            + " Answer in Vietnamese unless the user asks otherwise. Be concise, clear, and action-focused. "
-            "Use only provided workspace context for facts about the user's email, calendar, history, or account. "
-            "If the data is missing, say you do not have enough data instead of guessing. "
-            "Do not invent senders, dates, deadlines, meetings, or completed actions. "
-            "Classify useful information as meetings, deadlines, tasks, reminders, important information, or low priority. "
-            "Suggest the next action, but do not claim a sensitive action was completed unless the user explicitly confirmed it."
-        )
+        "content": _build_agent_system_prompt(mode_prompt)
     }]
 
     workspace_sources = set()
@@ -891,6 +973,13 @@ def send_message():
         'workspace_sources': sorted(workspace_sources),
         'intent': intent_result,
         'refresh_targets': sorted(set(refresh_targets)),
+        'agent_trace': _build_agent_trace(
+            intent_result,
+            workspace_sources=workspace_sources,
+            refresh_targets=refresh_targets,
+            ai_used=True,
+            action='Đề xuất lịch cần xác nhận' if schedule_suggestion else None
+        ),
         'grounded': bool(workspace_sources),
         'ai_used': True
     })

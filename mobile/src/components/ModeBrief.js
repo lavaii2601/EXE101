@@ -10,8 +10,8 @@ export default function ModeBrief({ userMode, stats = [] }) {
 
   return (
     <View style={styles.card}>
-      <Text style={styles.label}>AI BRIEF · {mode.shortLabel.toUpperCase()}</Text>
-      <Text style={styles.title}>Hom nay nen tap trung vao dieu gi?</Text>
+      <Text style={styles.label}>AI AGENT · {mode.shortLabel.toUpperCase()}</Text>
+      <Text style={styles.title}>Hôm nay agent nên xử lý gì?</Text>
       <Text style={styles.description}>{mode.description}</Text>
       {stats.length ? (
         <View style={styles.stats}>

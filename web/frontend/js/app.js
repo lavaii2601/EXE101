@@ -2284,8 +2284,18 @@ async function sendMessageConfirmed(message, opts = {}) {
             const sourceBadge = workspaceSources.length
                 ? `<span class="provider-badge workspace-source-badge">${workspaceSources.map(source => sourceLabels[source]).join(' + ')}</span>`
                 : '';
+            const agentTrace = data.agent_trace || {};
+            const agentIntent = agentTrace.intent || data.intent?.intent || 'chat.freeform';
+            const agentSteps = Array.isArray(agentTrace.steps) ? agentTrace.steps.slice(0, 3) : [];
+            const agentBadge = `
+                <div class="agent-trace">
+                    <span class="agent-pill">AI Agent</span>
+                    <span>${escapeHtml(agentIntent)}</span>
+                    ${agentSteps.length ? `<span>${escapeHtml(agentSteps.join(' → '))}</span>` : ''}
+                </div>
+            `;
 
-            addMessage(data.response, 'assistant', providerBadge + sourceBadge);
+            addMessage(data.response, 'assistant', providerBadge + sourceBadge + agentBadge);
             loadChatSessions().catch(() => {});
 
             if (data.demo_mode) {
@@ -2692,7 +2702,7 @@ function formatChatSessionTime(value) {
 
 function updateChatSessionTitle() {
     const titleEl = document.getElementById('chatSessionTitle');
-    const title = activeChatSessionTitle || ui('Chat hiện tại', 'Current chat');
+    const title = activeChatSessionTitle || ui('AI Agent hiện tại', 'Current AI agent');
     if (titleEl) titleEl.textContent = title;
     document.querySelectorAll('.chat-session-item').forEach((item) => {
         item.classList.toggle('active', item.dataset.sessionId === activeChatSessionId);
