@@ -1330,10 +1330,8 @@ function renderOverviewList(items, type) {
 
     return items.slice(0, 6).map((item, index) => {
         if (type === 'email') {
-            const clickable = item.id ? ' is-clickable' : '';
-            const idAttr = item.id ? ` data-email-id="${escapeHtml(item.id)}" tabindex="0" role="button"` : '';
             return `
-                <article class="overview-list-item${clickable}"${idAttr}>
+                <article class="overview-list-item is-clickable" data-email-index="${index}" tabindex="0" role="button">
                     <span class="overview-item-index">${index + 1}</span>
                     <div>
                         <strong>${escapeHtml(item.subject || ui('Email không tiêu đề', 'Untitled email'))}</strong>
@@ -1447,11 +1445,11 @@ function bindOverviewChecklist(container, selectedDate, schedules, checklistStat
     });
 }
 
-function bindOverviewEmailClicks(container, emails) {
-    container.querySelectorAll('.overview-list-item[data-email-id]').forEach((article) => {
+function bindOverviewEmailClicks(container, emails, selectedDate) {
+    container.querySelectorAll('.overview-list-item[data-email-index]').forEach((article) => {
         const openDetail = () => {
-            const email = emails.find((item) => String(item.id) === article.dataset.emailId);
-            if (email) showFormattedEmailDetail(email);
+            const email = emails[Number(article.dataset.emailIndex)];
+            openOverviewEmail(email, selectedDate);
         };
         article.addEventListener('click', openDetail);
         article.addEventListener('keydown', (event) => {
@@ -1460,6 +1458,39 @@ function bindOverviewEmailClicks(container, emails) {
                 openDetail();
             }
         });
+    });
+}
+
+async function openOverviewEmail(email, selectedDate) {
+    if (!email) return;
+    if (email.id) {
+        showFormattedEmailDetail(email);
+        return;
+    }
+
+    // Cached overview predates storing the Gmail message id -- force one
+    // refresh to pick up an id, then open the freshly matched row.
+    try {
+        const response = await apiFetch(
+            `${API_BASE}/overview/daily?date=${encodeURIComponent(selectedDate)}&max_results=50&force=1`
+        ).then((res) => res.json());
+        const freshRows = Array.isArray(response.email_rows) ? response.email_rows : [];
+        const match = freshRows.find((row) => row.subject === email.subject && row.sender === email.sender);
+        if (match && match.id) {
+            showFormattedEmailDetail(match);
+            return;
+        }
+    } catch (error) {
+        console.error('Overview email refresh failed:', error);
+    }
+
+    showFormattedEmailDetail({
+        ...email,
+        body: ui(
+            'Không tải được nội dung gốc, vui lòng bấm "Tổng hợp lại" ở trên rồi thử lại.',
+            'Could not load the original content -- tap "Refresh" above and try again.'
+        ),
+        attachments: []
     });
 }
 
@@ -1546,7 +1577,7 @@ async function loadOverviewPage(options = {}) {
             </div>
         `;
         bindOverviewChecklist(container, selectedDate, schedules, checklistState);
-        bindOverviewEmailClicks(container, emails);
+        bindOverviewEmailClicks(container, emails, selectedDate);
     } catch (error) {
         container.innerHTML = `
             <div class="overview-error">
