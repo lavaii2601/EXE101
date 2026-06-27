@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import EmptyState from '../components/EmptyState';
 import Field from '../components/Field';
 import Screen from '../components/Screen';
-import { apiGet, apiPost } from '../api/client';
+import { apiGet, apiPost, apiPut } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 
 export default function OverviewScreen() {
@@ -17,15 +17,19 @@ export default function OverviewScreen() {
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
+  const [checklistState, setChecklistState] = useState({ completed: {}, custom_items: [] });
+  const [checklistDraft, setChecklistDraft] = useState('');
+  const [checklistSaving, setChecklistSaving] = useState(false);
 
   const loadOverview = useCallback(async () => {
     setLoading(true);
     setEmailError('');
     try {
       const reportDate = formatReportDate(date);
-      const [scheduleResult, emailResult] = await Promise.allSettled([
+      const [scheduleResult, emailResult, checklistResult] = await Promise.allSettled([
         apiGet('/schedule/unified?max_results=100&live=0'),
         apiPost('/email/summarize-by-date', { date: reportDate, max_results: 50 }),
+        apiGet(`/schedule/checklist?date=${encodeURIComponent(date)}`),
       ]);
 
       if (scheduleResult.status === 'fulfilled') {
@@ -44,6 +48,12 @@ export default function OverviewScreen() {
           ? 'Cần đăng nhập Gmail để tổng hợp email.'
           : (emailResult.reason?.message || 'Không tải được email trong ngày.'));
       }
+
+      if (checklistResult.status === 'fulfilled') {
+        setChecklistState(normalizeChecklistState(checklistResult.value));
+      } else {
+        setChecklistState({ completed: {}, custom_items: [] });
+      }
     } catch (error) {
       Alert.alert('Không tổng hợp được dữ liệu', error.message);
     } finally {
@@ -58,6 +68,71 @@ export default function OverviewScreen() {
   const meetingEmails = emails.filter((item) => item.is_meeting);
   const insight = buildInsight({ emails, schedules, date });
   const sourceText = buildSourceText({ emails, schedules });
+  const checklistItems = useMemo(
+    () => buildChecklistItems({ schedules, checklistState }),
+    [schedules, checklistState]
+  );
+  const completedCount = checklistItems.filter((item) => item.completed).length;
+
+  const saveChecklist = useCallback(async (nextState) => {
+    setChecklistSaving(true);
+    try {
+      const saved = await apiPut('/schedule/checklist', { date, ...nextState });
+      setChecklistState(normalizeChecklistState(saved));
+    } catch (error) {
+      Alert.alert('Không lưu được checklist', error.message);
+    } finally {
+      setChecklistSaving(false);
+    }
+  }, [date]);
+
+  const toggleChecklistItem = useCallback((item) => {
+    const nextCompleted = {
+      ...checklistState.completed,
+      [item.id]: !item.completed,
+    };
+    let nextCustom = checklistState.custom_items || [];
+    if (item.kind === 'custom') {
+      nextCustom = nextCustom.map((customItem) => (
+        customItem.id === item.id
+          ? { ...customItem, completed: !item.completed }
+          : customItem
+      ));
+    }
+    const nextState = { completed: nextCompleted, custom_items: nextCustom };
+    setChecklistState(nextState);
+    saveChecklist(nextState);
+  }, [checklistState, saveChecklist]);
+
+  const addChecklistItem = useCallback(() => {
+    const title = checklistDraft.trim();
+    if (!title) return;
+    const item = {
+      id: `custom:${date}:${Date.now()}`,
+      title,
+      completed: false,
+      created_at: new Date().toISOString(),
+    };
+    const nextState = {
+      completed: checklistState.completed || {},
+      custom_items: [...(checklistState.custom_items || []), item],
+    };
+    setChecklistDraft('');
+    setChecklistState(nextState);
+    saveChecklist(nextState);
+  }, [checklistDraft, checklistState, date, saveChecklist]);
+
+  const deleteChecklistItem = useCallback((item) => {
+    if (item.kind !== 'custom') return;
+    const nextCompleted = { ...(checklistState.completed || {}) };
+    delete nextCompleted[item.id];
+    const nextState = {
+      completed: nextCompleted,
+      custom_items: (checklistState.custom_items || []).filter((customItem) => customItem.id !== item.id),
+    };
+    setChecklistState(nextState);
+    saveChecklist(nextState);
+  }, [checklistState, saveChecklist]);
 
   return (
     <Screen
@@ -89,6 +164,57 @@ export default function OverviewScreen() {
         <StatCard label="Task mở" value={openTasks.length} styles={styles} />
         <StatCard label="Mail họp" value={meetingEmails.length} styles={styles} />
       </View>
+
+      <Card>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.kicker}>CHECKLIST</Text>
+          <Text style={styles.sectionTitle}>Việc người dùng cần hoàn tất</Text>
+          <Text style={styles.checklistMeta}>{completedCount}/{checklistItems.length} đã xong</Text>
+        </View>
+        <View style={styles.addRow}>
+          <View style={styles.addInput}>
+            <Field
+              label="Thêm việc"
+              value={checklistDraft}
+              onChangeText={setChecklistDraft}
+              placeholder="Nhập việc cần làm"
+            />
+          </View>
+          <Button title="Thêm" onPress={addChecklistItem} loading={checklistSaving} disabled={!checklistDraft.trim()} />
+        </View>
+        {checklistItems.length === 0 ? (
+          <EmptyState title="Checklist đang trống" detail="Thêm việc thủ công hoặc tạo lịch/task để FlowMate đưa vào checklist." />
+        ) : checklistItems.map((item) => (
+          <View key={item.id} style={styles.checklistItem}>
+            <TouchableOpacity
+              style={[styles.checkbox, item.completed && styles.checkboxChecked]}
+              onPress={() => toggleChecklistItem(item)}
+              activeOpacity={0.78}
+            >
+              <Text style={[styles.checkboxText, item.completed && styles.checkboxTextChecked]}>
+                {item.completed ? '✓' : ''}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.checklistBody}
+              onPress={() => toggleChecklistItem(item)}
+              activeOpacity={0.78}
+            >
+              <Text style={[styles.checklistTitle, item.completed && styles.checklistTitleDone]}>
+                {item.title}
+              </Text>
+              {item.meta ? <Text style={styles.itemMeta}>{item.meta}</Text> : null}
+            </TouchableOpacity>
+            {item.kind === 'custom' ? (
+              <TouchableOpacity style={styles.deleteButton} onPress={() => deleteChecklistItem(item)} activeOpacity={0.78}>
+                <Text style={styles.deleteButtonText}>Xóa</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.checklistSource}>Lịch</Text>
+            )}
+          </View>
+        ))}
+      </Card>
 
       <Card>
         <View style={styles.sectionHeader}>
@@ -147,6 +273,37 @@ function StatCard({ label, value, styles }) {
       <Text style={styles.statLabel}>{label}</Text>
     </Card>
   );
+}
+
+function normalizeChecklistState(value) {
+  return {
+    completed: value?.completed && typeof value.completed === 'object' ? value.completed : {},
+    custom_items: Array.isArray(value?.custom_items) ? value.custom_items : [],
+  };
+}
+
+function buildChecklistItems({ schedules, checklistState }) {
+  const completed = checklistState.completed || {};
+  const generated = schedules
+    .filter((item) => item.status !== 'cancelled' && item.status !== 'dismissed')
+    .map((item) => {
+      const id = `schedule:${scheduleFingerprint(item)}`;
+      return {
+        id,
+        kind: 'schedule',
+        title: item.title || 'Task không tiêu đề',
+        meta: formatScheduleTime(item.start_time, item.end_time),
+        completed: Boolean(completed[id] || item.status === 'completed'),
+      };
+    });
+  const custom = (checklistState.custom_items || []).map((item) => ({
+    id: item.id,
+    kind: 'custom',
+    title: item.title,
+    meta: 'Thêm thủ công',
+    completed: Boolean(completed[item.id] || item.completed),
+  }));
+  return [...generated, ...custom];
 }
 
 function buildInsight({ emails, schedules, date }) {
@@ -279,6 +436,68 @@ function makeStyles(colors) {
     statLabel: { marginTop: 3, color: colors.textMuted, fontWeight: '800' },
     sectionHeader: { marginBottom: 4 },
     sectionTitle: { marginTop: 2, color: colors.text, fontSize: 16, fontWeight: '900' },
+    checklistMeta: { marginTop: 4, color: colors.textMuted, fontSize: 12, fontWeight: '800' },
+    addRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: 10,
+      marginTop: 10,
+      marginBottom: 4,
+    },
+    addInput: { flex: 1, minWidth: 0 },
+    checklistItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 12,
+      borderTopColor: colors.border,
+      borderTopWidth: 1,
+    },
+    checkbox: {
+      width: 28,
+      height: 28,
+      borderRadius: 8,
+      borderWidth: 2,
+      borderColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.panel,
+    },
+    checkboxChecked: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary,
+    },
+    checkboxText: {
+      color: colors.panel,
+      fontWeight: '900',
+      lineHeight: 18,
+    },
+    checkboxTextChecked: { color: '#ffffff' },
+    checklistBody: { flex: 1, minWidth: 0 },
+    checklistTitle: { color: colors.text, fontWeight: '900', lineHeight: 20 },
+    checklistTitleDone: {
+      color: colors.textMuted,
+      textDecorationLine: 'line-through',
+    },
+    checklistSource: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontWeight: '900',
+      textTransform: 'uppercase',
+    },
+    deleteButton: {
+      minHeight: 30,
+      paddingHorizontal: 10,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: `${colors.danger}18`,
+    },
+    deleteButtonText: {
+      color: colors.danger,
+      fontSize: 11,
+      fontWeight: '900',
+    },
     item: {
       flexDirection: 'row',
       alignItems: 'flex-start',

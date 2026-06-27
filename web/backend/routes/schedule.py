@@ -29,11 +29,17 @@ _WEEK_SYNC_TTL_SECONDS = 90
 _SCHEDULE_CACHE_TTL_SECONDS = 15
 _FULL_SYNC_DAYS = int(os.getenv('SCHEDULE_FULL_SYNC_DAYS', '90'))
 _LOCAL_EDIT_SYNC_GRACE_SECONDS = 180
+_CHECKLIST_CACHE_TTL_SECONDS = 365 * 24 * 60 * 60
 
 
 def _schedule_cache_key(user_id, name, *parts):
     safe_parts = [str(part).replace('%', '').replace(':', '-') for part in parts if part is not None]
     return 'schedule:' + ':'.join([user_id, name, *safe_parts])
+
+
+def _checklist_cache_key(user_id, date_value):
+    safe_date = str(date_value or '').strip().replace('%', '').replace(':', '-')
+    return f"overview:checklist:{user_id}:{safe_date}"
 
 
 def _clear_schedule_cache(db_path):
@@ -82,6 +88,30 @@ def _has_calendar_token(user_id):
     if not user_id or user_id == 'default':
         return False
     return os.path.exists(get_user_token_file(user_id))
+
+
+def _normalize_checklist_payload(data):
+    data = data or {}
+    completed = data.get('completed') if isinstance(data.get('completed'), dict) else {}
+    custom_items = data.get('custom_items') if isinstance(data.get('custom_items'), list) else []
+    normalized_custom = []
+    for item in custom_items[:100]:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get('title') or '').strip()
+        item_id = str(item.get('id') or '').strip()
+        if not title or not item_id:
+            continue
+        normalized_custom.append({
+            'id': item_id[:120],
+            'title': title[:240],
+            'completed': bool(item.get('completed')),
+            'created_at': str(item.get('created_at') or datetime.utcnow().isoformat())[:40],
+        })
+    return {
+        'completed': {str(key)[:180]: bool(value) for key, value in completed.items()},
+        'custom_items': normalized_custom,
+    }
 
 
 def _normalize_attendees(attendees_value):
@@ -174,6 +204,42 @@ def _delete_calendar_event_async(user_id, calendar_event_id, db_path):
 
     threading.Thread(target=_bg, daemon=True).start()
     return True
+
+
+@schedule_bp.route('/checklist', methods=['GET'])
+def get_overview_checklist():
+    """Return per-day overview checklist state for the current user."""
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+    date_value = (request.args.get('date') or datetime.now().date().isoformat()).strip()
+    cached = Cache.get(_checklist_cache_key(user_id, date_value), db_path=db_path)
+    payload = _normalize_checklist_payload(cached)
+    return jsonify({
+        'success': True,
+        'date': date_value,
+        **payload,
+    })
+
+
+@schedule_bp.route('/checklist', methods=['PUT', 'POST'])
+def save_overview_checklist():
+    """Persist per-day overview checklist state for the current user."""
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+    data = request.get_json() or {}
+    date_value = (data.get('date') or request.args.get('date') or datetime.now().date().isoformat()).strip()
+    payload = _normalize_checklist_payload(data)
+    Cache.set(
+        _checklist_cache_key(user_id, date_value),
+        payload,
+        ttl=_CHECKLIST_CACHE_TTL_SECONDS,
+        db_path=db_path,
+    )
+    return jsonify({
+        'success': True,
+        'date': date_value,
+        **payload,
+    })
 
 
 @schedule_bp.route('/create', methods=['POST'])
