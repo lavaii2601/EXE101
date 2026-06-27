@@ -1411,6 +1411,13 @@ select:focus {
     line-height: 1.65;
 }
 
+.overview-hero .overview-refresh-note {
+    margin-top: 8px;
+    color: var(--primary);
+    font-size: 13px;
+    font-weight: 600;
+}
+
 .overview-score {
     display: grid;
     place-items: center;

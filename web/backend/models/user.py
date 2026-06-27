@@ -183,3 +183,39 @@ class User:
         conn.close()
         
         return dict(user) if user else None
+
+    @staticmethod
+    def list_user_ids(connected_only=False, limit=500):
+        """Return known user identifiers for background jobs."""
+        if pg.enabled():
+            where = "WHERE gmail_connected = TRUE" if connected_only else ""
+            with pg.connection() as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT user_id FROM users
+                    {where}
+                    ORDER BY updated_at DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                ).fetchall()
+                return [row['user_id'] for row in rows if row.get('user_id')]
+
+        db_path = Config.DATABASE_PATH
+        User.init_db()
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        where = "WHERE gmail_connected = 1" if connected_only else ""
+        cursor.execute(
+            f'''
+            SELECT user_id FROM users
+            {where}
+            ORDER BY updated_at DESC
+            LIMIT ?
+            ''',
+            (limit,)
+        )
+        users = [row['user_id'] for row in cursor.fetchall() if row['user_id']]
+        conn.close()
+        return users

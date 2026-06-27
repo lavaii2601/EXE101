@@ -15,6 +15,7 @@ from models.calendar_event import CalendarEvent
 from models.schedule import Schedule, LOCAL_TZ
 from models.history import History
 from models.sync_job import SyncJob
+from services.overview_service import invalidate_daily_overview
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from utils.google_service_cache import get_cached_service
 
@@ -47,6 +48,13 @@ def _clear_schedule_cache(db_path):
         Cache.clear_pattern('schedule:%', db_path=db_path)
     except Exception:
         logger.debug("Could not clear schedule cache", exc_info=True)
+
+
+def _clear_overview_cache(user_id):
+    try:
+        invalidate_daily_overview(user_id)
+    except Exception:
+        logger.debug("Could not clear overview cache", exc_info=True)
 
 
 def _parse_duration_minutes(raw_value):
@@ -292,6 +300,7 @@ def create_schedule():
             db_path=db_path
         )
         _clear_schedule_cache(db_path)
+        _clear_overview_cache(user_id)
 
         return jsonify({
             'success': True,
@@ -928,6 +937,7 @@ def update_status(schedule_id):
         db_path = get_user_db_path(user_id)
         Schedule.update_status(schedule_id, status, db_path=db_path)
         _clear_schedule_cache(db_path)
+        _clear_overview_cache(user_id)
         History.create(
             f"Cập nhật trạng thái lịch hẹn",
             f"Trạng thái: {status}",
@@ -976,6 +986,7 @@ def update_schedule(schedule_id):
 
         Schedule.update(schedule_id, db_path=db_path, **update_data)
         _clear_schedule_cache(db_path)
+        _clear_overview_cache(user_id)
         updated = Schedule.get_by_id(schedule_id, db_path=db_path)
         
         calendar_sync_pending = _sync_schedule_to_calendar_async(user_id, schedule_id, db_path)
@@ -1015,6 +1026,7 @@ def delete_schedule(schedule_id):
         if calendar_event_id:
             CalendarEvent.delete_google_event(user_id, calendar_event_id, db_path=db_path)
         _clear_schedule_cache(db_path)
+        _clear_overview_cache(user_id)
         calendar_delete_pending = _delete_calendar_event_async(user_id, calendar_event_id, db_path)
 
         History.create(

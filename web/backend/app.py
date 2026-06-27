@@ -31,11 +31,13 @@ from models.schedule import Schedule
 from models.history import History
 from models.user import User
 from models import postgres_db as pg
+from services.overview_scheduler import start_overview_scheduler
 from routes.chat import chat_bp
 from routes.email import email_bp
 from routes.schedule import schedule_bp
 from routes.user import user_bp
 from routes.calendar import calendar_bp
+from routes.overview import overview_bp
 from routes._background import bg_bp
 from utils.security import authenticated_user_id, enforce_rate_limit, valid_request_origin
 
@@ -119,6 +121,7 @@ app.register_blueprint(email_bp)
 app.register_blueprint(schedule_bp)
 app.register_blueprint(user_bp)
 app.register_blueprint(calendar_bp)
+app.register_blueprint(overview_bp)
 app.register_blueprint(bg_bp)
 
 # Ensure data directory exists
@@ -130,6 +133,7 @@ if pg.enabled():
 Schedule.init_db()
 History.init_db()
 User.init_db()
+start_overview_scheduler()
 
 # Serve frontend
 @app.route('/')

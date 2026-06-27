@@ -1462,28 +1462,27 @@ async function loadOverviewPage(options = {}) {
             clearRuntimeCache('schedule:');
         }
 
-        const [scheduleResult, emailResult, checklistResult] = await Promise.allSettled([
-            apiFetch(`${API_BASE}/schedule/unified?max_results=100&live=0`).then((response) => response.json()),
-            apiFetch(`${API_BASE}/email/summarize-by-date`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ date: reportDate, max_results: 50 })
-            }).then((response) => response.json()),
+        const [overviewResult, checklistResult] = await Promise.allSettled([
+            apiFetch(`${API_BASE}/overview/daily?date=${encodeURIComponent(selectedDate)}&max_results=50${options.force ? '&force=1' : ''}`).then((response) => response.json()),
             apiFetch(`${API_BASE}/schedule/checklist?date=${encodeURIComponent(selectedDate)}`).then((response) => response.json())
         ]);
 
-        const scheduleData = scheduleResult.status === 'fulfilled' ? scheduleResult.value : {};
-        const emailData = emailResult.status === 'fulfilled' ? emailResult.value : {};
+        const overviewData = overviewResult.status === 'fulfilled' ? overviewResult.value : {};
         const checklistData = checklistResult.status === 'fulfilled' ? checklistResult.value : {};
-        const schedules = dedupeSchedules(Array.isArray(scheduleData.items) ? scheduleData.items : [])
+        const schedules = dedupeSchedules(Array.isArray(overviewData.schedules) ? overviewData.schedules : [])
             .filter((item) => isSameOverviewDay(item.start_time, selectedDate))
             .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
-        const emails = Array.isArray(emailData.rows) ? emailData.rows : [];
+        const emails = Array.isArray(overviewData.email_rows)
+            ? overviewData.email_rows
+            : (Array.isArray(overviewData.emails) ? overviewData.emails : []);
         const checklistState = normalizeOverviewChecklist(checklistData);
         const deadlines = schedules.filter((item) => getOverviewPriority(item) === ui('Deadline', 'Deadline'));
         const openTasks = schedules.filter((item) => item.status !== 'completed');
         const meetingEmails = emails.filter((item) => item.is_meeting);
         const insight = buildOverviewInsight({ schedules, emails, selectedDate });
+        const refreshNote = overviewData.refreshing
+            ? `<p class="overview-refresh-note">${ui('AI đang cập nhật email trong nền. Lịch/task đã sẵn sàng để xem ngay.', 'AI is updating email in the background. Schedule/task data is ready now.')}</p>`
+            : '';
 
         container.innerHTML = `
             <section class="overview-hero">
@@ -1491,6 +1490,7 @@ async function loadOverviewPage(options = {}) {
                     <span class="overview-kicker">${ui('TÓM TẮT AI', 'AI SUMMARY')}</span>
                     <h3>${escapeHtml(reportDate)}</h3>
                     <p>${escapeHtml(insight)}</p>
+                    ${refreshNote}
                 </div>
                 <div class="overview-score">
                     <strong>${openTasks.length + emails.length}</strong>

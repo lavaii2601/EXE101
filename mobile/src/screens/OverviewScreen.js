@@ -5,7 +5,7 @@ import Card from '../components/Card';
 import EmptyState from '../components/EmptyState';
 import Field from '../components/Field';
 import Screen from '../components/Screen';
-import { apiGet, apiPost, apiPut } from '../api/client';
+import { apiGet, apiPut } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 
 export default function OverviewScreen() {
@@ -23,28 +23,23 @@ export default function OverviewScreen() {
     setLoading(true);
     setEmailError('');
     try {
-      const reportDate = formatReportDate(date);
-      const [scheduleResult, emailResult, checklistResult] = await Promise.allSettled([
-        apiGet('/schedule/unified?max_results=100&live=0'),
-        apiPost('/email/summarize-by-date', { date: reportDate, max_results: 50 }),
+      const [overviewResult, checklistResult] = await Promise.allSettled([
+        apiGet(`/overview/daily?date=${encodeURIComponent(date)}&max_results=50`),
         apiGet(`/schedule/checklist?date=${encodeURIComponent(date)}`),
       ]);
 
-      if (scheduleResult.status === 'fulfilled') {
-        setSchedules(dedupeSchedules(scheduleResult.value.items || [])
+      if (overviewResult.status === 'fulfilled') {
+        setSchedules(dedupeSchedules(overviewResult.value.schedules || [])
           .filter((item) => isSameDay(item.start_time, date))
           .sort((a, b) => new Date(a.start_time) - new Date(b.start_time)));
+        setEmails(overviewResult.value.email_rows || overviewResult.value.emails || []);
+        setEmailError(overviewResult.value.refreshing
+          ? 'Email đang được AI tổng hợp trong nền, lịch/task đã sẵn sàng.'
+          : '');
       } else {
         setSchedules([]);
-      }
-
-      if (emailResult.status === 'fulfilled') {
-        setEmails(emailResult.value.rows || []);
-      } else {
         setEmails([]);
-        setEmailError(emailResult.reason?.status === 401
-          ? 'Cần đăng nhập Gmail để tổng hợp email.'
-          : (emailResult.reason?.message || 'Không tải được email trong ngày.'));
+        setEmailError(overviewResult.reason?.message || 'Không tải được tổng hợp trong ngày.');
       }
 
       if (checklistResult.status === 'fulfilled') {
