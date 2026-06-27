@@ -7,6 +7,7 @@ from models.cache import Cache
 from models.schedule import LOCAL_TZ, Schedule
 from services.ai_service import AIService
 from services.gmail_service import GmailService
+from utils.google_service_cache import get_cached_service
 from utils.user_context import get_user_db_path, get_user_token_file, sanitize_user_id
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,11 @@ OVERVIEW_CACHE_TTL_SECONDS = 36 * 60 * 60
 _refresh_lock = threading.Lock()
 _refreshing = set()
 _ai_service = AIService()
+
+
+def _load_gmail_service(token_file):
+    """Reuse a cached GmailService instead of re-authenticating on every poll."""
+    return get_cached_service(token_file, lambda: GmailService(token_file=token_file))
 
 
 def parse_overview_date(value=None):
@@ -41,6 +47,16 @@ def overview_cache_key(user_id, day):
 
 def overview_refresh_lock_key(user_id, day):
     return f'{sanitize_user_id(user_id)}:{day.isoformat()}'
+
+
+def build_email_signature(message_ids):
+    """Order-independent fingerprint of a day's Gmail message IDs.
+
+    Lets us tell whether new mail arrived since the cached summary was
+    generated without re-running the (expensive) AI summarization.
+    """
+    ids = sorted(str(mid) for mid in (message_ids or []) if mid)
+    return '|'.join(ids)
 
 
 def get_day_schedules(user_id, day, limit=500):
@@ -92,11 +108,13 @@ def refresh_daily_overview(user_id, day=None, max_results=50, force=False):
         return cached
 
     rows = []
+    email_signature = None
     token_file = get_user_token_file(user_id)
     if os.path.exists(token_file):
         try:
-            service = GmailService(token_file=token_file)
+            service = _load_gmail_service(token_file)
             emails = service.get_emails_by_date(format_report_date(day), max_results=max_results)
+            email_signature = build_email_signature(e.get('id') for e in emails)
             if emails:
                 rows = _ai_service.summarize_email_report(
                     emails,
@@ -107,6 +125,7 @@ def refresh_daily_overview(user_id, day=None, max_results=50, force=False):
             logger.warning("Could not refresh overview email summary for %s", user_id, exc_info=True)
 
     payload = build_overview_payload(user_id, day, rows=rows, generated=True)
+    payload['email_signature'] = email_signature
     store_overview_payload(user_id, day, payload)
     return payload
 
@@ -155,3 +174,38 @@ def get_or_start_daily_overview(user_id, day=None, max_results=50):
 def invalidate_daily_overview(user_id):
     db_path = get_user_db_path(user_id)
     Cache.clear_pattern(f'overview:daily:{sanitize_user_id(user_id)}:%', db_path=db_path)
+
+
+def has_new_emails(user_id, day, max_results=50):
+    """Cheap check for whether mail arrived since the cached summary's signature.
+
+    Returns False (nothing to do) if the user has no overview cached yet for
+    `day` -- the first summary is still generated lazily when they open the
+    Overview tab, this only keeps an existing one fresh.
+    """
+    user_id = sanitize_user_id(user_id)
+    cached = build_cached_overview(user_id, day)
+    if not cached:
+        return False
+
+    token_file = get_user_token_file(user_id)
+    if not os.path.exists(token_file):
+        return False
+
+    try:
+        service = _load_gmail_service(token_file)
+        message_ids = service.list_message_ids_by_date(format_report_date(day), max_results=max_results)
+    except Exception:
+        logger.warning("Could not check for new mail for %s", user_id, exc_info=True)
+        return False
+
+    return build_email_signature(message_ids) != cached.get('email_signature')
+
+
+def check_and_refresh_if_new(user_id, day=None, max_results=50):
+    """Background-safe top-up: only pays for AI re-summarization when new mail showed up."""
+    user_id = sanitize_user_id(user_id)
+    day = parse_overview_date(day)
+    if not has_new_emails(user_id, day, max_results=max_results):
+        return False
+    return refresh_daily_overview_async(user_id, day, max_results=max_results, force=True)

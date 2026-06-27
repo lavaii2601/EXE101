@@ -17,6 +17,7 @@ from models.schedule import Schedule, LOCAL_TZ
 from models.user import User
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from services.calendar_service import CalendarService
+from utils.google_service_cache import get_cached_service
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -24,6 +25,11 @@ logger = logging.getLogger(__name__)
 chat_bp = Blueprint('chat', __name__, url_prefix='/api/chat')
 ai_service = AIService()
 intent_orchestrator = IntentOrchestrator()
+
+
+def _load_gmail_service(token_file):
+    """Return a cached GmailService instance instead of re-authenticating per call."""
+    return get_cached_service(token_file, lambda: GmailService(token_file=token_file))
 
 
 def _ensure_chat_session(user_id, session_id, mode='worker', title=None):
@@ -93,7 +99,7 @@ def _summarize_latest_emails(user_id, count=1):
     if not token_file or not os.path.exists(token_file):
         raise RuntimeError('Gmail chưa được kết nối cho tài khoản này.')
 
-    service = GmailService(token_file=token_file)
+    service = _load_gmail_service(token_file)
     count = max(1, min(int(count or 1), 5))
     latest = service.get_emails(
         max_results=count,
@@ -103,11 +109,13 @@ def _summarize_latest_emails(user_id, count=1):
     if not latest:
         raise RuntimeError('Không tìm thấy email nào trong hộp thư đến.')
 
+    email_ids = [metadata.get('id') for metadata in latest[:count] if metadata.get('id')]
+    full_emails = {email['id']: email for email in service.get_email_details_batch(email_ids)}
+
     emails = []
     sections = []
-    for index, metadata in enumerate(latest[:count], start=1):
-        email_id = metadata.get('id')
-        email = service.get_email_details(email_id, lazy=False) if email_id else None
+    for index, email_id in enumerate(email_ids, start=1):
+        email = full_emails.get(email_id)
         if not email:
             logger.warning("Could not load full Gmail message %s", email_id)
             continue
@@ -163,7 +171,7 @@ def _format_email_context(user_id):
     if not token_file or not os.path.exists(token_file):
         return "EMAIL\nGmail chưa được kết nối."
 
-    emails = GmailService(token_file=token_file).get_emails(
+    emails = _load_gmail_service(token_file).get_emails(
         max_results=5,
         query='in:inbox',
         include_read=True
@@ -371,7 +379,7 @@ def _direct_email_search_response(message, user_id, limit=8):
         return "Gmail chưa được kết nối, nên mình chưa thể xem email thật của bạn."
 
     query, include_read = _email_lookup_query(message)
-    emails = GmailService(token_file=token_file).get_emails(
+    emails = _load_gmail_service(token_file).get_emails(
         max_results=max(1, min(limit, 10)),
         query=query,
         include_read=include_read

@@ -247,21 +247,24 @@ const STATIC_ENGLISH_PLACEHOLDERS = {
     'Mô tả / Nội dung cuộc hẹn': 'Description / Appointment details'
 };
 
+// STATIC_ENGLISH_TEXT/PLACEHOLDERS never change at runtime, so their reverse
+// (EN -> VI) lookups are computed once here instead of on every language toggle.
+const STATIC_VIETNAMESE_TEXT = Object.fromEntries(Object.entries(STATIC_ENGLISH_TEXT).map(([vi, en]) => [en, vi]));
+const STATIC_VIETNAMESE_PLACEHOLDERS = Object.fromEntries(Object.entries(STATIC_ENGLISH_PLACEHOLDERS).map(([vi, en]) => [en, vi]));
+
 function applyStaticLanguage() {
-    const reverseText = Object.fromEntries(Object.entries(STATIC_ENGLISH_TEXT).map(([vi, en]) => [en, vi]));
-    const reversePlaceholders = Object.fromEntries(Object.entries(STATIC_ENGLISH_PLACEHOLDERS).map(([vi, en]) => [en, vi]));
     const userContentSelector = '#chatMessages, #emailsList, #emailDetail, #dailyReportContainer, #historyList, #schedulesList';
     document.querySelectorAll('body *').forEach((element) => {
         if (element.closest(userContentSelector)) return;
         if (element.children.length === 0) {
             const text = element.textContent.trim();
-            const replacement = currentLanguage === 'en' ? STATIC_ENGLISH_TEXT[text] : reverseText[text];
+            const replacement = currentLanguage === 'en' ? STATIC_ENGLISH_TEXT[text] : STATIC_VIETNAMESE_TEXT[text];
             if (replacement) element.textContent = replacement;
         }
         if ('placeholder' in element && element.placeholder) {
             const replacement = currentLanguage === 'en'
                 ? STATIC_ENGLISH_PLACEHOLDERS[element.placeholder]
-                : reversePlaceholders[element.placeholder];
+                : STATIC_VIETNAMESE_PLACEHOLDERS[element.placeholder];
             if (replacement) element.placeholder = replacement;
         }
     });

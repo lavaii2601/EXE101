@@ -167,6 +167,35 @@ class GmailService:
             print(f"Error getting emails by date: {str(e)}")
             return []
 
+    def list_message_ids_by_date(self, date_str, max_results=50):
+        """Return just the message IDs received on a date, no detail fetch.
+
+        Used to cheaply detect whether new mail arrived for a day without
+        paying for the batch metadata fetch that get_emails_by_date does.
+        """
+        try:
+            target_date = self._parse_date(date_str)
+            if not target_date:
+                return []
+
+            next_date = target_date + timedelta(days=1)
+            query = (
+                f"after:{target_date.strftime('%Y/%m/%d')} "
+                f"before:{next_date.strftime('%Y/%m/%d')}"
+            )
+            try:
+                max_results = max(1, min(int(max_results), 150))
+            except Exception:
+                max_results = 50
+
+            results = self.service.users().messages().list(
+                userId='me', q=query, maxResults=max_results
+            ).execute()
+            return [msg.get('id') for msg in results.get('messages', []) if msg.get('id')]
+        except Exception as e:
+            logger.warning(f"Error listing message ids by date: {e}")
+            return []
+
     @staticmethod
     def _parse_date(date_str):
         if not date_str:
@@ -183,6 +212,10 @@ class GmailService:
 
         return None
     
+    def get_email_details_batch(self, message_ids):
+        """Fetch full details (body + attachments) for several messages in one batch call."""
+        return self._get_email_details_batch(list(message_ids or []), lazy=False)
+
     def get_email_details(self, message_id, lazy=False):
         """Get email details - lazy=True skips full body for speed"""
         try:
