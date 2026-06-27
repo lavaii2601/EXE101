@@ -1609,6 +1609,18 @@ select:focus {
     border-bottom: 0;
 }
 
+.overview-list-item.is-clickable {
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background 0.15s ease;
+}
+
+.overview-list-item.is-clickable:hover,
+.overview-list-item.is-clickable:focus-visible {
+    background: rgba(37, 99, 235, 0.08);
+    outline: none;
+}
+
 .overview-item-index {
     display: grid;
     place-items: center;

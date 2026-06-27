@@ -1039,10 +1039,12 @@ class AIService:
                 item = index_to_item.get(idx, {})
                 safe_summary = self._safe_report_summary(email, item.get('summary'), fallback_summary)
                 rows.append({
+                    'id': email.get('id', ''),
                     'sender': email.get('sender', 'Unknown'),
                     'summary': safe_summary,
                     'subject': email.get('subject', ''),
                     'date': email.get('date', ''),
+                    'is_unread': bool(email.get('is_unread', False)),
                     'is_meeting': bool(inferred.get('is_meeting', False)),
                     'meeting_note': item.get('meeting_note') or inferred.get('meeting_note', ''),
                     'schedule_title': item.get('schedule_title') or inferred.get('schedule_title', ''),
@@ -1090,10 +1092,12 @@ class AIService:
                 fallback_summary = self._truncate_text(email.get('snippet', '') or email.get('body', ''), 180)
                 inferred = self._infer_meeting_signals(email, report_date=report_date)
                 rows.append({
+                    'id': email.get('id', ''),
                     'sender': email.get('sender', 'Unknown'),
                     'summary': fallback_summary,
                     'subject': email.get('subject', ''),
                     'date': email.get('date', ''),
+                    'is_unread': bool(email.get('is_unread', False)),
                     'is_meeting': inferred.get('is_meeting', False),
                     'meeting_note': inferred.get('meeting_note', ''),
                     'schedule_title': inferred.get('schedule_title', ''),

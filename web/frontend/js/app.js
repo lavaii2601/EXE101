@@ -1330,8 +1330,10 @@ function renderOverviewList(items, type) {
 
     return items.slice(0, 6).map((item, index) => {
         if (type === 'email') {
+            const clickable = item.id ? ' is-clickable' : '';
+            const idAttr = item.id ? ` data-email-id="${escapeHtml(item.id)}" tabindex="0" role="button"` : '';
             return `
-                <article class="overview-list-item">
+                <article class="overview-list-item${clickable}"${idAttr}>
                     <span class="overview-item-index">${index + 1}</span>
                     <div>
                         <strong>${escapeHtml(item.subject || ui('Email không tiêu đề', 'Untitled email'))}</strong>
@@ -1445,6 +1447,22 @@ function bindOverviewChecklist(container, selectedDate, schedules, checklistStat
     });
 }
 
+function bindOverviewEmailClicks(container, emails) {
+    container.querySelectorAll('.overview-list-item[data-email-id]').forEach((article) => {
+        const openDetail = () => {
+            const email = emails.find((item) => String(item.id) === article.dataset.emailId);
+            if (email) showFormattedEmailDetail(email);
+        };
+        article.addEventListener('click', openDetail);
+        article.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                openDetail();
+            }
+        });
+    });
+}
+
 async function loadOverviewPage(options = {}) {
     const container = document.getElementById('overviewContent');
     const dateInput = document.getElementById('overviewDate');
@@ -1528,6 +1546,7 @@ async function loadOverviewPage(options = {}) {
             </div>
         `;
         bindOverviewChecklist(container, selectedDate, schedules, checklistState);
+        bindOverviewEmailClicks(container, emails);
     } catch (error) {
         container.innerHTML = `
             <div class="overview-error">
