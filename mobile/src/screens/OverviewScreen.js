@@ -17,14 +17,17 @@ export default function OverviewScreen() {
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
+  const [refreshNote, setRefreshNote] = useState('');
   const [checklistState, setChecklistState] = useState({ completed: {}, custom_items: [] });
 
-  const loadOverview = useCallback(async () => {
+  const loadOverview = useCallback(async (options = {}) => {
+    const force = options?.force === true;
     setLoading(true);
     setEmailError('');
+    setRefreshNote('');
     try {
       const [overviewResult, checklistResult] = await Promise.allSettled([
-        apiGet(`/overview/daily?date=${encodeURIComponent(date)}&max_results=50`),
+        apiGet(`/overview/daily?date=${encodeURIComponent(date)}&max_results=50${force ? '&force=1' : ''}`),
         apiGet(`/schedule/checklist?date=${encodeURIComponent(date)}`),
       ]);
 
@@ -33,8 +36,8 @@ export default function OverviewScreen() {
           .filter((item) => isSameDay(item.start_time, date))
           .sort((a, b) => new Date(a.start_time) - new Date(b.start_time)));
         setEmails(overviewResult.value.email_rows || overviewResult.value.emails || []);
-        setEmailError(overviewResult.value.refreshing
-          ? 'Email đang được AI tổng hợp trong nền, lịch/task đã sẵn sàng.'
+        setRefreshNote(overviewResult.value.refreshing
+          ? 'AI đang cập nhật email trong nền. Lịch/task đã sẵn sàng để xem ngay.'
           : '');
       } else {
         setSchedules([]);
@@ -90,13 +93,14 @@ export default function OverviewScreen() {
     <Screen
       title="Tổng hợp"
       refreshing={loading}
-      onRefresh={loadOverview}
-      actions={<Button title="Tổng hợp lại" variant="secondary" onPress={loadOverview} loading={loading} />}
+      onRefresh={() => loadOverview()}
+      actions={<Button title="Tổng hợp lại" variant="secondary" onPress={() => loadOverview({ force: true })} loading={loading} />}
     >
       <Card style={styles.heroCard}>
         <Text style={styles.kicker}>FLOWMATE AI</Text>
         <Text style={styles.heroTitle}>{formatReportDate(date)}</Text>
         <Text style={styles.heroText}>{insight}</Text>
+        {refreshNote ? <Text style={styles.refreshNote}>{refreshNote}</Text> : null}
         <Text style={styles.sourceText}>{sourceText}</Text>
       </Card>
 
@@ -107,7 +111,7 @@ export default function OverviewScreen() {
           onChangeText={setDate}
           placeholder="2026-06-26"
         />
-        <Button title="Xem ngày này" onPress={loadOverview} loading={loading} />
+        <Button title="Xem ngày này" onPress={() => loadOverview()} loading={loading} />
       </Card>
 
       <View style={styles.statsGrid}>
@@ -346,6 +350,7 @@ function makeStyles(colors) {
     },
     heroTitle: { color: colors.text, fontSize: 20, fontWeight: '700' },
     heroText: { color: colors.textMuted, fontSize: 14, lineHeight: 21 },
+    refreshNote: { marginTop: 4, color: colors.primary, fontSize: 13, fontWeight: '600', lineHeight: 19 },
     sourceText: { marginTop: 4, color: colors.textMuted, fontSize: 12, fontWeight: '600' },
     dateCard: { gap: 10 },
     statsGrid: {
