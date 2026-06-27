@@ -412,14 +412,14 @@ function makeStyles(colors) {
     },
     kicker: {
       color: colors.primary,
-      fontSize: 10,
-      fontWeight: '900',
-      letterSpacing: 1,
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 0,
       textTransform: 'uppercase',
     },
-    heroTitle: { color: colors.text, fontSize: 22, fontWeight: '900' },
-    heroText: { color: colors.textMuted, lineHeight: 21 },
-    sourceText: { marginTop: 4, color: colors.textMuted, fontSize: 12, fontWeight: '800' },
+    heroTitle: { color: colors.text, fontSize: 20, fontWeight: '700' },
+    heroText: { color: colors.textMuted, fontSize: 14, lineHeight: 21 },
+    sourceText: { marginTop: 4, color: colors.textMuted, fontSize: 12, fontWeight: '600' },
     dateCard: { gap: 10 },
     statsGrid: {
       flexDirection: 'row',
@@ -432,11 +432,11 @@ function makeStyles(colors) {
       minHeight: 76,
       justifyContent: 'center',
     },
-    statValue: { color: colors.text, fontSize: 24, fontWeight: '900' },
-    statLabel: { marginTop: 3, color: colors.textMuted, fontWeight: '800' },
+    statValue: { color: colors.text, fontSize: 22, fontWeight: '700' },
+    statLabel: { marginTop: 3, color: colors.textMuted, fontSize: 13, fontWeight: '600' },
     sectionHeader: { marginBottom: 4 },
-    sectionTitle: { marginTop: 2, color: colors.text, fontSize: 16, fontWeight: '900' },
-    checklistMeta: { marginTop: 4, color: colors.textMuted, fontSize: 12, fontWeight: '800' },
+    sectionTitle: { marginTop: 2, color: colors.text, fontSize: 16, fontWeight: '700' },
+    checklistMeta: { marginTop: 4, color: colors.textMuted, fontSize: 12, fontWeight: '600' },
     addRow: {
       flexDirection: 'row',
       alignItems: 'flex-end',
@@ -469,12 +469,12 @@ function makeStyles(colors) {
     },
     checkboxText: {
       color: colors.panel,
-      fontWeight: '900',
+      fontWeight: '700',
       lineHeight: 18,
     },
     checkboxTextChecked: { color: '#ffffff' },
     checklistBody: { flex: 1, minWidth: 0 },
-    checklistTitle: { color: colors.text, fontWeight: '900', lineHeight: 20 },
+    checklistTitle: { color: colors.text, fontSize: 14, fontWeight: '600', lineHeight: 20 },
     checklistTitleDone: {
       color: colors.textMuted,
       textDecorationLine: 'line-through',
@@ -482,7 +482,7 @@ function makeStyles(colors) {
     checklistSource: {
       color: colors.textMuted,
       fontSize: 11,
-      fontWeight: '900',
+      fontWeight: '600',
       textTransform: 'uppercase',
     },
     deleteButton: {
@@ -496,7 +496,7 @@ function makeStyles(colors) {
     deleteButtonText: {
       color: colors.danger,
       fontSize: 11,
-      fontWeight: '900',
+      fontWeight: '600',
     },
     item: {
       flexDirection: 'row',
@@ -515,11 +515,11 @@ function makeStyles(colors) {
       justifyContent: 'center',
       backgroundColor: `${colors.primary}18`,
     },
-    itemIndexText: { color: colors.primary, fontSize: 12, fontWeight: '900' },
+    itemIndexText: { color: colors.primary, fontSize: 12, fontWeight: '700' },
     itemBody: { flex: 1, minWidth: 0 },
-    itemTitle: { color: colors.text, fontWeight: '900', lineHeight: 20 },
-    itemMeta: { marginTop: 3, color: colors.textMuted, fontSize: 12, fontWeight: '700' },
-    itemPreview: { marginTop: 6, color: colors.textMuted, lineHeight: 19 },
+    itemTitle: { color: colors.text, fontSize: 14, fontWeight: '600', lineHeight: 20 },
+    itemMeta: { marginTop: 3, color: colors.textMuted, fontSize: 12, fontWeight: '500' },
+    itemPreview: { marginTop: 6, color: colors.textMuted, fontSize: 13, lineHeight: 19 },
     chip: {
       overflow: 'hidden',
       borderRadius: 999,
@@ -527,8 +527,8 @@ function makeStyles(colors) {
       paddingVertical: 4,
       backgroundColor: 'rgba(13,148,136,0.13)',
       color: '#0f766e',
-      fontSize: 10,
-      fontWeight: '900',
+      fontSize: 11,
+      fontWeight: '600',
     },
     chipStack: { alignItems: 'flex-end', gap: 5 },
     gmailChip: {
@@ -546,7 +546,7 @@ function makeStyles(colors) {
     errorText: {
       marginTop: 10,
       color: colors.danger,
-      fontWeight: '700',
+      fontWeight: '600',
     },
   });
 }
