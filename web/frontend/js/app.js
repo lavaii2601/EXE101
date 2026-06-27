@@ -2994,7 +2994,15 @@ async function loadEmails(page = 1, options = {}) {
         console.log(`📡 Response status: ${response.status}`);
         
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            let errorData = {};
+            try {
+                errorData = await response.json();
+            } catch {
+                errorData = {};
+            }
+            const detail = errorData.error || errorData.message || response.statusText || ui('Không rõ lỗi', 'Unknown error');
+            const type = errorData.error_type ? ` (${errorData.error_type})` : '';
+            throw new Error(`HTTP ${response.status}: ${detail}${type}`);
         }
         
         const data = await response.json();

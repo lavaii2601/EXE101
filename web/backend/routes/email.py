@@ -561,6 +561,22 @@ def _prune_existing_meeting_suggestions(db_path):
             visible.append(suggestion)
     return visible
 
+
+def _safe_prune_existing_meeting_suggestions(db_path):
+    try:
+        return _prune_existing_meeting_suggestions(db_path)
+    except Exception:
+        logger.warning("Skipping meeting suggestion pruning", exc_info=True)
+        return []
+
+
+def _safe_pending_meeting_suggestions(db_path):
+    try:
+        return MeetingSuggestion.get_pending(db_path=db_path)
+    except Exception:
+        logger.warning("Skipping pending meeting suggestions", exc_info=True)
+        return []
+
 def _are_emails_cached(cache_key):
     """Check if cache is still valid (10 minute TTL for better performance)"""
     if cache_key not in _email_cache:
@@ -901,7 +917,7 @@ def get_unread_emails():
                 cache_hit = True
             else:
                 if cache_only:
-                    suggestions = _prune_existing_meeting_suggestions(db_path)
+                    suggestions = _safe_prune_existing_meeting_suggestions(db_path)
                     return jsonify({
                         'success': True,
                         'filter': filter_type,
@@ -1020,7 +1036,7 @@ def get_unread_emails():
                 'per_page': per_page,
                 'total_items': total_emails
             },
-            'meeting_suggestions': MeetingSuggestion.get_pending(db_path=db_path)
+            'meeting_suggestions': _safe_pending_meeting_suggestions(db_path)
         })
     except Exception as e:
         logger.error(f"Error in get_unread_emails: {str(e)}", exc_info=True)
