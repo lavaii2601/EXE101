@@ -81,47 +81,119 @@ class IntentOrchestrator:
             "refresh_targets": refresh_targets,
         }
 
-    def detect_with_ai(self, message, ai_service, user_id=None, confidence_threshold=0.6):
+    FEW_SHOT_REASONING = (
+        "Vi du cach lap luan (KHONG dung ngay/gio trong vi du, chi hoc CACH suy luan "
+        "tu THOI DIEM HIEN TAI thuc te o tren):\n"
+        "- 'Nhac minh hop voi sep luc 3 gio chieu mai' => schedule.create; "
+        "start_time = (ngay ke tiep THOI DIEM HIEN TAI) luc 15:00.\n"
+        "- 'Dat lich kham rang thu 5 tuan sau 9 gio sang' => schedule.create; "
+        "start_time = (Thu Nam cua tuan ke tiep tuan chua THOI DIEM HIEN TAI) luc 09:00.\n"
+        "- 'Trong 2 tieng nua goi lai cho khach' => schedule.create; "
+        "start_time = THOI DIEM HIEN TAI + 2 gio.\n"
+        "- 'Tuan sau minh co lich gi khong' => schedule.list; window.label=next_week.\n"
+        "- 'Tim email tu chi Lan noi ve hop dong' => email.search; "
+        "email_query.keyword='hop dong', email_query.sender='chi Lan' "
+        "(vi 'chi Lan' khong phai dia chi email hop le nen coi la tu khoa, khong dat vao truong sender dang email).\n"
+        "- 'Tu nay minh lam freelance roi, doi giup minh' => settings.update_mode; mode=freelancer.\n"
+        "- 'Nay minh bao ban lam gi roi nhi' => history.list.\n"
+        "- 'Ban nghi gi ve lam viec tu xa' => chat.freeform (khong khop muc nao tren).\n"
+    )
+
+    def detect_with_ai(self, message, ai_service, user_id=None, db_path=None,
+                        chat_session_id=None, confidence_threshold=0.6):
         """Run the deterministic rules first; only ask the AI to read the
         message when the rules aren't confident (i.e. it fell through to
         chat.freeform). This keeps clear-cut requests fast and free while
-        letting paraphrased/indirect requests still get recognized.
+        letting paraphrased/indirect requests -- including follow-ups that
+        only make sense given recent chat turns -- still get recognized.
         """
         result = self.detect(message)
         if result.get("confidence", 0) >= confidence_threshold or not ai_service:
             return result
         try:
-            ai_result = self._detect_via_ai(message, ai_service, user_id=user_id)
+            ai_result = self._detect_via_ai(
+                message, ai_service, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
+            )
         except Exception:
             logger.warning("AI-assisted intent detection failed", exc_info=True)
             ai_result = None
         return ai_result or result
 
-    def _detect_via_ai(self, message, ai_service, user_id=None):
+    def _detect_via_ai(self, message, ai_service, user_id=None, db_path=None, chat_session_id=None):
         now = datetime.now()
+        recent_turns = self._recent_turns_text(db_path, chat_session_id)
+        system_message = {
+            "role": "system",
+            "content": (
+                "Ban la bo phan loai y dinh cho mot tro ly cong viec. Doc cau nhan tu "
+                "nguoi dung (va lich su hoi thoai gan day neu co) va TRA VE DUY NHAT mot "
+                "JSON object hop le theo dung cau truc duoc yeu cau, khong giai thich them, "
+                "khong dung markdown."
+            ),
+        }
+        user_message = {
+            "role": "user",
+            "content": self._build_ai_classification_prompt(message, now, recent_turns),
+        }
         raw = ai_service.generate_response(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "Ban la bo phan loai y dinh cho mot tro ly cong viec. Doc cau nhan tu "
-                        "nguoi dung va TRA VE DUY NHAT mot JSON object hop le theo dung cau truc "
-                        "duoc yeu cau, khong giai thich them, khong dung markdown."
-                    ),
-                },
-                {"role": "user", "content": self._build_ai_classification_prompt(message, now)},
-            ],
+            [system_message, user_message],
             max_tokens=320,
             task="intent_classification",
             user_id=user_id,
         )
         data = self._parse_ai_json(raw)
-        if not data:
-            return None
-        return self._coerce_ai_result(data, message)
+        result = self._coerce_ai_result(data, message) if data else None
+        if result:
+            return result
 
-    def _build_ai_classification_prompt(self, message, now):
+        # Self-correction retry: ask once more, pointing at what came back, in
+        # case the first reply broke JSON formatting or skipped a required field.
+        retry_message = {
+            "role": "user",
+            "content": (
+                "Phan hoi truoc khong dung dinh dang JSON yeu cau hoac thieu du lieu bat buoc:\n"
+                f"{str(raw or '')[:400]}\n\n"
+                "Hay tra ve LAI CHINH XAC mot JSON object hop le dung cau truc da neu o tren, "
+                "khong giai thich, khong dung markdown."
+            ),
+        }
+        raw2 = ai_service.generate_response(
+            [system_message, user_message, retry_message],
+            max_tokens=320,
+            task="intent_classification",
+            user_id=user_id,
+        )
+        data2 = self._parse_ai_json(raw2)
+        return self._coerce_ai_result(data2, message) if data2 else None
+
+    def _recent_turns_text(self, db_path, chat_session_id, limit=3):
+        if not db_path or not chat_session_id:
+            return ""
+        try:
+            records = History.get_recent(limit=limit, db_path=db_path, chat_session_id=chat_session_id)
+        except Exception:
+            return ""
+        if not records:
+            return ""
+        lines = []
+        for record in reversed(records):
+            if record.get("action_type") != "chat":
+                continue
+            user_text = self._squash(record.get("user_message"))[:200]
+            assistant_text = self._squash(record.get("assistant_response"))[:200]
+            if user_text:
+                lines.append(f"Nguoi dung: {user_text}")
+            if assistant_text:
+                lines.append(f"Tro ly: {assistant_text}")
+        return "\n".join(lines)
+
+    def _build_ai_classification_prompt(self, message, now, recent_turns=""):
         weekday = self.WEEKDAY_NAMES_VN[now.weekday()]
+        history_block = (
+            f"LICH SU HOI THOAI GAN DAY (chi de hieu ngu canh / cau tham chieu nhu "
+            f"'doi gio do', 'vay tao lich luon', KHONG phai cau can phan loai):\n{recent_turns}\n\n"
+            if recent_turns else ""
+        )
         return (
             f"THOI DIEM HIEN TAI: {now.strftime('%Y-%m-%d %H:%M')} ({weekday}), GMT+7\n\n"
             "Cac loai y dinh hop le (chon dung 1 gia tri cho truong \"intent\"):\n"
@@ -133,6 +205,7 @@ class IntentOrchestrator:
             "- settings.update_mode: muon doi che do lam viec "
             "(student, worker, freelancer, creator, business, mentor, teacher)\n"
             "- chat.freeform: tat ca truong hop khac (hoi dap thong thuong)\n\n"
+            f"{self.FEW_SHOT_REASONING}\n"
             "Tra ve CHINH XAC mot JSON object theo cau truc:\n"
             "{\n"
             '  "intent": "<mot trong cac gia tri tren>",\n'
@@ -150,7 +223,9 @@ class IntentOrchestrator:
             "Neu intent la schedule.create, BAT BUOC tinh start_time tuyet doi (ngay+gio cu the) "
             "dua vao THOI DIEM HIEN TAI o tren khi cau co nhac thoi gian (vd 'chieu mai', "
             "'thu 5 tuan sau', 'trong 2 tieng nua'). Khong bia dat thong tin ma nguoi dung khong "
-            "cung cap.\n\n"
+            "cung cap. Dung lich su hoi thoai (neu co) de hieu cau tham chieu/sua doi, "
+            "nhung chi phan loai cau nhan moi nhat.\n\n"
+            f"{history_block}"
             f"CAU NHAN TU NGUOI DUNG: \"{message}\""
         )
 

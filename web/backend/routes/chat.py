@@ -822,7 +822,9 @@ def send_message():
             chat_session_id=chat_session_id if action_type == 'chat' else None,
         )
 
-    intent_result = intent_orchestrator.detect_with_ai(user_message, ai_service, user_id=user_id)
+    intent_result = intent_orchestrator.detect_with_ai(
+        user_message, ai_service, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
+    )
     refresh_targets = list(intent_result.get('refresh_targets') or [])
 
     if intent_result.get('intent') == 'email.latest_summary':
