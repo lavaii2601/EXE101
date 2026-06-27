@@ -1483,9 +1483,132 @@ select:focus {
     font-size: 16px;
 }
 
+.overview-panel-head small {
+    display: block;
+    margin-top: 5px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+}
+
 .overview-list {
     display: grid;
     gap: 0;
+}
+
+.overview-checklist-panel {
+    overflow: hidden;
+}
+
+.overview-checklist-add {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.overview-checklist-add input {
+    min-height: 40px;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel-soft);
+    color: var(--text);
+    font: inherit;
+}
+
+.overview-checklist-list {
+    display: grid;
+}
+
+.overview-checklist-item {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.overview-checklist-item:last-child {
+    border-bottom: 0;
+}
+
+.overview-check,
+.overview-checklist-main,
+.overview-checklist-delete {
+    font: inherit;
+}
+
+.overview-check {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    color: var(--primary);
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.overview-check:not(:empty) {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: #ffffff;
+}
+
+.overview-checklist-main {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.overview-checklist-main strong {
+    display: block;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.overview-checklist-main span {
+    display: block;
+    margin-top: 3px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.overview-checklist-main.is-done strong {
+    color: var(--text-secondary);
+    text-decoration: line-through;
+}
+
+.overview-checklist-delete {
+    min-height: 30px;
+    padding: 5px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: rgba(220, 38, 38, 0.10);
+    color: var(--danger);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.overview-checklist-source {
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
 }
 
 .overview-list-item {

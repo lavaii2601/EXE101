@@ -1356,6 +1356,147 @@ function renderOverviewList(items, type) {
     }).join('');
 }
 
+function normalizeOverviewChecklist(value) {
+    return {
+        completed: value?.completed && typeof value.completed === 'object' ? value.completed : {},
+        custom_items: Array.isArray(value?.custom_items) ? value.custom_items : []
+    };
+}
+
+function buildOverviewChecklistItems(schedules, checklistState) {
+    const completed = checklistState.completed || {};
+    const generated = schedules
+        .filter((item) => item.status !== 'cancelled' && item.status !== 'dismissed')
+        .map((item) => {
+            const id = `schedule:${scheduleFingerprint(item)}`;
+            const range = formatScheduleRange(item.start_time, item.end_time);
+            return {
+                id,
+                kind: 'schedule',
+                title: item.title || ui('Task không tiêu đề', 'Untitled task'),
+                meta: range.time || range.date || ui('Chưa rõ thời gian', 'Time unknown'),
+                completed: Boolean(completed[id] || item.status === 'completed')
+            };
+        });
+    const custom = (checklistState.custom_items || []).map((item) => ({
+        id: item.id,
+        kind: 'custom',
+        title: item.title,
+        meta: ui('Thêm thủ công', 'Manual item'),
+        completed: Boolean(completed[item.id] || item.completed)
+    }));
+    return [...generated, ...custom];
+}
+
+function renderOverviewChecklist(schedules, checklistState) {
+    const items = buildOverviewChecklistItems(schedules, checklistState);
+    const doneCount = items.filter((item) => item.completed).length;
+    const rows = items.length
+        ? items.map((item) => `
+            <div class="overview-checklist-item">
+                <button class="overview-check" type="button" data-checklist-toggle="${escapeHtml(item.id)}" aria-label="${ui('Đánh dấu hoàn thành', 'Toggle complete')}">
+                    ${item.completed ? '✓' : ''}
+                </button>
+                <button class="overview-checklist-main ${item.completed ? 'is-done' : ''}" type="button" data-checklist-toggle="${escapeHtml(item.id)}">
+                    <strong>${escapeHtml(item.title || ui('Việc cần làm', 'Task'))}</strong>
+                    <span>${escapeHtml(item.meta || '')}</span>
+                </button>
+                ${item.kind === 'custom'
+                    ? `<button class="overview-checklist-delete" type="button" data-checklist-delete="${escapeHtml(item.id)}">${ui('Xóa', 'Delete')}</button>`
+                    : `<span class="overview-checklist-source">${ui('Lịch', 'Schedule')}</span>`
+                }
+            </div>
+        `).join('')
+        : `<div class="overview-empty">${ui('Checklist đang trống. Thêm việc thủ công hoặc tạo lịch/task để FlowMate đưa vào checklist.', 'Checklist is empty. Add a manual item or create a schedule/task.')}</div>`;
+
+    return `
+        <section class="overview-panel overview-checklist-panel">
+            <div class="overview-panel-head">
+                <span class="overview-kicker">CHECKLIST</span>
+                <strong>${ui('Việc người dùng cần hoàn tất', 'Work to complete')}</strong>
+                <small>${doneCount}/${items.length} ${ui('đã xong', 'done')}</small>
+            </div>
+            <div class="overview-checklist-add">
+                <input id="overviewChecklistInput" type="text" placeholder="${ui('Nhập việc cần làm', 'Add a task')}" maxlength="240">
+                <button id="overviewChecklistAdd" class="btn-primary" type="button">${ui('Thêm', 'Add')}</button>
+            </div>
+            <div class="overview-checklist-list">${rows}</div>
+        </section>
+    `;
+}
+
+function bindOverviewChecklist(container, selectedDate, schedules, checklistState) {
+    const input = container.querySelector('#overviewChecklistInput');
+    const addBtn = container.querySelector('#overviewChecklistAdd');
+    let state = normalizeOverviewChecklist(checklistState);
+
+    const save = async (nextState) => {
+        state = normalizeOverviewChecklist(nextState);
+        await apiFetch(`${API_BASE}/schedule/checklist`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ date: selectedDate, ...state })
+        });
+    };
+
+    const findItem = (id) => buildOverviewChecklistItems(schedules, state).find((item) => item.id === id);
+    const rerender = () => {
+        const panel = container.querySelector('.overview-checklist-panel');
+        if (!panel) return;
+        panel.outerHTML = renderOverviewChecklist(schedules, state);
+        bindOverviewChecklist(container, selectedDate, schedules, state);
+    };
+
+    container.querySelectorAll('[data-checklist-toggle]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const id = button.getAttribute('data-checklist-toggle');
+            const item = findItem(id);
+            if (!item) return;
+            const nextCompleted = { ...state.completed, [id]: !item.completed };
+            const nextCustom = (state.custom_items || []).map((customItem) => (
+                customItem.id === id ? { ...customItem, completed: !item.completed } : customItem
+            ));
+            await save({ completed: nextCompleted, custom_items: nextCustom });
+            rerender();
+        });
+    });
+
+    container.querySelectorAll('[data-checklist-delete]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const id = button.getAttribute('data-checklist-delete');
+            const nextCompleted = { ...state.completed };
+            delete nextCompleted[id];
+            await save({
+                completed: nextCompleted,
+                custom_items: (state.custom_items || []).filter((item) => item.id !== id)
+            });
+            rerender();
+        });
+    });
+
+    const addItem = async () => {
+        const title = (input?.value || '').trim();
+        if (!title) return;
+        const item = {
+            id: `custom:${selectedDate}:${Date.now()}`,
+            title,
+            completed: false,
+            created_at: new Date().toISOString()
+        };
+        if (input) input.value = '';
+        await save({
+            completed: state.completed || {},
+            custom_items: [...(state.custom_items || []), item]
+        });
+        rerender();
+    };
+
+    addBtn?.addEventListener('click', addItem);
+    input?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') addItem();
+    });
+}
+
 async function loadOverviewPage(options = {}) {
     const container = document.getElementById('overviewContent');
     const dateInput = document.getElementById('overviewDate');
@@ -1376,21 +1517,24 @@ async function loadOverviewPage(options = {}) {
             clearRuntimeCache('schedule:');
         }
 
-        const [scheduleResult, emailResult] = await Promise.allSettled([
+        const [scheduleResult, emailResult, checklistResult] = await Promise.allSettled([
             apiFetch(`${API_BASE}/schedule/unified?max_results=100&live=0`).then((response) => response.json()),
             apiFetch(`${API_BASE}/email/summarize-by-date`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ date: reportDate, max_results: 50 })
-            }).then((response) => response.json())
+            }).then((response) => response.json()),
+            apiFetch(`${API_BASE}/schedule/checklist?date=${encodeURIComponent(selectedDate)}`).then((response) => response.json())
         ]);
 
         const scheduleData = scheduleResult.status === 'fulfilled' ? scheduleResult.value : {};
         const emailData = emailResult.status === 'fulfilled' ? emailResult.value : {};
+        const checklistData = checklistResult.status === 'fulfilled' ? checklistResult.value : {};
         const schedules = dedupeSchedules(Array.isArray(scheduleData.items) ? scheduleData.items : [])
             .filter((item) => isSameOverviewDay(item.start_time, selectedDate))
             .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
         const emails = Array.isArray(emailData.rows) ? emailData.rows : [];
+        const checklistState = normalizeOverviewChecklist(checklistData);
         const deadlines = schedules.filter((item) => getOverviewPriority(item) === ui('Deadline', 'Deadline'));
         const openTasks = schedules.filter((item) => item.status !== 'completed');
         const meetingEmails = emails.filter((item) => item.is_meeting);
@@ -1416,6 +1560,8 @@ async function loadOverviewPage(options = {}) {
                 <article><strong>${meetingEmails.length}</strong><span>${ui('Mail họp', 'Meeting mail')}</span></article>
             </div>
 
+            ${renderOverviewChecklist(schedules, checklistState)}
+
             <div class="overview-grid">
                 <section class="overview-panel">
                     <div class="overview-panel-head">
@@ -1433,6 +1579,7 @@ async function loadOverviewPage(options = {}) {
                 </section>
             </div>
         `;
+        bindOverviewChecklist(container, selectedDate, schedules, checklistState);
     } catch (error) {
         container.innerHTML = `
             <div class="overview-error">
