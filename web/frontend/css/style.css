@@ -1335,20 +1335,22 @@ select:focus {
 
 .overview-header {
     align-items: flex-start;
+    font-family: "Times New Roman", Times, serif;
 }
 
 .overview-header p {
     margin: 4px 0 0;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: 12px;
 }
 
 .overview-kicker {
     display: block;
     color: var(--primary);
-    font-size: 11px;
-    font-weight: 900;
-    letter-spacing: 0.08em;
+    font-family: "Times New Roman", Times, serif;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0;
     text-transform: uppercase;
 }
 
@@ -1360,20 +1362,23 @@ select:focus {
 }
 
 .overview-actions input {
-    min-height: 40px;
+    min-height: 36px;
     padding: 8px 10px;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--panel-soft);
     color: var(--text);
+    font-family: "Times New Roman", Times, serif;
+    font-size: 13px;
 }
 
 .overview-content {
     display: grid;
-    gap: 12px;
+    gap: 10px;
     min-height: 0;
     overflow: auto;
     padding-bottom: 12px;
+    font-family: "Times New Roman", Times, serif;
 }
 
 .overview-hero,
@@ -1390,9 +1395,9 @@ select:focus {
 .overview-hero {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 18px;
+    gap: 14px;
     align-items: center;
-    padding: 22px;
+    padding: 18px;
     background:
         linear-gradient(135deg, rgba(37, 99, 235, 0.10), rgba(13, 148, 136, 0.08)),
         var(--panel);
@@ -1401,75 +1406,79 @@ select:focus {
 .overview-hero h3 {
     margin: 4px 0 8px;
     color: var(--text);
-    font-size: 24px;
+    font-size: 20px;
+    font-weight: 600;
 }
 
 .overview-hero p {
     max-width: 920px;
     margin: 0;
     color: var(--text-secondary);
-    line-height: 1.65;
+    font-size: 13px;
+    line-height: 1.5;
 }
 
 .overview-hero .overview-refresh-note {
     margin-top: 8px;
     color: var(--primary);
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 12px;
+    font-weight: 500;
 }
 
 .overview-score {
     display: grid;
     place-items: center;
-    min-width: 132px;
-    min-height: 110px;
-    padding: 14px;
+    min-width: 116px;
+    min-height: 92px;
+    padding: 12px;
     border-radius: 12px;
     background: var(--panel-soft);
 }
 
 .overview-score strong {
     color: var(--primary);
-    font-size: 34px;
+    font-size: 28px;
     line-height: 1;
+    font-weight: 600;
 }
 
 .overview-score span {
     margin-top: 6px;
     color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 500;
     text-align: center;
 }
 
 .overview-stat-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
+    gap: 10px;
 }
 
 .overview-stat-grid article {
     display: grid;
     gap: 4px;
-    min-height: 92px;
-    padding: 16px;
+    min-height: 76px;
+    padding: 13px;
 }
 
 .overview-stat-grid strong {
     color: var(--text);
-    font-size: 26px;
+    font-size: 22px;
+    font-weight: 600;
 }
 
 .overview-stat-grid span {
     color: var(--text-secondary);
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 12px;
+    font-weight: 500;
 }
 
 .overview-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    gap: 10px;
     min-height: 0;
 }
 
@@ -1479,7 +1488,7 @@ select:focus {
 }
 
 .overview-panel-head {
-    padding: 16px 16px 12px;
+    padding: 13px 14px 10px;
     border-bottom: 1px solid var(--border);
 }
 
@@ -1487,15 +1496,16 @@ select:focus {
     display: block;
     margin-top: 3px;
     color: var(--text);
-    font-size: 16px;
+    font-size: 14px;
+    font-weight: 600;
 }
 
 .overview-panel-head small {
     display: block;
     margin-top: 5px;
     color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 500;
 }
 
 .overview-list {
@@ -1513,10 +1523,10 @@ select:focus {
 
 .overview-checklist-item {
     display: grid;
-    grid-template-columns: 30px minmax(0, 1fr) auto;
-    gap: 10px;
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    gap: 9px;
     align-items: center;
-    padding: 12px 16px;
+    padding: 10px 14px;
     border-bottom: 1px solid var(--border);
 }
 
@@ -1532,13 +1542,13 @@ select:focus {
 .overview-check {
     display: grid;
     place-items: center;
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     border: 2px solid var(--border);
     border-radius: 8px;
     background: var(--panel);
     color: var(--primary);
-    font-weight: 700;
+    font-weight: 600;
     cursor: pointer;
 }
 
@@ -1561,7 +1571,7 @@ select:focus {
 .overview-checklist-main strong {
     display: block;
     color: var(--text);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     line-height: 1.45;
     overflow-wrap: anywhere;
@@ -1571,7 +1581,7 @@ select:focus {
     display: block;
     margin-top: 3px;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 11px;
 }
 
 .overview-checklist-main.is-done strong {
@@ -1581,17 +1591,17 @@ select:focus {
 
 .overview-checklist-source {
     color: var(--text-secondary);
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 10px;
+    font-weight: 500;
     text-transform: uppercase;
 }
 
 .overview-list-item {
     display: grid;
-    grid-template-columns: 32px minmax(0, 1fr) auto;
-    gap: 12px;
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    gap: 10px;
     align-items: flex-start;
-    padding: 14px 16px;
+    padding: 11px 14px;
     border-bottom: 1px solid var(--border);
 }
 
@@ -1602,13 +1612,13 @@ select:focus {
 .overview-item-index {
     display: grid;
     place-items: center;
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     border-radius: 8px;
     background: rgba(37, 99, 235, 0.10);
     color: var(--primary);
-    font-size: 12px;
-    font-weight: 900;
+    font-size: 11px;
+    font-weight: 600;
 }
 
 .overview-list-item strong,
@@ -1620,6 +1630,8 @@ select:focus {
 .overview-list-item strong {
     display: block;
     color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
     line-height: 1.35;
 }
 
@@ -1627,24 +1639,24 @@ select:focus {
     display: block;
     margin-top: 3px;
     color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 500;
 }
 
 .overview-list-item p {
-    margin: 7px 0 0;
+    margin: 6px 0 0;
     color: var(--text-secondary);
-    font-size: 13px;
-    line-height: 1.55;
+    font-size: 12px;
+    line-height: 1.45;
 }
 
 .overview-chip {
-    padding: 5px 8px;
+    padding: 4px 7px;
     border-radius: 999px;
     background: rgba(13, 148, 136, 0.12);
     color: #0f766e;
-    font-size: 11px;
-    font-weight: 900;
+    font-size: 10px;
+    font-weight: 600;
     white-space: nowrap;
 }
 
@@ -1658,6 +1670,7 @@ select:focus {
 .overview-error {
     padding: 18px;
     color: var(--text-secondary);
+    font-size: 13px;
 }
 
 .overview-error strong {
