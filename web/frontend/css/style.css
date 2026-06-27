@@ -1500,25 +1500,6 @@ select:focus {
     overflow: hidden;
 }
 
-.overview-checklist-add {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px;
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--border);
-}
-
-.overview-checklist-add input {
-    min-height: 40px;
-    min-width: 0;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel-soft);
-    color: var(--text);
-    font: inherit;
-}
-
 .overview-checklist-list {
     display: grid;
 }
@@ -1537,8 +1518,7 @@ select:focus {
 }
 
 .overview-check,
-.overview-checklist-main,
-.overview-checklist-delete {
+.overview-checklist-main {
     font: inherit;
 }
 
@@ -1590,18 +1570,6 @@ select:focus {
 .overview-checklist-main.is-done strong {
     color: var(--text-secondary);
     text-decoration: line-through;
-}
-
-.overview-checklist-delete {
-    min-height: 30px;
-    padding: 5px 10px;
-    border: 0;
-    border-radius: 8px;
-    background: rgba(220, 38, 38, 0.10);
-    color: var(--danger);
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
 }
 
 .overview-checklist-source {

@@ -1365,7 +1365,7 @@ function normalizeOverviewChecklist(value) {
 
 function buildOverviewChecklistItems(schedules, checklistState) {
     const completed = checklistState.completed || {};
-    const generated = schedules
+    return schedules
         .filter((item) => item.status !== 'cancelled' && item.status !== 'dismissed')
         .map((item) => {
             const id = `schedule:${scheduleFingerprint(item)}`;
@@ -1378,14 +1378,6 @@ function buildOverviewChecklistItems(schedules, checklistState) {
                 completed: Boolean(completed[id] || item.status === 'completed')
             };
         });
-    const custom = (checklistState.custom_items || []).map((item) => ({
-        id: item.id,
-        kind: 'custom',
-        title: item.title,
-        meta: ui('Thêm thủ công', 'Manual item'),
-        completed: Boolean(completed[item.id] || item.completed)
-    }));
-    return [...generated, ...custom];
 }
 
 function renderOverviewChecklist(schedules, checklistState) {
@@ -1401,13 +1393,10 @@ function renderOverviewChecklist(schedules, checklistState) {
                     <strong>${escapeHtml(item.title || ui('Việc cần làm', 'Task'))}</strong>
                     <span>${escapeHtml(item.meta || '')}</span>
                 </button>
-                ${item.kind === 'custom'
-                    ? `<button class="overview-checklist-delete" type="button" data-checklist-delete="${escapeHtml(item.id)}">${ui('Xóa', 'Delete')}</button>`
-                    : `<span class="overview-checklist-source">${ui('Lịch', 'Schedule')}</span>`
-                }
+                <span class="overview-checklist-source">${ui('Lịch', 'Schedule')}</span>
             </div>
         `).join('')
-        : `<div class="overview-empty">${ui('Checklist đang trống. Thêm việc thủ công hoặc tạo lịch/task để FlowMate đưa vào checklist.', 'Checklist is empty. Add a manual item or create a schedule/task.')}</div>`;
+        : `<div class="overview-empty">${ui('Checklist đang trống. Tạo lịch/task ở tab Lịch để FlowMate đưa vào đây.', 'Checklist is empty. Create a schedule/task in the Schedule tab to show it here.')}</div>`;
 
     return `
         <section class="overview-panel overview-checklist-panel">
@@ -1416,18 +1405,12 @@ function renderOverviewChecklist(schedules, checklistState) {
                 <strong>${ui('Việc người dùng cần hoàn tất', 'Work to complete')}</strong>
                 <small>${doneCount}/${items.length} ${ui('đã xong', 'done')}</small>
             </div>
-            <div class="overview-checklist-add">
-                <input id="overviewChecklistInput" type="text" placeholder="${ui('Nhập việc cần làm', 'Add a task')}" maxlength="240">
-                <button id="overviewChecklistAdd" class="btn-primary" type="button">${ui('Thêm', 'Add')}</button>
-            </div>
             <div class="overview-checklist-list">${rows}</div>
         </section>
     `;
 }
 
 function bindOverviewChecklist(container, selectedDate, schedules, checklistState) {
-    const input = container.querySelector('#overviewChecklistInput');
-    const addBtn = container.querySelector('#overviewChecklistAdd');
     let state = normalizeOverviewChecklist(checklistState);
 
     const save = async (nextState) => {
@@ -1453,47 +1436,9 @@ function bindOverviewChecklist(container, selectedDate, schedules, checklistStat
             const item = findItem(id);
             if (!item) return;
             const nextCompleted = { ...state.completed, [id]: !item.completed };
-            const nextCustom = (state.custom_items || []).map((customItem) => (
-                customItem.id === id ? { ...customItem, completed: !item.completed } : customItem
-            ));
-            await save({ completed: nextCompleted, custom_items: nextCustom });
+            await save({ completed: nextCompleted, custom_items: state.custom_items || [] });
             rerender();
         });
-    });
-
-    container.querySelectorAll('[data-checklist-delete]').forEach((button) => {
-        button.addEventListener('click', async () => {
-            const id = button.getAttribute('data-checklist-delete');
-            const nextCompleted = { ...state.completed };
-            delete nextCompleted[id];
-            await save({
-                completed: nextCompleted,
-                custom_items: (state.custom_items || []).filter((item) => item.id !== id)
-            });
-            rerender();
-        });
-    });
-
-    const addItem = async () => {
-        const title = (input?.value || '').trim();
-        if (!title) return;
-        const item = {
-            id: `custom:${selectedDate}:${Date.now()}`,
-            title,
-            completed: false,
-            created_at: new Date().toISOString()
-        };
-        if (input) input.value = '';
-        await save({
-            completed: state.completed || {},
-            custom_items: [...(state.custom_items || []), item]
-        });
-        rerender();
-    };
-
-    addBtn?.addEventListener('click', addItem);
-    input?.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') addItem();
     });
 }
 

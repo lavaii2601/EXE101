@@ -18,8 +18,6 @@ export default function OverviewScreen() {
   const [loading, setLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [checklistState, setChecklistState] = useState({ completed: {}, custom_items: [] });
-  const [checklistDraft, setChecklistDraft] = useState('');
-  const [checklistSaving, setChecklistSaving] = useState(false);
 
   const loadOverview = useCallback(async () => {
     setLoading(true);
@@ -75,14 +73,11 @@ export default function OverviewScreen() {
   const completedCount = checklistItems.filter((item) => item.completed).length;
 
   const saveChecklist = useCallback(async (nextState) => {
-    setChecklistSaving(true);
     try {
       const saved = await apiPut('/schedule/checklist', { date, ...nextState });
       setChecklistState(normalizeChecklistState(saved));
     } catch (error) {
       Alert.alert('Không lưu được checklist', error.message);
-    } finally {
-      setChecklistSaving(false);
     }
   }, [date]);
 
@@ -91,45 +86,7 @@ export default function OverviewScreen() {
       ...checklistState.completed,
       [item.id]: !item.completed,
     };
-    let nextCustom = checklistState.custom_items || [];
-    if (item.kind === 'custom') {
-      nextCustom = nextCustom.map((customItem) => (
-        customItem.id === item.id
-          ? { ...customItem, completed: !item.completed }
-          : customItem
-      ));
-    }
-    const nextState = { completed: nextCompleted, custom_items: nextCustom };
-    setChecklistState(nextState);
-    saveChecklist(nextState);
-  }, [checklistState, saveChecklist]);
-
-  const addChecklistItem = useCallback(() => {
-    const title = checklistDraft.trim();
-    if (!title) return;
-    const item = {
-      id: `custom:${date}:${Date.now()}`,
-      title,
-      completed: false,
-      created_at: new Date().toISOString(),
-    };
-    const nextState = {
-      completed: checklistState.completed || {},
-      custom_items: [...(checklistState.custom_items || []), item],
-    };
-    setChecklistDraft('');
-    setChecklistState(nextState);
-    saveChecklist(nextState);
-  }, [checklistDraft, checklistState, date, saveChecklist]);
-
-  const deleteChecklistItem = useCallback((item) => {
-    if (item.kind !== 'custom') return;
-    const nextCompleted = { ...(checklistState.completed || {}) };
-    delete nextCompleted[item.id];
-    const nextState = {
-      completed: nextCompleted,
-      custom_items: (checklistState.custom_items || []).filter((customItem) => customItem.id !== item.id),
-    };
+    const nextState = { completed: nextCompleted, custom_items: checklistState.custom_items || [] };
     setChecklistState(nextState);
     saveChecklist(nextState);
   }, [checklistState, saveChecklist]);
@@ -171,19 +128,8 @@ export default function OverviewScreen() {
           <Text style={styles.sectionTitle}>Việc người dùng cần hoàn tất</Text>
           <Text style={styles.checklistMeta}>{completedCount}/{checklistItems.length} đã xong</Text>
         </View>
-        <View style={styles.addRow}>
-          <View style={styles.addInput}>
-            <Field
-              label="Thêm việc"
-              value={checklistDraft}
-              onChangeText={setChecklistDraft}
-              placeholder="Nhập việc cần làm"
-            />
-          </View>
-          <Button title="Thêm" onPress={addChecklistItem} loading={checklistSaving} disabled={!checklistDraft.trim()} />
-        </View>
         {checklistItems.length === 0 ? (
-          <EmptyState title="Checklist đang trống" detail="Thêm việc thủ công hoặc tạo lịch/task để FlowMate đưa vào checklist." />
+          <EmptyState title="Checklist đang trống" detail="Tạo lịch/task ở tab Lịch để FlowMate đưa vào checklist." />
         ) : checklistItems.map((item) => (
           <View key={item.id} style={styles.checklistItem}>
             <TouchableOpacity
@@ -205,13 +151,7 @@ export default function OverviewScreen() {
               </Text>
               {item.meta ? <Text style={styles.itemMeta}>{item.meta}</Text> : null}
             </TouchableOpacity>
-            {item.kind === 'custom' ? (
-              <TouchableOpacity style={styles.deleteButton} onPress={() => deleteChecklistItem(item)} activeOpacity={0.78}>
-                <Text style={styles.deleteButtonText}>Xóa</Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.checklistSource}>Lịch</Text>
-            )}
+            <Text style={styles.checklistSource}>Lịch</Text>
           </View>
         ))}
       </Card>
@@ -284,7 +224,7 @@ function normalizeChecklistState(value) {
 
 function buildChecklistItems({ schedules, checklistState }) {
   const completed = checklistState.completed || {};
-  const generated = schedules
+  return schedules
     .filter((item) => item.status !== 'cancelled' && item.status !== 'dismissed')
     .map((item) => {
       const id = `schedule:${scheduleFingerprint(item)}`;
@@ -296,14 +236,6 @@ function buildChecklistItems({ schedules, checklistState }) {
         completed: Boolean(completed[id] || item.status === 'completed'),
       };
     });
-  const custom = (checklistState.custom_items || []).map((item) => ({
-    id: item.id,
-    kind: 'custom',
-    title: item.title,
-    meta: 'Thêm thủ công',
-    completed: Boolean(completed[item.id] || item.completed),
-  }));
-  return [...generated, ...custom];
 }
 
 function buildInsight({ emails, schedules, date }) {
@@ -437,14 +369,6 @@ function makeStyles(colors) {
     sectionHeader: { marginBottom: 4 },
     sectionTitle: { marginTop: 2, color: colors.text, fontSize: 16, fontWeight: '700' },
     checklistMeta: { marginTop: 4, color: colors.textMuted, fontSize: 12, fontWeight: '600' },
-    addRow: {
-      flexDirection: 'row',
-      alignItems: 'flex-end',
-      gap: 10,
-      marginTop: 10,
-      marginBottom: 4,
-    },
-    addInput: { flex: 1, minWidth: 0 },
     checklistItem: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -484,19 +408,6 @@ function makeStyles(colors) {
       fontSize: 11,
       fontWeight: '600',
       textTransform: 'uppercase',
-    },
-    deleteButton: {
-      minHeight: 30,
-      paddingHorizontal: 10,
-      borderRadius: 8,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: `${colors.danger}18`,
-    },
-    deleteButtonText: {
-      color: colors.danger,
-      fontSize: 11,
-      fontWeight: '600',
     },
     item: {
       flexDirection: 'row',
