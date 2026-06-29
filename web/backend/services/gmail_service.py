@@ -13,9 +13,18 @@ from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from config import Config
+from utils.google_service_cache import get_cached_service
 
 # Configure module logger
 logger = logging.getLogger(__name__)
+
+
+def get_cached_gmail_service(token_file):
+    """Return a cached GmailService instance for this token file instead of
+    re-authenticating on every call. Shared by every caller that already has
+    a validated token_file path (services/chat_agents.py, services/overview_service.py)."""
+    return get_cached_service(token_file, lambda: GmailService(token_file=token_file))
+
 
 class GmailService:
     # Keep this in sync with MainActivity's GoogleSignInOptions. Google adds

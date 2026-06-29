@@ -7,14 +7,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from services.ai_service import AIService
-from services.gmail_service import GmailService
+from services.gmail_service import get_cached_gmail_service
 from services.intent_orchestrator import IntentOrchestrator
 from services.schedule_service import ScheduleService
 from services.calendar_service import CalendarService
 from models.history import History
 from models.schedule import Schedule, LOCAL_TZ
 from utils.user_context import get_user_token_file
-from utils.google_service_cache import get_cached_service
 from routes.knowledge import knowledge_service
 
 logger = logging.getLogger(__name__)
@@ -59,32 +58,10 @@ class AgentResult:
     email_sources: list = None
 
 
-def _load_gmail_service(token_file):
-    """Return a cached GmailService instance instead of re-authenticating per call."""
-    return get_cached_service(token_file, lambda: GmailService(token_file=token_file))
-
-
 def _normalize_intent_text(value):
     value = unicodedata.normalize('NFD', str(value or '').lower())
     value = ''.join(char for char in value if unicodedata.category(char) != 'Mn')
     return value.replace('đ', 'd')
-
-
-def _is_latest_email_summary_request(message):
-    """Unused -- superseded by IntentOrchestrator.detect_with_ai. Kept (moved
-    verbatim) rather than deleted, since this refactor is structure-only."""
-    normalized = _normalize_intent_text(message)
-    email_word = r'(?:e-?mails?|gmails?|mails?|thu|hop thu|inbox)'
-    has_email = re.search(rf'\b{email_word}\b', normalized) is not None
-    has_latest = (
-        any(term in normalized for term in (
-            'moi nhat', 'gan nhat', 'gan day', 'vua nhan', 'moi nhan',
-            'latest', 'newest', 'most recent', 'recent',
-            'just received', 'newly received', 'last received'
-        ))
-        or re.search(r'\blast\s+(?:e-?mails?|mails?|message|messages)\b', normalized) is not None
-    )
-    return has_email and has_latest
 
 
 def _latest_email_count(message):
@@ -123,7 +100,7 @@ def _summarize_latest_emails(user_id, count=1):
     if not token_file or not os.path.exists(token_file):
         raise RuntimeError('Gmail chưa được kết nối cho tài khoản này.')
 
-    service = _load_gmail_service(token_file)
+    service = get_cached_gmail_service(token_file)
     count = max(1, min(int(count or 1), 5))
     latest = service.get_emails(
         max_results=count,
@@ -195,7 +172,7 @@ def _format_email_context(user_id):
     if not token_file or not os.path.exists(token_file):
         return "EMAIL\nGmail chưa được kết nối."
 
-    emails = _load_gmail_service(token_file).get_emails(
+    emails = get_cached_gmail_service(token_file).get_emails(
         max_results=5,
         query='in:inbox',
         include_read=True
@@ -461,7 +438,7 @@ def _direct_email_search_response(message, user_id, limit=8, query_override=None
         return "Gmail chưa được kết nối, nên mình chưa thể xem email thật của bạn."
 
     query, include_read = query_override or _email_lookup_query(message)
-    emails = _load_gmail_service(token_file).get_emails(
+    emails = get_cached_gmail_service(token_file).get_emails(
         max_results=max(1, min(limit, 10)),
         query=query,
         include_read=include_read

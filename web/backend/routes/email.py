@@ -19,7 +19,7 @@ from google_auth_oauthlib.flow import Flow
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from googleapiclient.discovery import build
-from services.gmail_service import GmailService
+from services.gmail_service import GmailService, get_cached_gmail_service
 from services.mistral_service import MistralService
 from services.ai_service import AIService
 from models.history import History
@@ -31,7 +31,7 @@ from config import Config
 from config import GMAIL_CLIENT_ID_KEYS, GMAIL_CLIENT_SECRET_KEYS, GMAIL_CREDENTIALS_JSON_KEYS
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from utils.security import issue_mobile_token
-from utils.google_service_cache import get_cached_service, invalidate_cached_service
+from utils.google_service_cache import invalidate_cached_service
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -683,7 +683,7 @@ def _load_gmail_service(user_id):
     token_file = get_user_token_file(user_id)
     if os.path.exists(token_file):
         try:
-            return get_cached_service(token_file, lambda: GmailService(token_file=token_file))
+            return get_cached_gmail_service(token_file)
         except Exception as e:
             print(f"Error creating GmailService: {e}")
     return None

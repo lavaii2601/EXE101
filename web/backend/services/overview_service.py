@@ -6,8 +6,7 @@ from datetime import date, datetime, time, timedelta
 from models.cache import Cache
 from models.schedule import LOCAL_TZ, Schedule
 from services.ai_service import AIService
-from services.gmail_service import GmailService
-from utils.google_service_cache import get_cached_service
+from services.gmail_service import get_cached_gmail_service
 from utils.user_context import get_user_db_path, get_user_token_file, sanitize_user_id
 
 logger = logging.getLogger(__name__)
@@ -16,11 +15,6 @@ OVERVIEW_CACHE_TTL_SECONDS = 36 * 60 * 60
 _refresh_lock = threading.Lock()
 _refreshing = set()
 _ai_service = AIService()
-
-
-def _load_gmail_service(token_file):
-    """Reuse a cached GmailService instead of re-authenticating on every poll."""
-    return get_cached_service(token_file, lambda: GmailService(token_file=token_file))
 
 
 def parse_overview_date(value=None):
@@ -112,7 +106,7 @@ def refresh_daily_overview(user_id, day=None, max_results=50, force=False):
     token_file = get_user_token_file(user_id)
     if os.path.exists(token_file):
         try:
-            service = _load_gmail_service(token_file)
+            service = get_cached_gmail_service(token_file)
             emails = service.get_emails_by_date(format_report_date(day), max_results=max_results)
             email_signature = build_email_signature(e.get('id') for e in emails)
             if emails:
@@ -193,7 +187,7 @@ def has_new_emails(user_id, day, max_results=50):
         return False
 
     try:
-        service = _load_gmail_service(token_file)
+        service = get_cached_gmail_service(token_file)
         message_ids = service.list_message_ids_by_date(format_report_date(day), max_results=max_results)
     except Exception:
         logger.warning("Could not check for new mail for %s", user_id, exc_info=True)
