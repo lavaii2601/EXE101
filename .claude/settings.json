@@ -17,7 +17,10 @@
       "Bash(grep -n \"^\\\\.provider-badge\\\\b\\\\|\\\\.provider-badge\\\\s*{\\\\|\\\\.provider-badge,\" css/style.css)",
       "Bash(rm -f screenshot_before.py screenshot_before_full.png screenshot_before_chat.png screenshot_before_chat_empty.png screenshot_before_chat_msg.png screenshot_before_chat_bubble.png screenshot_before_chat_bubble_full.png)",
       "Bash(taskkill //F //IM python.exe //FI \"WINDOWTITLE eq*\")",
-      "Bash(netstat -ano)"
+      "Bash(netstat -ano)",
+      "Bash(taskkill //PID 20200 //F)",
+      "Bash(taskkill //PID 1460 //F)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe mobile_check.py)"
     ]
   }
 }

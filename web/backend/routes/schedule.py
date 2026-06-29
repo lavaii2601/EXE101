@@ -1,10 +1,12 @@
 import os
 import sys
 import logging
+import re
 import threading
 import time
+import uuid
 from flask import Blueprint, request, jsonify
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dt_time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -31,6 +33,38 @@ _SCHEDULE_CACHE_TTL_SECONDS = 15
 _FULL_SYNC_DAYS = int(os.getenv('SCHEDULE_FULL_SYNC_DAYS', '90'))
 _LOCAL_EDIT_SYNC_GRACE_SECONDS = 180
 _CHECKLIST_CACHE_TTL_SECONDS = 365 * 24 * 60 * 60
+
+_DATE_WORDS = {
+    'today': 0,
+    'hom nay': 0,
+    'hôm nay': 0,
+    'toi nay': 0,
+    'tối nay': 0,
+    'chieu nay': 0,
+    'chiều nay': 0,
+    'sang nay': 0,
+    'sáng nay': 0,
+    'tomorrow': 1,
+    'ngay mai': 1,
+    'ngày mai': 1,
+    'mai': 1,
+}
+
+_WEEKDAY_WORDS = {
+    'thu 2': 0, 'thứ 2': 0, 'thu hai': 0, 'thứ hai': 0,
+    'thu 3': 1, 'thứ 3': 1, 'thu ba': 1, 'thứ ba': 1,
+    'thu 4': 2, 'thứ 4': 2, 'thu tu': 2, 'thứ tư': 2,
+    'thu 5': 3, 'thứ 5': 3, 'thu nam': 3, 'thứ năm': 3,
+    'thu 6': 4, 'thứ 6': 4, 'thu sau': 4, 'thứ sáu': 4,
+    'thu 7': 5, 'thứ 7': 5, 'thu bay': 5, 'thứ bảy': 5,
+    'chu nhat': 6, 'chủ nhật': 6, 'cn': 6,
+}
+
+_ACTIVITY_KEYWORDS = (
+    'họp', 'hop', 'meeting', 'call', 'gặp', 'gap', 'cafe', 'cà phê',
+    'gym', 'tập', 'tap', 'chạy', 'chay', 'học', 'hoc', 'đi ', 'di ',
+    'khám', 'kham', 'ăn', 'an ', 'workout', 'appointment', 'lịch', 'lich'
+)
 
 
 def _schedule_cache_key(user_id, name, *parts):
@@ -98,6 +132,187 @@ def _has_calendar_token(user_id):
     return os.path.exists(get_user_token_file(user_id))
 
 
+def _parse_quick_base_date(value):
+    raw = str(value or '').strip()
+    if raw:
+        try:
+            return datetime.strptime(raw[:10], '%Y-%m-%d').date()
+        except ValueError:
+            pass
+    return datetime.now(LOCAL_TZ).date()
+
+
+def _parse_explicit_date(text, base_date):
+    normalized = str(text or '').lower()
+
+    date_match = re.search(r'(?<!\d)(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?(?!\d)', normalized)
+    if date_match:
+        day = int(date_match.group(1))
+        month = int(date_match.group(2))
+        year = date_match.group(3)
+        year = int(year) if year else base_date.year
+        if year < 100:
+            year += 2000
+        try:
+            parsed = datetime(year, month, day).date()
+            if not date_match.group(3) and parsed < base_date:
+                parsed = parsed.replace(year=parsed.year + 1)
+            return parsed
+        except ValueError:
+            pass
+
+    for token, offset in _DATE_WORDS.items():
+        if token in normalized:
+            return base_date + timedelta(days=offset)
+
+    for token, weekday in _WEEKDAY_WORDS.items():
+        if re.search(rf'(?<!\w){re.escape(token)}(?!\w)', normalized):
+            delta = (weekday - base_date.weekday()) % 7
+            if delta == 0:
+                delta = 7
+            return base_date + timedelta(days=delta)
+
+    return None
+
+
+def _infer_period(text):
+    normalized = str(text or '').lower()
+    if any(word in normalized for word in ('tối', 'toi', 'đêm', 'dem', 'pm')):
+        return 'evening'
+    if any(word in normalized for word in ('chiều', 'chieu')):
+        return 'afternoon'
+    if any(word in normalized for word in ('sáng', 'sang', 'am')):
+        return 'morning'
+    return ''
+
+
+def _extract_quick_time(text):
+    normalized = str(text or '').lower()
+    period = _infer_period(normalized)
+    patterns = [
+        r'(?<!\d)(\d{1,2})\s*[:h]\s*(\d{1,2})?\s*(sáng|sang|chiều|chieu|tối|toi|đêm|dem|am|pm)?(?!\d)',
+        r'(?<!\d)(\d{1,2})\s*giờ\s*(\d{1,2})?\s*(sáng|sang|chiều|chieu|tối|toi|đêm|dem|am|pm)?(?!\d)',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, normalized)
+        if not match:
+            continue
+        hour = int(match.group(1))
+        minute = int(match.group(2) or 0)
+        local_period = match.group(3) or period
+        if hour > 23 or minute > 59:
+            continue
+        if local_period in ('pm', 'chiều', 'chieu', 'tối', 'toi', 'đêm', 'dem', 'evening', 'afternoon') and 1 <= hour < 12:
+            hour += 12
+        if local_period in ('am', 'sáng', 'sang', 'morning') and hour == 12:
+            hour = 0
+        return dt_time(hour=hour, minute=minute), True
+
+    if period:
+        defaults = {
+            'morning': dt_time(hour=8),
+            'afternoon': dt_time(hour=14),
+            'evening': dt_time(hour=19),
+        }
+        return defaults.get(period), False
+    return None, False
+
+
+def _extract_duration_minutes_from_text(text):
+    normalized = str(text or '').lower()
+    match = re.search(r'(?:trong|khoảng|khoang)\s*(\d+(?:[,.]\d+)?)\s*(tiếng|gio|giờ|hour|hours)', normalized)
+    if match:
+        value = float(match.group(1).replace(',', '.'))
+        return max(15, int(value * 60))
+    match = re.search(r'(\d+)\s*(phút|phut|minute|minutes)', normalized)
+    if match:
+        return max(15, int(match.group(1)))
+    match = re.search(r'(\d+(?:[,.]\d+)?)\s*(tiếng|hour|hours)', normalized)
+    if match:
+        value = float(match.group(1).replace(',', '.'))
+        return max(15, int(value * 60))
+    return 60
+
+
+def _clean_quick_title(text):
+    title = str(text or '').strip()
+    replacements = [
+        r'\b(hôm nay|hom nay|ngày mai|ngay mai|mai|today|tomorrow|tối nay|toi nay|chiều nay|chieu nay|sáng nay|sang nay)\b',
+        r'(?<!\d)\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?(?!\d)',
+        r'(?<!\d)\d{1,2}\s*[:h]\s*\d{0,2}\s*(?:sáng|sang|chiều|chieu|tối|toi|đêm|dem|am|pm)?(?!\d)',
+        r'(?<!\d)\d{1,2}\s*giờ\s*\d{0,2}\s*(?:sáng|sang|chiều|chieu|tối|toi|đêm|dem|am|pm)?(?!\d)',
+        r'\b(?:trong|khoảng|khoang)\s*\d+(?:[,.]\d+)?\s*(?:tiếng|gio|giờ|hour|hours|phút|phut|minute|minutes)\b',
+    ]
+    for pattern in replacements:
+        title = re.sub(pattern, ' ', title, flags=re.IGNORECASE)
+    title = re.sub(r'\s+', ' ', title).strip(' -–—,.;:')
+    return title or str(text or '').strip()
+
+
+def _task_priority_for_due(base_date, due_date):
+    if not due_date:
+        return 40, 'Chưa có hạn rõ ràng, đặt ở nhóm có thể làm sau.'
+    delta = (due_date - base_date).days
+    if delta <= 0:
+        return 95, 'Ưu tiên cao vì hạn là hôm nay hoặc đã đến hạn.'
+    if delta == 1:
+        return 82, 'Ưu tiên cao vì hạn là ngày mai.'
+    if delta <= 3:
+        return 68, 'Ưu tiên vừa vì hạn trong vài ngày tới.'
+    return 52, 'Có hạn rõ ràng nhưng chưa quá gấp.'
+
+
+def _custom_item_sort_key(item):
+    completed = bool(item.get('completed'))
+    pinned_rank = 0 if item.get('pinned') else 1
+    due_value = item.get('due_at') or item.get('due_date') or '9999-12-31'
+    priority = -int(item.get('priority_score') or 0)
+    created = item.get('created_at') or ''
+    return (completed, pinned_rank, due_value, priority, created)
+
+
+def _sort_custom_items(items):
+    return sorted(items or [], key=_custom_item_sort_key)
+
+
+def _classify_quick_plan(text, selected_date):
+    base_date = _parse_quick_base_date(selected_date)
+    due_date = _parse_explicit_date(text, base_date)
+    start_clock, explicit_time = _extract_quick_time(text)
+    normalized = str(text or '').lower()
+    has_activity_keyword = any(keyword in normalized for keyword in _ACTIVITY_KEYWORDS)
+    title = _clean_quick_title(text)
+
+    if start_clock and (explicit_time or has_activity_keyword):
+        activity_date = due_date or base_date
+        start_dt = datetime.combine(activity_date, start_clock)
+        duration_minutes = _extract_duration_minutes_from_text(text)
+        end_dt = start_dt + timedelta(minutes=duration_minutes)
+        return {
+            'kind': 'activity',
+            'title': title[:180],
+            'description': f'Tạo nhanh từ Overview: {text.strip()}',
+            'start_time': start_dt.isoformat(),
+            'end_time': end_dt.isoformat(),
+            'duration_minutes': duration_minutes,
+            'target_date': activity_date.isoformat(),
+            'ai_reason': 'FlowMate xếp vào Lịch vì câu nhập có thời gian cụ thể.',
+            'confidence': 0.84 if explicit_time else 0.68,
+        }
+
+    priority_score, reason = _task_priority_for_due(base_date, due_date)
+    due_iso = due_date.isoformat() if due_date else ''
+    return {
+        'kind': 'task',
+        'title': title[:180],
+        'due_date': due_iso,
+        'target_date': (due_date or base_date).isoformat(),
+        'priority_score': priority_score,
+        'ai_reason': reason,
+        'confidence': 0.78 if due_date else 0.58,
+    }
+
+
 def _normalize_checklist_payload(data):
     data = data or {}
     completed = data.get('completed') if isinstance(data.get('completed'), dict) else {}
@@ -115,10 +330,17 @@ def _normalize_checklist_payload(data):
             'title': title[:240],
             'completed': bool(item.get('completed')),
             'created_at': str(item.get('created_at') or datetime.utcnow().isoformat())[:40],
+            'source': str(item.get('source') or 'manual')[:40],
+            'item_type': str(item.get('item_type') or 'task')[:40],
+            'due_date': str(item.get('due_date') or '')[:20],
+            'due_at': str(item.get('due_at') or '')[:40],
+            'ai_reason': str(item.get('ai_reason') or '')[:260],
+            'priority_score': int(item.get('priority_score') or 0),
+            'pinned': bool(item.get('pinned')),
         })
     return {
         'completed': {str(key)[:180]: bool(value) for key, value in completed.items()},
-        'custom_items': normalized_custom,
+        'custom_items': _sort_custom_items(normalized_custom),
     }
 
 
