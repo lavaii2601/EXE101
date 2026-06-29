@@ -23,6 +23,7 @@ with sync_playwright() as p:
     page.evaluate("""
         document.body.classList.add('workspace-ready');
         document.getElementById('authGate').classList.add('is-hidden');
+        if (typeof isAuthenticated !== 'undefined') isAuthenticated = true;
         if (typeof userModeRequired !== 'undefined') userModeRequired = false;
         if (typeof currentUserMode !== 'undefined') currentUserMode = 'worker';
         const modal = document.getElementById('userModeModal');
