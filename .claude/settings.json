@@ -20,7 +20,12 @@
       "Bash(netstat -ano)",
       "Bash(taskkill //PID 20200 //F)",
       "Bash(taskkill //PID 1460 //F)",
-      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe mobile_check.py)"
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe mobile_check.py)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe mobile_check2.py)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe mobile_check3.py)",
+      "Bash(rm -f mobile_check.py mobile_check2.py mobile_check3.py mobile_login.png mobile_overview.png mobile_sidebar_open.png mobile_chat.png mobile_chat_msg.png mobile_chat_msg_viewport.png mobile_chat_overflow_test.png repro_chat_direct.png repro_chat_direct_msg.png repro3.png)",
+      "Bash(taskkill //PID 21832 //F)",
+      "Bash(python -m py_compile web/backend/app.py)"
     ]
   }
 }

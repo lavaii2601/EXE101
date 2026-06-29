@@ -1497,6 +1497,7 @@ function renderOverviewQuickAdd() {
                     <button id="overviewQuickAddBtn" type="submit" class="btn-primary">${ui('Thêm', 'Add')}</button>
                 </div>
                 <p id="overviewQuickAddStatus" class="overview-quick-add-status" aria-live="polite"></p>
+                <div id="overviewPlanSuggestion" class="overview-plan-suggestion" hidden></div>
             </form>
         </section>
     `;
@@ -1540,6 +1541,49 @@ function renderOverviewChecklist(schedules, checklistState) {
 
 function sortOverviewCustomItems(items = []) {
     return [...items].sort(compareOverviewChecklistItems);
+}
+
+function renderOverviewPlanSuggestion(plan) {
+    const items = Array.isArray(plan?.items) ? plan.items : [];
+    if (!items.length) return '';
+    const rows = items.map((item) => {
+        const range = formatScheduleRange(item.start_time, item.end_time);
+        return `
+            <div class="overview-plan-suggestion-item">
+                <strong>${escapeHtml(range.time || '')}</strong>
+                <span>${escapeHtml(item.title || ui('Hoạt động', 'Activity'))}</span>
+                <small>${escapeHtml(item.reason || '')}</small>
+            </div>
+        `;
+    }).join('');
+    const dateLabel = (() => {
+        try {
+            const date = new Date(`${plan.date}T00:00:00`);
+            if (Number.isNaN(date.getTime())) return plan.date || '';
+            return date.toLocaleDateString(currentLanguage === 'en' ? 'en-US' : 'vi-VN', {
+                weekday: 'long',
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+        } catch (error) {
+            return plan.date || '';
+        }
+    })();
+    return `
+        <div class="overview-plan-suggestion-head">
+            <div>
+                <span class="overview-kicker">${ui('GỢI Ý LỊCH', 'SUGGESTED PLAN')}</span>
+                <strong>${escapeHtml(dateLabel)}</strong>
+                <small>${ui('FlowMate chỉ tạo lịch sau khi bạn xác nhận.', 'FlowMate will only create events after you confirm.')}</small>
+            </div>
+        </div>
+        <div class="overview-plan-suggestion-list">${rows}</div>
+        <div class="overview-plan-suggestion-actions">
+            <button type="button" class="btn-secondary" data-plan-dismiss>${ui('Bỏ qua', 'Dismiss')}</button>
+            <button type="button" class="btn-primary" data-plan-apply>${ui('Áp dụng lịch này', 'Apply this plan')}</button>
+        </div>
+    `;
 }
 
 function bindOverviewChecklist(container, selectedDate, schedules, checklistState) {
@@ -1607,7 +1651,53 @@ function bindOverviewQuickAdd(container, selectedDate) {
     const input = container.querySelector('#overviewQuickInput');
     const button = container.querySelector('#overviewQuickAddBtn');
     const status = container.querySelector('#overviewQuickAddStatus');
+    const suggestionBox = container.querySelector('#overviewPlanSuggestion');
     if (!form || !input) return;
+
+    const showPlanSuggestion = (plan) => {
+        if (!suggestionBox) return;
+        suggestionBox.hidden = false;
+        suggestionBox.innerHTML = renderOverviewPlanSuggestion(plan);
+        const dismissButton = suggestionBox.querySelector('[data-plan-dismiss]');
+        const applyButton = suggestionBox.querySelector('[data-plan-apply]');
+        if (dismissButton) {
+            dismissButton.addEventListener('click', () => {
+                suggestionBox.hidden = true;
+                suggestionBox.innerHTML = '';
+            });
+        }
+        if (applyButton) {
+            applyButton.addEventListener('click', async () => {
+                applyButton.disabled = true;
+                if (status) status.textContent = ui('Đang tạo lịch từ gợi ý...', 'Creating events from suggestion...');
+                try {
+                    const response = await apiFetch(`${API_BASE}/schedule/plan-day/apply`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ date: plan.date || selectedDate, items: plan.items || [] })
+                    });
+                    const data = await response.json();
+                    if (!response.ok || !data.success) {
+                        throw new Error(data.error || ui('Không thể áp dụng lịch gợi ý', 'Unable to apply suggested plan'));
+                    }
+                    clearRuntimeCache('schedule:');
+                    suggestionBox.hidden = true;
+                    suggestionBox.innerHTML = '';
+                    showNotification(ui('Đã tạo lịch từ gợi ý', 'Suggested plan applied'), 'success');
+                    await Promise.allSettled([
+                        loadOverviewPage({ force: true }),
+                        loadWeekSchedule({ forceSync: true }),
+                        loadSchedules({ liveGoogle: true })
+                    ]);
+                } catch (error) {
+                    if (status) status.textContent = error.message;
+                    showNotification(`${ui('Lỗi', 'Error')}: ${error.message}`, 'error');
+                } finally {
+                    applyButton.disabled = false;
+                }
+            });
+        }
+    };
 
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -1629,6 +1719,11 @@ function bindOverviewQuickAdd(container, selectedDate) {
                 throw new Error(data.error || ui('Không thể thêm mục này', 'Unable to add this item'));
             }
             input.value = '';
+            if (data.kind === 'suggested_plan') {
+                if (status) status.textContent = ui('FlowMate đã gợi ý giờ. Kiểm tra rồi áp dụng nếu hợp lý.', 'FlowMate suggested times. Review and apply if it looks right.');
+                showPlanSuggestion(data);
+                return;
+            }
             if (data.kind === 'activity') {
                 clearRuntimeCache('schedule:');
                 showNotification(ui('Đã thêm vào lịch', 'Added to calendar'), 'success');

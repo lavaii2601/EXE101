@@ -1752,6 +1752,87 @@ select:focus {
     margin: 0;
 }
 
+.overview-plan-suggestion {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 12px;
+    margin-top: 2px;
+    padding: 14px;
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    border-radius: 8px;
+    background: rgba(37, 99, 235, 0.055);
+}
+
+.overview-plan-suggestion[hidden] {
+    display: none;
+}
+
+.overview-plan-suggestion-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.overview-plan-suggestion-head strong,
+.overview-plan-suggestion-head small {
+    display: block;
+}
+
+.overview-plan-suggestion-head strong {
+    margin-top: 3px;
+    color: var(--text);
+    font-size: 14px;
+}
+
+.overview-plan-suggestion-head small {
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.overview-plan-suggestion-list {
+    display: grid;
+    gap: 8px;
+}
+
+.overview-plan-suggestion-item {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 4px 10px;
+    align-items: start;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+}
+
+.overview-plan-suggestion-item strong {
+    color: var(--primary);
+    font-size: 12px;
+}
+
+.overview-plan-suggestion-item span {
+    min-width: 0;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.overview-plan-suggestion-item small {
+    grid-column: 2;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.overview-plan-suggestion-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
 .overview-list-item {
     display: grid;
     grid-template-columns: 30px minmax(0, 1fr) auto;
@@ -6542,6 +6623,22 @@ body.dark-theme .week-table td.is-today {
         grid-template-columns: 1fr;
     }
 
+    .overview-plan-suggestion-item {
+        grid-template-columns: 1fr;
+    }
+
+    .overview-plan-suggestion-item small {
+        grid-column: 1;
+    }
+
+    .overview-plan-suggestion-actions {
+        flex-direction: column-reverse;
+    }
+
+    .overview-plan-suggestion-actions button {
+        width: 100%;
+    }
+
     .overview-sort-btn {
         width: 100%;
     }
@@ -6576,4 +6673,33 @@ body.dark-theme .week-table td.is-today {
 
 .workspace-source-badge {
     font-size: 12px;
+}
+
+/* Mobile UI bug: `.container.workspace-app[data-current-page="chat"]`
+   (specificity 0,3,0, no media query) is more specific than the generic
+   mobile reset `.container.workspace-app { grid-template-columns: 1fr }`
+   (specificity 0,2,0, inside @media max-width:860px), so on the chat page
+   specifically the desktop 2-column layout (268px sidebar gutter + content)
+   kept winning even on phones -- wasting a 268px-wide empty column since the
+   sidebar is off-canvas on mobile. Every other page works because it has no
+   such per-page override fighting the generic reset. Match the same
+   selector + specificity inside the same breakpoint so this one wins. */
+@media (max-width: 860px) {
+    .container.workspace-app[data-current-page="chat"],
+    .container.workspace-app.sidebar-collapsed[data-current-page="chat"] {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Mobile UI bug: the polish pass's unconditional `.sidebar { padding: 22px
+   16px }` (no media query) overwrites the padding-top that earlier mobile
+   styles relied on to clear the fixed-position menu-toggle (open/close)
+   button, so the close (X) button renders on top of the brand logo when the
+   drawer is open on phones. `.sidebar.open` has higher specificity than the
+   plain `.sidebar` rule, so this reliably restores the clearance regardless
+   of source order. */
+@media (max-width: 860px) {
+    .sidebar.open {
+        padding-top: 64px;
+    }
 }

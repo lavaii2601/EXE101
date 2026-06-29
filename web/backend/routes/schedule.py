@@ -276,6 +276,155 @@ def _sort_custom_items(items):
     return sorted(items or [], key=_custom_item_sort_key)
 
 
+def _split_day_plan_items(text):
+    raw = str(text or '').strip()
+    if not raw:
+        return []
+
+    if ':' in raw:
+        raw = raw.split(':', 1)[1]
+    raw = re.sub(r'\.{2,}', ',', raw)
+    raw = re.sub(r'\b(và|and)\b', ',', raw, flags=re.IGNORECASE)
+    raw = re.sub(
+        r'\b(ngày mai|ngay mai|hôm nay|hom nay|today|tomorrow|tôi có|toi co|các hoạt động sau|cac hoat dong sau|hoạt động sau|activities)\b',
+        ' ',
+        raw,
+        flags=re.IGNORECASE,
+    )
+    parts = re.split(r'[,;\n]+', raw)
+    items = []
+    for part in parts:
+        title = _clean_quick_title(part)
+        title = re.sub(r'^\s*(?:-|•|\d+[.)])\s*', '', title).strip()
+        if len(title) >= 2:
+            items.append(title[:180])
+    return items[:12]
+
+
+def _looks_like_day_plan(text, items):
+    normalized = str(text or '').lower()
+    has_list_signal = any(token in normalized for token in (
+        'các hoạt động', 'cac hoat dong', 'hoạt động sau', 'activities',
+        'những việc', 'nhung viec', 'các việc', 'cac viec'
+    ))
+    has_separator = ',' in normalized or ';' in normalized or '\n' in normalized
+    has_date_signal = any(
+        re.search(rf'(?<!\w){re.escape(token)}(?!\w)', normalized)
+        for token in (*_DATE_WORDS.keys(), *_WEEKDAY_WORDS.keys())
+    )
+    return len(items) >= 2 and (has_list_signal or (has_separator and has_date_signal))
+
+
+def _activity_profile(title):
+    normalized = str(title or '').lower()
+    if any(token in normalized for token in ('yoga', 'gym', 'workout', 'tập', 'tap', 'chạy', 'chay')):
+        return dt_time(7, 0), 45, 'Hoạt động thể chất nhẹ, phù hợp để bắt đầu ngày.'
+    if any(token in normalized for token in ('mèo', 'meo', 'cưng', 'cung', 'thú cưng', 'thu cung', 'pet')):
+        return dt_time(8, 0), 20, 'Việc chăm sóc ngắn, nên đặt gần đầu ngày để không quên.'
+    if any(token in normalized for token in ('dọn', 'don', 'nhà', 'nha', 'clean')):
+        return dt_time(19, 30), 60, 'Việc nhà thường hợp lý vào buổi tối khi các việc chính đã xong.'
+    if any(token in normalized for token in ('học', 'hoc', 'đọc', 'doc', 'viết', 'viet', 'báo cáo', 'bao cao', 'focus')):
+        return dt_time(9, 0), 90, 'Việc cần tập trung nên đặt vào khung giờ tỉnh táo.'
+    if any(token in normalized for token in ('mua', 'đi ', 'di ', 'khám', 'kham', 'cafe', 'cà phê')):
+        return dt_time(15, 0), 60, 'Hoạt động di chuyển/gặp gỡ được đặt vào khung chiều để linh hoạt hơn.'
+    return dt_time(10, 0), 45, 'FlowMate đặt vào khung trống gần nhất trong ngày.'
+
+
+def _datetime_from_local_iso(value):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(LOCAL_TZ).replace(tzinfo=None)
+    return parsed
+
+
+def _busy_ranges_for_day(db_path, target_date):
+    start = datetime.combine(target_date, dt_time.min)
+    end = start + timedelta(days=1)
+    ranges = []
+    for schedule in Schedule.get_between(start, end, limit=500, db_path=db_path):
+        start_dt = _datetime_from_local_iso(schedule.get('start_time'))
+        end_dt = _datetime_from_local_iso(schedule.get('end_time')) or (
+            start_dt + timedelta(minutes=60) if start_dt else None
+        )
+        if start_dt and end_dt:
+            ranges.append((start_dt, end_dt))
+    return ranges
+
+
+def _slot_conflicts(start_dt, end_dt, busy_ranges, buffer_minutes=10):
+    buffered_start = start_dt - timedelta(minutes=buffer_minutes)
+    buffered_end = end_dt + timedelta(minutes=buffer_minutes)
+    return any(buffered_start < busy_end and buffered_end > busy_start for busy_start, busy_end in busy_ranges)
+
+
+def _find_available_slot(target_date, preferred_clock, duration_minutes, busy_ranges):
+    day_start = datetime.combine(target_date, dt_time(6, 30))
+    day_end = datetime.combine(target_date, dt_time(22, 30))
+    preferred = datetime.combine(target_date, preferred_clock)
+    candidates = [preferred]
+
+    for offset in range(30, 16 * 60, 30):
+        candidates.append(preferred + timedelta(minutes=offset))
+        candidates.append(preferred - timedelta(minutes=offset))
+
+    for candidate in candidates:
+        start_dt = candidate
+        end_dt = start_dt + timedelta(minutes=duration_minutes)
+        if start_dt < day_start or end_dt > day_end:
+            continue
+        if not _slot_conflicts(start_dt, end_dt, busy_ranges):
+            busy_ranges.append((start_dt, end_dt))
+            busy_ranges.sort(key=lambda item: item[0])
+            return start_dt, end_dt
+
+    fallback = max(day_start, preferred)
+    while fallback + timedelta(minutes=duration_minutes) <= day_end:
+        end_dt = fallback + timedelta(minutes=duration_minutes)
+        if not _slot_conflicts(fallback, end_dt, busy_ranges):
+            busy_ranges.append((fallback, end_dt))
+            busy_ranges.sort(key=lambda item: item[0])
+            return fallback, end_dt
+        fallback += timedelta(minutes=30)
+
+    end_dt = preferred + timedelta(minutes=duration_minutes)
+    busy_ranges.append((preferred, end_dt))
+    return preferred, end_dt
+
+
+def _build_suggested_day_plan(user_id, db_path, text, selected_date):
+    base_date = _parse_quick_base_date(selected_date)
+    target_date = _parse_explicit_date(text, base_date) or base_date
+    titles = _split_day_plan_items(text)
+    if not _looks_like_day_plan(text, titles):
+        return None
+
+    busy_ranges = _busy_ranges_for_day(db_path, target_date)
+    items = []
+    for title in titles:
+        preferred_clock, duration_minutes, reason = _activity_profile(title)
+        start_dt, end_dt = _find_available_slot(target_date, preferred_clock, duration_minutes, busy_ranges)
+        items.append({
+            'title': title,
+            'description': f'Tạo từ kế hoạch ngày: {text.strip()}',
+            'start_time': start_dt.isoformat(),
+            'end_time': end_dt.isoformat(),
+            'duration_minutes': duration_minutes,
+            'reason': reason,
+        })
+
+    return {
+        'kind': 'suggested_plan',
+        'date': target_date.isoformat(),
+        'items': items,
+        'message': 'FlowMate đã gợi ý khung giờ. Xác nhận để tạo lịch.',
+    }
+
+
 def _classify_quick_plan(text, selected_date):
     base_date = _parse_quick_base_date(selected_date)
     due_date = _parse_explicit_date(text, base_date)
@@ -473,6 +622,94 @@ def save_overview_checklist():
     })
 
 
+def _create_schedule_from_plan_item(user_id, db_path, item):
+    title = str(item.get('title') or '').strip()
+    start_time = str(item.get('start_time') or '').strip()
+    end_time = str(item.get('end_time') or '').strip() or None
+    description = str(item.get('description') or item.get('reason') or '').strip()
+    duration_minutes = _parse_duration_minutes(item.get('duration_minutes'))
+    if not title or not start_time:
+        raise ValueError('Missing title or start_time')
+
+    end_time = _compute_end_time(start_time, end_time, duration_minutes)
+    schedule_id = ScheduleService.create_schedule(
+        title,
+        description,
+        start_time,
+        [],
+        end_time=end_time,
+        duration_minutes=duration_minutes,
+        db_path=db_path,
+    )
+    created_schedule = Schedule.get_by_id(schedule_id, db_path=db_path)
+    calendar_sync_pending = _sync_schedule_to_calendar_async(user_id, schedule_id, db_path)
+    History.create(
+        f"Tạo lịch từ gợi ý: {title}",
+        f"Lịch đề xuất: {title} vào {start_time}",
+        action_type='schedule_created',
+        related_id=schedule_id,
+        db_path=db_path,
+    )
+    return {
+        'schedule_id': schedule_id,
+        'schedule': created_schedule,
+        'calendar_sync_pending': calendar_sync_pending,
+    }
+
+
+@schedule_bp.route('/plan-day', methods=['POST'])
+def suggest_day_plan():
+    """Suggest calendar slots for a natural-language list of day activities."""
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+    data = request.get_json() or {}
+    text = str(data.get('text') or '').strip()
+    date_value = (data.get('date') or datetime.now().date().isoformat()).strip()
+    if not text:
+        return jsonify({'success': False, 'error': 'Missing text'}), 400
+
+    plan = _build_suggested_day_plan(user_id, db_path, text, date_value)
+    if not plan:
+        return jsonify({
+            'success': False,
+            'error': 'not_a_day_plan',
+            'message': 'Không phát hiện danh sách hoạt động để xếp lịch.',
+        }), 400
+    return jsonify({'success': True, **plan})
+
+
+@schedule_bp.route('/plan-day/apply', methods=['POST'])
+def apply_day_plan():
+    """Create schedules from a previously suggested day plan."""
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+    data = request.get_json() or {}
+    items = data.get('items') if isinstance(data.get('items'), list) else []
+    if not items:
+        return jsonify({'success': False, 'error': 'Missing items'}), 400
+
+    created = []
+    try:
+        for item in items[:12]:
+            if not isinstance(item, dict):
+                continue
+            created.append(_create_schedule_from_plan_item(user_id, db_path, item))
+        if not created:
+            return jsonify({'success': False, 'error': 'No valid items'}), 400
+        _clear_schedule_cache(db_path)
+        _clear_overview_cache(user_id)
+        return jsonify({
+            'success': True,
+            'kind': 'applied_plan',
+            'created_count': len(created),
+            'created': created,
+            'message': 'Đã tạo lịch từ kế hoạch gợi ý',
+        })
+    except Exception as e:
+        logger.error("Apply day plan failed: %s", e, exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @schedule_bp.route('/quick-add', methods=['POST'])
 def quick_add_plan_item():
     """Add natural-language input as either a checklist task or a calendar activity."""
@@ -484,6 +721,10 @@ def quick_add_plan_item():
 
     if not text:
         return jsonify({'success': False, 'error': 'Missing text'}), 400
+
+    suggested_plan = _build_suggested_day_plan(user_id, db_path, text, date_value)
+    if suggested_plan:
+        return jsonify({'success': True, **suggested_plan})
 
     plan = _classify_quick_plan(text, date_value)
 
