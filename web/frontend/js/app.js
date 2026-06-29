@@ -1543,16 +1543,31 @@ function sortOverviewCustomItems(items = []) {
     return [...items].sort(compareOverviewChecklistItems);
 }
 
+function escapeAttr(value) {
+    return escapeHtml(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function renderOverviewPlanSuggestion(plan) {
     const items = Array.isArray(plan?.items) ? plan.items : [];
     if (!items.length) return '';
-    const rows = items.map((item) => {
+    const rows = items.map((item, index) => {
         const range = formatScheduleRange(item.start_time, item.end_time);
+        const startValue = toDatetimeLocal(item.start_time);
+        const endValue = toDatetimeLocal(item.end_time);
         return `
-            <div class="overview-plan-suggestion-item">
-                <strong>${escapeHtml(range.time || '')}</strong>
-                <span>${escapeHtml(item.title || ui('Hoạt động', 'Activity'))}</span>
-                <small>${escapeHtml(item.reason || '')}</small>
+            <div class="overview-plan-suggestion-item" data-plan-row data-plan-index="${index}">
+                <label class="overview-plan-suggestion-check">
+                    <input type="checkbox" data-plan-select checked>
+                    <span>${escapeHtml(range.time || '')}</span>
+                </label>
+                <div class="overview-plan-suggestion-fields">
+                    <input type="text" data-plan-title value="${escapeAttr(item.title || ui('Hoạt động', 'Activity'))}" aria-label="${ui('Tên hoạt động', 'Activity title')}">
+                    <div class="overview-plan-time-grid">
+                        <input type="datetime-local" data-plan-start value="${escapeAttr(startValue)}" aria-label="${ui('Bắt đầu', 'Start')}">
+                        <input type="datetime-local" data-plan-end value="${escapeAttr(endValue)}" aria-label="${ui('Kết thúc', 'End')}">
+                    </div>
+                    <small>${escapeHtml(item.reason || '')}</small>
+                </div>
             </div>
         `;
     }).join('');
@@ -1666,15 +1681,62 @@ function bindOverviewQuickAdd(container, selectedDate) {
                 suggestionBox.innerHTML = '';
             });
         }
+        suggestionBox.querySelectorAll('[data-plan-row]').forEach((row) => {
+            const checkbox = row.querySelector('[data-plan-select]');
+            const startInput = row.querySelector('[data-plan-start]');
+            const endInput = row.querySelector('[data-plan-end]');
+            const titleInput = row.querySelector('[data-plan-title]');
+            const index = Number(row.getAttribute('data-plan-index'));
+            const original = plan.items?.[index] || {};
+            const originalDuration = getDurationMinutes(original.start_time, original.end_time) || original.duration_minutes || 60;
+            const updateDisabledState = () => {
+                const disabled = !checkbox?.checked;
+                row.classList.toggle('is-disabled', disabled);
+                [titleInput, startInput, endInput].forEach((input) => {
+                    if (input) input.disabled = disabled;
+                });
+            };
+            if (checkbox) {
+                checkbox.addEventListener('change', updateDisabledState);
+                updateDisabledState();
+            }
+            if (startInput && endInput) {
+                startInput.addEventListener('change', () => {
+                    const nextEnd = addMinutesToDatetimeLocal(startInput.value, originalDuration);
+                    if (nextEnd) endInput.value = nextEnd;
+                });
+            }
+        });
         if (applyButton) {
             applyButton.addEventListener('click', async () => {
+                const selectedItems = Array.from(suggestionBox.querySelectorAll('[data-plan-row]'))
+                    .filter((row) => row.querySelector('[data-plan-select]')?.checked)
+                    .map((row) => {
+                        const index = Number(row.getAttribute('data-plan-index'));
+                        const original = plan.items?.[index] || {};
+                        const title = row.querySelector('[data-plan-title]')?.value?.trim() || original.title || '';
+                        const startTime = row.querySelector('[data-plan-start]')?.value || original.start_time || '';
+                        const endTime = row.querySelector('[data-plan-end]')?.value || original.end_time || '';
+                        return {
+                            ...original,
+                            title,
+                            start_time: startTime,
+                            end_time: endTime,
+                            duration_minutes: getDurationMinutes(startTime, endTime) || original.duration_minutes || 60
+                        };
+                    })
+                    .filter((item) => item.title && item.start_time);
+                if (!selectedItems.length) {
+                    if (status) status.textContent = ui('Hãy chọn ít nhất một hoạt động để tạo lịch.', 'Select at least one activity to create events.');
+                    return;
+                }
                 applyButton.disabled = true;
                 if (status) status.textContent = ui('Đang tạo lịch từ gợi ý...', 'Creating events from suggestion...');
                 try {
                     const response = await apiFetch(`${API_BASE}/schedule/plan-day/apply`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ date: plan.date || selectedDate, items: plan.items || [] })
+                        body: JSON.stringify({ date: plan.date || selectedDate, items: selectedItems })
                     });
                     const data = await response.json();
                     if (!response.ok || !data.success) {

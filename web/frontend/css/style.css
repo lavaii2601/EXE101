@@ -1798,13 +1798,52 @@ select:focus {
 
 .overview-plan-suggestion-item {
     display: grid;
-    grid-template-columns: 92px minmax(0, 1fr);
+    grid-template-columns: 118px minmax(0, 1fr);
     gap: 4px 10px;
     align-items: start;
     padding: 10px;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--panel);
+}
+
+.overview-plan-suggestion-item.is-disabled {
+    opacity: 0.58;
+}
+
+.overview-plan-suggestion-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.overview-plan-suggestion-check input {
+    width: 16px;
+    min-height: 16px;
+    accent-color: var(--primary);
+}
+
+.overview-plan-suggestion-fields {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+.overview-plan-suggestion-fields > input,
+.overview-plan-time-grid input {
+    min-height: 36px;
+    padding: 8px 10px;
+    font-size: 13px;
+}
+
+.overview-plan-time-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
 }
 
 .overview-plan-suggestion-item strong {
@@ -1821,7 +1860,6 @@ select:focus {
 }
 
 .overview-plan-suggestion-item small {
-    grid-column: 2;
     color: var(--text-secondary);
     font-size: 11px;
     line-height: 1.4;
@@ -6624,6 +6662,10 @@ body.dark-theme .week-table td.is-today {
     }
 
     .overview-plan-suggestion-item {
+        grid-template-columns: 1fr;
+    }
+
+    .overview-plan-time-grid {
         grid-template-columns: 1fr;
     }
 

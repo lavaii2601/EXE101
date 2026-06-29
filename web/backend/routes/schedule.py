@@ -234,6 +234,11 @@ def _extract_duration_minutes_from_text(text):
     return 60
 
 
+def _has_duration_signal(text):
+    normalized = str(text or '').lower()
+    return bool(re.search(r'\d+(?:[,.]\d+)?\s*(tiếng|gio|giờ|hour|hours|phút|phut|minute|minutes)', normalized))
+
+
 def _clean_quick_title(text):
     title = str(text or '').strip()
     replacements = [
@@ -243,6 +248,7 @@ def _clean_quick_title(text):
         r'(?<!\d)\d{1,2}\s*giờ\s*\d{0,2}\s*(?:sáng|sang|chiều|chieu|tối|toi|đêm|dem|am|pm)?(?!\d)',
         r'\b(?:trong|khoảng|khoang)\s*\d+(?:[,.]\d+)?\s*(?:tiếng|gio|giờ|hour|hours|phút|phut|minute|minutes)\b',
         r'(?<!\w)\d+(?:[,.]\d+)?\s*(?:tiếng|gio|giờ|hour|hours|phút|phut|minute|minutes)(?!\w)',
+        r'\b(lúc|luc|vào|vao|at)\b',
     ]
     for pattern in replacements:
         title = re.sub(pattern, ' ', title, flags=re.IGNORECASE)
@@ -276,7 +282,7 @@ def _sort_custom_items(items):
     return sorted(items or [], key=_custom_item_sort_key)
 
 
-def _split_day_plan_items(text):
+def _split_day_plan_entries(text):
     raw = str(text or '').strip()
     if not raw:
         return []
@@ -292,13 +298,18 @@ def _split_day_plan_items(text):
         flags=re.IGNORECASE,
     )
     parts = re.split(r'[,;\n]+', raw)
-    items = []
+    entries = []
     for part in parts:
+        original = str(part or '').strip()
         title = _clean_quick_title(part)
         title = re.sub(r'^\s*(?:-|•|\d+[.)])\s*', '', title).strip()
         if len(title) >= 2:
-            items.append(title[:180])
-    return items[:12]
+            entries.append({'raw': original, 'title': title[:180]})
+    return entries[:12]
+
+
+def _split_day_plan_items(text):
+    return [entry['title'] for entry in _split_day_plan_entries(text)]
 
 
 def _looks_like_day_plan(text, items):
@@ -399,14 +410,24 @@ def _find_available_slot(target_date, preferred_clock, duration_minutes, busy_ra
 def _build_suggested_day_plan(user_id, db_path, text, selected_date):
     base_date = _parse_quick_base_date(selected_date)
     target_date = _parse_explicit_date(text, base_date) or base_date
-    titles = _split_day_plan_items(text)
+    entries = _split_day_plan_entries(text)
+    titles = [entry['title'] for entry in entries]
     if not _looks_like_day_plan(text, titles):
         return None
 
     busy_ranges = _busy_ranges_for_day(db_path, target_date)
     items = []
-    for title in titles:
+    for entry in entries:
+        title = entry['title']
+        raw_item = entry.get('raw') or title
         preferred_clock, duration_minutes, reason = _activity_profile(title)
+        item_clock, explicit_time = _extract_quick_time(raw_item)
+        item_duration = _extract_duration_minutes_from_text(raw_item)
+        if explicit_time and item_clock:
+            preferred_clock = item_clock
+            reason = 'Giữ giờ người dùng đã nhập cho hoạt động này.'
+        if _has_duration_signal(raw_item):
+            duration_minutes = item_duration
         start_dt, end_dt = _find_available_slot(target_date, preferred_clock, duration_minutes, busy_ranges)
         items.append({
             'title': title,
@@ -631,6 +652,10 @@ def _create_schedule_from_plan_item(user_id, db_path, item):
     if not title or not start_time:
         raise ValueError('Missing title or start_time')
 
+    start_dt = _datetime_from_local_iso(start_time)
+    end_dt = _datetime_from_local_iso(end_time)
+    if start_dt and end_dt and end_dt <= start_dt:
+        end_time = None
     end_time = _compute_end_time(start_time, end_time, duration_minutes)
     schedule_id = ScheduleService.create_schedule(
         title,
