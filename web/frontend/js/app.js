@@ -2671,60 +2671,88 @@ async function sendMessageConfirmed(message, opts = {}) {
                 try { await loadSchedules(); } catch (e) { /* ignore */ }
                 try { await loadWeekSchedule(); } catch (e) { /* ignore */ }
                 showNotification(`${ui('✅ Đã tạo lịch', '✅ Event created')}: ${data.schedule_created.title || ui('Lịch hẹn', 'Appointment')}`, 'success');
-            } else if (data.schedule_suggestion && isScheduleIntent(message)) {
+            } else if (data.schedule_suggestion && (data.schedule_suggestion.action ? true : isScheduleIntent(message))) {
                 const suggested = data.schedule_suggestion;
-                // Show inline suggestion with create/dismiss buttons
+                const isMutation = suggested.action === 'update' || suggested.action === 'delete';
+
                 const suggestionDiv = document.createElement('div');
                 suggestionDiv.className = 'message assistant';
-                suggestionDiv.innerHTML = `
-                    <div class="message-content">
-                        <div style="font-weight:700; margin-bottom:6px;">${ui('AI gợi ý tạo lịch', 'AI suggested an event')}: ${escapeHtml(suggested.title || ui('Lịch hẹn', 'Appointment'))}</div>
-                        <div style="color:var(--text-secondary); font-size:13px; margin-bottom:8px;">${escapeHtml(suggested.description || '')}</div>
-                        <div style="display:flex; gap:8px;">
-                            <button class="btn-primary confirm-create-schedule">${ui('Tạo lịch', 'Create event')}</button>
-                            <button class="btn-secondary dismiss-schedule">${ui('Bỏ qua', 'Dismiss')}</button>
+                if (isMutation) {
+                    const isDelete = suggested.action === 'delete';
+                    const currentLine = `${ui('Lịch hiện tại', 'Current event')}: ${escapeHtml(suggested.title || '')} - ${escapeHtml(suggested.start_time || '')}`;
+                    const newLine = (!isDelete && suggested.new_start_time)
+                        ? `<div style="color:var(--text-secondary); font-size:13px; margin-bottom:8px;">${ui('Thời gian mới', 'New time')}: ${escapeHtml(suggested.new_start_time)}</div>`
+                        : '';
+                    const confirmLabel = isDelete ? ui('Xóa lịch', 'Delete event') : ui('Cập nhật lịch', 'Update event');
+                    suggestionDiv.innerHTML = `
+                        <div class="message-content">
+                            <div style="font-weight:700; margin-bottom:6px;">${isDelete ? ui('AI gợi ý xóa lịch', 'AI suggests deleting an event') : ui('AI gợi ý sửa lịch', 'AI suggests updating an event')}</div>
+                            <div style="color:var(--text-secondary); font-size:13px; margin-bottom:4px;">${currentLine}</div>
+                            ${newLine}
+                            <div style="display:flex; gap:8px;">
+                                <button class="btn-primary confirm-create-schedule">${confirmLabel}</button>
+                                <button class="btn-secondary dismiss-schedule">${ui('Bỏ qua', 'Dismiss')}</button>
+                            </div>
                         </div>
-                    </div>
-                `;
+                    `;
+                } else {
+                    suggestionDiv.innerHTML = `
+                        <div class="message-content">
+                            <div style="font-weight:700; margin-bottom:6px;">${ui('AI gợi ý tạo lịch', 'AI suggested an event')}: ${escapeHtml(suggested.title || ui('Lịch hẹn', 'Appointment'))}</div>
+                            <div style="color:var(--text-secondary); font-size:13px; margin-bottom:8px;">${escapeHtml(suggested.description || '')}</div>
+                            <div style="display:flex; gap:8px;">
+                                <button class="btn-primary confirm-create-schedule">${ui('Tạo lịch', 'Create event')}</button>
+                                <button class="btn-secondary dismiss-schedule">${ui('Bỏ qua', 'Dismiss')}</button>
+                            </div>
+                        </div>
+                    `;
+                }
                 chatMessages.appendChild(suggestionDiv);
                 chatMessages.scrollTop = chatMessages.scrollHeight;
 
-                // wire buttons
                 suggestionDiv.querySelector('.dismiss-schedule').addEventListener('click', () => {
                     suggestionDiv.remove();
-                    showNotification(ui('Đã bỏ qua gợi ý tạo lịch', 'Event suggestion dismissed'), 'info');
+                    showNotification(ui('Đã bỏ qua gợi ý', 'Suggestion dismissed'), 'info');
                 });
 
-                suggestionDiv.querySelector('.confirm-create-schedule').addEventListener('click', async () => {
-                    // disable buttons while creating
-                    suggestionDiv.querySelectorAll('button').forEach(b => b.disabled = true);
-                    try {
-                        const resp = await apiFetch(`${API_BASE}/schedule/create`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                title: suggested.title,
-                                description: suggested.description,
-                                start_time: suggested.start_time,
-                                end_time: suggested.end_time,
-                                attendees: suggested.attendees || []
-                            })
-                        });
-                        const j = await resp.json();
-                        if (resp.ok && j.success) {
-                            showNotification(`${ui('✅ Đã tạo lịch', '✅ Event created')}: ${j.calendar_event_id ? ui('đã đồng bộ Google Calendar', 'synced with Google Calendar') : suggested.title}`, 'success');
-                            await refreshWorkspaceTargets(['schedule', 'history']);
-                            suggestionDiv.remove();
-                        } else {
-                            showNotification(ui('❌ Không thể tạo lịch: ', '❌ Could not create event: ') + (j.error || resp.statusText || ui('lỗi', 'error')), 'error');
+                if (isMutation) {
+                    suggestionDiv.querySelector('.confirm-create-schedule').addEventListener('click', () => {
+                        suggestionDiv.querySelectorAll('button').forEach(b => b.disabled = true);
+                        sendMessageConfirmed(message, { confirmedSchedule: true, scheduleOverride: suggested });
+                        suggestionDiv.remove();
+                    });
+                } else {
+                    suggestionDiv.querySelector('.confirm-create-schedule').addEventListener('click', async () => {
+                        // disable buttons while creating
+                        suggestionDiv.querySelectorAll('button').forEach(b => b.disabled = true);
+                        try {
+                            const resp = await apiFetch(`${API_BASE}/schedule/create`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    title: suggested.title,
+                                    description: suggested.description,
+                                    start_time: suggested.start_time,
+                                    end_time: suggested.end_time,
+                                    attendees: suggested.attendees || []
+                                })
+                            });
+                            const j = await resp.json();
+                            if (resp.ok && j.success) {
+                                showNotification(`${ui('✅ Đã tạo lịch', '✅ Event created')}: ${j.calendar_event_id ? ui('đã đồng bộ Google Calendar', 'synced with Google Calendar') : suggested.title}`, 'success');
+                                await refreshWorkspaceTargets(['schedule', 'history']);
+                                suggestionDiv.remove();
+                            } else {
+                                showNotification(ui('❌ Không thể tạo lịch: ', '❌ Could not create event: ') + (j.error || resp.statusText || ui('lỗi', 'error')), 'error');
+                                suggestionDiv.querySelectorAll('button').forEach(b => b.disabled = false);
+                            }
+                        } catch (err) {
+                            console.error('Create schedule error', err);
+                            showNotification(ui('❌ Lỗi tạo lịch: ', '❌ Event creation error: ') + err.message, 'error');
                             suggestionDiv.querySelectorAll('button').forEach(b => b.disabled = false);
                         }
-                    } catch (err) {
-                        console.error('Create schedule error', err);
-                        showNotification(ui('❌ Lỗi tạo lịch: ', '❌ Event creation error: ') + err.message, 'error');
-                        suggestionDiv.querySelectorAll('button').forEach(b => b.disabled = false);
-                    }
-                });
+                    });
+                }
             }
 
             if (Array.isArray(data.suggested_actions)) {
@@ -2764,6 +2792,7 @@ async function sendMessageConfirmed(message, opts = {}) {
                             if (resp.ok && j.success) {
                                 addMessage(j.reply, 'assistant');
                                 actionDiv.remove();
+                                renderSendDraftedReplyCard(action.email_id, j.reply);
                             } else {
                                 showNotification(ui('❌ Không tạo được trả lời: ', '❌ Could not draft reply: ') + (j.error || resp.statusText || ui('lỗi', 'error')), 'error');
                                 actionDiv.querySelectorAll('button').forEach(b => b.disabled = false);
@@ -2793,6 +2822,46 @@ Status: Not reached
         `.trim();
         console.error(errorMsg);
     }
+}
+
+function renderSendDraftedReplyCard(emailId, replyText) {
+    const card = document.createElement('div');
+    card.className = 'message assistant';
+    card.innerHTML = `
+        <div class="message-content">
+            <div style="display:flex; gap:8px;">
+                <button class="btn-primary send-drafted-reply-btn">${ui('Gửi luôn', 'Send now')}</button>
+                <button class="btn-secondary dismiss-suggestion">${ui('Không gửi', "Don't send")}</button>
+            </div>
+        </div>
+    `;
+    chatMessages.appendChild(card);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    card.querySelector('.dismiss-suggestion').addEventListener('click', () => card.remove());
+
+    card.querySelector('.send-drafted-reply-btn').addEventListener('click', async () => {
+        card.querySelectorAll('button').forEach(b => b.disabled = true);
+        try {
+            const resp = await apiFetch(`${API_BASE}/chat/send-drafted-reply`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email_id: emailId, reply_text: replyText })
+            });
+            const j = await resp.json();
+            if (resp.ok && j.success) {
+                showNotification(ui('✅ Đã gửi email trả lời', '✅ Reply sent'), 'success');
+                card.remove();
+            } else {
+                showNotification(ui('❌ Không gửi được email: ', '❌ Could not send email: ') + (j.error || resp.statusText || ui('lỗi', 'error')), 'error');
+                card.querySelectorAll('button').forEach(b => b.disabled = false);
+            }
+        } catch (err) {
+            console.error('Send drafted reply error', err);
+            showNotification(ui('❌ Lỗi: ', '❌ Error: ') + err.message, 'error');
+            card.querySelectorAll('button').forEach(b => b.disabled = false);
+        }
+    });
 }
 
 const BOB_AVATAR_SVG = `

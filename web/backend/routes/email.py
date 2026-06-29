@@ -1261,6 +1261,10 @@ def mark_email_as_read(email_id):
         if success:
             # Clear cache to force refresh
             _clear_email_list_cache(user_id)
+            History.create(
+                "Đánh dấu email đã đọc", "", action_type='email_marked_read',
+                db_path=get_user_db_path(user_id),
+            )
             return jsonify({'success': True, 'message': 'Đã đánh dấu đã đọc'})
         return jsonify({'error': 'Failed to mark as read'}), 500
     except Exception as e:
@@ -1281,6 +1285,10 @@ def mark_email_as_unread(email_id):
         if success:
             # Clear cache to force refresh
             _clear_email_list_cache(user_id)
+            History.create(
+                "Đánh dấu email chưa đọc", "", action_type='email_marked_unread',
+                db_path=get_user_db_path(user_id),
+            )
             return jsonify({'success': True, 'message': 'Đã đánh dấu chưa đọc'})
         return jsonify({'error': 'Failed to mark as unread'}), 500
     except Exception as e:
