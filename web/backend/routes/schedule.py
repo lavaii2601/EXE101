@@ -242,6 +242,7 @@ def _clean_quick_title(text):
         r'(?<!\d)\d{1,2}\s*[:h]\s*\d{0,2}\s*(?:sáng|sang|chiều|chieu|tối|toi|đêm|dem|am|pm)?(?!\d)',
         r'(?<!\d)\d{1,2}\s*giờ\s*\d{0,2}\s*(?:sáng|sang|chiều|chieu|tối|toi|đêm|dem|am|pm)?(?!\d)',
         r'\b(?:trong|khoảng|khoang)\s*\d+(?:[,.]\d+)?\s*(?:tiếng|gio|giờ|hour|hours|phút|phut|minute|minutes)\b',
+        r'(?<!\w)\d+(?:[,.]\d+)?\s*(?:tiếng|gio|giờ|hour|hours|phút|phut|minute|minutes)(?!\w)',
     ]
     for pattern in replacements:
         title = re.sub(pattern, ' ', title, flags=re.IGNORECASE)

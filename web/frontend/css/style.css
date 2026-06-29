@@ -1588,6 +1588,13 @@ select:focus {
     overflow: hidden;
 }
 
+.overview-checklist-panel .overview-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
 .overview-checklist-list {
     display: grid;
 }
@@ -1665,6 +1672,84 @@ select:focus {
     font-size: 10px;
     font-weight: 500;
     text-transform: uppercase;
+}
+
+.overview-checklist-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.overview-checklist-remove,
+.overview-sort-btn {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.overview-checklist-remove {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    font-size: 16px;
+    line-height: 1;
+}
+
+.overview-sort-btn {
+    min-height: 32px;
+    padding: 6px 10px;
+    font-size: 12px;
+}
+
+.overview-checklist-remove:hover,
+.overview-sort-btn:hover {
+    border-color: rgba(37, 99, 235, 0.28);
+    background: rgba(37, 99, 235, 0.08);
+    color: var(--primary);
+}
+
+.overview-quick-add {
+    overflow: hidden;
+}
+
+.overview-quick-add-form {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(280px, 1.15fr);
+    gap: 14px;
+    align-items: end;
+    padding: 16px;
+}
+
+.overview-quick-add-form label {
+    display: block;
+    margin-top: 3px;
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.overview-quick-add-form small,
+.overview-quick-add-status {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.overview-quick-add-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+}
+
+.overview-quick-add-status {
+    grid-column: 1 / -1;
+    min-height: 18px;
+    margin: 0;
 }
 
 .overview-list-item {
@@ -6378,6 +6463,15 @@ body.dark-theme .week-table td.is-today {
         grid-template-columns: 1fr;
     }
 
+    .overview-quick-add-form {
+        grid-template-columns: 1fr;
+        padding: 14px;
+    }
+
+    .overview-checklist-panel .overview-panel-head {
+        align-items: flex-start;
+    }
+
     .message-content {
         max-width: min(100%, 620px);
     }
@@ -6442,6 +6536,23 @@ body.dark-theme .week-table td.is-today {
     .email-search-bar .btn-secondary {
         grid-column: 1 / -1;
         width: 100%;
+    }
+
+    .overview-quick-add-row {
+        grid-template-columns: 1fr;
+    }
+
+    .overview-sort-btn {
+        width: 100%;
+    }
+
+    .overview-checklist-item {
+        grid-template-columns: 28px minmax(0, 1fr);
+    }
+
+    .overview-checklist-actions {
+        grid-column: 2;
+        justify-content: flex-start;
     }
 }
 

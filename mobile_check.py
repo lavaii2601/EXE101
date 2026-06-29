@@ -29,11 +29,23 @@ with sync_playwright() as p:
     page.wait_for_timeout(500)
     page.screenshot(path="mobile_overview.png", full_page=True)
 
+    # Open the sidebar via the hamburger toggle first, as a real mobile user would
+    menu_toggle = page.locator('#menuToggle')
+    if menu_toggle.count() > 0:
+        menu_toggle.first.click()
+        page.wait_for_timeout(500)
+    page.screenshot(path="mobile_sidebar_open.png", full_page=True)
+
     nav = page.locator('.nav-btn[data-page="chat"]')
     if nav.count() > 0:
-        nav.first.click()
+        nav.first.click(force=True)
         page.wait_for_timeout(800)
     page.screenshot(path="mobile_chat.png", full_page=True)
+
+    page.fill("#userInput", "Xin chao")
+    page.click("#sendBtn")
+    page.wait_for_timeout(2000)
+    page.screenshot(path="mobile_chat_msg.png", full_page=True)
 
     print("Saved mobile screenshots")
     browser.close()
