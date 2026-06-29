@@ -502,7 +502,7 @@ class IntentOrchestrator:
                 "response": response,
                 "workspace_sources": ["history"],
                 "refresh_targets": ["history"],
-                "action_type": "history_lookup",
+                "action_type": "chat",
             }
 
         if intent == "schedule.create":

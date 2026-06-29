@@ -1073,7 +1073,7 @@ def _mark_emails(ctx, read):
     _clear_email_list_cache(ctx.user_id)
 
     label = 'đã đọc' if read else 'chưa đọc'
-    action_type = 'email_marked_read' if read else 'email_marked_unread'
+    action_type = 'chat'
     for email in marked:
         History.create(
             f"Đánh dấu email {label}: {email.get('subject') or '(không có tiêu đề)'}",

@@ -1262,7 +1262,7 @@ def mark_email_as_read(email_id):
             # Clear cache to force refresh
             _clear_email_list_cache(user_id)
             History.create(
-                "Đánh dấu email đã đọc", "", action_type='email_marked_read',
+                "Đánh dấu email đã đọc", "", action_type='chat',
                 db_path=get_user_db_path(user_id),
             )
             return jsonify({'success': True, 'message': 'Đã đánh dấu đã đọc'})
@@ -1286,7 +1286,7 @@ def mark_email_as_unread(email_id):
             # Clear cache to force refresh
             _clear_email_list_cache(user_id)
             History.create(
-                "Đánh dấu email chưa đọc", "", action_type='email_marked_unread',
+                "Đánh dấu email chưa đọc", "", action_type='chat',
                 db_path=get_user_db_path(user_id),
             )
             return jsonify({'success': True, 'message': 'Đã đánh dấu chưa đọc'})
