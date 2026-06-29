@@ -255,9 +255,17 @@ class IntentOrchestrator:
             f"THOI DIEM HIEN TAI: {now.strftime('%Y-%m-%d %H:%M')} ({weekday}), GMT+7\n\n"
             "Cac loai y dinh hop le (chon dung 1 gia tri cho truong \"intent\"):\n"
             "- schedule.create: muon tao lich hen/su kien/nhac nho moi\n"
+            "- schedule.update: muon doi/sua thoi gian hoac thong tin cua lich hen DA CO san "
+            "(vi du 'doi gio hop voi sep', 'chuyen lich kham rang sang ngay khac')\n"
+            "- schedule.delete: muon xoa/huy lich hen DA CO san "
+            "(vi du 'xoa lich hop ngay mai', 'huy cuoc hen voi khach')\n"
             "- schedule.list: muon xem lich/su kien da co\n"
             "- email.latest_summary: muon tom tat (cac) email moi nhat trong hop thu\n"
             "- email.search: muon tim/xem email theo tu khoa hoac nguoi gui\n"
+            "- email.mark_read: muon danh dau (cac) email DA DOC "
+            "(vi du 'danh dau da xem email tu chi Lan')\n"
+            "- email.mark_unread: muon danh dau (cac) email CHUA DOC "
+            "(vi du 'danh dau email do la chua xem')\n"
             "- history.list: muon xem lich su hoat dong/da lam gi\n"
             "- settings.update_mode: muon doi che do lam viec "
             "(student, worker, freelancer, creator, business, mentor, teacher)\n"
@@ -339,6 +347,22 @@ class IntentOrchestrator:
                     "sender": str(query.get("sender") or "").strip(),
                     "keyword": str(query.get("keyword") or "").strip(),
                     "unread_only": bool(query.get("unread_only")),
+                }
+            refresh_targets = ["email", "overview", "history"]
+        elif intent == "schedule.update":
+            entities["new_values"] = self._coerce_ai_schedule(data.get("schedule") or {}, message)
+            requires_confirmation = True
+            refresh_targets = ["schedule", "calendar", "overview", "history"]
+        elif intent == "schedule.delete":
+            requires_confirmation = True
+            refresh_targets = ["schedule", "calendar", "overview", "history"]
+        elif intent in ("email.mark_read", "email.mark_unread"):
+            query = data.get("email_query")
+            if isinstance(query, dict):
+                entities["query"] = {
+                    "sender": str(query.get("sender") or "").strip(),
+                    "keyword": str(query.get("keyword") or "").strip(),
+                    "unread_only": False,
                 }
             refresh_targets = ["email", "overview", "history"]
         elif intent == "history.list":

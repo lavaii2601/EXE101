@@ -6745,3 +6745,23 @@ body.dark-theme .week-table td.is-today {
         padding-top: 64px;
     }
 }
+
+/* Mobile UI polish: action toolbars/rows that are deliberately horizontally
+   scrollable on phones (overflow-x: auto + hidden scrollbar, set earlier in
+   this file) instead of wrapping have no visible scrollbar and no other
+   hint, so the cut-off trailing button/column reads as broken/clipped
+   rather than "swipe for more". A right-edge fade is a standard, cheap
+   affordance for this. Scoped ONLY to the containers confirmed (via actual
+   scrollWidth > width measurement on a 390px viewport) to overflow --
+   `.overview-actions` and `#schedule-page .section-header > div` were
+   checked and do NOT overflow (they wrap onto a second row instead), so a
+   permanent fade there would incorrectly dim real, fully-visible content. */
+@media (max-width: 860px) {
+    .email-toolbar,
+    .tabs,
+    .week-nav,
+    .week-table-wrapper {
+        -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+        mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+    }
+}

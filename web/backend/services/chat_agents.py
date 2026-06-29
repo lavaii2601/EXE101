@@ -839,7 +839,15 @@ class ScheduleUpdateAgent:
         return self._propose(ctx)
 
     def _propose(self, ctx):
-        new_values = intent_orchestrator.extract_schedule(ctx.user_message)
+        # Prefer the AI-classified new time (handles paraphrases/relative
+        # dates like "thu 5 tuan sau" that the regex fallback can't) when
+        # the AI-assisted path actually ran; otherwise fall back to the same
+        # regex-based extraction the rule-based path always uses.
+        ai_new_values = (ctx.intent_result.get('entities') or {}).get('new_values')
+        if ai_new_values and (ai_new_values.get('start_time') or ai_new_values.get('end_time')):
+            new_values = ai_new_values
+        else:
+            new_values = intent_orchestrator.extract_schedule(ctx.user_message)
         has_change = bool(new_values.get('start_time') or new_values.get('end_time'))
         if not has_change:
             return AgentResult(
@@ -1038,7 +1046,8 @@ def _mark_emails(ctx, read):
     if not token_file or not os.path.exists(token_file):
         return AgentResult(response="Gmail chưa được kết nối cho tài khoản này.", action='Gmail chưa kết nối')
 
-    query, include_read = _email_lookup_query(ctx.user_message)
+    query_override = _query_override_from_entities(ctx.intent_result.get('entities'))
+    query, include_read = query_override or _email_lookup_query(ctx.user_message)
     service = get_cached_gmail_service(token_file)
     emails = service.get_emails(max_results=10, query=query, include_read=True)
     if not emails:
