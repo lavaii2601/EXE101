@@ -6444,3 +6444,25 @@ body.dark-theme .week-table td.is-today {
         width: 100%;
     }
 }
+
+/* Gap left by the 2026-06 polish pass above: the chat agent-trace row and
+   workspace-source badges were still at the old 11px scale, which reads as
+   cramped/illegible next to the rest of the chat bubble. Bring them in line
+   with the polish pass's meta-text scale (12px) and calmer (non-bold) weight
+   for the descriptive trace text, keeping the pill badges themselves bold. */
+.agent-trace {
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.5;
+}
+
+.agent-pill {
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.workspace-source-badge {
+    font-size: 12px;
+}
