@@ -162,7 +162,7 @@ def _parse_explicit_date(text, base_date):
             pass
 
     for token, offset in _DATE_WORDS.items():
-        if token in normalized:
+        if re.search(rf'(?<!\w){re.escape(token)}(?!\w)', normalized):
             return base_date + timedelta(days=offset)
 
     for token, weekday in _WEEKDAY_WORDS.items():
@@ -469,6 +469,89 @@ def save_overview_checklist():
         'success': True,
         'date': date_value,
         **payload,
+    })
+
+
+@schedule_bp.route('/quick-add', methods=['POST'])
+def quick_add_plan_item():
+    """Add natural-language input as either a checklist task or a calendar activity."""
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+    data = request.get_json() or {}
+    text = str(data.get('text') or '').strip()
+    date_value = (data.get('date') or datetime.now().date().isoformat()).strip()
+
+    if not text:
+        return jsonify({'success': False, 'error': 'Missing text'}), 400
+
+    plan = _classify_quick_plan(text, date_value)
+
+    if plan.get('kind') == 'activity':
+        try:
+            schedule_id = ScheduleService.create_schedule(
+                plan['title'],
+                plan.get('description', ''),
+                plan['start_time'],
+                [],
+                end_time=plan.get('end_time'),
+                duration_minutes=plan.get('duration_minutes'),
+                db_path=db_path,
+            )
+            created_schedule = Schedule.get_by_id(schedule_id, db_path=db_path)
+            calendar_sync_pending = _sync_schedule_to_calendar_async(user_id, schedule_id, db_path)
+            History.create(
+                f"Tạo lịch nhanh: {plan['title']}",
+                f"Nguồn nhập: {text}",
+                action_type='schedule_created',
+                related_id=schedule_id,
+                db_path=db_path,
+            )
+            _clear_schedule_cache(db_path)
+            _clear_overview_cache(user_id)
+            return jsonify({
+                'success': True,
+                'kind': 'activity',
+                'classification': plan,
+                'schedule_id': schedule_id,
+                'schedule': created_schedule,
+                'calendar_sync_pending': calendar_sync_pending,
+                'message': 'Đã thêm vào lịch',
+            })
+        except Exception as e:
+            logger.error("Quick activity creation failed: %s", e, exc_info=True)
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    checklist_date = date_value
+    cached = Cache.get(_checklist_cache_key(user_id, checklist_date), db_path=db_path)
+    payload = _normalize_checklist_payload(cached)
+    item = {
+        'id': f"manual:{uuid.uuid4().hex[:12]}",
+        'title': plan.get('title') or text,
+        'completed': False,
+        'created_at': datetime.utcnow().isoformat(),
+        'source': 'manual',
+        'item_type': 'task',
+        'due_date': plan.get('due_date') or '',
+        'due_at': '',
+        'ai_reason': plan.get('ai_reason') or '',
+        'priority_score': plan.get('priority_score') or 0,
+        'pinned': False,
+    }
+    payload['custom_items'] = _sort_custom_items([item, *payload.get('custom_items', [])])
+    Cache.set(
+        _checklist_cache_key(user_id, checklist_date),
+        payload,
+        ttl=_CHECKLIST_CACHE_TTL_SECONDS,
+        db_path=db_path,
+    )
+    return jsonify({
+        'success': True,
+        'kind': 'task',
+        'classification': plan,
+        'date': checklist_date,
+        'item': item,
+        **payload,
+        'message': 'Đã thêm vào checklist',
     })
 
 
