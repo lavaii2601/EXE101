@@ -701,15 +701,25 @@ class IntentOrchestrator:
         return None
 
     @staticmethod
-    def _extract_time(text):
+    def _apply_period_of_day(hour, text):
+        """Vietnamese times often skip am/pm and say "chieu"/"toi"/"trua"
+        instead -- without this, "5 gio chieu" parses as 05:00 instead of
+        the intended 17:00."""
+        if 1 <= hour <= 11 and any(term in text for term in ("chieu", "toi", "trua")):
+            return hour + 12
+        return hour
+
+    @classmethod
+    def _extract_time(cls, text):
         match = re.search(r"(?<!\d)(\d{1,2})[:h](\d{2})(?!\d)", text)
         if match:
             hour, minute = int(match.group(1)), int(match.group(2))
+            hour = cls._apply_period_of_day(hour, text)
             if 0 <= hour <= 23 and 0 <= minute <= 59:
                 return datetime.strptime(f"{hour:02d}:{minute:02d}", "%H:%M").time()
         match = re.search(r"(?<!\d)(\d{1,2})\s*(?:gio|h)(?!\d)", text)
         if match:
-            hour = int(match.group(1))
+            hour = cls._apply_period_of_day(int(match.group(1)), text)
             if 0 <= hour <= 23:
                 return datetime.strptime(f"{hour:02d}:00", "%H:%M").time()
         return None

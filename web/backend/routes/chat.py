@@ -1,15 +1,17 @@
 from flask import Blueprint, request, jsonify
 import os
 import sys
+import re
 import logging
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.chat_agents import ai_service, intent_orchestrator, get_agent, ChatContext
+from services.gmail_service import get_cached_gmail_service
 from models.history import History
 from models.schedule import Schedule
 from models.user import User
-from utils.user_context import get_current_user_id, get_user_db_path
+from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -389,6 +391,61 @@ def generate_reply():
         'success': True,
         'reply': reply
     })
+
+
+def _extract_reply_address(sender_header):
+    """Pull a bare email address out of a "Name <addr>" From header."""
+    match = re.search(r'[\w\.+-]+@[\w\.-]+\.\w+', sender_header or '')
+    return match.group(0) if match else ''
+
+
+@chat_bp.route('/send-drafted-reply', methods=['POST'])
+def send_drafted_reply():
+    """Send a reply that the AI already drafted for a specific email --
+    the user clicking 'Soạn trả lời' then 'Gửi luôn' (two deliberate steps)
+    is the confirmation gate, mirroring the schedule_suggestion confirm card."""
+    data = request.get_json(silent=True) or {}
+    email_id = (data.get('email_id') or '').strip()
+    reply_text = (data.get('reply_text') or '').strip()
+    if not email_id or not reply_text:
+        return jsonify({'error': 'Missing email_id or reply_text'}), 400
+
+    user_id = get_current_user_id(request)
+    db_path = get_user_db_path(user_id)
+    token_file = get_user_token_file(user_id)
+    if not token_file or not os.path.exists(token_file):
+        return jsonify({'error': 'Gmail chưa được kết nối'}), 401
+
+    service = get_cached_gmail_service(token_file)
+    original = service.get_email_details(email_id, lazy=True)
+    if not original:
+        return jsonify({'error': 'Không tìm thấy email gốc'}), 404
+
+    to_address = _extract_reply_address(original.get('sender'))
+    if not to_address:
+        return jsonify({'error': 'Không xác định được địa chỉ người nhận'}), 400
+
+    subject = original.get('subject') or '(Không có tiêu đề)'
+    if not subject.lower().startswith('re:'):
+        subject = f"Re: {subject}"
+
+    try:
+        success = service.send_email(to_address, subject, reply_text)
+    except Exception as e:
+        logger.exception("Failed to send drafted reply for email %s", email_id)
+        return jsonify({'error': str(e)}), 500
+
+    if not success:
+        return jsonify({'error': 'Gửi email không thành công'}), 500
+
+    History.create(
+        f"Gửi email tới {to_address}",
+        reply_text,
+        action_type='email_sent',
+        db_path=db_path,
+    )
+    return jsonify({'success': True})
+
 
 @chat_bp.route('/history', methods=['GET'])
 def get_history():
