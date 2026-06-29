@@ -15,6 +15,13 @@ from models.history import History
 from models.schedule import Schedule, LOCAL_TZ
 from utils.user_context import get_user_token_file
 from routes.knowledge import knowledge_service
+from routes.schedule import (
+    _clear_schedule_cache,
+    _clear_overview_cache,
+    _sync_schedule_to_calendar_async,
+    _delete_calendar_event_async,
+    _prune_stale_duplicate_after_move_async,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -322,6 +329,45 @@ def _format_calendar_context(message, user_id, db_path, window_override=None):
         if item.get('status') and item.get('status') != 'pending':
             lines.append(f"   Trang thai: {item.get('status')}")
     return "\n".join(lines)
+
+
+_SCHEDULE_ACTION_STOPWORDS = (
+    'doi', 'sua', 'cap nhat', 'thay doi', 'chuyen', 'xoa', 'huy', 'bo lich',
+    'cancel', 'delete', 'tao', 'dat', 'them', 'add', 'book', 'nhac toi', 'remind',
+)
+_SCHEDULE_NOUN_STOPWORDS = (
+    'lich', 'su kien', 'hen', 'hop', 'meeting', 'appointment', 'calendar',
+)
+
+
+def _find_matching_schedules(message, db_path, window_days=14):
+    """Best-effort keyword match against existing schedules in a date window --
+    NEVER used to act directly. Callers must always show the matched
+    schedule's current title+time back to the user for confirmation before
+    mutating anything (see ScheduleUpdateAgent/ScheduleDeleteAgent)."""
+    normalized = _normalize_intent_text(message)
+    for phrase in _SCHEDULE_ACTION_STOPWORDS + _SCHEDULE_NOUN_STOPWORDS:
+        normalized = normalized.replace(phrase, ' ')
+    significant_words = [w for w in normalized.split() if len(w) >= 3]
+    if not significant_words:
+        return []
+
+    now = datetime.now()
+    window_start = now - timedelta(days=1)
+    window_end = now + timedelta(days=window_days)
+    candidates = Schedule.get_between(window_start.isoformat(), window_end.isoformat(), limit=100, db_path=db_path)
+
+    scored = []
+    for schedule in candidates:
+        title_normalized = _normalize_intent_text(schedule.get('title') or '')
+        score = sum(1 for word in significant_words if word in title_normalized)
+        if score > 0:
+            item = dict(schedule)
+            item['_score'] = score
+            scored.append(item)
+
+    scored.sort(key=lambda item: item['_score'], reverse=True)
+    return scored
 
 
 def _format_history_context(db_path):
@@ -774,6 +820,189 @@ class ScheduleCreateAgent:
         )
 
 
+def _format_match_list(matches, verb):
+    lines = [f"Mình thấy vài lịch khớp, bạn muốn {verb} cái nào? Hãy nói rõ hơn nhé."]
+    for index, sched in enumerate(matches[:5], start=1):
+        lines.append(f"{index}. {sched.get('title')} - {sched.get('start_time')}")
+    return "\n".join(lines)
+
+
+class ScheduleUpdateAgent:
+    """AGENT_CAPABILITIES: roughly 'schedule.manage'. Only handles new
+    start_time/end_time/attendees from the message -- deliberately does not
+    attempt to infer a new title from freeform text (too ambiguous, risks
+    silently overwriting the wrong field)."""
+
+    def handle(self, ctx):
+        if ctx.client_confirm and (ctx.schedule_override or {}).get('schedule_id'):
+            return self._handle_confirmed(ctx)
+        return self._propose(ctx)
+
+    def _propose(self, ctx):
+        new_values = intent_orchestrator.extract_schedule(ctx.user_message)
+        has_change = bool(new_values.get('start_time') or new_values.get('end_time'))
+        if not has_change:
+            return AgentResult(
+                response="Mình chưa hiểu bạn muốn đổi sang ngày/giờ nào, bạn nói rõ hơn giúp mình nhé.",
+                action='Cần thêm thông tin để sửa lịch',
+            )
+        matches = _find_matching_schedules(ctx.user_message, ctx.db_path)
+        if not matches:
+            return AgentResult(
+                response="Mình không tìm thấy lịch hẹn phù hợp trong 14 ngày tới. Bạn cho mình biết rõ tên lịch hẹn nhé.",
+                workspace_sources=['calendar'],
+                action='Không tìm thấy lịch cần sửa',
+            )
+        if len(matches) > 1:
+            return AgentResult(
+                response=_format_match_list(matches, 'sửa'),
+                workspace_sources=['calendar'],
+                action='Nhiều lịch khớp, cần xác định rõ',
+            )
+        sched = matches[0]
+        suggestion = {
+            'action': 'update',
+            'schedule_id': sched.get('id'),
+            'title': sched.get('title'),
+            'start_time': sched.get('start_time'),
+            'end_time': sched.get('end_time'),
+            'new_start_time': new_values.get('start_time'),
+            'new_end_time': new_values.get('end_time'),
+        }
+        return AgentResult(
+            response=(
+                f"Mình tìm thấy lịch '{sched.get('title')}' lúc {sched.get('start_time')}. "
+                "Xác nhận đổi sang thời gian mới?"
+            ),
+            schedule_suggestion=suggestion,
+            workspace_sources=['calendar'],
+            action='Đề xuất sửa lịch cần xác nhận',
+        )
+
+    def _handle_confirmed(self, ctx):
+        schedule_id = ctx.schedule_override.get('schedule_id')
+        previous = Schedule.get_by_id(schedule_id, db_path=ctx.db_path)
+        if not previous:
+            return AgentResult(
+                response="Lịch hẹn này không còn tồn tại, có thể đã bị xóa trước đó.",
+                workspace_sources=['calendar'],
+                action='Lịch không còn tồn tại',
+            )
+
+        update_data = {}
+        if ctx.schedule_override.get('new_start_time'):
+            update_data['start_time'] = ctx.schedule_override['new_start_time']
+        if ctx.schedule_override.get('new_end_time'):
+            update_data['end_time'] = ctx.schedule_override['new_end_time']
+
+        if not update_data:
+            return AgentResult(
+                response="Không có thay đổi nào để cập nhật.",
+                workspace_sources=['calendar'],
+                action='Không có thay đổi',
+            )
+
+        try:
+            Schedule.update(schedule_id, db_path=ctx.db_path, **update_data)
+            _clear_schedule_cache(ctx.db_path)
+            _clear_overview_cache(ctx.user_id)
+            updated = Schedule.get_by_id(schedule_id, db_path=ctx.db_path)
+            _sync_schedule_to_calendar_async(ctx.user_id, schedule_id, ctx.db_path)
+            _prune_stale_duplicate_after_move_async(ctx.user_id, ctx.db_path, schedule_id, previous, updated)
+            History.create(
+                f"Chinh sua lich hen: {previous.get('title')}",
+                f"Cap nhat: {', '.join(update_data.keys())}",
+                action_type='schedule_updated',
+                related_id=schedule_id,
+                db_path=ctx.db_path,
+            )
+            response = f"Đã cập nhật lịch '{updated.get('title')}' sang {updated.get('start_time')}."
+        except Exception as e:
+            logger.exception("Failed to update schedule %s via chat", schedule_id)
+            response = f"Không thể cập nhật lịch: {e}"
+
+        return AgentResult(
+            response=response,
+            workspace_sources=['calendar'],
+            refresh_targets=['schedule', 'history'],
+            action='Đã cập nhật lịch',
+        )
+
+
+class ScheduleDeleteAgent:
+    """AGENT_CAPABILITIES: roughly 'schedule.manage'."""
+
+    def handle(self, ctx):
+        if ctx.client_confirm and (ctx.schedule_override or {}).get('schedule_id'):
+            return self._handle_confirmed(ctx)
+        return self._propose(ctx)
+
+    def _propose(self, ctx):
+        matches = _find_matching_schedules(ctx.user_message, ctx.db_path)
+        if not matches:
+            return AgentResult(
+                response="Mình không tìm thấy lịch hẹn phù hợp để xóa trong 14 ngày tới.",
+                workspace_sources=['calendar'],
+                action='Không tìm thấy lịch cần xóa',
+            )
+        if len(matches) > 1:
+            return AgentResult(
+                response=_format_match_list(matches, 'xóa'),
+                workspace_sources=['calendar'],
+                action='Nhiều lịch khớp, cần xác định rõ',
+            )
+        sched = matches[0]
+        suggestion = {
+            'action': 'delete',
+            'schedule_id': sched.get('id'),
+            'title': sched.get('title'),
+            'start_time': sched.get('start_time'),
+            'end_time': sched.get('end_time'),
+        }
+        return AgentResult(
+            response=f"Mình tìm thấy lịch '{sched.get('title')}' lúc {sched.get('start_time')}. Xác nhận xóa?",
+            schedule_suggestion=suggestion,
+            workspace_sources=['calendar'],
+            action='Đề xuất xóa lịch cần xác nhận',
+        )
+
+    def _handle_confirmed(self, ctx):
+        schedule_id = ctx.schedule_override.get('schedule_id')
+        schedule = Schedule.get_by_id(schedule_id, db_path=ctx.db_path)
+        if not schedule:
+            return AgentResult(
+                response="Lịch hẹn này không còn tồn tại, có thể đã bị xóa trước đó.",
+                workspace_sources=['calendar'],
+                action='Lịch không còn tồn tại',
+            )
+
+        try:
+            calendar_event_id = schedule.get('calendar_event_id')
+            Schedule.delete(schedule_id, db_path=ctx.db_path)
+            _clear_schedule_cache(ctx.db_path)
+            _clear_overview_cache(ctx.user_id)
+            if calendar_event_id:
+                _delete_calendar_event_async(ctx.user_id, calendar_event_id, ctx.db_path)
+            History.create(
+                f"Xoa lich hen: {schedule.get('title')}",
+                "Lich hen da bi xoa qua chat",
+                action_type='schedule_deleted',
+                related_id=schedule_id,
+                db_path=ctx.db_path,
+            )
+            response = f"Đã xóa lịch '{schedule.get('title')}'."
+        except Exception as e:
+            logger.exception("Failed to delete schedule %s via chat", schedule_id)
+            response = f"Không thể xóa lịch: {e}"
+
+        return AgentResult(
+            response=response,
+            workspace_sources=['calendar'],
+            refresh_targets=['schedule', 'history'],
+            action='Đã xóa lịch',
+        )
+
+
 class ScheduleListAgent:
     """AGENT_CAPABILITIES: roughly 'calendar.sync'."""
 
@@ -802,6 +1031,82 @@ class EmailSearchAgent:
             refresh_targets=ctx.refresh_targets,
             action='Tìm email trong Gmail',
         )
+
+
+def _mark_emails(ctx, read):
+    token_file = get_user_token_file(ctx.user_id)
+    if not token_file or not os.path.exists(token_file):
+        return AgentResult(response="Gmail chưa được kết nối cho tài khoản này.", action='Gmail chưa kết nối')
+
+    query, include_read = _email_lookup_query(ctx.user_message)
+    service = get_cached_gmail_service(token_file)
+    emails = service.get_emails(max_results=10, query=query, include_read=True)
+    if not emails:
+        return AgentResult(
+            response="Mình không tìm thấy email phù hợp trong Gmail theo dữ liệu hiện tại.",
+            workspace_sources=['email'],
+            action='Không tìm thấy email',
+        )
+
+    targets = emails[:3]
+    marked = []
+    for email in targets:
+        try:
+            if read:
+                service.mark_as_read(email.get('id'))
+            else:
+                service.mark_as_unread(email.get('id'))
+            marked.append(email)
+        except Exception:
+            logger.exception("Failed to mark email %s as %s", email.get('id'), 'read' if read else 'unread')
+
+    from routes.email import _clear_email_list_cache
+    _clear_email_list_cache(ctx.user_id)
+
+    label = 'đã đọc' if read else 'chưa đọc'
+    action_type = 'email_marked_read' if read else 'email_marked_unread'
+    for email in marked:
+        History.create(
+            f"Đánh dấu email {label}: {email.get('subject') or '(không có tiêu đề)'}",
+            "Đánh dấu qua chat",
+            action_type=action_type,
+            db_path=ctx.db_path,
+        )
+
+    if not marked:
+        return AgentResult(
+            response="Mình tìm thấy email nhưng không thể đánh dấu được, bạn thử lại sau nhé.",
+            workspace_sources=['email'],
+            action='Không đánh dấu được email',
+        )
+
+    titles = ", ".join(e.get('subject') or '(không có tiêu đề)' for e in marked)
+    extra = (
+        f" (còn {len(emails) - len(targets)} email khác khớp, bạn nói rõ hơn để mình xử lý tiếp nếu cần)"
+        if len(emails) > len(targets) else ""
+    )
+    return AgentResult(
+        response=f"Đã đánh dấu {label}: {titles}.{extra}",
+        workspace_sources=['email'],
+        refresh_targets=['email', 'overview', 'history'],
+        action=f"Đánh dấu email {label}",
+    )
+
+
+class EmailMarkReadAgent:
+    """AGENT_CAPABILITIES: roughly 'email.inbox_triage'. No confirmation
+    needed -- marking read/unread is low-risk and trivially reversible,
+    unlike schedule mutation or sending email."""
+
+    def handle(self, ctx):
+        return _mark_emails(ctx, read=True)
+
+
+class EmailMarkUnreadAgent:
+    """AGENT_CAPABILITIES: roughly 'email.inbox_triage'."""
+
+    def handle(self, ctx):
+        return _mark_emails(ctx, read=False)
 
 
 class HistoryListAgent:
@@ -990,8 +1295,12 @@ _FREEFORM_AGENT = FreeformChatAgent()
 _AGENT_REGISTRY = {
     'email.latest_summary': EmailLatestSummaryAgent(),
     'schedule.create': ScheduleCreateAgent(),
+    'schedule.update': ScheduleUpdateAgent(),
+    'schedule.delete': ScheduleDeleteAgent(),
     'schedule.list': ScheduleListAgent(),
     'email.search': EmailSearchAgent(),
+    'email.mark_read': EmailMarkReadAgent(),
+    'email.mark_unread': EmailMarkUnreadAgent(),
     'history.list': HistoryListAgent(),
     'settings.update_mode': SettingsUpdateModeAgent(),
 }

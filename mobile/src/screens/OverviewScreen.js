@@ -5,10 +5,10 @@ import Card from '../components/Card';
 import EmptyState from '../components/EmptyState';
 import Field from '../components/Field';
 import Screen from '../components/Screen';
-import { apiGet, apiPut } from '../api/client';
+import { apiGet, apiPost, apiPut } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 
-export default function OverviewScreen({ syncEvent }) {
+export default function OverviewScreen({ onAgentSync, syncEvent }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -19,6 +19,10 @@ export default function OverviewScreen({ syncEvent }) {
   const [emailError, setEmailError] = useState('');
   const [refreshNote, setRefreshNote] = useState('');
   const [checklistState, setChecklistState] = useState({ completed: {}, custom_items: [] });
+  const [quickInput, setQuickInput] = useState('');
+  const [quickLoading, setQuickLoading] = useState(false);
+  const [quickMessage, setQuickMessage] = useState('');
+  const [planSuggestion, setPlanSuggestion] = useState(null);
 
   const loadOverview = useCallback(async (options = {}) => {
     const force = options?.force === true;
@@ -75,6 +79,8 @@ export default function OverviewScreen({ syncEvent }) {
     [schedules, checklistState]
   );
   const completedCount = checklistItems.filter((item) => item.completed).length;
+  const planItems = planSuggestion?.items || [];
+  const selectedPlanCount = planItems.filter((item) => item.selected !== false).length;
 
   const saveChecklist = useCallback(async (nextState) => {
     try {
@@ -86,14 +92,180 @@ export default function OverviewScreen({ syncEvent }) {
   }, [date]);
 
   const toggleChecklistItem = useCallback((item) => {
+    const nextCompletedValue = !item.completed;
     const nextCompleted = {
       ...checklistState.completed,
-      [item.id]: !item.completed,
+      [item.id]: nextCompletedValue,
     };
-    const nextState = { completed: nextCompleted, custom_items: checklistState.custom_items || [] };
+    const customItems = item.kind === 'custom'
+      ? (checklistState.custom_items || []).map((entry) => (
+        entry.id === item.id ? { ...entry, completed: nextCompletedValue } : entry
+      ))
+      : (checklistState.custom_items || []);
+    const nextState = { completed: nextCompleted, custom_items: customItems };
     setChecklistState(nextState);
     saveChecklist(nextState);
   }, [checklistState, saveChecklist]);
+
+  const refreshAfterQuickChange = useCallback(async (targetDate) => {
+    const nextDate = normalizeApiDate(targetDate);
+    if (nextDate && nextDate !== date) {
+      setDate(nextDate);
+      return;
+    }
+    await loadOverview();
+  }, [date, loadOverview]);
+
+  const handleQuickAdd = useCallback(async () => {
+    const text = quickInput.trim();
+    if (!text) {
+      Alert.alert('Thiếu nội dung', 'Nhập một task hoặc danh sách hoạt động.');
+      return;
+    }
+
+    setQuickLoading(true);
+    setQuickMessage('');
+    try {
+      const data = await apiPost('/schedule/quick-add', { text, date });
+      if (data.kind === 'suggested_plan') {
+        setPlanSuggestion(normalizePlanSuggestion(data));
+        if (data.date && data.date !== date) setDate(data.date);
+        setQuickMessage(data.message || 'FlowMate đã xếp khung giờ đề xuất.');
+        return;
+      }
+
+      setPlanSuggestion(null);
+      setQuickInput('');
+      setQuickMessage(data.message || (data.kind === 'activity' ? 'Đã thêm vào lịch.' : 'Đã thêm vào checklist.'));
+
+      if (data.kind === 'task') {
+        setChecklistState(normalizeChecklistState(data));
+        onAgentSync?.(['overview']);
+      } else {
+        await refreshAfterQuickChange(data.classification?.target_date || data.schedule?.start_time);
+        onAgentSync?.(['schedule', 'calendar', 'overview', 'history'], data);
+      }
+    } catch (error) {
+      Alert.alert('Không thêm nhanh được', error.message);
+    } finally {
+      setQuickLoading(false);
+    }
+  }, [date, onAgentSync, quickInput, refreshAfterQuickChange]);
+
+  const updatePlanDraftItem = useCallback((index, key, value) => {
+    setPlanSuggestion((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        items: current.items.map((item, itemIndex) => (
+          itemIndex === index ? { ...item, [key]: value } : item
+        )),
+      };
+    });
+  }, []);
+
+  const togglePlanDraftItem = useCallback((index) => {
+    setPlanSuggestion((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        items: current.items.map((item, itemIndex) => (
+          itemIndex === index ? { ...item, selected: item.selected === false } : item
+        )),
+      };
+    });
+  }, []);
+
+  const applyPlanSuggestion = useCallback(async () => {
+    const selectedItems = (planSuggestion?.items || []).filter((item) => item.selected !== false);
+    if (!selectedItems.length) {
+      Alert.alert('Chưa chọn hoạt động', 'Chọn ít nhất một hoạt động để tạo lịch.');
+      return;
+    }
+
+    setQuickLoading(true);
+    setQuickMessage('');
+    try {
+      const data = await apiPost('/schedule/plan-day/apply', {
+        items: selectedItems.map(toPlanPayload),
+      });
+      const targetDate = planSuggestion?.date;
+      setPlanSuggestion(null);
+      setQuickInput('');
+      setQuickMessage(data.message || `Đã tạo ${selectedItems.length} lịch.`);
+      await refreshAfterQuickChange(targetDate);
+      onAgentSync?.(['schedule', 'calendar', 'overview', 'history'], data);
+      Alert.alert('Đã tạo lịch', `FlowMate đã tạo ${data.created_count || selectedItems.length} hoạt động.`);
+    } catch (error) {
+      Alert.alert('Không áp dụng được lịch', error.message);
+    } finally {
+      setQuickLoading(false);
+    }
+  }, [onAgentSync, planSuggestion, refreshAfterQuickChange]);
+
+  const renderPlanSuggestion = () => {
+    if (!planSuggestion) return null;
+    return (
+      <View style={styles.planBox}>
+        <View style={styles.planHeader}>
+          <View style={styles.planHeaderText}>
+            <Text style={styles.planTitle}>Gợi ý {formatReportDate(planSuggestion.date || date)}</Text>
+            <Text style={styles.planMeta}>{selectedPlanCount}/{planItems.length} hoạt động được chọn</Text>
+          </View>
+          <Text style={styles.planBadge}>AI</Text>
+        </View>
+        {planItems.map((item, index) => (
+          <View
+            key={`${item.title || 'item'}-${item.start_time || index}-${index}`}
+            style={[styles.planItem, item.selected === false && styles.planItemMuted]}
+          >
+            <TouchableOpacity
+              style={[styles.checkbox, item.selected !== false && styles.checkboxChecked]}
+              onPress={() => togglePlanDraftItem(index)}
+              activeOpacity={0.78}
+            >
+              <Text style={[styles.checkboxText, item.selected !== false && styles.checkboxTextChecked]}>
+                {item.selected !== false ? '✓' : ''}
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.planItemBody}>
+              <Field
+                label="Hoạt động"
+                value={item.title || ''}
+                onChangeText={(value) => updatePlanDraftItem(index, 'title', value)}
+                placeholder="Tên hoạt động"
+              />
+              <View style={styles.planTimeGrid}>
+                <View style={styles.planTimeField}>
+                  <Field
+                    label="Bắt đầu"
+                    value={toEditableDateTime(item.start_time)}
+                    onChangeText={(value) => updatePlanDraftItem(index, 'start_time', value)}
+                    placeholder="2026-06-30T07:00"
+                  />
+                </View>
+                <View style={styles.planTimeField}>
+                  <Field
+                    label="Kết thúc"
+                    value={toEditableDateTime(item.end_time)}
+                    onChangeText={(value) => updatePlanDraftItem(index, 'end_time', value)}
+                    placeholder="2026-06-30T08:00"
+                  />
+                </View>
+              </View>
+              {item.reason ? <Text style={styles.planReason}>{item.reason}</Text> : null}
+            </View>
+          </View>
+        ))}
+        <Button
+          title="Áp dụng lịch đã chọn"
+          onPress={applyPlanSuggestion}
+          loading={quickLoading}
+          disabled={selectedPlanCount === 0}
+        />
+      </View>
+    );
+  };
 
   return (
     <Screen
@@ -118,6 +290,40 @@ export default function OverviewScreen({ syncEvent }) {
           placeholder="2026-06-26"
         />
         <Button title="Xem ngày này" onPress={() => loadOverview()} loading={loading} />
+      </Card>
+
+      <Card style={styles.quickCard}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.kicker}>THÊM NHANH</Text>
+          <Text style={styles.sectionTitle}>Task và hoạt động trong ngày</Text>
+        </View>
+        <Field
+          label="Nhập task hoặc hoạt động"
+          value={quickInput}
+          onChangeText={setQuickInput}
+          placeholder="Yoga 30 phút, chăm mèo cưng, dọn nhà"
+          multiline
+        />
+        <View style={styles.quickActions}>
+          <Button
+            title="Thêm nhanh"
+            onPress={handleQuickAdd}
+            loading={quickLoading}
+            disabled={!quickInput.trim()}
+            style={styles.quickButton}
+          />
+          {planSuggestion ? (
+            <Button
+              title="Đóng gợi ý"
+              variant="secondary"
+              onPress={() => setPlanSuggestion(null)}
+              disabled={quickLoading}
+              style={styles.quickButton}
+            />
+          ) : null}
+        </View>
+        {quickMessage ? <Text style={styles.quickMessage}>{quickMessage}</Text> : null}
+        {renderPlanSuggestion()}
       </Card>
 
       <View style={styles.statsGrid}>
@@ -154,9 +360,9 @@ export default function OverviewScreen({ syncEvent }) {
               <Text style={[styles.checklistTitle, item.completed && styles.checklistTitleDone]}>
                 {item.title}
               </Text>
-              {item.meta ? <Text style={styles.itemMeta}>{item.meta}</Text> : null}
+              {item.meta ? <Text style={styles.itemMeta} numberOfLines={2}>{item.meta}</Text> : null}
             </TouchableOpacity>
-            <Text style={styles.checklistSource}>Lịch</Text>
+            <Text style={styles.checklistSource}>{item.sourceLabel || 'Lịch'}</Text>
           </View>
         ))}
       </Card>
@@ -232,9 +438,42 @@ function normalizeChecklistState(value) {
   };
 }
 
+function normalizePlanSuggestion(value) {
+  return {
+    ...value,
+    items: Array.isArray(value?.items)
+      ? value.items.map((item) => ({ ...item, selected: true }))
+      : [],
+  };
+}
+
+function toPlanPayload(item) {
+  return {
+    title: item.title || '',
+    description: item.description || '',
+    start_time: item.start_time || '',
+    end_time: item.end_time || '',
+    duration_minutes: item.duration_minutes ? Number(item.duration_minutes) : undefined,
+    reason: item.reason || '',
+  };
+}
+
 function buildChecklistItems({ schedules, checklistState }) {
   const completed = checklistState.completed || {};
-  return schedules
+  const customItems = (checklistState.custom_items || [])
+    .filter((item) => item && item.title)
+    .map((item) => {
+      const id = String(item.id || '');
+      return {
+        id,
+        kind: 'custom',
+        title: item.title || 'Task không tiêu đề',
+        meta: customChecklistMeta(item),
+        completed: Boolean(item.completed || completed[id]),
+        sourceLabel: item.source === 'manual' ? 'Task' : providerLabel(item.source),
+      };
+    });
+  const scheduleItems = schedules
     .filter((item) => item.status !== 'cancelled' && item.status !== 'dismissed')
     .map((item) => {
       const id = `schedule:${scheduleFingerprint(item)}`;
@@ -244,8 +483,17 @@ function buildChecklistItems({ schedules, checklistState }) {
         title: item.title || 'Task không tiêu đề',
         meta: formatScheduleTime(item.start_time, item.end_time),
         completed: Boolean(completed[id] || item.status === 'completed'),
+        sourceLabel: 'Lịch',
       };
     });
+  return [...customItems, ...scheduleItems];
+}
+
+function customChecklistMeta(item) {
+  if (item.due_at) return `Hạn ${formatScheduleTime(item.due_at)}`;
+  if (item.due_date) return `Hạn ${formatReportDate(item.due_date)}`;
+  if (item.ai_reason) return item.ai_reason;
+  return 'Thêm nhanh';
 }
 
 function buildInsight({ emails, schedules, date }) {
@@ -292,6 +540,21 @@ function formatReportDate(value) {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+}
+
+function normalizeApiDate(value) {
+  if (!value) return '';
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? '' : formatDateForApi(date);
+}
+
+function toEditableDateTime(value) {
+  if (!value) return '';
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text)) return text.slice(0, 16);
+  return text;
 }
 
 function isSameDay(value, selectedDate) {
@@ -366,6 +629,79 @@ function makeStyles(colors) {
     refreshNote: { marginTop: 4, color: colors.primary, fontFamily: officeFont, fontSize: 12, fontWeight: '500', lineHeight: 18 },
     sourceText: { marginTop: 4, color: colors.textMuted, fontFamily: officeFont, fontSize: 11, fontWeight: '500' },
     dateCard: { gap: 8 },
+    quickCard: { gap: 8 },
+    quickActions: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    quickButton: {
+      flexGrow: 1,
+      flexBasis: '45%',
+    },
+    quickMessage: {
+      color: colors.success,
+      fontFamily: officeFont,
+      fontSize: 12,
+      fontWeight: '600',
+      lineHeight: 18,
+    },
+    planBox: {
+      marginTop: 6,
+      paddingTop: 12,
+      borderTopColor: colors.border,
+      borderTopWidth: 1,
+      gap: 10,
+    },
+    planHeader: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 8,
+    },
+    planHeaderText: { flex: 1, minWidth: 0 },
+    planTitle: { color: colors.text, fontFamily: officeFont, fontSize: 14, fontWeight: '700' },
+    planMeta: { marginTop: 3, color: colors.textMuted, fontFamily: officeFont, fontSize: 11, fontWeight: '500' },
+    planBadge: {
+      overflow: 'hidden',
+      borderRadius: 999,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      backgroundColor: `${colors.primary}18`,
+      color: colors.primary,
+      fontFamily: officeFont,
+      fontSize: 10,
+      fontWeight: '700',
+    },
+    planItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      paddingTop: 10,
+      borderTopColor: colors.border,
+      borderTopWidth: 1,
+    },
+    planItemMuted: { opacity: 0.52 },
+    planItemBody: { flex: 1, minWidth: 0 },
+    planTimeGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    planTimeField: {
+      flexGrow: 1,
+      flexBasis: '46%',
+      minWidth: 128,
+    },
+    planReason: {
+      marginTop: -2,
+      marginBottom: 8,
+      color: colors.textMuted,
+      fontFamily: officeFont,
+      fontSize: 11,
+      fontWeight: '500',
+      lineHeight: 16,
+    },
     statsGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',

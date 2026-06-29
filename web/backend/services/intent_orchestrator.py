@@ -16,7 +16,8 @@ class IntentOrchestrator:
     """Normalize user prompts into canonical workspace actions."""
 
     AI_INTENTS = (
-        "email.latest_summary", "email.search", "schedule.create", "schedule.list",
+        "email.latest_summary", "email.search", "schedule.create", "schedule.update",
+        "schedule.delete", "schedule.list", "email.mark_read", "email.mark_unread",
         "history.list", "settings.update_mode", "chat.freeform",
     )
 
@@ -63,11 +64,30 @@ class IntentOrchestrator:
             entities["schedule"] = self.extract_schedule(message)
             requires_confirmation = True
             refresh_targets = ["schedule", "calendar", "overview", "history"]
+        elif self._is_schedule_update(text):
+            intent = "schedule.update"
+            confidence = 0.8
+            entities["new_values"] = self.extract_schedule(message)
+            requires_confirmation = True
+            refresh_targets = ["schedule", "calendar", "overview", "history"]
+        elif self._is_schedule_delete(text):
+            intent = "schedule.delete"
+            confidence = 0.8
+            requires_confirmation = True
+            refresh_targets = ["schedule", "calendar", "overview", "history"]
         elif self._is_schedule_lookup(text):
             intent = "schedule.list"
             confidence = 0.82
             entities["window"] = self._calendar_window(text)
             refresh_targets = ["schedule", "calendar", "overview", "history"]
+        elif self._is_email_mark_read(text):
+            intent = "email.mark_read"
+            confidence = 0.8
+            refresh_targets = ["email", "overview", "history"]
+        elif self._is_email_mark_unread(text):
+            intent = "email.mark_unread"
+            confidence = 0.8
+            refresh_targets = ["email", "overview", "history"]
         elif self._is_email_lookup(text):
             intent = "email.search"
             confidence = 0.74
@@ -594,11 +614,31 @@ class IntentOrchestrator:
         schedule = any(term in text for term in ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar"))
         return action and schedule
 
+    def _is_schedule_update(self, text):
+        action = any(term in text for term in ("doi", "sua", "cap nhat", "thay doi", "chuyen"))
+        schedule = any(term in text for term in ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar"))
+        return action and schedule
+
+    def _is_schedule_delete(self, text):
+        action = any(term in text for term in ("xoa", "huy", "bo lich", "cancel", "delete"))
+        schedule = any(term in text for term in ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar"))
+        return action and schedule
+
     def _is_schedule_lookup(self, text):
         return any(term in text for term in (
             "lich tuan", "lich hom", "hom nay co lich", "co lich gi", "calendar",
             "meeting tuan", "su kien tuan", "appointments"
         ))
+
+    def _is_email_mark_read(self, text):
+        if not any(term in text for term in ("danh dau", "mark")):
+            return False
+        return any(term in text for term in ("da doc", "read")) and "chua doc" not in text and "unread" not in text
+
+    def _is_email_mark_unread(self, text):
+        if not any(term in text for term in ("danh dau", "mark")):
+            return False
+        return any(term in text for term in ("chua doc", "unread"))
 
     def _is_email_lookup(self, text):
         return any(term in text for term in ("email", "gmail", "hop thu", "thu chua doc", "mail"))

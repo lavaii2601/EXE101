@@ -99,7 +99,7 @@ function AppShell() {
   }, [refreshShell]);
 
   const renderScreen = () => {
-    if (activeTab === 'overview') return <OverviewScreen syncEvent={syncEvent} />;
+    if (activeTab === 'overview') return <OverviewScreen onAgentSync={handleAgentSync} syncEvent={syncEvent} />;
     if (activeTab === 'emails')   return <EmailScreen userMode={userMode || 'worker'} onAuthChanged={refreshShell} onAgentSync={handleAgentSync} syncEvent={syncEvent} />;
     if (activeTab === 'schedule') return <ScheduleScreen onAgentSync={handleAgentSync} syncEvent={syncEvent} />;
     if (activeTab === 'history')  return <HistoryScreen syncEvent={syncEvent} />;
