@@ -2330,7 +2330,7 @@ async function sendMessageConfirmed(message, opts = {}) {
                 : '';
             const agentTrace = data.agent_trace || {};
             const agentIntent = agentTrace.intent || data.intent?.intent || 'chat.freeform';
-            const agentSteps = Array.isArray(agentTrace.steps) ? agentTrace.steps.slice(0, 3) : [];
+            const agentSteps = Array.isArray(agentTrace.steps) ? agentTrace.steps.slice(0, 4) : [];
             const agentBadge = `
                 <div class="agent-trace">
                     <span class="agent-pill">${escapeHtml(agentProfile?.name || 'Bob')}</span>
@@ -2407,6 +2407,56 @@ async function sendMessageConfirmed(message, opts = {}) {
                         showNotification(ui('❌ Lỗi tạo lịch: ', '❌ Event creation error: ') + err.message, 'error');
                         suggestionDiv.querySelectorAll('button').forEach(b => b.disabled = false);
                     }
+                });
+            }
+
+            if (Array.isArray(data.suggested_actions)) {
+                data.suggested_actions.forEach(action => {
+                    if (action.type !== 'draft_reply') return;
+
+                    const actionDiv = document.createElement('div');
+                    actionDiv.className = 'message assistant';
+                    actionDiv.innerHTML = `
+                        <div class="message-content">
+                            <div style="font-weight:700; margin-bottom:6px;">${ui('AI gợi ý', 'AI suggestion')}: ${escapeHtml(action.label || '')}</div>
+                            <div style="display:flex; gap:8px;">
+                                <button class="btn-primary draft-reply-btn">${ui('Soạn trả lời', 'Draft reply')}</button>
+                                <button class="btn-secondary dismiss-suggestion">${ui('Bỏ qua', 'Dismiss')}</button>
+                            </div>
+                        </div>
+                    `;
+                    chatMessages.appendChild(actionDiv);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+                    actionDiv.querySelector('.dismiss-suggestion').addEventListener('click', () => {
+                        actionDiv.remove();
+                    });
+
+                    actionDiv.querySelector('.draft-reply-btn').addEventListener('click', async () => {
+                        actionDiv.querySelectorAll('button').forEach(b => b.disabled = true);
+                        try {
+                            const resp = await apiFetch(`${API_BASE}/chat/generate-reply`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    context: action.context,
+                                    choice: 'Trả lời lịch sự, ngắn gọn, đúng trọng tâm'
+                                })
+                            });
+                            const j = await resp.json();
+                            if (resp.ok && j.success) {
+                                addMessage(j.reply, 'assistant');
+                                actionDiv.remove();
+                            } else {
+                                showNotification(ui('❌ Không tạo được trả lời: ', '❌ Could not draft reply: ') + (j.error || resp.statusText || ui('lỗi', 'error')), 'error');
+                                actionDiv.querySelectorAll('button').forEach(b => b.disabled = false);
+                            }
+                        } catch (err) {
+                            console.error('Draft reply error', err);
+                            showNotification(ui('❌ Lỗi: ', '❌ Error: ') + err.message, 'error');
+                            actionDiv.querySelectorAll('button').forEach(b => b.disabled = false);
+                        }
+                    });
                 });
             }
         } else {

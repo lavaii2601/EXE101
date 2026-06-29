@@ -43,11 +43,14 @@ class Config:
     MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
     CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    OLLAMA_ENABLED = _bool(os.getenv("OLLAMA_ENABLED"), default=False)
+    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
     MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-1")
     CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-opus")
     GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 
     AI_PRIMARY_PROVIDER = os.getenv("AI_PRIMARY_PROVIDER", "openrouter")
     AI_PROVIDER_ORDER = os.getenv("AI_PROVIDER_ORDER", "openrouter,openai,mistral,claude,gemini")

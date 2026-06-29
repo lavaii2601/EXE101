@@ -652,6 +652,35 @@ def _build_agent_system_prompt(mode_prompt):
     )
 
 
+def _describe_intent_entities(intent, entities):
+    """Short human-readable summary of what the agent extracted for this
+    intent, so the chat UI can show *why* it answered the way it did.
+    Returns None when there's nothing meaningful to show (e.g. email.search
+    only carries entities on the AI-assisted classification path)."""
+    entities = entities or {}
+    if intent == 'email.search':
+        query = entities.get('query') or {}
+        parts = []
+        if query.get('sender'):
+            parts.append(f"người gửi: {query['sender']}")
+        if query.get('keyword'):
+            parts.append(f"từ khóa: {query['keyword']}")
+        return "Đã hiểu: " + ", ".join(parts) if parts else None
+    if intent == 'schedule.create':
+        schedule = entities.get('schedule') or {}
+        parts = []
+        if schedule.get('start_time'):
+            parts.append(f"thời gian: {schedule['start_time']}")
+        if schedule.get('attendees'):
+            parts.append(f"người tham gia: {', '.join(schedule['attendees'])}")
+        return "Đã hiểu: " + ", ".join(parts) if parts else None
+    if intent == 'email.latest_summary':
+        count = entities.get('count')
+        if count:
+            return f"Đã hiểu: lấy {count} email gần nhất"
+    return None
+
+
 def _build_agent_trace(intent_result, workspace_sources=None, refresh_targets=None, ai_used=False, action=None):
     intent = intent_result.get('intent') if intent_result else 'chat.freeform'
     entities = (intent_result or {}).get('entities') or {}
@@ -668,6 +697,9 @@ def _build_agent_trace(intent_result, workspace_sources=None, refresh_targets=No
         steps.append("Kiểm tra " + ", ".join(labels.get(source, source) for source in sources))
     if intent and intent != 'chat.freeform':
         steps.append(f"Nhận diện intent: {intent}")
+    entity_step = _describe_intent_entities(intent, entities)
+    if entity_step:
+        steps.append(entity_step)
     if action:
         steps.append(action)
     elif schedule:
@@ -790,6 +822,40 @@ def extract_schedule_from_response(response, user_message):
     return schedule_info if schedule_info['title'] else None
 
 
+_REPLY_NEEDED_KEYWORDS = (
+    'vui long', 'xac nhan', 'phan hoi', 'rsvp', 'please', 'could you',
+    'confirm', 'reply', 'respond',
+)
+
+
+def _email_needs_reply(email):
+    """Heuristic: does this email look like it's waiting on a reply?"""
+    text = ' '.join([
+        str(email.get('subject', '') or ''),
+        str(email.get('snippet', '') or ''),
+        str(email.get('body', '') or ''),
+    ])
+    if '?' in text:
+        return True
+    normalized = _normalize_intent_text(text)
+    return any(keyword in normalized for keyword in _REPLY_NEEDED_KEYWORDS)
+
+
+def _build_draft_reply_suggestion(email):
+    body = email.get('body') or email.get('snippet') or ''
+    context = (
+        f"From: {email.get('sender', 'Unknown')}\n"
+        f"Subject: {email.get('subject', '')}\n\n"
+        f"{body[:800]}"
+    )
+    return {
+        'type': 'draft_reply',
+        'label': f"Soạn trả lời: {email.get('subject') or '(Không có tiêu đề)'}",
+        'email_id': email.get('id'),
+        'context': context,
+    }
+
+
 @chat_bp.route('/message', methods=['POST'])
 def send_message():
     """Send message to AI assistant"""
@@ -867,6 +933,11 @@ def send_message():
             response, source_emails = _summarize_latest_emails(user_id, requested_count)
             source_email = source_emails[0]
             save_chat_history(user_message, response)
+            suggested_actions = [
+                _build_draft_reply_suggestion(email)
+                for email in source_emails
+                if _email_needs_reply(email)
+            ]
             return jsonify({
                 'success': True,
                 'session_id': chat_session_id,
@@ -875,6 +946,7 @@ def send_message():
                 'demo_mode': ai_service.last_provider_used == 'demo',
                 'schedule_created': None,
                 'schedule_suggestion': None,
+                'suggested_actions': suggested_actions,
                 'workspace_sources': ['email'],
                 'intent': intent_result,
                 'refresh_targets': refresh_targets,

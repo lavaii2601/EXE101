@@ -83,6 +83,7 @@ class AIService:
             'mistral': 0,
             'claude': 0,
             'gemini': 0,
+            'ollama': 0,
             'demo': 0
         }
         
@@ -282,6 +283,8 @@ class AIService:
             configured.append('claude')
         if Config.GEMINI_API_KEY:
             configured.append('gemini')
+        if Config.OLLAMA_ENABLED:
+            configured.append('ollama')
 
         return configured
 
@@ -465,6 +468,8 @@ class AIService:
             return self._call_claude(messages, max_tokens)
         if provider == 'gemini':
             return self._call_gemini(messages, max_tokens)
+        if provider == 'ollama':
+            return self._call_ollama(messages, max_tokens)
 
         raise ValueError(f"Unsupported provider: {provider}")
 
@@ -636,6 +641,38 @@ class AIService:
         except requests.exceptions.RequestException as e:
             raise e
 
+    def _call_ollama(self, messages, max_tokens):
+        if not Config.OLLAMA_ENABLED:
+            raise ValueError("Ollama chưa được cấu hình")
+
+        try:
+            response = requests.post(
+                f"{Config.OLLAMA_BASE_URL}/api/chat",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "model": Config.OLLAMA_MODEL,
+                    "messages": messages,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.5,
+                        "num_predict": max_tokens
+                    }
+                },
+                timeout=self.timeout
+            )
+
+            if response.status_code in [429, 401, 403, 402]:
+                error_data = response.json() if response.text else {}
+                error_msg = error_data.get('error', f"HTTP {response.status_code}")
+                raise requests.exceptions.HTTPError(f"Ollama quota/rate error: {error_msg}", response=response)
+
+            response.raise_for_status()
+            data = response.json()
+            return data['message']['content']
+
+        except requests.exceptions.RequestException as e:
+            raise e
+
     def _split_system_message(self, messages):
         system_parts = []
         converted = []
@@ -667,7 +704,7 @@ class AIService:
         """Return provider configuration for UI/debug"""
         chain = self._build_provider_chain() if self.configured_providers else []
         missing_providers = [
-            provider for provider in ['openai', 'mistral', 'claude', 'gemini']
+            provider for provider in ['openai', 'mistral', 'claude', 'gemini', 'ollama']
             if provider not in self.configured_providers
         ]
         
