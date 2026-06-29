@@ -1132,11 +1132,25 @@ button {
 
 .message {
     display: flex;
+    align-items: flex-start;
+    gap: 8px;
     margin-bottom: 12px;
 }
 
 .message.user {
     justify-content: flex-end;
+}
+
+.message-avatar {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+}
+
+.message-avatar svg {
+    width: 100%;
+    height: 100%;
+    display: block;
 }
 
 .message-content {

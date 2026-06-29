@@ -347,6 +347,18 @@ CREATE TABLE IF NOT EXISTS sync_jobs (
     CONSTRAINT sync_jobs_status_check CHECK (status IN ('pending', 'running', 'success', 'failed', 'skipped'))
 );
 
+-- Shared knowledge base for Bob's RAG lookups (not per-user -- product/feature
+-- knowledge, FAQ, and any open-source reference material fed in later).
+CREATE TABLE IF NOT EXISTS knowledge_documents (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    tags TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'manual',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Idempotent upgrades for databases that already had these tables before
 -- chat retention columns were added. CREATE TABLE IF NOT EXISTS does not
 -- add missing columns to existing tables.
@@ -440,6 +452,8 @@ CREATE INDEX IF NOT EXISTS idx_ai_requests_provider_task ON ai_requests (provide
 
 CREATE INDEX IF NOT EXISTS idx_sync_jobs_user_type_status ON sync_jobs (user_id, job_type, status, created_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_knowledge_documents_created ON knowledge_documents (created_at DESC);
+
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -520,6 +534,11 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 DROP TRIGGER IF EXISTS trg_sync_jobs_updated_at ON sync_jobs;
 CREATE TRIGGER trg_sync_jobs_updated_at
 BEFORE UPDATE ON sync_jobs
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_knowledge_documents_updated_at ON knowledge_documents;
+CREATE TRIGGER trg_knowledge_documents_updated_at
+BEFORE UPDATE ON knowledge_documents
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 COMMIT;

@@ -18,6 +18,7 @@ from models.user import User
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from services.calendar_service import CalendarService
 from utils.google_service_cache import get_cached_service
+from routes.knowledge import knowledge_service
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -97,6 +98,14 @@ AGENT_CAPABILITIES = [
         'description': 'Theo dõi provider AI, demo mode và fallback để người dùng biết phản hồi đến từ đâu.',
         'workspace_sources': ['profile'],
         'refresh_targets': ['providers', 'settings'],
+        'confirmation_required': False,
+    },
+    {
+        'id': 'knowledge.lookup',
+        'label': 'Tra cứu kiến thức',
+        'description': 'Tìm đoạn kiến thức FlowMate/mã nguồn mở liên quan (TF-IDF, không cần model embedding) để trả lời có căn cứ.',
+        'workspace_sources': ['knowledge'],
+        'refresh_targets': [],
         'confirmation_required': False,
     },
 ]
@@ -557,6 +566,20 @@ def _direct_email_search_response(message, user_id, limit=8, query_override=None
     return "\n".join(lines)
 
 
+def _format_knowledge_context(message):
+    try:
+        results = knowledge_service.search(message, top_k=2)
+    except Exception:
+        logger.warning("Knowledge base search failed", exc_info=True)
+        return ''
+    if not results:
+        return ''
+    lines = ["KIẾN THỨC THAM KHẢO (FlowMate/Bob)"]
+    for index, doc in enumerate(results, start=1):
+        lines.append(f"{index}. {doc.get('title')}: {doc.get('content')}")
+    return "\n".join(lines)
+
+
 def _build_workspace_context(message, user_id, db_path):
     sources = _intent_sources(message)
     context_parts = []
@@ -568,12 +591,22 @@ def _build_workspace_context(message, user_id, db_path):
         context_parts.append(_format_history_context(db_path))
     if 'profile' in sources:
         context_parts.append(_format_profile_context(user_id))
+
+    # Always attempt a (free, local) knowledge-base lookup -- the TF-IDF
+    # relevance threshold already filters out unrelated chit-chat, so this
+    # only adds context when it actually found something relevant.
+    knowledge_context = _format_knowledge_context(message)
+    if knowledge_context:
+        context_parts.append(knowledge_context)
+        sources.add('knowledge')
+
     return sources, "\n\n".join(context_parts)
 
 
 def _agent_profile():
     return {
-        'name': 'FlowMate AI Agent',
+        'name': 'Bob',
+        'product': 'FlowMate',
         'version': '2026-06-agent-sync',
         'channels': ['web', 'mobile'],
         'capabilities': AGENT_CAPABILITIES,
@@ -600,8 +633,9 @@ def _capability_prompt_lines():
 
 def _build_agent_system_prompt(mode_prompt):
     return (
-        "You are FlowMate AI Agent, a workspace agent for email, calendar, schedules, "
-        "history, and user settings. " + mode_prompt
+        "You are Bob, the AI agent inside FlowMate -- a workspace agent for email, "
+        "calendar, schedules, history, and user settings. If asked your name, say Bob. "
+        "Never mention which underlying AI provider or model powers you. " + mode_prompt
         + " Answer in Vietnamese unless the user asks otherwise. "
         "Operate like an agent: identify the user's goal, inspect available workspace context, "
         "decide the next best action, and produce a useful result. "

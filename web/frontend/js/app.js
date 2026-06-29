@@ -1164,7 +1164,7 @@ function renderAgentStatus(agent, providers) {
         ? ui('Demo provider', 'Demo provider')
         : ui('Provider sẵn sàng', 'Provider ready');
     el.innerHTML = `
-        <span class="agent-pill">AI Agent</span>
+        <span class="agent-pill">${escapeHtml(agent.name || 'Bob')}</span>
         <span>${escapeHtml(agent.version || '')}</span>
         <span>${capabilityCount} ${ui('năng lực', 'capabilities')}</span>
         <span>${escapeHtml(providerText)}</span>
@@ -1760,7 +1760,7 @@ function showNotification(message, type = 'info') {
 
         const loadingDiv = document.createElement('div');
         loadingDiv.className = 'message assistant';
-        loadingDiv.innerHTML = '<div class="message-content"><div class="loading"></div></div>';
+        loadingDiv.innerHTML = `<div class="message-avatar bob-avatar" aria-hidden="true">${BOB_AVATAR_SVG}</div><div class="message-content"><div class="loading"></div></div>`;
         chatMessages.appendChild(loadingDiv);
         chatMessages.scrollTop = chatMessages.scrollHeight;
 
@@ -1787,8 +1787,7 @@ function showNotification(message, type = 'info') {
                 return;
             }
 
-            const providerBadge = data.provider ? `<span class="provider-badge" style="font-size:11px;padding:2px 8px;background:${data.demo_mode?'#FF9800':'#4CAF50'};color:white;border-radius:10px;margin-left:8px;">${data.demo_mode? '🎭 Demo' : ('🤖 '+data.provider.toUpperCase())}</span>` : '';
-            addMessage(data.response, 'assistant', providerBadge);
+            addMessage(data.response, 'assistant');
 
             if (data.demo_mode) showNotification(ui('⚠️ Chế độ demo - Tất cả nhà cung cấp AI đang tạm nghỉ', '⚠️ Demo mode - All AI providers are cooling down'), 'info');
 
@@ -2277,7 +2276,7 @@ async function sendMessageConfirmed(message, opts = {}) {
     // Show loading
     const loadingDiv = document.createElement('div');
     loadingDiv.className = 'message assistant';
-    loadingDiv.innerHTML = '<div class="message-content"><div class="loading"></div></div>';
+    loadingDiv.innerHTML = `<div class="message-avatar bob-avatar" aria-hidden="true">${BOB_AVATAR_SVG}</div><div class="message-content"><div class="loading"></div></div>`;
     chatMessages.appendChild(loadingDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
@@ -2316,15 +2315,12 @@ async function sendMessageConfirmed(message, opts = {}) {
         loadingDiv.remove();
 
         if (data.success) {
-            const providerBadge = data.provider ? 
-                `<span class="provider-badge" style="font-size: 11px; padding: 2px 8px; background: ${data.demo_mode ? '#FF9800' : '#4CAF50'}; color: white; border-radius: 10px; margin-left: 8px;">
-                    ${data.demo_mode ? '🎭 Demo' : '🤖 ' + data.provider.toUpperCase()}
-                </span>` : '';
             const sourceLabels = {
                 email: ui('Email', 'Email'),
                 calendar: ui('Lịch', 'Calendar'),
                 history: ui('Lịch sử', 'History'),
-                profile: ui('Hồ sơ', 'Profile')
+                profile: ui('Hồ sơ', 'Profile'),
+                knowledge: ui('Kiến thức', 'Knowledge')
             };
             const workspaceSources = Array.isArray(data.workspace_sources)
                 ? data.workspace_sources.filter(source => sourceLabels[source])
@@ -2337,13 +2333,13 @@ async function sendMessageConfirmed(message, opts = {}) {
             const agentSteps = Array.isArray(agentTrace.steps) ? agentTrace.steps.slice(0, 3) : [];
             const agentBadge = `
                 <div class="agent-trace">
-                    <span class="agent-pill">AI Agent</span>
+                    <span class="agent-pill">${escapeHtml(agentProfile?.name || 'Bob')}</span>
                     <span>${escapeHtml(agentIntent)}</span>
                     ${agentSteps.length ? `<span>${escapeHtml(agentSteps.join(' → '))}</span>` : ''}
                 </div>
             `;
 
-            addMessage(data.response, 'assistant', providerBadge + sourceBadge + agentBadge);
+            addMessage(data.response, 'assistant', sourceBadge + agentBadge);
             loadChatSessions().catch(() => {});
 
             if (data.demo_mode) {
@@ -2432,10 +2428,29 @@ Status: Not reached
     }
 }
 
+const BOB_AVATAR_SVG = `
+<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+        <linearGradient id="bobAvatarGrad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#34D399"/>
+            <stop offset="100%" stop-color="#2563EB"/>
+        </linearGradient>
+    </defs>
+    <circle cx="20" cy="20" r="20" fill="url(#bobAvatarGrad)"/>
+    <line x1="20" y1="7" x2="20" y2="11" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.95"/>
+    <circle cx="20" cy="6.5" r="1.7" fill="white"/>
+    <rect x="11" y="11" width="18" height="15" rx="6" fill="white" opacity="0.95"/>
+    <circle cx="16.5" cy="18.5" r="2.1" fill="#1f2937"/>
+    <circle cx="23.5" cy="18.5" r="2.1" fill="#1f2937"/>
+</svg>`;
+
 function addMessage(text, role, badge = '') {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${role}`;
-    messageDiv.innerHTML = `<div class="message-content">${renderMarkdown(escapeHtml(text))}${badge}</div>`;
+    const avatar = role === 'assistant'
+        ? `<div class="message-avatar bob-avatar" aria-hidden="true">${BOB_AVATAR_SVG}</div>`
+        : '';
+    messageDiv.innerHTML = `${avatar}<div class="message-content">${renderMarkdown(escapeHtml(text))}${badge}</div>`;
     chatMessages.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
@@ -2750,7 +2765,7 @@ function formatChatSessionTime(value) {
 
 function updateChatSessionTitle() {
     const titleEl = document.getElementById('chatSessionTitle');
-    const title = activeChatSessionTitle || ui('AI Agent hiện tại', 'Current AI agent');
+    const title = activeChatSessionTitle || ui('Bob', 'Bob');
     if (titleEl) titleEl.textContent = title;
     document.querySelectorAll('.chat-session-item').forEach((item) => {
         item.classList.toggle('active', item.dataset.sessionId === activeChatSessionId);
