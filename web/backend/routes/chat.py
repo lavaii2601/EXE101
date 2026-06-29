@@ -2,30 +2,19 @@ from flask import Blueprint, request, jsonify
 import os
 import sys
 import logging
-import re
-import unicodedata
-from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.ai_service import AIService
-from services.gmail_service import GmailService
-from services.intent_orchestrator import IntentOrchestrator
-from services.schedule_service import ScheduleService
+from services.chat_agents import ai_service, intent_orchestrator, get_agent, ChatContext
 from models.history import History
-from models.schedule import Schedule, LOCAL_TZ
+from models.schedule import Schedule
 from models.user import User
-from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
-from services.calendar_service import CalendarService
-from utils.google_service_cache import get_cached_service
-from routes.knowledge import knowledge_service
+from utils.user_context import get_current_user_id, get_user_db_path
 
 # Configure module logger
 logger = logging.getLogger(__name__)
 
 chat_bp = Blueprint('chat', __name__, url_prefix='/api/chat')
-ai_service = AIService()
-intent_orchestrator = IntentOrchestrator()
 
 AGENT_CAPABILITIES = [
     {
@@ -133,11 +122,6 @@ AGENT_CONFIRMATION_REQUIRED = [
 ]
 
 
-def _load_gmail_service(token_file):
-    """Return a cached GmailService instance instead of re-authenticating per call."""
-    return get_cached_service(token_file, lambda: GmailService(token_file=token_file))
-
-
 def _ensure_chat_session(user_id, session_id, mode='worker', title=None):
     return History.ensure_chat_session(
         user_id=user_id,
@@ -146,461 +130,6 @@ def _ensure_chat_session(user_id, session_id, mode='worker', title=None):
         mode=mode,
         db_path=get_user_db_path(user_id),
     )
-
-
-def _normalize_intent_text(value):
-    value = unicodedata.normalize('NFD', str(value or '').lower())
-    value = ''.join(char for char in value if unicodedata.category(char) != 'Mn')
-    return value.replace('đ', 'd')
-
-
-def _is_latest_email_summary_request(message):
-    normalized = _normalize_intent_text(message)
-    email_word = r'(?:e-?mails?|gmails?|mails?|thu|hop thu|inbox)'
-    has_email = re.search(rf'\b{email_word}\b', normalized) is not None
-    has_latest = (
-        any(term in normalized for term in (
-            'moi nhat', 'gan nhat', 'gan day', 'vua nhan', 'moi nhan',
-            'latest', 'newest', 'most recent', 'recent',
-            'just received', 'newly received', 'last received'
-        ))
-        or re.search(r'\blast\s+(?:e-?mails?|mails?|message|messages)\b', normalized) is not None
-    )
-    return has_email and has_latest
-
-
-def _latest_email_count(message):
-    normalized = _normalize_intent_text(message)
-    email_word = r'(?:e-?mails?|gmails?|mails?|thu|hop thu)'
-    latest_word = (
-        r'(?:moi nhat|gan nhat|gan day|vua nhan|moi nhan|latest|newest|'
-        r'most recent|recent|just received|newly received|last)'
-    )
-    match = (
-        re.search(rf'\b(\d{{1,2}})\s*(?:{latest_word}\s*)?{email_word}\b', normalized)
-        or re.search(rf'\b{latest_word}\s*(\d{{1,2}})\s*{email_word}\b', normalized)
-        or re.search(rf'\b{email_word}\s*{latest_word}\s*(\d{{1,2}})\b', normalized)
-    )
-    if match:
-        return max(1, min(int(match.group(1)), 5))
-
-    number_words = {
-        'mot': 1, 'một': 1, 'one': 1,
-        'hai': 2, 'two': 2,
-        'ba': 3, 'three': 3,
-        'bon': 4, 'bốn': 4, 'tu': 4, 'four': 4,
-        'nam': 5, 'năm': 5, 'five': 5,
-    }
-    for word, count in number_words.items():
-        if (
-            re.search(rf'\b{word}\s+(?:{latest_word}\s+)?{email_word}\b', normalized)
-            or re.search(rf'\b{latest_word}\s+{word}\s+{email_word}\b', normalized)
-        ):
-            return count
-    return 1
-
-
-def _summarize_latest_emails(user_id, count=1):
-    token_file = get_user_token_file(user_id)
-    if not token_file or not os.path.exists(token_file):
-        raise RuntimeError('Gmail chưa được kết nối cho tài khoản này.')
-
-    service = _load_gmail_service(token_file)
-    count = max(1, min(int(count or 1), 5))
-    latest = service.get_emails(
-        max_results=count,
-        query='in:inbox',
-        include_read=True
-    )
-    if not latest:
-        raise RuntimeError('Không tìm thấy email nào trong hộp thư đến.')
-
-    email_ids = [metadata.get('id') for metadata in latest[:count] if metadata.get('id')]
-    full_emails = {email['id']: email for email in service.get_email_details_batch(email_ids)}
-
-    emails = []
-    sections = []
-    for index, email_id in enumerate(email_ids, start=1):
-        email = full_emails.get(email_id)
-        if not email:
-            logger.warning("Could not load full Gmail message %s", email_id)
-            continue
-
-        summary = ai_service.summarize_email_polished(email, user_id=user_id)
-        emails.append(email)
-        sections.append(
-            f"{index}. {email.get('subject') or '(Không có tiêu đề)'}\n"
-            f"Người gửi: {email.get('sender') or 'Không xác định'}\n"
-            f"Thời gian: {email.get('date') or 'Không xác định'}\n\n"
-            f"{summary}"
-        )
-
-    if not emails:
-        raise RuntimeError('Không thể tải nội dung đầy đủ của các email gần nhất.')
-
-    heading = "EMAIL MỚI NHẤT" if len(emails) == 1 else f"{len(emails)} EMAIL GẦN NHẤT"
-    return f"{heading}\n\n" + "\n\n--------------------\n\n".join(sections), emails
-
-
-def _intent_sources(message):
-    normalized = _normalize_intent_text(message)
-    overview = any(term in normalized for term in (
-        'tong quan', 'hom nay co gi', 'can lam gi', 'viec cua toi',
-        'dashboard', 'overview', 'today overview'
-    ))
-    history_requested = overview or any(term in normalized for term in (
-        'lich su', 'hoat dong', 'da lam gi', 'history', 'activity'
-    ))
-    sources = set()
-    if overview or any(term in normalized for term in (
-        'email', 'e-mail', 'gmail', 'hop thu', 'thu moi', 'thu chua doc'
-    )):
-        sources.add('email')
-    if overview or (
-        not history_requested
-        and any(term in normalized for term in (
-        'lich', 'calendar', 'cuoc hop', 'su kien', 'appointment', 'meeting'
-        ))
-    ):
-        sources.add('calendar')
-    if history_requested:
-        sources.add('history')
-    if overview or any(term in normalized for term in (
-        'ho so', 'tai khoan', 'che do', 'cai dat', 'profile', 'account', 'settings', 'mode'
-    )):
-        sources.add('profile')
-    return sources
-
-
-def _format_email_context(user_id):
-    token_file = get_user_token_file(user_id)
-    if not token_file or not os.path.exists(token_file):
-        return "EMAIL\nGmail chưa được kết nối."
-
-    emails = _load_gmail_service(token_file).get_emails(
-        max_results=5,
-        query='in:inbox',
-        include_read=True
-    )
-    if not emails:
-        return "EMAIL\nKhông có email trong hộp thư đến."
-
-    lines = ["EMAIL GẦN ĐÂY"]
-    for index, email in enumerate(emails, start=1):
-        snippet = re.sub(r'\s+', ' ', email.get('snippet', '') or '').strip()
-        lines.extend([
-            f"{index}. Người gửi: {email.get('sender') or 'Không xác định'}",
-            f"   Tiêu đề: {email.get('subject') or '(Không có tiêu đề)'}",
-            f"   Thời gian: {email.get('date') or 'Không xác định'}",
-            f"   Trạng thái: {'Chưa đọc' if email.get('is_unread') else 'Đã đọc'}",
-            f"   Xem trước: {snippet[:320] or 'Không có nội dung xem trước'}",
-        ])
-    return "\n".join(lines)
-
-
-def _calendar_window(message):
-    normalized = _normalize_intent_text(message)
-    now = datetime.now().astimezone()
-    monday = (now - timedelta(days=now.weekday())).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-
-    if 'tuan truoc' in normalized or 'last week' in normalized:
-        return monday - timedelta(days=7), monday, 'TUẦN TRƯỚC'
-    if 'tuan nay' in normalized or 'this week' in normalized:
-        return monday, monday + timedelta(days=7), 'TUẦN NÀY'
-    if 'tuan sau' in normalized or 'next week' in normalized:
-        return monday + timedelta(days=7), monday + timedelta(days=14), 'TUẦN SAU'
-    if 'hom qua' in normalized or 'yesterday' in normalized:
-        start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        return start, start + timedelta(days=1), 'HÔM QUA'
-    if 'hom nay' in normalized or 'today' in normalized:
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        return start, start + timedelta(days=1), 'HÔM NAY'
-
-    return now, now + timedelta(days=30), 'SẮP TỚI'
-
-
-def _parse_schedule_datetime(value):
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=LOCAL_TZ)
-        return parsed.astimezone(LOCAL_TZ)
-    except (TypeError, ValueError):
-        return None
-
-
-def _schedule_response_key(title, start_value):
-    start_dt = _parse_schedule_datetime(start_value)
-    normalized_title = ' '.join(str(title or '').strip().lower().split())
-    normalized_start = start_dt.strftime('%Y-%m-%dT%H:%M') if start_dt else str(start_value or '').strip()
-    return normalized_title, normalized_start
-
-
-def _format_schedule_response_time(start_value, end_value):
-    start_dt = _parse_schedule_datetime(start_value)
-    end_dt = _parse_schedule_datetime(end_value)
-    if not start_dt:
-        return 'Khong xac dinh'
-    date_text = start_dt.strftime('%d/%m/%Y')
-    start_text = start_dt.strftime('%H:%M')
-    if end_dt:
-        if end_dt.date() == start_dt.date():
-            return f'{date_text}, {start_text} - {end_dt.strftime("%H:%M")} (GMT+7)'
-        return f'{date_text}, {start_text} - {end_dt.strftime("%d/%m/%Y %H:%M")} (GMT+7)'
-    return f'{date_text}, {start_text} (GMT+7)'
-
-
-def _format_calendar_context(message, user_id, db_path, window_override=None):
-    if window_override:
-        window_start, window_end, window_label = window_override
-    else:
-        window_start, window_end, window_label = _calendar_window(message)
-    lines = [
-        f"LICH VA SU KIEN {window_label}",
-        f"Khoang thoi gian: {window_start.date().isoformat()} den {(window_end - timedelta(days=1)).date().isoformat()}",
-    ]
-    token_file = get_user_token_file(user_id)
-    google_events = []
-    if token_file and os.path.exists(token_file):
-        google_events = CalendarService(token_file=token_file).get_events(
-            max_results=50,
-            time_min=window_start.replace(tzinfo=LOCAL_TZ).isoformat(),
-            time_max=window_end.replace(tzinfo=LOCAL_TZ).isoformat()
-        )
-
-    local_schedules = Schedule.get_between(
-        window_start.isoformat(),
-        window_end.isoformat(),
-        limit=100,
-        db_path=db_path
-    )
-
-    if not google_events and not local_schedules:
-        return "\n".join(lines + [f"Khong co lich hoac su kien trong {window_label.lower()}."])
-
-    items_by_key = {}
-    for event in google_events:
-        key = _schedule_response_key(event.get('title'), event.get('start'))
-        if key not in items_by_key:
-            items_by_key[key] = {
-                'title': event.get('title') or '(Khong co tieu de)',
-                'start': event.get('start'),
-                'end': event.get('end'),
-                'location': event.get('location') or '',
-                'status': '',
-            }
-
-    for schedule in local_schedules:
-        key = _schedule_response_key(schedule.get('title'), schedule.get('start_time'))
-        if key in items_by_key:
-            existing = items_by_key[key]
-            existing['status'] = existing.get('status') or schedule.get('status') or ''
-            existing['location'] = existing.get('location') or schedule.get('location') or ''
-            continue
-        items_by_key[key] = {
-            'title': schedule.get('title') or '(Khong co tieu de)',
-            'start': schedule.get('start_time'),
-            'end': schedule.get('end_time'),
-            'location': schedule.get('location') or '',
-            'status': schedule.get('status') or '',
-        }
-
-    items = sorted(
-        items_by_key.values(),
-        key=lambda item: (
-            _parse_schedule_datetime(item.get('start')) or datetime.max.replace(tzinfo=LOCAL_TZ),
-            item.get('title') or ''
-        )
-    )
-    if not items:
-        return "\n".join(lines + [f"Khong co lich hoac su kien trong {window_label.lower()}."])
-
-    for item_index, item in enumerate(items, start=1):
-        lines.append(f"{item_index}. {item.get('title')}")
-        lines.append(f"   Thoi gian: {_format_schedule_response_time(item.get('start'), item.get('end'))}")
-        if item.get('location'):
-            lines.append(f"   Dia diem: {item.get('location')}")
-        if item.get('status') and item.get('status') != 'pending':
-            lines.append(f"   Trang thai: {item.get('status')}")
-    return "\n".join(lines)
-
-def _format_history_context(db_path):
-    records = History.get_recent(limit=10, db_path=db_path)
-    if not records:
-        return "LỊCH SỬ HOẠT ĐỘNG\nChưa có hoạt động nào."
-
-    lines = ["LỊCH SỬ HOẠT ĐỘNG GẦN ĐÂY"]
-    for index, record in enumerate(records, start=1):
-        request_text = re.sub(r'\s+', ' ', record.get('user_message', '') or '').strip()
-        result_text = re.sub(r'\s+', ' ', record.get('assistant_response', '') or '').strip()
-        lines.extend([
-            f"{index}. Loại: {record.get('action_type') or 'activity'}",
-            f"   Thời gian: {record.get('created_at') or 'Không xác định'}",
-            f"   Nội dung: {request_text[:240] or 'Không có'}",
-            f"   Kết quả: {result_text[:320] or 'Không có'}",
-        ])
-    return "\n".join(lines)
-
-
-def _format_profile_context(user_id):
-    user = User.get(user_id) or {}
-    return "\n".join([
-        "HỒ SƠ VÀ CÀI ĐẶT",
-        f"Tên: {user.get('name') or user.get('gmail_name') or 'Chưa thiết lập'}",
-        f"Email: {user.get('gmail_email') or user.get('email') or 'Chưa thiết lập'}",
-        f"Chế độ làm việc: {user.get('user_mode') or 'Chưa chọn'}",
-        f"Gmail đã kết nối: {'Có' if user.get('gmail_connected') else 'Không'}",
-    ])
-
-
-def _direct_schedule_list_response(message, user_id, db_path, window_override=None):
-    context = _format_calendar_context(message, user_id, db_path, window_override=window_override)
-    return (
-        context
-        + "\n\nMình chỉ liệt kê dữ liệu lịch đang có trong Calendar/FlowMate, "
-        "không tự suy đoán thêm sự kiện ngoài dữ liệu này."
-    )
-
-
-WINDOW_LABELS_VN = {
-    'today': 'HÔM NAY',
-    'yesterday': 'HÔM QUA',
-    'this_week': 'TUẦN NÀY',
-    'next_week': 'TUẦN SAU',
-    'last_week': 'TUẦN TRƯỚC',
-}
-
-
-def _window_override_from_entities(entities):
-    """Turn an AI-classified `window` entity into the (start, end, label) tuple
-    that _format_calendar_context expects, so an AI-assisted schedule.list
-    intent actually changes which range gets queried -- not just the label.
-    """
-    window = (entities or {}).get('window')
-    if not isinstance(window, dict):
-        return None
-    try:
-        start = datetime.fromisoformat(str(window.get('start'))).replace(tzinfo=LOCAL_TZ)
-        end = datetime.fromisoformat(str(window.get('end'))).replace(tzinfo=LOCAL_TZ)
-    except (TypeError, ValueError):
-        return None
-    if end <= start:
-        return None
-    label = WINDOW_LABELS_VN.get(window.get('label'), 'KHOẢNG THỜI GIAN ĐÃ CHỌN')
-    return start, end, label
-
-
-def _email_lookup_query(message):
-    normalized = _normalize_intent_text(message)
-    include_read = 'chua doc' not in normalized and 'unread' not in normalized
-    query = 'in:inbox' if include_read else 'is:unread'
-
-    quoted = re.search(r'"([^"]{2,80})"', message or '')
-    if quoted:
-        return f'{query} "{quoted.group(1).strip()}"', include_read
-
-    sender_match = re.search(r'(?:tu|from)\s+([\w\.-]+@[\w\.-]+\.\w+)', normalized)
-    if sender_match:
-        return f'{query} from:{sender_match.group(1)}', include_read
-
-    return query, include_read
-
-
-def _query_override_from_entities(entities):
-    """Build a Gmail query from an AI-classified `query` entity (sender/keyword/
-    unread_only) instead of re-parsing the raw message text with regex.
-    """
-    query_info = (entities or {}).get('query')
-    if not isinstance(query_info, dict):
-        return None
-    unread_only = bool(query_info.get('unread_only'))
-    include_read = not unread_only
-    parts = ['is:unread' if unread_only else 'in:inbox']
-
-    sender = str(query_info.get('sender') or '').strip()
-    keyword = str(query_info.get('keyword') or '').strip()
-    if sender and re.match(r'^[\w.+-]+@[\w.-]+\.\w+$', sender):
-        parts.append(f'from:{sender}')
-    elif sender:
-        keyword = f'{sender} {keyword}'.strip()
-    if keyword:
-        parts.append(f'"{keyword[:80]}"')
-
-    if len(parts) == 1:
-        return None
-    return ' '.join(parts), include_read
-
-
-def _direct_email_search_response(message, user_id, limit=8, query_override=None):
-    token_file = get_user_token_file(user_id)
-    if not token_file or not os.path.exists(token_file):
-        return "Gmail chưa được kết nối, nên mình chưa thể xem email thật của bạn."
-
-    query, include_read = query_override or _email_lookup_query(message)
-    emails = _load_gmail_service(token_file).get_emails(
-        max_results=max(1, min(limit, 10)),
-        query=query,
-        include_read=include_read
-    )
-    if not emails:
-        return "Không tìm thấy email phù hợp trong Gmail theo dữ liệu hiện tại."
-
-    lines = [
-        "EMAIL TÌM THẤY",
-        f"Nguồn: Gmail thật, truy vấn: {query}",
-    ]
-    for index, email in enumerate(emails, start=1):
-        snippet = re.sub(r'\s+', ' ', email.get('snippet', '') or '').strip()
-        lines.extend([
-            f"{index}. {email.get('subject') or '(Không có tiêu đề)'}",
-            f"   Người gửi: {email.get('sender') or 'Không xác định'}",
-            f"   Thời gian: {email.get('date') or 'Không xác định'}",
-            f"   Trạng thái: {'Chưa đọc' if email.get('is_unread') else 'Đã đọc'}",
-            f"   Xem trước: {snippet[:220] or 'Không có nội dung xem trước'}",
-        ])
-    lines.append("\nMình không tự kết luận nội dung ngoài phần Gmail trả về ở trên.")
-    return "\n".join(lines)
-
-
-def _format_knowledge_context(message):
-    try:
-        results = knowledge_service.search(message, top_k=2)
-    except Exception:
-        logger.warning("Knowledge base search failed", exc_info=True)
-        return ''
-    if not results:
-        return ''
-    lines = ["KIẾN THỨC THAM KHẢO (FlowMate/Bob)"]
-    for index, doc in enumerate(results, start=1):
-        lines.append(f"{index}. {doc.get('title')}: {doc.get('content')}")
-    return "\n".join(lines)
-
-
-def _build_workspace_context(message, user_id, db_path):
-    sources = _intent_sources(message)
-    context_parts = []
-    if 'email' in sources:
-        context_parts.append(_format_email_context(user_id))
-    if 'calendar' in sources:
-        context_parts.append(_format_calendar_context(message, user_id, db_path))
-    if 'history' in sources:
-        context_parts.append(_format_history_context(db_path))
-    if 'profile' in sources:
-        context_parts.append(_format_profile_context(user_id))
-
-    # Always attempt a (free, local) knowledge-base lookup -- the TF-IDF
-    # relevance threshold already filters out unrelated chit-chat, so this
-    # only adds context when it actually found something relevant.
-    knowledge_context = _format_knowledge_context(message)
-    if knowledge_context:
-        context_parts.append(knowledge_context)
-        sources.add('knowledge')
-
-    return sources, "\n\n".join(context_parts)
 
 
 def _agent_profile():
@@ -619,37 +148,6 @@ def _agent_profile():
             'Luôn trả refresh_targets để web/mobile đồng bộ màn liên quan.',
         ],
     }
-
-
-def _capability_prompt_lines():
-    lines = []
-    for item in AGENT_CAPABILITIES:
-        confirmation = 'requires confirmation' if item.get('confirmation_required') else 'read/analysis'
-        lines.append(
-            f"- {item['id']}: {item['description']} ({confirmation}; refresh: {', '.join(item.get('refresh_targets') or [])})"
-        )
-    return "\n".join(lines)
-
-
-def _build_agent_system_prompt(mode_prompt):
-    return (
-        "You are Bob, the AI agent inside FlowMate -- a workspace agent for email, "
-        "calendar, schedules, history, and user settings. If asked your name, say Bob. "
-        "Never mention which underlying AI provider or model powers you. " + mode_prompt
-        + " Answer in Vietnamese unless the user asks otherwise. "
-        "Operate like an agent: identify the user's goal, inspect available workspace context, "
-        "decide the next best action, and produce a useful result. "
-        "When a supported direct action is needed, rely on the app tools/orchestrator instead of pretending. "
-        "For sensitive or persistent actions such as creating schedules, changing settings, sending messages, "
-        "or modifying external data, ask for or respect explicit confirmation before claiming completion. "
-        "Use only provided workspace context for facts about the user's email, calendar, history, or account. "
-        "If data is missing, say exactly what is missing and give the smallest useful next step. "
-        "Do not invent senders, dates, deadlines, meetings, completed actions, or external facts. "
-        "Classify useful information as meetings, deadlines, tasks, reminders, important information, or low priority. "
-        "Keep responses concise, clear, action-focused, and include a next action when helpful. "
-        "Your trained capabilities are:\n"
-        + _capability_prompt_lines()
-    )
 
 
 def _describe_intent_entities(intent, entities):
@@ -723,139 +221,6 @@ def _build_agent_trace(intent_result, workspace_sources=None, refresh_targets=No
     }
 
 
-def extract_schedule_from_response(response, user_message):
-    """
-    Detect if AI response contains scheduling information
-    Returns dict with schedule data or None
-    """
-    # Previously we gated schedule extraction on explicit keywords.
-    # Remove keyword gating so AI can decide from the prompt/response when to create a schedule.
-    combined_text = (user_message + ' ' + response).lower()
-    
-    # Try to extract schedule details
-    schedule_info = {
-        'title': '',
-        'description': response,
-        'start_time': None,
-        'attendees': []
-    }
-    
-    # Extract title (first meaningful part of response or user message)
-    if 'lịch hẹn:' in response.lower():
-        title_match = re.search(r'lịch hẹn:\s*([^\n]+)', response, re.IGNORECASE)
-        if title_match:
-            schedule_info['title'] = title_match.group(1).strip()[:100]
-    
-    if not schedule_info['title']:
-        # Use first few words from user message
-        words = user_message.split()[:5]
-        schedule_info['title'] = ' '.join(words)[:100]
-    
-    now = datetime.now()
-    start_time = None
-
-    # Parse explicit date first: dd/mm/yyyy or dd-mm-yyyy
-    date_match = re.search(r'(\d{1,4})[/-](\d{1,2})[/-](\d{1,4})', combined_text)
-    date_value = None
-    if date_match:
-        g1 = date_match.group(1)
-        g2 = date_match.group(2)
-        g3 = date_match.group(3)
-        # Support formats: DD/MM/YYYY or YYYY-MM-DD
-        try:
-            if len(g1) == 4:
-                # YYYY-MM-DD
-                year = int(g1)
-                month = int(g2)
-                day = int(g3)
-            else:
-                # DD/MM/YYYY or D/M/YY
-                day = int(g1)
-                month = int(g2)
-                year = int(g3)
-
-            if year < 100:
-                year += 2000
-
-            date_value = datetime(year, month, day).date()
-        except Exception:
-            date_value = None
-    elif 'ngày mai' in combined_text or 'tomorrow' in combined_text:
-        date_value = (now + timedelta(days=1)).date()
-    elif 'tuần sau' in combined_text or 'next week' in combined_text:
-        date_value = (now + timedelta(weeks=1)).date()
-    elif 'hôm nay' in combined_text or 'today' in combined_text:
-        date_value = now.date()
-
-    # Parse time variants: HH:MM, 10h, 10h30, 10 giờ
-    time_value = None
-    time_match = re.search(r'(?<!\d)(\d{1,2})[:h](\d{2})(?!\d)', combined_text)
-    if time_match:
-        hour = int(time_match.group(1))
-        minute = int(time_match.group(2))
-        if 0 <= hour <= 23 and 0 <= minute <= 59:
-            time_value = datetime.strptime(f"{hour:02d}:{minute:02d}", '%H:%M').time()
-    else:
-        hour_only_match = re.search(r'(?<!\d)(\d{1,2})\s*(giờ|h)(?!\d)', combined_text)
-        if hour_only_match:
-            hour = int(hour_only_match.group(1))
-            if 0 <= hour <= 23:
-                time_value = datetime.strptime(f"{hour:02d}:00", '%H:%M').time()
-
-    # Combine parsed date/time with sensible defaults
-    if date_value and time_value:
-        start_time = datetime.combine(date_value, time_value)
-    elif date_value:
-        start_time = datetime.combine(date_value, datetime.strptime('09:00', '%H:%M').time())
-    elif time_value:
-        start_time = datetime.combine(now.date(), time_value)
-    else:
-        # Default to tomorrow at current time if no clear temporal signal
-        start_time = now + timedelta(days=1)
-    
-    schedule_info['start_time'] = start_time.isoformat()
-    
-    # Extract email addresses (attendees)
-    emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', combined_text)
-    schedule_info['attendees'] = list(set(emails))  # Remove duplicates
-    
-    return schedule_info if schedule_info['title'] else None
-
-
-_REPLY_NEEDED_KEYWORDS = (
-    'vui long', 'xac nhan', 'phan hoi', 'rsvp', 'please', 'could you',
-    'confirm', 'reply', 'respond',
-)
-
-
-def _email_needs_reply(email):
-    """Heuristic: does this email look like it's waiting on a reply?"""
-    text = ' '.join([
-        str(email.get('subject', '') or ''),
-        str(email.get('snippet', '') or ''),
-        str(email.get('body', '') or ''),
-    ])
-    if '?' in text:
-        return True
-    normalized = _normalize_intent_text(text)
-    return any(keyword in normalized for keyword in _REPLY_NEEDED_KEYWORDS)
-
-
-def _build_draft_reply_suggestion(email):
-    body = email.get('body') or email.get('snippet') or ''
-    context = (
-        f"From: {email.get('sender', 'Unknown')}\n"
-        f"Subject: {email.get('subject', '')}\n\n"
-        f"{body[:800]}"
-    )
-    return {
-        'type': 'draft_reply',
-        'label': f"Soạn trả lời: {email.get('subject') or '(Không có tiêu đề)'}",
-        'email_id': email.get('id'),
-        'context': context,
-    }
-
-
 @chat_bp.route('/message', methods=['POST'])
 def send_message():
     """Send message to AI assistant"""
@@ -898,10 +263,10 @@ def send_message():
     task = (data.get('task', 'chat') or 'chat').strip().lower()
     if task not in ['chat', 'summary', 'reply', 'analyze']:
         task = 'chat'
-    
+
     if not user_message:
         return jsonify({'error': 'Empty message'}), 400
-    
+
     db_path = get_user_db_path(user_id)
     History.init_db(db_path=db_path)
     Schedule.init_db(db_path=db_path)
@@ -927,376 +292,76 @@ def send_message():
     )
     refresh_targets = list(intent_result.get('refresh_targets') or [])
 
-    if intent_result.get('intent') == 'email.latest_summary':
-        try:
-            requested_count = int((intent_result.get('entities') or {}).get('count') or _latest_email_count(user_message))
-            response, source_emails = _summarize_latest_emails(user_id, requested_count)
-            source_email = source_emails[0]
-            save_chat_history(user_message, response)
-            suggested_actions = [
-                _build_draft_reply_suggestion(email)
-                for email in source_emails
-                if _email_needs_reply(email)
-            ]
-            return jsonify({
-                'success': True,
-                'session_id': chat_session_id,
-                'response': response,
-                'provider': ai_service.last_provider_used,
-                'demo_mode': ai_service.last_provider_used == 'demo',
-                'schedule_created': None,
-                'schedule_suggestion': None,
-                'suggested_actions': suggested_actions,
-                'workspace_sources': ['email'],
-                'intent': intent_result,
-                'refresh_targets': refresh_targets,
-                'agent_trace': _build_agent_trace(
-                    intent_result,
-                    workspace_sources=['email'],
-                    refresh_targets=refresh_targets,
-                    ai_used=True,
-                    action='Tóm tắt email mới nhất'
-                ),
-                'email_source': {
-                    'id': source_email.get('id'),
-                    'sender': source_email.get('sender'),
-                    'subject': source_email.get('subject'),
-                    'date': source_email.get('date')
-                },
-                'email_sources': [{
-                    'id': email.get('id'),
-                    'sender': email.get('sender'),
-                    'subject': email.get('subject'),
-                    'date': email.get('date')
-                } for email in source_emails],
-                'grounded': True,
-                'ai_used': True
-            })
-        except Exception as e:
-            logger.exception("Failed to summarize latest Gmail messages for user %s", user_id)
-            response = f"Khong the lay email gan nhat tu Gmail: {e}"
-            save_chat_history(user_message, response)
-            return jsonify({
-                'success': True,
-                'session_id': chat_session_id,
-                'response': response,
-                'provider': None,
-                'demo_mode': False,
-                'schedule_created': None,
-                'schedule_suggestion': None,
-                'intent': intent_result,
-                'refresh_targets': refresh_targets,
-                'agent_trace': _build_agent_trace(
-                    intent_result,
-                    workspace_sources=['email'],
-                    refresh_targets=refresh_targets,
-                    action='Không lấy được Gmail'
-                ),
-                'grounded': True,
-                'ai_used': False
-            })
+    ctx = ChatContext(
+        user_message=user_message,
+        user_id=user_id,
+        db_path=db_path,
+        chat_session_id=chat_session_id,
+        mode=mode,
+        mode_prompt=mode_prompt,
+        task=task,
+        intent_result=intent_result,
+        refresh_targets=refresh_targets,
+        client_confirm=bool(data.get('confirmed_schedule')),
+        schedule_override=data.get('schedule_override') or {},
+    )
 
-    client_confirm = bool(data.get('confirmed_schedule'))
-    schedule_override = data.get('schedule_override') or {}
-    if intent_result.get('intent') == 'schedule.create' and (client_confirm or schedule_override):
-        schedule_created = None
-        response = "Minh chua tao duoc lich vi thieu ngay/gio bat dau."
-        try:
-            schedule_created = intent_orchestrator.create_schedule_from_intent(
-                intent_result,
-                schedule_override,
-                db_path
-            )
-            if schedule_created:
-                response = f"Da tao lich: {schedule_created.get('title')} luc {schedule_created.get('start_time')}."
-                History.create(
-                    f"Tao lich hen: {schedule_created.get('title')}",
-                    "Lich hen duoc tao tu xac nhan cua nguoi dung",
-                    action_type='schedule_created',
-                    related_id=schedule_created.get('id'),
-                    db_path=db_path
-                )
-        except Exception as e:
-            logger.exception("Failed to create schedule through intent orchestrator")
-            response = f"Khong the tao lich: {e}"
+    agent = get_agent(intent_result.get('intent'))
+    result = agent.handle(ctx)
+    if result is None:
+        result = get_agent('chat.freeform').handle(ctx)
 
-        save_chat_history(user_message, response)
-        return jsonify({
-            'success': True,
-            'session_id': chat_session_id,
-            'response': response,
-            'provider': None,
-            'demo_mode': False,
-            'schedule_created': schedule_created,
-            'schedule_suggestion': None if schedule_created else (intent_result.get('entities') or {}).get('schedule'),
-            'workspace_sources': ['calendar'],
-            'intent': intent_result,
-            'refresh_targets': ['schedule', 'history'],
-            'agent_trace': _build_agent_trace(
-                intent_result,
-                workspace_sources=['calendar'],
-                refresh_targets=['schedule', 'history'],
-                action='Tạo lịch sau xác nhận' if schedule_created else 'Cần bổ sung thông tin lịch'
-            ),
-            'grounded': True,
-            'ai_used': False
-        })
+    save_chat_history(user_message, result.response, action_type=result.action_type)
 
-    if intent_result.get('intent') == 'schedule.list':
-        window_override = _window_override_from_entities(intent_result.get('entities'))
-        response = _direct_schedule_list_response(user_message, user_id, db_path, window_override=window_override)
-        save_chat_history(user_message, response)
-        return jsonify({
-            'success': True,
-            'session_id': chat_session_id,
-            'response': response,
-            'provider': None,
-            'demo_mode': False,
-            'schedule_created': None,
-            'schedule_suggestion': None,
-            'workspace_sources': ['calendar'],
-            'intent': intent_result,
-            'refresh_targets': refresh_targets,
-            'agent_trace': _build_agent_trace(
-                intent_result,
-                workspace_sources=['calendar'],
-                refresh_targets=refresh_targets,
-                action='Liệt kê lịch từ dữ liệu thật'
-            ),
-            'grounded': True,
-            'ai_used': False
-        })
-
-    if intent_result.get('intent') == 'email.search':
-        query_override = _query_override_from_entities(intent_result.get('entities'))
-        response = _direct_email_search_response(user_message, user_id, query_override=query_override)
-        save_chat_history(user_message, response)
-        return jsonify({
-            'success': True,
-            'session_id': chat_session_id,
-            'response': response,
-            'provider': None,
-            'demo_mode': False,
-            'schedule_created': None,
-            'schedule_suggestion': None,
-            'workspace_sources': ['email'],
-            'intent': intent_result,
-            'refresh_targets': refresh_targets,
-            'agent_trace': _build_agent_trace(
-                intent_result,
-                workspace_sources=['email'],
-                refresh_targets=refresh_targets,
-                action='Tìm email trong Gmail'
-            ),
-            'grounded': True,
-            'ai_used': False
-        })
-
-    direct_result = intent_orchestrator.execute_direct(intent_result, user_id, db_path)
-    if direct_result and intent_result.get('intent') in {'settings.update_mode', 'history.list', 'schedule.create'}:
-        response = direct_result.get('response') or ''
-        save_chat_history(user_message, response, action_type=direct_result.get('action_type') or 'chat')
-        return jsonify({
-            'success': True,
-            'session_id': chat_session_id,
-            'response': response,
-            'provider': None,
-            'demo_mode': False,
-            'schedule_created': None,
-            'schedule_suggestion': direct_result.get('schedule_suggestion'),
-            'workspace_sources': direct_result.get('workspace_sources') or [],
-            'intent': intent_result,
-            'refresh_targets': direct_result.get('refresh_targets') or refresh_targets,
-            'agent_trace': _build_agent_trace(
-                intent_result,
-                workspace_sources=direct_result.get('workspace_sources') or [],
-                refresh_targets=direct_result.get('refresh_targets') or refresh_targets,
-                action='Thực hiện hành động trực tiếp'
-            ),
-            'grounded': True,
-            'ai_used': False
-        })
-
-    # Build messages for AI with recent chat context for smarter responses
-    messages = [{
-        "role": "system",
-        "content": _build_agent_system_prompt(mode_prompt)
-    }]
-
-    workspace_sources = set()
-    workspace_context = ''
-    try:
-        workspace_sources, workspace_context = _build_workspace_context(
-            user_message,
-            user_id,
-            db_path
-        )
-    except Exception as e:
-        logger.exception("Failed to build workspace context for user %s", user_id)
-
-    if not workspace_sources:
-        recent_history = History.get_recent(limit=8, db_path=db_path, chat_session_id=chat_session_id)
-        for record in reversed(recent_history):
-            if record.get('action_type') != 'chat':
-                continue
-
-            prev_user = (record.get('user_message') or '').strip()
-            prev_assistant = (record.get('assistant_response') or '').strip()
-            if prev_user:
-                messages.append({"role": "user", "content": prev_user})
-            if prev_assistant:
-                messages.append({"role": "assistant", "content": prev_assistant})
-
-    if workspace_context:
-        messages.append({
-            "role": "user",
-            "preserve_context": True,
-            "content": (
-                "DỮ LIỆU WORKSPACE THỰC TẾ\n"
-                "Chỉ dùng dữ liệu dưới đây để trả lời câu hỏi tiếp theo. "
-                "Không bịa thêm dữ liệu không có trong context. "
-                "Nếu context không đủ, nói rõ thiếu dữ liệu nào.\n\n"
-                + workspace_context
-            )
-        })
-
-    messages.append({
-        "role": "user",
-        "content": user_message
-    })
-    
-    # Generate response
-    response = ai_service.generate_response(messages, task=task, user_id=user_id)
-    
-    # Save to history
-    save_chat_history(user_message, response)
-    
-    # Auto-detect schedule suggestion from AI response
-    schedule_info = extract_schedule_from_response(response, user_message)
-    schedule_created = None
-
-    # Check if client asked to confirm/create the schedule now
-    if schedule_info:
-        if client_confirm or schedule_override:
-            # Use override values from client when provided, otherwise use detected info
-            payload = {
-                'title': schedule_override.get('title') or schedule_info.get('title'),
-                'description': schedule_override.get('description') or schedule_info.get('description'),
-                'start_time': schedule_override.get('start_time') or schedule_info.get('start_time'),
-                'end_time': schedule_override.get('end_time') or schedule_info.get('end_time'),
-                'attendees': schedule_override.get('attendees') or schedule_info.get('attendees')
-            }
-            try:
-                schedule_id = ScheduleService.create_schedule(
-                    title=payload['title'],
-                    description=payload['description'],
-                    start_time=payload['start_time'],
-                    attendees=payload.get('attendees') or [],
-                    db_path=db_path
-                )
-
-                # Save to chat history for reference
-                History.create(
-                    f"Tạo lịch hẹn: {payload['title']}",
-                    f"Lịch hẹn được tạo từ xác nhận của người dùng",
-                    action_type='schedule_created',
-                    related_id=schedule_id,
-                    db_path=db_path
-                )
-
-                schedule_created = {
-                    'id': schedule_id,
-                    'title': payload['title'],
-                    'start_time': payload['start_time']
-                }
-
-                logger.info(f"Created schedule (confirmed): {payload['title']}")
-            except Exception as e:
-                logger.error(f"Failed to create schedule on confirmation: {e}")
-
-            # Spawn background calendar sync for created schedule
-            try:
-                import threading as _thr
-                def _bg_sync():
-                    try:
-                        token_file = get_user_token_file(user_id)
-                        if not token_file or not os.path.exists(token_file):
-                            return
-                        cal = CalendarService(token_file=token_file)
-                        schedule = Schedule.get_by_id(schedule_id, db_path=db_path)
-                        if not schedule:
-                            return
-                        if schedule.get('calendar_event_id'):
-                            cal.update_event(
-                                event_id=schedule.get('calendar_event_id'),
-                                title=schedule.get('title'),
-                                description=schedule.get('description'),
-                                start_time=schedule.get('start_time'),
-                                end_time=schedule.get('end_time'),
-                                attendees=[a.strip() for a in (schedule.get('attendees') or '').split(',') if a.strip()]
-                            )
-                        else:
-                            event_id = cal.create_event(
-                                title=schedule.get('title'),
-                                description=schedule.get('description'),
-                                start_time=schedule.get('start_time'),
-                                end_time=schedule.get('end_time'),
-                                attendees=[a.strip() for a in (schedule.get('attendees') or '').split(',') if a.strip()]
-                            )
-                            if event_id:
-                                Schedule.update(schedule_id, calendar_event_id=event_id, db_path=db_path)
-                    except Exception:
-                        pass
-                _thr.Thread(target=_bg_sync, daemon=True).start()
-            except Exception:
-                pass
-        else:
-            # Do not create schedule automatically - return suggestion for client to confirm
-            schedule_created = None
-    
-    schedule_suggestion = None
-    if schedule_info and not schedule_created:
-        schedule_suggestion = schedule_info
-
-    return jsonify({
+    response_payload = {
         'success': True,
         'session_id': chat_session_id,
-        'response': response,
-        'provider': ai_service.last_provider_used,
-        'demo_mode': ai_service.last_provider_used == 'demo',
-        'schedule_created': schedule_created,
-        'schedule_suggestion': schedule_suggestion,
-        'workspace_sources': sorted(workspace_sources),
+        'response': result.response,
+        'provider': result.provider,
+        'demo_mode': result.demo_mode,
+        'schedule_created': result.schedule_created,
+        'schedule_suggestion': result.schedule_suggestion,
         'intent': intent_result,
-        'refresh_targets': sorted(set(refresh_targets)),
+        'refresh_targets': result.refresh_targets,
         'agent_trace': _build_agent_trace(
             intent_result,
-            workspace_sources=workspace_sources,
-            refresh_targets=refresh_targets,
-            ai_used=True,
-            action='Đề xuất lịch cần xác nhận' if schedule_suggestion else None
+            workspace_sources=result.workspace_sources,
+            refresh_targets=result.refresh_targets,
+            ai_used=result.ai_used,
+            action=result.action,
         ),
-        'grounded': bool(workspace_sources),
-        'ai_used': True
-    })
+        'grounded': result.grounded,
+        'ai_used': result.ai_used,
+    }
+    if result.workspace_sources is not None:
+        response_payload['workspace_sources'] = result.workspace_sources
+    if result.suggested_actions is not None:
+        response_payload['suggested_actions'] = result.suggested_actions
+    if result.email_source is not None:
+        response_payload['email_source'] = result.email_source
+    if result.email_sources is not None:
+        response_payload['email_sources'] = result.email_sources
+
+    return jsonify(response_payload)
+
 
 @chat_bp.route('/summarize-email', methods=['POST'])
 def summarize_email():
     """Summarize email content"""
     data = request.get_json()
     email_content = data.get('content', '').strip()
-    
+
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
 
     if not email_content:
         return jsonify({'error': 'Empty email content'}), 400
-    
+
     summary = ai_service.summarize_email(email_content, user_id=user_id)
-    
+
     # Save to history
     History.create(f"Tóm tắt email", summary, action_type='email_summary', db_path=db_path)
-    
+
     return jsonify({
         'success': True,
         'summary': summary
@@ -1308,18 +373,18 @@ def generate_reply():
     data = request.get_json()
     context = data.get('context', '').strip()
     choice = data.get('choice', '').strip()
-    
+
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
 
     if not context or not choice:
         return jsonify({'error': 'Missing context or choice'}), 400
-    
+
     reply = ai_service.generate_reply(context, choice, user_id=user_id)
-    
+
     # Save to history
     History.create(f"Tạo email trả lời: {choice}", reply, action_type='email_reply', db_path=db_path)
-    
+
     return jsonify({
         'success': True,
         'reply': reply
@@ -1341,7 +406,7 @@ def get_history():
                 'history': []
             })
     history = History.get_recent(limit=limit, db_path=db_path, chat_session_id=chat_session_id)
-    
+
     return jsonify({
         'success': True,
         'session_id': chat_session_id,
@@ -1427,10 +492,10 @@ def clear_conversation():
     chat_session_id = data.get('session_id') or data.get('chat_session_id')
     if chat_session_id:
         chat_session_id = _ensure_chat_session(user_id, chat_session_id)
-    
+
     # Delete only chat messages, preserve email and schedule history
     deleted_count = History.clear_all(action_type='chat', db_path=db_path, chat_session_id=chat_session_id)
-    
+
     return jsonify({
         'success': True,
         'session_id': chat_session_id,
@@ -1443,12 +508,11 @@ def clear_all_history():
     """Clear all history including emails and schedules"""
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
-    
+
     deleted_count = History.clear_all(db_path=db_path)
-    
+
     return jsonify({
         'success': True,
         'message': f'Đã xóa {deleted_count} bản ghi lịch sử',
         'deleted_count': deleted_count
     })
-
