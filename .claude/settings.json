@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -sf http://127.0.0.1:5000/ -o /tmp/index_check.html -w \"HTTP_STATUS:%{http_code}\\\\n\")",
+      "Bash(command -v chromium-cli)",
+      "Bash(node -e \"console.log\\(require.resolve\\('playwright'\\)\\)\")",
+      "Bash(npm ls *)",
+      "Bash(npx --no-install playwright --version)",
+      "Bash(.venv/Scripts/python.exe -c \"import playwright; print\\('playwright OK'\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"import selenium; print\\('selenium OK'\\)\")",
+      "Read(//c/Program Files \\(x86\\)/Microsoft/Edge/Application/**)",
+      "Read(//c/Program Files/Microsoft/Edge/Application/**)",
+      "Bash(.venv/Scripts/python.exe -m pip install playwright --quiet)",
+      "Bash(.venv/Scripts/python.exe screenshot_before.py)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe screenshot_before.py)"
+    ]
+  }
+}
