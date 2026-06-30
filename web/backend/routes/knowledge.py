@@ -6,6 +6,7 @@ from flask import Blueprint, jsonify, request
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.knowledge import KnowledgeDocument
+from services.colloquial_knowledge_seed import COLLOQUIAL_SEED_DOCUMENTS
 from services.knowledge_service import KnowledgeService
 from utils.user_context import get_current_user_id
 
@@ -225,15 +226,17 @@ _SEED_DOCUMENTS = [
     ),
 ]
 
+_ALL_SEED_DOCUMENTS = _SEED_DOCUMENTS + COLLOQUIAL_SEED_DOCUMENTS
+
 
 def _seed_if_empty():
     """Despite the legacy name (app.py imports this as `seed_knowledge_base`
     and calls it once at startup), this keeps every source='seed' document
-    fully in sync with _SEED_DOCUMENTS above, every time the app starts --
+    fully in sync with _ALL_SEED_DOCUMENTS above, every time the app starts --
     not just a one-time insert:
     - a title not seen before is created
     - an existing seed doc whose content/tags changed here is updated in place
-    - a seed doc whose title was REMOVED from the list above is deleted
+    - a seed doc whose title was REMOVED from the seed lists above is deleted
     'manual' (legacy rows from the now-removed Knowledge tab UI) and 'auto'
     (Bob's per-user learned memories) documents are never touched by any of
     this -- only source='seed' rows are managed declaratively from this
@@ -247,17 +250,24 @@ def _seed_if_empty():
             if doc.get('source') == 'seed'
         }
         wanted_titles = set()
-        for title, content, tags in _SEED_DOCUMENTS:
+        changed = False
+        for title, content, tags in _ALL_SEED_DOCUMENTS:
             wanted_titles.add(title)
             current = existing_seed_by_title.get(title)
             if current is None:
                 KnowledgeDocument.create(title, content, tags=tags, source='seed')
+                changed = True
             elif current.get('content') != content or current.get('tags') != tags:
                 KnowledgeDocument.update(current['id'], content=content, tags=tags)
+                changed = True
 
         for title, doc in existing_seed_by_title.items():
             if title not in wanted_titles:
                 KnowledgeDocument.delete(doc['id'])
+                changed = True
+
+        if changed:
+            knowledge_service.rebuild_index()
     except Exception:
         pass
 

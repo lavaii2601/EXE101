@@ -584,7 +584,7 @@ def _direct_email_search_response(message, user_id, limit=8, query_override=None
 
 def _format_knowledge_context(message, user_id=None):
     try:
-        results = knowledge_service.search(message, top_k=2, user_id=user_id)
+        results = knowledge_service.search(message, top_k=3, user_id=user_id)
     except Exception:
         logger.warning("Knowledge base search failed", exc_info=True)
         return ''
