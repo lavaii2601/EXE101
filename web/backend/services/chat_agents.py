@@ -596,29 +596,141 @@ def _format_knowledge_context(message, user_id=None):
     return "\n".join(lines)
 
 
-def _learn_from_web_research(research_result, user_id):
+_WEB_LEARNING_HINT_TERMS = (
+    'hoc', 'hoc hoi', 'trau doi', 'cai thien', 'toi uu', 'kinh nghiem',
+    'best practice', 'practice', 'guide', 'how to', 'workflow', 'process',
+    'quy trinh', 'nguyen tac', 'framework', 'playbook', 'automation',
+    'agent', 'assistant', 'email management', 'calendar management',
+    'task management', 'productivity', 'prompt', 'safety',
+)
+
+
+def _learning_quota_available(user_id, db_path, scope, max_per_day):
+    try:
+        max_per_day = int(max_per_day)
+    except (TypeError, ValueError):
+        max_per_day = 0
+    if max_per_day <= 0:
+        return False
+    if not user_id or user_id == 'default':
+        return False
+    if not db_path:
+        return True
+    key = f"learning_quota::{scope}::{user_id}::{datetime.now(LOCAL_TZ).date().isoformat()}"
+    payload = Cache.get(key, db_path=db_path) or {}
+    count = int(payload.get('count') or 0)
+    if count >= max_per_day:
+        return False
+    Cache.set(key, {'count': count + 1}, ttl=36 * 3600, db_path=db_path)
+    return True
+
+
+def _should_extract_web_learning(query):
+    normalized = _normalize_intent_text(query)
+    return any(term in normalized for term in _WEB_LEARNING_HINT_TERMS)
+
+
+def _extract_web_learning_candidate(research_result, user_id):
+    if not getattr(ai_service, 'configured_providers', None):
+        return None
+    query = str((research_result or {}).get('query') or '').strip()
+    results = (research_result or {}).get('results') or []
+    if not query or not results or not _should_extract_web_learning(query):
+        return None
+
+    source_lines = []
+    for index, result in enumerate(results[:4], start=1):
+        snippet = re.sub(r'\s+', ' ', str(result.get('snippet') or '')).strip()
+        source_lines.append(
+            f"{index}. {result.get('title') or result.get('url')}\n"
+            f"URL: {result.get('url')}\n"
+            f"Snippet: {snippet[:700]}"
+        )
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You distill public web research into durable learning notes for Bob, "
+                "a FlowMate workflow assistant. Save only reusable process knowledge, "
+                "best practices, source-use rules, or action-handling principles. "
+                "Do not save raw search results, news trivia, volatile facts, private data, "
+                "or one-off answers. Return only JSON: "
+                '{"should_learn": true/false, "title": "<short>", '
+                '"content": "<1-3 reusable sentences with source URLs if relevant>", '
+                '"tags": "<comma-separated>", "confidence": 0.0-1.0}'
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Query: {query}\n\nSources:\n" + "\n\n".join(source_lines)
+            ),
+        },
+    ]
+    try:
+        raw = ai_service.generate_response(
+            messages,
+            max_tokens=min(int(getattr(Config, 'AI_MENTOR_MAX_TOKENS', 260)), 320),
+            task='analyze',
+            user_id=user_id,
+        )
+    except Exception:
+        logger.info("Web learning extraction skipped", exc_info=True)
+        return None
+
+    data = _parse_memory_json(raw)
+    if not data or not data.get('should_learn'):
+        return None
+    try:
+        confidence = float(data.get('confidence', 0.0))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    if confidence < 0.70:
+        return None
+    title = _redact_mentor_text(str(data.get('title') or '').strip())[:150]
+    content = _redact_mentor_text(str(data.get('content') or '').strip())[:900]
+    tags = str(data.get('tags') or '').strip()[:220]
+    if not title or not content:
+        return None
+    return {'title': title, 'content': content, 'tags': tags, 'confidence': confidence}
+
+
+def _learn_from_web_research(research_result, user_id, db_path=None):
     if not getattr(Config, 'WEB_RESEARCH_AUTO_LEARN_ENABLED', True):
         return
     if not user_id or user_id == 'default':
         return
-    results = (research_result or {}).get('results') or []
     query = str((research_result or {}).get('query') or '').strip()
-    if not query or not results:
+    if not query or not _should_extract_web_learning(query):
         return
 
-    title = f"Web research: {query[:110]}"
-    lines = [f"Query: {query}", "Public web sources Bob used:"]
-    for index, result in enumerate(results[:5], start=1):
-        snippet = re.sub(r'\s+', ' ', str(result.get('snippet') or '')).strip()
-        lines.append(f"{index}. {result.get('title') or result.get('url')}")
-        lines.append(f"   URL: {result.get('url')}")
-        if snippet:
-            lines.append(f"   Note: {snippet[:700]}")
-    content = "\n".join(lines)[:3500]
+    if not _learning_quota_available(
+        user_id,
+        db_path,
+        'web',
+        getattr(Config, 'WEB_RESEARCH_LEARNING_MAX_PER_DAY', 6),
+    ):
+        return
+
+    candidate = _extract_web_learning_candidate(research_result, user_id)
+    if not candidate:
+        return
+
+    title = f"Web learning: {candidate['title']}"
+    content = (
+        f"Query: {query}\n"
+        f"Confidence: {candidate.get('confidence', 0):.2f}\n"
+        f"Lesson: {candidate['content']}"
+    )
+    tags = ','.join(
+        part.strip()
+        for part in f"web-learning,internet,curated,{candidate.get('tags') or ''}".split(',')
+        if part.strip()
+    )[:240]
 
     existing_match = None
     try:
-        for result in knowledge_service.search(title, top_k=5, min_score=0.42, user_id=user_id):
+        for result in knowledge_service.search(title, top_k=5, min_score=0.38, user_id=user_id):
             if result.get("source") == "web" and result.get("user_id") == user_id:
                 existing_match = result
                 break
@@ -631,18 +743,26 @@ def _learn_from_web_research(research_result, user_id):
                 existing_match["id"],
                 title=title,
                 content=content,
-                tags="internet,web,research,auto",
+                tags=tags,
             )
         else:
             knowledge_service.add_document(
                 title,
                 content,
-                tags="internet,web,research,auto",
+                tags=tags,
                 source="web",
                 user_id=user_id,
             )
     except Exception:
         logger.warning("Failed to save web research memory for user %s", user_id, exc_info=True)
+
+
+def _learn_from_web_research_async(research_result, user_id, db_path=None):
+    _thr.Thread(
+        target=_learn_from_web_research,
+        args=(research_result, user_id, db_path),
+        daemon=True,
+    ).start()
 
 
 def _build_workspace_context(message, user_id, db_path):
@@ -674,7 +794,7 @@ def _build_workspace_context(message, user_id, db_path):
     if web_research and web_research.get('context'):
         context_parts.append(web_research['context'])
         sources.add('internet')
-        _learn_from_web_research(web_research, user_id)
+        _learn_from_web_research_async(web_research, user_id, db_path)
 
     return sources, "\n\n".join(context_parts)
 
@@ -850,6 +970,8 @@ def _mentor_learning_allowed(user_message, user_id, intent_result=None, workspac
         return False
 
     sources = set(workspace_sources or [])
+    if sources and sources <= {'time'}:
+        return False
     has_private_context = bool(sources & _MENTOR_PRIVATE_SOURCES)
     if has_private_context and not getattr(Config, 'AI_MENTOR_ALLOW_PRIVATE_CONTEXT', False):
         return False
@@ -939,7 +1061,7 @@ def _mentor_candidate_from_raw(raw):
         confidence = float(data.get('confidence', 0.0))
     except (TypeError, ValueError):
         confidence = 0.0
-    if confidence < 0.55:
+    if confidence < 0.70:
         return None
 
     title = _redact_mentor_text(str(data.get('title') or '').strip())[:150]
@@ -996,7 +1118,7 @@ def _save_mentor_lesson(candidate, user_id, provider):
         )
 
 
-def learn_from_mentors(user_message, assistant_response, user_id, intent_result=None, workspace_sources=None, primary_provider=None):
+def learn_from_mentors(user_message, assistant_response, user_id, intent_result=None, workspace_sources=None, primary_provider=None, db_path=None):
     try:
         if not _mentor_learning_allowed(
             user_message,
@@ -1008,6 +1130,13 @@ def learn_from_mentors(user_message, assistant_response, user_id, intent_result=
 
         providers = _select_mentor_providers(primary_provider=primary_provider)
         if not providers:
+            return
+        if not _learning_quota_available(
+            user_id,
+            db_path,
+            'mentor',
+            getattr(Config, 'AI_MENTOR_LEARNING_MAX_PER_DAY', 6),
+        ):
             return
 
         messages = _build_mentor_prompt(
@@ -1039,10 +1168,10 @@ def learn_from_mentors(user_message, assistant_response, user_id, intent_result=
         logger.warning("learn_from_mentors failed for user %s", user_id, exc_info=True)
 
 
-def learn_from_mentors_async(user_message, assistant_response, user_id, intent_result=None, workspace_sources=None, primary_provider=None):
+def learn_from_mentors_async(user_message, assistant_response, user_id, intent_result=None, workspace_sources=None, primary_provider=None, db_path=None):
     _thr.Thread(
         target=learn_from_mentors,
-        args=(user_message, assistant_response, user_id, intent_result, workspace_sources, primary_provider),
+        args=(user_message, assistant_response, user_id, intent_result, workspace_sources, primary_provider, db_path),
         daemon=True,
     ).start()
 

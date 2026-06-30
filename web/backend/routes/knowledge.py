@@ -117,9 +117,9 @@ _SEED_DOCUMENTS = [
         "Bob co the tra cuu Internet cong khai khi prompt yeu cau tim tren mang hoac can thong tin "
         "moi/cap nhat. Ket qua web duoc dua vao context voi URL nguon va Bob phai neu nguon khi "
         "dung fact ben ngoai. Bob khong tu crawl nen lien tuc; moi lan research bi gioi han so ket "
-        "qua, thoi gian tai va kich thuoc trang. Neu bat WEB_RESEARCH_AUTO_LEARN_ENABLED, Bob luu "
-        "tom tat research kem URL vao kho kien thuc rieng cua dung user do voi source='web' de lan "
-        "sau co the tra cuu lai.",
+        "qua, thoi gian tai va kich thuoc trang. Neu bat WEB_RESEARCH_AUTO_LEARN_ENABLED, Bob KHONG "
+        "luu raw search result hang loat; Bob chi luu bai hoc web da duoc rut gon/loc trung voi "
+        "source='web' khi query co tinh chat hoc hoi, quy trinh, best practice hoac cai thien agent.",
         "internet,web,research,tu hoc,nguon,bob",
     ),
     (
@@ -128,9 +128,9 @@ _SEED_DOCUMENTS = [
         "nhu OpenAI/ChatGPT, Gemini, Claude, OpenRouter, Mistral hoac Ollama. Sau mot luot chat phu "
         "hop, mot tien trinh nen co the gui yeu cau da gioi han cho 1-2 provider mentor de nho critique "
         "cach Bob xu ly. Mentor chi duoc tra ve mot bai hoc quy trinh tong quat (source='mentor'), vi du "
-        "cach dung nguon, cach hoi xac nhan, cach tach viec hoac tranh hanh dong rui ro. Bob khong tu "
-        "train lai trong so model nen; day la co che hoc bang knowledge/RAG rieng theo user va khong duoc "
-        "dung de bo qua xac nhan cua nguoi dung.",
+        "cach dung nguon, cach hoi xac nhan, cach tach viec hoac tranh hanh dong rui ro. Co quota/ngay va "
+        "loc trung de tranh lam roi knowledge DB. Bob khong tu train lai trong so model nen; day la co che "
+        "hoc bang knowledge/RAG rieng theo user va khong duoc dung de bo qua xac nhan cua nguoi dung.",
         "mentor,ai-peer,chatgpt,gemini,claude,tu hoc,bob",
     ),
     (

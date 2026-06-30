@@ -109,7 +109,7 @@ AGENT_CAPABILITIES = [
     {
         'id': 'internet.research',
         'label': 'Tra cứu Internet',
-        'description': 'Tự tra cứu web công khai khi prompt cần thông tin mới/nguồn ngoài, đưa URL nguồn vào câu trả lời và lưu phát hiện có nguồn vào kho kiến thức riêng của user.',
+        'description': 'Tự tra cứu web công khai khi prompt cần thông tin mới/nguồn ngoài, đưa URL nguồn vào câu trả lời; chỉ lưu long-term lesson đã lọc khi research có giá trị học hỏi/quy trình.',
         'workspace_sources': ['internet'],
         'refresh_targets': [],
         'confirmation_required': False,
@@ -117,7 +117,7 @@ AGENT_CAPABILITIES = [
     {
         'id': 'mentor.learning',
         'label': 'Học từ AI mentor',
-        'description': 'Chạy nền để hỏi các provider đã cấu hình như ChatGPT/OpenAI, Gemini, Claude hoặc OpenRouter critique cách Bob xử lý, rồi lưu bài học quy trình vào knowledge riêng của user.',
+        'description': 'Chạy nền có quota để hỏi provider như ChatGPT/OpenAI, Gemini, Claude hoặc OpenRouter critique cách Bob xử lý, rồi chỉ lưu bài học quy trình đã lọc/dedupe vào knowledge riêng của user.',
         'workspace_sources': ['knowledge'],
         'refresh_targets': [],
         'confirmation_required': False,
@@ -358,6 +358,7 @@ def send_message():
         intent_result=intent_result,
         workspace_sources=result.workspace_sources,
         primary_provider=result.provider,
+        db_path=db_path,
     )
 
     response_payload = {

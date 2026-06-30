@@ -17,8 +17,9 @@ class KnowledgeDocument:
       before this column existed.
     - Per-user learned rows (user_id set, source='auto', source='web', or
       source='mentor') -- facts, corrections, preferences, sourced web
-      research, or AI mentor lessons Bob picks up for a specific user. These
-      must NEVER be visible to a different user_id.
+      research lessons, or AI mentor lessons Bob picks up for a specific
+      user. Web/mentor rows should be curated lessons, not raw search dumps.
+      These must NEVER be visible to a different user_id.
     """
 
     _initialized = False
