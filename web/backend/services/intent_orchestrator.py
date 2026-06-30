@@ -22,6 +22,19 @@ class IntentOrchestrator:
         "schedule.suggest_plan", "chat.freeform",
     )
 
+    # Intents safe for the AI-classification cache (services/
+    # intent_pattern_cache.py) to short-circuit: every one of these always
+    # shows the user a suggestion/confirmation before anything is written
+    # (schedule.create/update/delete require explicit confirm; suggest_plan
+    # only ever proposes slots, applied through a separate endpoint). A
+    # wrong cache hit here can only ever produce a rejectable suggestion,
+    # never a silent wrong write -- unlike checklist.create/history.list/
+    # etc., which write immediately and so always go through the AI when
+    # rules are unsure, never the cache.
+    CACHEABLE_INTENTS = {
+        "schedule.create", "schedule.update", "schedule.delete", "schedule.suggest_plan",
+    }
+
     WEEKDAY_NAMES_VN = (
         "Thu Hai", "Thu Ba", "Thu Tu", "Thu Nam", "Thu Sau", "Thu Bay", "Chu Nhat",
     )
@@ -322,12 +335,29 @@ class IntentOrchestrator:
         free, while letting paraphrased/indirect action requests -- including
         follow-ups that only make sense given recent chat turns -- still get
         recognized.
+
+        Before paying for that AI call, check the intent-pattern cache for a
+        phrasing similar enough to one already TRUSTED (the AI agreed on the
+        same intent IntentPattern.CONFIRM_THRESHOLD times before) -- if
+        found, skip the AI call entirely and reuse that classification
+        (with entities re-extracted fresh by the same rule-based extractor
+        that intent already has, never the old message's entities). A brand
+        new phrasing the AI just resolved does NOT skip future AI calls
+        immediately -- it starts as an unproven 'candidate' that still goes
+        through the AI every time until it has been confirmed enough times,
+        spending quota deliberately up front so only well-proven patterns
+        ever get to answer on their own later.
         """
         result = self.detect(message)
         if result.get("confidence", 0) >= confidence_threshold or not ai_service:
             return result
         if not self._has_actionable_hint(message):
             return result
+
+        cached = self._lookup_cached_intent(message)
+        if cached:
+            return cached
+
         try:
             ai_result = self._detect_via_ai(
                 message, ai_service, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
@@ -335,7 +365,60 @@ class IntentOrchestrator:
         except Exception:
             logger.warning("AI-assisted intent detection failed", exc_info=True)
             ai_result = None
+
+        if ai_result and ai_result.get("intent") in self.CACHEABLE_INTENTS:
+            try:
+                from services.intent_pattern_cache import intent_pattern_cache
+                intent_pattern_cache.observe(
+                    message, ai_result["intent"], confidence=ai_result.get("confidence", 0.6),
+                )
+            except Exception:
+                logger.warning("Failed to record intent pattern cache entry", exc_info=True)
+
         return ai_result or result
+
+    def _lookup_cached_intent(self, message):
+        """Reuse a previously AI-confirmed phrasing->intent match. Entities
+        are always re-extracted fresh via the rule-based extractor for that
+        intent (dates/titles/etc differ on every message) -- the cache only
+        ever supplies the intent label, never borrowed entity values. If
+        extraction comes up empty, returns None so the caller falls through
+        to actually calling the AI rather than forcing a thin/wrong result."""
+        try:
+            from services.intent_pattern_cache import intent_pattern_cache
+            hit = intent_pattern_cache.lookup(message, min_score=0.6)
+        except Exception:
+            logger.warning("Intent pattern cache lookup failed", exc_info=True)
+            return None
+        if not hit or hit["intent"] not in self.CACHEABLE_INTENTS:
+            return None
+
+        intent = hit["intent"]
+        base = {
+            "intent": intent,
+            "confidence": 0.7,
+            "entities": {},
+            "requires_confirmation": True,
+            "refresh_targets": ["schedule", "calendar", "overview", "history"],
+            "cache_assisted": True,
+        }
+        if intent == "schedule.create":
+            schedule = self.extract_schedule(message)
+            if not schedule.get("start_time"):
+                return None
+            base["entities"] = {"schedule": schedule}
+        elif intent == "schedule.update":
+            new_values = self.extract_schedule(message)
+            if not (new_values.get("start_time") or new_values.get("end_time")):
+                return None
+            base["entities"] = {"new_values": new_values}
+        elif intent == "schedule.delete":
+            pass
+        elif intent == "schedule.suggest_plan":
+            base["requires_confirmation"] = False
+        else:
+            return None
+        return base
 
     def _detect_via_ai(self, message, ai_service, user_id=None, db_path=None, chat_session_id=None):
         now = datetime.now()
@@ -941,32 +1024,44 @@ class IntentOrchestrator:
                 return count
         return 1
 
+    # Short keywords like "hop" or "call" need a word boundary -- a plain
+    # substring check also matches "hop" inside "shopping"/"workshop" or
+    # "call" inside "recall"/"called", which would wrongly fire schedule
+    # detection on unrelated English sentences. Multi-word phrases work
+    # fine through the same helper since \b only needs to anchor the outer
+    # edges, not every internal space.
+    @staticmethod
+    def _contains_word(text, words):
+        return any(re.search(rf"\b{re.escape(word)}\b", text) for word in words)
+
+    _SCHEDULE_WORDS = ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar", "call", "event")
+
     def _is_schedule_create(self, text):
         # "schedule" needs a word boundary -- a plain substring check would
         # also match inside "reschedule", which should go to
         # _is_schedule_update instead (checked right after this).
-        action = any(term in text for term in (
+        action = self._contains_word(text, (
             "tao", "dat", "book", "them", "add", "nhac toi", "remind",
-            "set up", "arrange", "plan",
-        )) or bool(re.search(r"\bschedule\b", text))
-        schedule = any(term in text for term in ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar", "call"))
+            "set up", "arrange", "plan", "schedule",
+        ))
+        schedule = self._contains_word(text, self._SCHEDULE_WORDS)
         return action and schedule
 
     def _is_schedule_update(self, text):
-        action = any(term in text for term in (
+        action = self._contains_word(text, (
             "doi", "sua", "cap nhat", "thay doi", "chuyen",
             "change", "update", "reschedule", "move", "postpone", "shift",
         ))
-        schedule = any(term in text for term in ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar", "call"))
+        schedule = self._contains_word(text, self._SCHEDULE_WORDS)
         return action and schedule
 
     def _is_schedule_delete(self, text):
-        action = any(term in text for term in ("xoa", "huy", "bo lich", "cancel", "delete"))
-        schedule = any(term in text for term in ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar", "call"))
+        action = self._contains_word(text, ("xoa", "huy", "bo lich", "cancel", "delete"))
+        schedule = self._contains_word(text, self._SCHEDULE_WORDS)
         return action and schedule
 
     def _is_schedule_lookup(self, text):
-        if any(term in text for term in (
+        if self._contains_word(text, (
             "lich tuan", "lich hom", "hom nay co lich", "co lich gi", "calendar",
             "meeting tuan", "su kien tuan", "appointments",
             "my schedule", "my calendar", "my meetings",
@@ -976,12 +1071,10 @@ class IntentOrchestrator:
         # "do i have"/"what's on my" are too generic on their own (could be
         # about email, weather, anything) -- only count them when paired
         # with an explicit schedule word, same pattern as _is_schedule_create.
-        has_question = any(term in text for term in (
+        has_question = self._contains_word(text, (
             "do i have", "what's on my", "whats on my", "what do i have",
         ))
-        has_schedule_word = any(term in text for term in (
-            "meeting", "meetings", "event", "events", "appointment", "appointments", "schedule",
-        ))
+        has_schedule_word = self._contains_word(text, self._SCHEDULE_WORDS + ("schedule",))
         return has_question and has_schedule_word
 
     def _is_email_mark_read(self, text):

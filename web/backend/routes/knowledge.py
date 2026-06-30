@@ -45,9 +45,9 @@ _SEED_DOCUMENTS = [
     (
         "Tab Lich (Schedule/Calendar)",
         "Tab Lich quan ly cac lich hen cua FlowMate va dong bo hai chieu voi Google Calendar khi "
-        "nguoi dung ket noi Gmail. Co the tao lich qua giao dien hoac qua chat voi Bob bang cau "
-        "tu nhien nhu 'nhac minh hop voi sep luc 3 gio chieu mai' -- Bob se tu tinh ngay/gio dua "
-        "tren thoi diem hien tai va hoi xac nhan truoc khi tao.",
+        "nguoi dung ket noi Gmail. Co the tao/sua/xoa lich qua giao dien hoac qua chat voi Bob "
+        "bang cau tu nhien (xem tai lieu rieng 've cach noi de tao/doi/xoa lich' de biet vi du cu "
+        "the).",
         "lich,calendar,schedule,bob",
     ),
     (
@@ -62,7 +62,8 @@ _SEED_DOCUMENTS = [
         "FlowMate co 7 che do lam viec de ca nhan hoa cach Bob uu tien thong tin: student (sinh "
         "vien), worker (nhan vien van phong), freelancer (tu do), creator (sang tao noi dung), "
         "business (kinh doanh), mentor (co van), teacher (giao vien). Doi che do qua tab Cai dat "
-        "hoac noi voi Bob truc tiep, vi du 'tu nay minh lam freelance, doi giup minh'.",
+        "hoac noi truc tiep voi Bob trong chat (xem tai lieu rieng 've cach doi che do qua chat' "
+        "de biet vi du cu the).",
         "mode,che do,settings",
     ),
     (
@@ -115,21 +116,120 @@ _SEED_DOCUMENTS = [
         "khi duoc yeu cau doi ngon ngu khac.",
         "song ngu,bilingual,tieng anh,tieng viet",
     ),
+    (
+        "Cach noi de Bob tao lich hen moi",
+        "Noi tu nhien, khong can dien form: vi du 'nhac minh hop voi sep luc 3 gio chieu mai', "
+        "'dat lich kham rang thu 5 tuan sau 9 gio sang', 'trong 2 tieng nua goi lai cho khach'. "
+        "Bob tu tinh ngay/gio cu the dua tren thoi diem hien tai. Neu cau co danh dau noi dung ro "
+        "rang (vi du 'voi noi dung la: ...'), Bob chi lay phan sau danh dau lam mo ta su kien, "
+        "khong lay nguyen ca cau lenh. Neu khong neu ten rieng, Bob tu dat tieu de ngan gon tu noi "
+        "dung. Sau khi hieu, Bob LUON hoi xac nhan truoc khi tao that, khong tu y tao ngay.",
+        "lich,tao lich,schedule create,vi du,bob",
+    ),
+    (
+        "Cach noi de Bob doi gio hoac xoa lich hen",
+        "Vi du 'doi gio hop voi sep sang 5 gio chieu mai', 'huy cuoc hen voi khach ngay mai', "
+        "'cancel my meeting with John'. Bob tim trong cac lich hen sap toi (14 ngay ke tu hom nay) "
+        "co tieu de khop voi tu khoa trong cau. Neu tim thay dung 1 lich, Bob hien thi lai thong "
+        "tin hien tai va hoi xac nhan truoc khi sua/xoa. Neu khop nhieu lich, Bob liet ke ra va hoi "
+        "nguoi dung chon ro lich nao. Neu khong tim thay, Bob bao khong tim duoc va goi y noi ro "
+        "ten lich hon.",
+        "lich,doi lich,xoa lich,schedule update,schedule delete,vi du,bob",
+    ),
+    (
+        "Cach hoi Bob ve lich sap toi hoac da co",
+        "Vi du 'tuan sau minh co lich gi khong', 'hom nay co lich gi', 'do i have any meetings "
+        "this week', 'what's on my calendar'. Bob tra loi dua tren du lieu lich that trong "
+        "FlowMate (da dong bo Google Calendar neu co ket noi), khong bia dat su kien khong ton tai.",
+        "lich,xem lich,schedule list,vi du,bob",
+    ),
+    (
+        "Cach hoi Bob tom tat hoac tim email",
+        "Tom tat: 'tom tat 3 email moi nhat', 'email nao moi nhat trong hop thu'. Tim kiem: 'tim "
+        "email tu chi Lan ve hop dong', 'co email nao tu cong ty X tuan nay khong'. Danh dau: "
+        "'danh dau email tu chi Lan la da doc', 'danh dau email do la chua xem'. Tat ca deu can "
+        "Gmail da ket noi (qua nut Dang nhap o tab Email) thi Bob moi doc duoc hop thu that.",
+        "email,gmail,tom tat,tim kiem,danh dau,vi du,bob",
+    ),
+    (
+        "Gioi han hien tai: nhung gi Bob CHUA lam duoc",
+        "De tranh hieu lam, Bob hien KHONG lam duoc nhung viec sau qua chat: (1) xoa hoac sua mot "
+        "viec cu the trong checklist bang loi noi -- phai bam nut xoa (x) tren giao dien web hoac "
+        "mobile; (2) tu dong gui email -- Bob chi soan nhap tra loi, nguoi dung phai bam 'Gui luon' "
+        "de xac nhan gui that; (3) tu y tao/sua/xoa lich hen ma khong hoi xac nhan truoc; (4) doc "
+        "du lieu cua nguoi dung khac -- moi du lieu (lich, email, lich su, tri nho tu hoc) chi "
+        "thuoc ve dung tai khoan dang dang nhap.",
+        "gioi han,chua ho tro,bob,luu y",
+    ),
+    (
+        "Cach hoi Bob ve lich su hoat dong da qua",
+        "Dung khi muon xem lai VIEC DA LAM truoc do, vi du 'lich su hoat dong hom qua the nao', "
+        "'nay minh da lam gi roi nhi', 'what did I do today'. Khac voi cau liet ke hoat dong SAP "
+        "lam (vi du 'hom nay co cac hoat dong nhu X, Y, Z') -- cau do se duoc hieu la muon tao "
+        "checklist hoac goi y lich, khong phai xem lich su.",
+        "lich su,history,vi du,bob",
+    ),
+    (
+        "Cach doi che do lam viec qua chat",
+        "Noi truc tiep voi Bob, vi du 'tu nay minh lam freelance roi, doi giup minh', 'minh moi "
+        "chuyen sang lam giao vien'. Bob tu nhan dien che do tuong ung trong 7 che do (student, "
+        "worker, freelancer, creator, business, mentor, teacher) va cap nhat ngay, khong can vao "
+        "tab Cai dat.",
+        "che do,mode,settings,vi du,bob",
+    ),
+    (
+        "Bob xac nhan truoc khi ghi du lieu nhu the nao",
+        "Bob chia hanh dong ghi du lieu thanh 2 nhom theo do rui ro. Nhom CAN xac nhan truoc (khong "
+        "tu lam ngay): tao/sua/xoa lich hen, ap dung goi y lich nhieu hoat dong, gui email (chi "
+        "soan nhap, phai bam 'Gui luon'). Nhom KHONG can xac nhan vi it rui ro va de hoan tac: them "
+        "viec vao checklist (xoa lai duoc qua nut x), doi che do lam viec, danh dau email da "
+        "doc/chua doc, tim kiem/tom tat email (chi doc, khong sua du lieu). Nguyen tac: hanh dong "
+        "tao ra ket qua kho hoan tac hoac anh huong ben ngoai (vd dong bo Google Calendar, gui mail "
+        "that) luon can nguoi dung xac nhan; hanh dong de sua/xoa lai trong app thi Bob lam ngay de "
+        "tiet kiem thao tac cho nguoi dung.",
+        "xac nhan,confirm,an toan,chinh sach,bob",
+    ),
+    (
+        "Gioi han: mot tin nhan hien chi xu ly mot y dinh",
+        "Bob hien phan loai moi tin nhan thanh DUY NHAT mot y dinh chinh (vi du tao lich, hoac "
+        "them checklist, hoac tom tat email...). Neu mot cau chua nhieu yeu cau khac nhau cung luc "
+        "(vi du 'tao lich hop 3 gio VA nhac toi chuan bi tai lieu truoc 30 phut'), Bob chi bat duoc "
+        "y chinh (thuong la tao lich), khong tu tach thanh nhieu hanh dong rieng. Cach dung tot "
+        "nhat hien tai: gui tung yeu cau trong tin nhan rieng de Bob xu ly chinh xac tung viec.",
+        "gioi han,nhieu y dinh,multi intent,bob,luu y",
+    ),
 ]
 
 
 def _seed_if_empty():
     """Despite the legacy name (app.py imports this as `seed_knowledge_base`
-    and calls it once at startup), this now seeds any starter doc whose
-    title doesn't already exist -- not just on a fully empty table -- so
-    new entries added to _SEED_DOCUMENTS later reach installs that already
-    seeded the original set, the next time the app starts. Safe to call
-    repeatedly: matching titles are skipped, never duplicated."""
+    and calls it once at startup), this keeps every source='seed' document
+    fully in sync with _SEED_DOCUMENTS above, every time the app starts --
+    not just a one-time insert:
+    - a title not seen before is created
+    - an existing seed doc whose content/tags changed here is updated in place
+    - a seed doc whose title was REMOVED from the list above is deleted
+    'manual' (user-added via the Knowledge tab) and 'auto' (Bob's per-user
+    learned memories) documents are never touched by any of this -- only
+    source='seed' rows are managed declaratively from this file."""
     try:
-        existing_titles = {doc.get('title') for doc in KnowledgeDocument.get_all(limit=2000)}
+        existing_seed_by_title = {
+            doc['title']: doc
+            for doc in KnowledgeDocument.get_all(limit=2000)
+            if doc.get('source') == 'seed'
+        }
+        wanted_titles = set()
         for title, content, tags in _SEED_DOCUMENTS:
-            if title not in existing_titles:
+            wanted_titles.add(title)
+            current = existing_seed_by_title.get(title)
+            if current is None:
                 KnowledgeDocument.create(title, content, tags=tags, source='seed')
+            elif current.get('content') != content or current.get('tags') != tags:
+                KnowledgeDocument.update(current['id'], content=content, tags=tags)
+
+        for title, doc in existing_seed_by_title.items():
+            if title not in wanted_titles:
+                KnowledgeDocument.delete(doc['id'])
     except Exception:
         pass
 
