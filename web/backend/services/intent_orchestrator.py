@@ -18,7 +18,7 @@ class IntentOrchestrator:
     AI_INTENTS = (
         "email.latest_summary", "email.search", "schedule.create", "schedule.update",
         "schedule.delete", "schedule.list", "email.mark_read", "email.mark_unread",
-        "history.list", "settings.update_mode", "chat.freeform",
+        "history.list", "settings.update_mode", "checklist.create", "chat.freeform",
     )
 
     WEEKDAY_NAMES_VN = (
@@ -56,6 +56,17 @@ class IntentOrchestrator:
             confidence = 0.9
             entities["mode"] = self._mode_from_text(text)
             refresh_targets = ["settings", "profile", "history"]
+        elif self._is_checklist_request(text):
+            intent = "checklist.create"
+            # Kept just below the AI-assist threshold on purpose: detecting
+            # "this is a checklist request" from keywords is reliable, but
+            # splitting the actual item list out of a messy chat sentence
+            # (leading "hom nay minh co...", trailing "giup minh nhe") is
+            # not -- so we always let the AI pass re-extract clean items
+            # rather than trusting the regex split here as final.
+            confidence = 0.55
+            entities["items"] = self._checklist_items_from_text(message)
+            refresh_targets = ["overview", "history"]
         elif self._is_history_lookup(text):
             intent = "history.list"
             confidence = 0.86
@@ -132,8 +143,23 @@ class IntentOrchestrator:
         "email_query.keyword='hop dong', email_query.sender='chi Lan' "
         "(vi 'chi Lan' khong phai dia chi email hop le nen coi la tu khoa, khong dat vao truong sender dang email).\n"
         "- 'Tu nay minh lam freelance roi, doi giup minh' => settings.update_mode; mode=freelancer.\n"
-        "- 'Nay minh bao ban lam gi roi nhi' => history.list.\n"
+        "- 'Nay minh bao ban lam gi roi nhi' => history.list (hoi VIEC DA LAM trong qua khu).\n"
+        "- 'Hom nay minh co cac hoat dong nhu yoga, cham meo, don nha. Dua vao checklist giup minh' "
+        "=> checklist.create; checklist_items=[{title:'Yoga',priority:'normal'},"
+        "{title:'Cham meo',priority:'normal'},{title:'Don nha',priority:'normal'}] (day la cac VIEC "
+        "SAP lam, KHONG phai history.list dau cau co chua tu 'hoat dong').\n"
+        "- 'Minh can nop bao cao gap truoc 5 gio chieu nay, ngoai ra ranh thi don ban lam viec, "
+        "dua vao checklist giup minh' => checklist.create; checklist_items=[{title:'Nop bao cao',"
+        "priority:'high'},{title:'Don ban lam viec',priority:'low'}] (tung viec mang muc do gap "
+        "rieng, khong dung chung 1 priority cho ca danh sach).\n"
         "- 'Ban nghi gi ve lam viec tu xa' => chat.freeform (khong khop muc nao tren).\n"
+        "- (Vi du bang TIENG ANH, ap dung CACH suy luan giong het cac vi du tieng Viet o tren) "
+        "'Schedule a call with the client tomorrow at 3pm' => schedule.create; "
+        "start_time = (ngay ke tiep THOI DIEM HIEN TAI) luc 15:00, title='Call with the client'.\n"
+        "- 'What's on my calendar next week' => schedule.list; window.label=next_week.\n"
+        "- 'I have a lot of things to do today: gym, laundry, finish the report (urgent)' "
+        "=> checklist.create; checklist_items=[{title:'Gym',priority:'normal'},"
+        "{title:'Laundry',priority:'normal'},{title:'Finish the report',priority:'high'}].\n"
     )
 
     # Domain words for any of the recognizable intents. If a message has none
@@ -151,14 +177,33 @@ class IntentOrchestrator:
         "lich su", "hoat dong", "history", "activity",
         "da lam gi", "lam gi roi", "nho lai", "nhac lai", "vua nay", "vua roi",
         "mode", "che do lam viec", "doi che do", "chuyen che do",
+        "checklist", "to-do", "todo", "danh sach cong viec", "danh sach viec",
+    )
+
+    # Signals that the message is asking to turn a list of upcoming
+    # activities into a checklist/to-do list -- distinct from
+    # _is_history_lookup's signals, which are about *past* activity.
+    CHECKLIST_LIST_SIGNAL = (
+        "checklist", "to-do", "todo", "danh sach cong viec", "danh sach viec",
+        "viec can lam", "cac hoat dong", "hoat dong sau", "nhung viec",
+        "cac viec can", "list cong viec",
+        "things to do", "my tasks", "task list", "list of tasks",
+        "today's activities", "todays activities", "things i need to do",
+        "stuff i need to do",
     )
 
     TIME_HINT_PATTERN = re.compile(
         r"(?<!\d)\d{1,2}\s*(?:gio|h)(?::?\d{2})?(?!\d)"
+        r"|(?<!\d)\d{1,2}(?::\d{2})?\s*(?:am|pm)\b"
         r"|ngay mai|hom nay|hom qua|sang nay|chieu nay|toi nay|sang mai|chieu mai|toi mai"
         r"|tuan nay|tuan sau|tuan toi|tuan truoc"
         r"|thu hai|thu ba|thu tu|thu nam|thu sau|thu bay|chu nhat"
         r"|\d{1,3}\s*(?:phut|gio|tieng)\s*nua"
+        r"|\btomorrow\b|\btoday\b|\byesterday\b|\btonight\b"
+        r"|\bthis morning\b|\bthis afternoon\b|\bthis evening\b|\btomorrow morning\b|\btomorrow afternoon\b"
+        r"|\bthis week\b|\bnext week\b|\blast week\b"
+        r"|\bmonday\b|\btuesday\b|\bwednesday\b|\bthursday\b|\bfriday\b|\bsaturday\b|\bsunday\b"
+        r"|\bin \d{1,3}\s*(?:minutes?|mins?|hours?)\b"
     )
 
     # Explicit "content marker" phrases (e.g. "voi noi dung la: xxx") that mark
@@ -201,13 +246,47 @@ class IntentOrchestrator:
         re.IGNORECASE,
     )
 
+    # Same idea but for an explicit location, e.g. "dia diem la 123 Le Loi".
+    # Deliberately limited to unambiguous markers -- bare "tai"/"o" are too
+    # common as ordinary prepositions ("tai vi", "o day") to use as a signal.
+    _LOCATION_MARKER_TERMS = (
+        "địa điểm là", "dia diem la",
+        "địa điểm", "dia diem",
+        "tại địa chỉ", "tai dia chi",
+        "địa chỉ là", "dia chi la",
+        "địa chỉ", "dia chi",
+        "location la", "location:",
+    )
+    LOCATION_MARKER_RE = re.compile(
+        r"(?:" + "|".join(re.escape(t) for t in sorted(set(_LOCATION_MARKER_TERMS), key=len, reverse=True)) + r")"
+        r"\s*[:\-]?\s*([^,.;\n]+)",
+        re.IGNORECASE,
+    )
+
+    # Urgency words used to score checklist items pulled out of a chat
+    # message -- items the user explicitly flags as urgent/low-priority sort
+    # to the top/bottom of the checklist instead of all landing at the same
+    # flat priority.
+    CHECKLIST_URGENCY_HIGH = (
+        "gap", "khan cap", "uu tien cao", "quan trong", "can ngay",
+        "ngay lap tuc", "urgent", "asap", "deadline", "important",
+        "high priority", "right away", "immediately", "as soon as possible",
+    )
+    CHECKLIST_URGENCY_LOW = (
+        "khong gap", "ranh thi", "khi nao ranh", "khong uu tien",
+        "khong qua gap", "thong thuong", "low priority",
+        "not urgent", "no rush", "whenever i'm free", "whenever im free",
+        "not a priority", "when i have time",
+    )
+
     # Leading filler ("Hay", "Ban hay", "Giup toi", ...) stripped before
     # falling back to the whole message as the title source, so "Hay tao
     # lich..." doesn't leave "Hay" stuck onto the auto-generated title.
     LEADING_FILLER_RE = re.compile(
         r"^\s*(?:xin\s+)?(?:hãy|hay|bạn hãy|ban hay|làm ơn|lam on|giúp tôi|giup toi|"
         r"giúp mình|giup minh|cho tôi|cho toi|mình muốn|minh muon|tôi muốn|toi muon|"
-        r"vui lòng|vui long)\s+",
+        r"vui lòng|vui long|"
+        r"please|can you|could you|would you|i want to|i need to|i'd like to|i would like to)\s+",
         re.IGNORECASE,
     )
 
@@ -252,7 +331,9 @@ class IntentOrchestrator:
                 "Ban la bo phan loai y dinh cho mot tro ly cong viec. Doc cau nhan tu "
                 "nguoi dung (va lich su hoi thoai gan day neu co) va TRA VE DUY NHAT mot "
                 "JSON object hop le theo dung cau truc duoc yeu cau, khong giai thich them, "
-                "khong dung markdown."
+                "khong dung markdown. Nguoi dung co the viet bang TIENG VIET hoac TIENG ANH "
+                "(hoac lan ca hai) -- hieu va phan loai dung y dinh bat ke ngon ngu nao, "
+                "khong chi dua vao tu khoa tieng Viet."
             ),
         }
         user_message = {
@@ -333,9 +414,12 @@ class IntentOrchestrator:
             "(vi du 'danh dau da xem email tu chi Lan')\n"
             "- email.mark_unread: muon danh dau (cac) email CHUA DOC "
             "(vi du 'danh dau email do la chua xem')\n"
-            "- history.list: muon xem lich su hoat dong/da lam gi\n"
+            "- history.list: muon xem lai lich su hoat dong DA LAM trong qua khu\n"
             "- settings.update_mode: muon doi che do lam viec "
             "(student, worker, freelancer, creator, business, mentor, teacher)\n"
+            "- checklist.create: liet ke nhieu viec/hoat dong SAP lam va muon dua vao checklist/to-do "
+            "(vi du 'hom nay co cac hoat dong nhu X, Y, Z, dua vao checklist giup minh') -- KHAC voi "
+            "history.list vi day la viec sap toi, khong phai viec da lam\n"
             "- chat.freeform: tat ca truong hop khac (hoi dap thong thuong)\n\n"
             f"{self.FEW_SHOT_REASONING}\n"
             "Tra ve CHINH XAC mot JSON object theo cau truc:\n"
@@ -349,9 +433,16 @@ class IntentOrchestrator:
             '  "email_count": <1-5>,\n'
             '  "email_query": {"sender": "", "keyword": "", "unread_only": false},\n'
             '  "history_limit": <1-20>,\n'
-            '  "mode": "<student|worker|freelancer|creator|business|mentor|teacher hoac null>"\n'
+            '  "mode": "<student|worker|freelancer|creator|business|mentor|teacher hoac null>",\n'
+            '  "checklist_items": [{"title": "<viec 1>", "priority": "high|normal|low"}, "..."]\n'
             "}\n"
             "Chi dien cac truong lien quan toi intent da chon, cac truong khac de null/bo qua. "
+            "Neu intent la checklist.create, BAT BUOC dien checklist_items la danh sach NGAN GON "
+            "tung viec/hoat dong nguoi dung da liet ke (giu nguyen y chinh, KHONG bia them, KHONG "
+            "gop nhieu viec vao chung mot phan tu, bo qua cac cum tu mo dau/ket thuc nhu 'hom nay "
+            "minh co', 'dua vao checklist giup minh'). Voi moi viec, dat priority='high' neu nguoi "
+            "dung noi viec do gap/khan cap/quan trong/co han gan, priority='low' neu nguoi dung noi "
+            "khong gap/ranh thi lam/khong uu tien, con lai dung priority='normal'.\n"
             "Neu intent la schedule.create, BAT BUOC tinh start_time tuyet doi (ngay+gio cu the) "
             "dua vao THOI DIEM HIEN TAI o tren khi cau co nhac thoi gian (vd 'chieu mai', "
             "'thu 5 tuan sau', 'trong 2 tieng nua'). Voi schedule.create, neu cau nhan co danh "
@@ -463,6 +554,26 @@ class IntentOrchestrator:
                 return None
             entities["mode"] = mode
             refresh_targets = ["settings", "profile", "history"]
+        elif intent == "checklist.create":
+            raw_items = data.get("checklist_items")
+            items = []
+            if isinstance(raw_items, list):
+                for raw_item in raw_items:
+                    if isinstance(raw_item, dict):
+                        title = str(raw_item.get("title") or "").strip()[:240]
+                        priority = str(raw_item.get("priority") or "normal").strip().lower()
+                    else:
+                        title = str(raw_item or "").strip()[:240]
+                        priority = "normal"
+                    if not title:
+                        continue
+                    if priority not in ("high", "normal", "low"):
+                        priority = "normal"
+                    items.append({"title": title, "priority": priority})
+            if not items:
+                return None
+            entities["items"] = items[:12]
+            refresh_targets = ["overview", "history"]
         else:
             return {
                 "intent": "chat.freeform",
@@ -502,15 +613,17 @@ class IntentOrchestrator:
         # the raw message back.
         marked_content = self._extract_marked_content(message)
         marked_title = self._extract_marked_title(message)
+        marked_location = self._extract_marked_location(message)
         description = str(schedule.get("description") or "").strip() or marked_content or str(message or "").strip()
         title = str(schedule.get("title") or "").strip() or marked_title or self._schedule_title(message, marked_content)
+        location = str(schedule.get("location") or "").strip() or marked_location
         return {
             "title": title[:150],
             "description": description,
             "start_time": start_time,
             "end_time": end_time,
             "attendees": attendees,
-            "location": str(schedule.get("location") or "").strip(),
+            "location": location[:150],
         }
 
     @staticmethod
@@ -679,6 +792,27 @@ class IntentOrchestrator:
             return ""
         return match.group(1).strip(" .,;:-\"'")[:100]
 
+    @classmethod
+    def _extract_marked_location(cls, message):
+        """Return an explicitly given location ('dia diem la:', 'dia chi:' ...),
+        or '' if the message doesn't name one."""
+        if not message:
+            return ""
+        match = cls.LOCATION_MARKER_RE.search(message)
+        if not match:
+            return ""
+        return match.group(1).strip(" .,;:-\"'")[:150]
+
+    def _checklist_item_priority(self, text):
+        """Score a single checklist item/message by urgency wording, or
+        'normal' if it carries none."""
+        normalized = self.normalize(text)
+        if any(term in normalized for term in self.CHECKLIST_URGENCY_HIGH):
+            return "high"
+        if any(term in normalized for term in self.CHECKLIST_URGENCY_LOW):
+            return "low"
+        return "normal"
+
     @staticmethod
     def _summarize_for_title(text, max_len=70):
         """Best-effort 'read and understand' for when no explicit title is
@@ -718,12 +852,14 @@ class IntentOrchestrator:
         attendees = sorted(set(re.findall(r"[\w\.-]+@[\w\.-]+\.\w+", message or "")))
         marked_content = self._extract_marked_content(message)
         marked_title = self._extract_marked_title(message)
+        marked_location = self._extract_marked_location(message)
         return {
             "title": marked_title or self._schedule_title(message, marked_content),
             "description": marked_content or message,
             "start_time": start_time,
             "end_time": end_time,
             "attendees": attendees,
+            "location": marked_location,
         }
 
     @staticmethod
@@ -779,25 +915,47 @@ class IntentOrchestrator:
         return 1
 
     def _is_schedule_create(self, text):
-        action = any(term in text for term in ("tao", "dat", "book", "them", "add", "nhac toi", "remind"))
-        schedule = any(term in text for term in ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar"))
+        # "schedule" needs a word boundary -- a plain substring check would
+        # also match inside "reschedule", which should go to
+        # _is_schedule_update instead (checked right after this).
+        action = any(term in text for term in (
+            "tao", "dat", "book", "them", "add", "nhac toi", "remind",
+            "set up", "arrange", "plan",
+        )) or bool(re.search(r"\bschedule\b", text))
+        schedule = any(term in text for term in ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar", "call"))
         return action and schedule
 
     def _is_schedule_update(self, text):
-        action = any(term in text for term in ("doi", "sua", "cap nhat", "thay doi", "chuyen"))
-        schedule = any(term in text for term in ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar"))
+        action = any(term in text for term in (
+            "doi", "sua", "cap nhat", "thay doi", "chuyen",
+            "change", "update", "reschedule", "move", "postpone", "shift",
+        ))
+        schedule = any(term in text for term in ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar", "call"))
         return action and schedule
 
     def _is_schedule_delete(self, text):
         action = any(term in text for term in ("xoa", "huy", "bo lich", "cancel", "delete"))
-        schedule = any(term in text for term in ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar"))
+        schedule = any(term in text for term in ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar", "call"))
         return action and schedule
 
     def _is_schedule_lookup(self, text):
-        return any(term in text for term in (
+        if any(term in text for term in (
             "lich tuan", "lich hom", "hom nay co lich", "co lich gi", "calendar",
-            "meeting tuan", "su kien tuan", "appointments"
+            "meeting tuan", "su kien tuan", "appointments",
+            "my schedule", "my calendar", "my meetings",
+            "upcoming meetings", "upcoming events",
+        )):
+            return True
+        # "do i have"/"what's on my" are too generic on their own (could be
+        # about email, weather, anything) -- only count them when paired
+        # with an explicit schedule word, same pattern as _is_schedule_create.
+        has_question = any(term in text for term in (
+            "do i have", "what's on my", "whats on my", "what do i have",
         ))
+        has_schedule_word = any(term in text for term in (
+            "meeting", "meetings", "event", "events", "appointment", "appointments", "schedule",
+        ))
+        return has_question and has_schedule_word
 
     def _is_email_mark_read(self, text):
         if not any(term in text for term in ("danh dau", "mark")):
@@ -813,7 +971,42 @@ class IntentOrchestrator:
         return any(term in text for term in ("email", "gmail", "hop thu", "thu chua doc", "mail"))
 
     def _is_history_lookup(self, text):
-        return any(term in text for term in ("lich su", "hoat dong", "da lam gi", "history", "activity"))
+        # Deliberately does NOT match bare "hoat dong"/"activity" -- those
+        # words show up just as often in forward-looking requests ("hom nay
+        # co cac hoat dong nhu...") as in actual history lookups, so they'd
+        # misfire on checklist/day-plan messages. "lich su"/"history" are
+        # unambiguous; the rest require an explicit retrospective phrase.
+        if "lich su" in text or "history" in text:
+            return True
+        return any(term in text for term in (
+            "da lam gi", "lam gi roi", "vua lam gi", "nhung gi da lam",
+            "what did i do", "what have i done", "what i did",
+        ))
+
+    def _is_checklist_request(self, text):
+        if not any(term in text for term in self.CHECKLIST_LIST_SIGNAL):
+            return False
+        from routes.schedule import _split_day_plan_entries
+        return len(_split_day_plan_entries(text)) >= 2
+
+    def _checklist_items_from_text(self, message):
+        """Split the message into items and score each one's urgency. If no
+        item carries its own urgency wording, fall back to the whole
+        message's urgency applied uniformly (covers 'hom nay co may viec
+        gap: X, Y, Z', where it's stated once for the whole list) -- but
+        never let a message-wide 'gap' override an item that explicitly
+        said it's low priority, or vice versa."""
+        from routes.schedule import _split_day_plan_entries
+        entries = _split_day_plan_entries(message)
+        priorities = [self._checklist_item_priority(entry["title"]) for entry in entries]
+        if entries and all(priority == "normal" for priority in priorities):
+            message_priority = self._checklist_item_priority(message)
+            if message_priority != "normal":
+                priorities = [message_priority] * len(entries)
+        return [
+            {"title": entry["title"], "priority": priority}
+            for entry, priority in zip(entries, priorities)
+        ]
 
     def _is_mode_update(self, text):
         if not any(term in text for term in ("doi che do", "chuyen che do", "set mode", "mode", "che do lam viec")):
@@ -912,8 +1105,30 @@ class IntentOrchestrator:
             return hour + 12
         return hour
 
+    @staticmethod
+    def _apply_am_pm(hour, period):
+        if period == "pm" and 1 <= hour <= 11:
+            return hour + 12
+        if period == "am" and hour == 12:
+            return 0
+        return hour
+
     @classmethod
     def _extract_time(cls, text):
+        # English 12-hour formats ("3pm", "3:30 pm") first -- these are the
+        # most common way English speakers write times, and don't overlap
+        # with the Vietnamese "Ngio"/"N:MM" patterns below.
+        match = re.search(r"(?<!\d)(\d{1,2}):(\d{2})\s*(am|pm)\b", text)
+        if match:
+            hour, minute = int(match.group(1)), int(match.group(2))
+            hour = cls._apply_am_pm(hour, match.group(3))
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                return datetime.strptime(f"{hour:02d}:{minute:02d}", "%H:%M").time()
+        match = re.search(r"(?<!\d)(\d{1,2})\s*(am|pm)\b", text)
+        if match:
+            hour = cls._apply_am_pm(int(match.group(1)), match.group(2))
+            if 0 <= hour <= 23:
+                return datetime.strptime(f"{hour:02d}:00", "%H:%M").time()
         match = re.search(r"(?<!\d)(\d{1,2})[:h](\d{2})(?!\d)", text)
         if match:
             hour, minute = int(match.group(1)), int(match.group(2))
@@ -959,7 +1174,10 @@ class IntentOrchestrator:
 
         prefixes = (
             "tao lich", "dat lich", "them lich", "book lich", "tao su kien",
-            "dat cuoc hop", "nhac toi", "remind me"
+            "dat cuoc hop", "nhac toi", "remind me",
+            "schedule a", "schedule an", "schedule", "book a", "book an",
+            "set up a", "set up an", "arrange a", "arrange an",
+            "plan a", "plan an", "create a meeting", "add a meeting",
         )
         normalized = IntentOrchestrator.normalize(clean)
         for prefix in prefixes:

@@ -51,13 +51,13 @@ _DATE_WORDS = {
 }
 
 _WEEKDAY_WORDS = {
-    'thu 2': 0, 'thứ 2': 0, 'thu hai': 0, 'thứ hai': 0,
-    'thu 3': 1, 'thứ 3': 1, 'thu ba': 1, 'thứ ba': 1,
-    'thu 4': 2, 'thứ 4': 2, 'thu tu': 2, 'thứ tư': 2,
-    'thu 5': 3, 'thứ 5': 3, 'thu nam': 3, 'thứ năm': 3,
-    'thu 6': 4, 'thứ 6': 4, 'thu sau': 4, 'thứ sáu': 4,
-    'thu 7': 5, 'thứ 7': 5, 'thu bay': 5, 'thứ bảy': 5,
-    'chu nhat': 6, 'chủ nhật': 6, 'cn': 6,
+    'thu 2': 0, 'thứ 2': 0, 'thu hai': 0, 'thứ hai': 0, 'monday': 0,
+    'thu 3': 1, 'thứ 3': 1, 'thu ba': 1, 'thứ ba': 1, 'tuesday': 1,
+    'thu 4': 2, 'thứ 4': 2, 'thu tu': 2, 'thứ tư': 2, 'wednesday': 2,
+    'thu 5': 3, 'thứ 5': 3, 'thu nam': 3, 'thứ năm': 3, 'thursday': 3,
+    'thu 6': 4, 'thứ 6': 4, 'thu sau': 4, 'thứ sáu': 4, 'friday': 4,
+    'thu 7': 5, 'thứ 7': 5, 'thu bay': 5, 'thứ bảy': 5, 'saturday': 5,
+    'chu nhat': 6, 'chủ nhật': 6, 'cn': 6, 'sunday': 6,
 }
 
 _ACTIVITY_KEYWORDS = (
@@ -192,6 +192,9 @@ def _extract_quick_time(text):
     patterns = [
         r'(?<!\d)(\d{1,2})\s*[:h]\s*(\d{1,2})?\s*(sáng|sang|chiều|chieu|tối|toi|đêm|dem|am|pm)?(?!\d)',
         r'(?<!\d)(\d{1,2})\s*giờ\s*(\d{1,2})?\s*(sáng|sang|chiều|chieu|tối|toi|đêm|dem|am|pm)?(?!\d)',
+        # Bare English 12-hour format with no colon/"h"/"gio" separator
+        # ("3pm", "10 am") -- the most common way English speakers write a time.
+        r'(?<!\d)(\d{1,2})()\s*(am|pm)(?!\d)',
     ]
     for pattern in patterns:
         match = re.search(pattern, normalized)

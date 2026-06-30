@@ -107,6 +107,22 @@ export default function OverviewScreen({ onAgentSync, syncEvent }) {
     saveChecklist(nextState);
   }, [checklistState, saveChecklist]);
 
+  const removeChecklistItem = useCallback((item) => {
+    if (item.kind !== 'custom') return;
+    const customItems = (checklistState.custom_items || []).filter((entry) => entry.id !== item.id);
+    const nextState = { completed: checklistState.completed || {}, custom_items: customItems };
+    setChecklistState(nextState);
+    saveChecklist(nextState);
+  }, [checklistState, saveChecklist]);
+
+  const sortChecklist = useCallback(() => {
+    const sortedCustomItems = sortChecklistEntries(checklistState.custom_items || []);
+    const nextState = { completed: checklistState.completed || {}, custom_items: sortedCustomItems };
+    setChecklistState(nextState);
+    saveChecklist(nextState);
+    setQuickMessage('Đã sắp xếp checklist theo ưu tiên.');
+  }, [checklistState, saveChecklist]);
+
   const refreshAfterQuickChange = useCallback(async (targetDate) => {
     const nextDate = normalizeApiDate(targetDate);
     if (nextDate && nextDate !== date) {
@@ -334,13 +350,18 @@ export default function OverviewScreen({ onAgentSync, syncEvent }) {
       </View>
 
       <Card>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.kicker}>CHECKLIST</Text>
-          <Text style={styles.sectionTitle}>Việc người dùng cần hoàn tất</Text>
-          <Text style={styles.checklistMeta}>{completedCount}/{checklistItems.length} đã xong</Text>
+        <View style={styles.checklistHeaderRow}>
+          <View style={styles.checklistHeaderText}>
+            <Text style={styles.kicker}>CHECKLIST</Text>
+            <Text style={styles.sectionTitle}>Việc và lịch được AI sắp xếp</Text>
+            <Text style={styles.checklistMeta}>{completedCount}/{checklistItems.length} đã xong</Text>
+          </View>
+          <TouchableOpacity style={styles.sortButton} onPress={sortChecklist} activeOpacity={0.78}>
+            <Text style={styles.sortButtonText}>Sắp xếp AI</Text>
+          </TouchableOpacity>
         </View>
         {checklistItems.length === 0 ? (
-          <EmptyState title="Checklist đang trống" detail="Tạo lịch/task ở tab Lịch để FlowMate đưa vào checklist." />
+          <EmptyState title="Checklist đang trống" detail="Thêm việc hoặc lịch ở ô Thêm nhanh phía trên." />
         ) : checklistItems.map((item) => (
           <View key={item.id} style={styles.checklistItem}>
             <TouchableOpacity
@@ -362,7 +383,19 @@ export default function OverviewScreen({ onAgentSync, syncEvent }) {
               </Text>
               {item.meta ? <Text style={styles.itemMeta} numberOfLines={2}>{item.meta}</Text> : null}
             </TouchableOpacity>
-            <Text style={styles.checklistSource}>{item.sourceLabel || 'Lịch'}</Text>
+            <View style={styles.checklistActions}>
+              <Text style={styles.checklistSource}>{item.sourceLabel || 'Lịch'}</Text>
+              {item.kind === 'custom' ? (
+                <TouchableOpacity
+                  style={styles.checklistRemove}
+                  onPress={() => removeChecklistItem(item)}
+                  activeOpacity={0.78}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Text style={styles.checklistRemoveText}>×</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </View>
         ))}
       </Card>
@@ -470,7 +503,12 @@ function buildChecklistItems({ schedules, checklistState }) {
         title: item.title || 'Task không tiêu đề',
         meta: customChecklistMeta(item),
         completed: Boolean(item.completed || completed[id]),
-        sourceLabel: item.source === 'manual' ? 'Task' : providerLabel(item.source),
+        sourceLabel: item.source === 'ai' ? 'AI' : 'Tự thêm',
+        pinned: Boolean(item.pinned),
+        priority_score: Number(item.priority_score || 0),
+        due_at: item.due_at || '',
+        due_date: item.due_date || '',
+        created_at: item.created_at || '',
       };
     });
   const scheduleItems = schedules
@@ -484,16 +522,46 @@ function buildChecklistItems({ schedules, checklistState }) {
         meta: formatScheduleTime(item.start_time, item.end_time),
         completed: Boolean(completed[id] || item.status === 'completed'),
         sourceLabel: 'Lịch',
+        pinned: false,
+        priority_score: /(deadline|hạn|nộp|due|submit|bàn giao)/i.test(item.title || '') ? 80 : 55,
+        start_time: item.start_time || '',
+        created_at: item.start_time || '',
       };
     });
-  return [...customItems, ...scheduleItems];
+  return [...customItems, ...scheduleItems].sort(compareChecklistItems);
+}
+
+function checklistDateValue(item) {
+  const raw = item.due_at || item.start_time || item.due_date || '';
+  if (!raw) return Number.MAX_SAFE_INTEGER;
+  const normalized = String(raw).includes('T') ? String(raw) : `${raw}T23:59:59`;
+  const time = new Date(normalized).getTime();
+  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
+}
+
+function compareChecklistItems(a, b) {
+  const completedDiff = Number(Boolean(a.completed)) - Number(Boolean(b.completed));
+  if (completedDiff) return completedDiff;
+  const pinnedDiff = Number(!a.pinned) - Number(!b.pinned);
+  if (pinnedDiff) return pinnedDiff;
+  const dateDiff = checklistDateValue(a) - checklistDateValue(b);
+  if (dateDiff) return dateDiff;
+  const priorityDiff = Number(b.priority_score || 0) - Number(a.priority_score || 0);
+  if (priorityDiff) return priorityDiff;
+  return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+}
+
+function sortChecklistEntries(items = []) {
+  return [...items].sort(compareChecklistItems);
 }
 
 function customChecklistMeta(item) {
-  if (item.due_at) return `Hạn ${formatScheduleTime(item.due_at)}`;
-  if (item.due_date) return `Hạn ${formatReportDate(item.due_date)}`;
-  if (item.ai_reason) return item.ai_reason;
-  return 'Thêm nhanh';
+  const dueDate = item.due_date || (item.due_at ? String(item.due_at).slice(0, 10) : '');
+  if (!dueDate) return item.ai_reason || 'Chưa có hạn rõ ràng';
+  const date = new Date(`${dueDate}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return item.ai_reason || dueDate;
+  const label = date.toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' });
+  return item.ai_reason ? `${label} · ${item.ai_reason}` : label;
 }
 
 function buildInsight({ emails, schedules, date }) {
@@ -718,6 +786,42 @@ function makeStyles(colors) {
     sectionHeader: { marginBottom: 4 },
     sectionTitle: { marginTop: 2, color: colors.text, fontFamily: officeFont, fontSize: 14, fontWeight: '600' },
     checklistMeta: { marginTop: 4, color: colors.textMuted, fontFamily: officeFont, fontSize: 11, fontWeight: '500' },
+    checklistHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 8,
+      marginBottom: 4,
+    },
+    checklistHeaderText: { flex: 1, minWidth: 0 },
+    sortButton: {
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      backgroundColor: `${colors.primary}18`,
+    },
+    sortButtonText: {
+      color: colors.primary,
+      fontFamily: officeFont,
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    checklistActions: { alignItems: 'flex-end', gap: 4 },
+    checklistRemove: {
+      width: 20,
+      height: 20,
+      borderRadius: 6,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: `${colors.danger}18`,
+    },
+    checklistRemoveText: {
+      color: colors.danger,
+      fontFamily: officeFont,
+      fontSize: 13,
+      fontWeight: '700',
+      lineHeight: 14,
+    },
     checklistItem: {
       flexDirection: 'row',
       alignItems: 'center',

@@ -3,6 +3,7 @@ import re
 import logging
 import threading as _thr
 import unicodedata
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -11,6 +12,7 @@ from services.gmail_service import get_cached_gmail_service
 from services.intent_orchestrator import IntentOrchestrator
 from services.schedule_service import ScheduleService
 from services.calendar_service import CalendarService
+from models.cache import Cache
 from models.history import History
 from models.schedule import Schedule, LOCAL_TZ
 from utils.user_context import get_user_token_file
@@ -21,6 +23,10 @@ from routes.schedule import (
     _sync_schedule_to_calendar_async,
     _delete_calendar_event_async,
     _prune_stale_duplicate_after_move_async,
+    _checklist_cache_key,
+    _normalize_checklist_payload,
+    _sort_custom_items,
+    _CHECKLIST_CACHE_TTL_SECONDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -151,8 +157,12 @@ def _intent_sources(message):
         'tong quan', 'hom nay co gi', 'can lam gi', 'viec cua toi',
         'dashboard', 'overview', 'today overview'
     ))
+    # Bare 'hoat dong'/'activity' is excluded here on purpose: it shows up
+    # just as often in forward-looking checklist/day-plan requests as in
+    # actual "what did I do" lookups, so it would wrongly pull in history
+    # context (and skip calendar context, see below) for those messages too.
     history_requested = overview or any(term in normalized for term in (
-        'lich su', 'hoat dong', 'da lam gi', 'history', 'activity'
+        'lich su', 'history', 'da lam gi', 'lam gi roi'
     ))
     sources = set()
     if overview or any(term in normalized for term in (
@@ -587,7 +597,10 @@ def _build_agent_system_prompt(mode_prompt, agent_capabilities):
         "You are Bob, the AI agent inside FlowMate -- a workspace agent for email, "
         "calendar, schedules, history, and user settings. If asked your name, say Bob. "
         "Never mention which underlying AI provider or model powers you. " + mode_prompt
-        + " Answer in Vietnamese unless the user asks otherwise. "
+        + " The user may write in Vietnamese or English. Detect the language of "
+        "their latest message and answer in that same language; if a message mixes "
+        "both, default to Vietnamese. Switch language immediately if the user "
+        "explicitly asks you to. "
         "Operate like an agent: identify the user's goal, inspect available workspace context, "
         "decide the next best action, and produce a useful result. "
         "When a supported direct action is needed, rely on the app tools/orchestrator instead of pretending. "
@@ -1163,6 +1176,89 @@ class SettingsUpdateModeAgent:
         return _wrap_direct_result(direct_result, ctx)
 
 
+_CHECKLIST_PRIORITY_SCORE = {'high': 95, 'normal': 60, 'low': 30}
+_CHECKLIST_PRIORITY_REASON = {
+    'high': 'Việc gấp/quan trọng theo yêu cầu của bạn.',
+    'normal': 'Thêm từ yêu cầu trong chat.',
+    'low': 'Không gấp, có thể làm khi rảnh.',
+}
+
+
+class ChecklistCreateAgent:
+    """AGENT_CAPABILITIES: roughly 'overview.daily_brief'. Adds the
+    activities listed in the chat message straight to today's checklist --
+    same no-confirmation behavior as the existing quick-add checklist path,
+    since checklist items are low-risk/reversible (no calendar side effect),
+    unlike schedule.create which always proposes first. Each item carries
+    its own urgency (extracted per-item by the intent orchestrator, not one
+    flat priority for the whole list) so wording like 'gap'/'khong gap' in
+    the original message actually changes where it lands in the checklist."""
+
+    def handle(self, ctx):
+        raw_items = (ctx.intent_result.get('entities') or {}).get('items') or []
+        normalized_items = []
+        for entry in raw_items:
+            if isinstance(entry, dict):
+                title = str(entry.get('title') or '').strip()
+                priority = str(entry.get('priority') or 'normal').strip().lower()
+            else:
+                title = str(entry or '').strip()
+                priority = 'normal'
+            if not title:
+                continue
+            if priority not in _CHECKLIST_PRIORITY_SCORE:
+                priority = 'normal'
+            normalized_items.append((title, priority))
+        if not normalized_items:
+            return None
+
+        date_value = datetime.now().date().isoformat()
+        cache_key = _checklist_cache_key(ctx.user_id, date_value)
+        cached = Cache.get(cache_key, db_path=ctx.db_path)
+        payload = _normalize_checklist_payload(cached)
+        existing_titles = {entry['title'].strip().lower() for entry in payload['custom_items']}
+
+        added = []
+        for title, priority in normalized_items:
+            if title.lower() in existing_titles:
+                continue
+            payload['custom_items'].append({
+                'id': f"manual:{uuid.uuid4().hex[:12]}",
+                'title': title[:240],
+                'completed': False,
+                'created_at': datetime.utcnow().isoformat(),
+                'source': 'manual',
+                'item_type': 'task',
+                'due_date': date_value,
+                'due_at': '',
+                'ai_reason': _CHECKLIST_PRIORITY_REASON[priority],
+                'priority_score': _CHECKLIST_PRIORITY_SCORE[priority],
+                'pinned': priority == 'high',
+            })
+            existing_titles.add(title.lower())
+            added.append(title)
+
+        if not added:
+            return AgentResult(
+                response="Các việc này đã có trong checklist hôm nay rồi.",
+                workspace_sources=['overview'],
+                refresh_targets=ctx.refresh_targets,
+                action='Checklist đã có sẵn các việc này',
+            )
+
+        payload['custom_items'] = _sort_custom_items(payload['custom_items'])
+        Cache.set(cache_key, payload, ttl=_CHECKLIST_CACHE_TTL_SECONDS, db_path=ctx.db_path)
+        _clear_overview_cache(ctx.user_id)
+
+        response = "Mình đã thêm vào checklist hôm nay:\n" + "\n".join(f"- {title}" for title in added)
+        return AgentResult(
+            response=response,
+            workspace_sources=['overview'],
+            refresh_targets=sorted(set(ctx.refresh_targets) | {'overview'}),
+            action='Đã thêm việc vào checklist',
+        )
+
+
 class FreeformChatAgent:
     """AGENT_CAPABILITIES: roughly 'overview.daily_brief' / 'knowledge.lookup'
     plus the catch-all chat.freeform fallback for any other/unknown intent."""
@@ -1339,6 +1435,7 @@ _AGENT_REGISTRY = {
     'email.mark_unread': EmailMarkUnreadAgent(),
     'history.list': HistoryListAgent(),
     'settings.update_mode': SettingsUpdateModeAgent(),
+    'checklist.create': ChecklistCreateAgent(),
 }
 
 
