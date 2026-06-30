@@ -627,7 +627,7 @@ def get_overview_checklist():
     """Return per-day overview checklist state for the current user."""
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
-    date_value = (request.args.get('date') or datetime.now().date().isoformat()).strip()
+    date_value = (request.args.get('date') or datetime.now(LOCAL_TZ).date().isoformat()).strip()
     cached = Cache.get(_checklist_cache_key(user_id, date_value), db_path=db_path)
     payload = _normalize_checklist_payload(cached)
     return jsonify({
@@ -643,7 +643,7 @@ def save_overview_checklist():
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
     data = request.get_json() or {}
-    date_value = (data.get('date') or request.args.get('date') or datetime.now().date().isoformat()).strip()
+    date_value = (data.get('date') or request.args.get('date') or datetime.now(LOCAL_TZ).date().isoformat()).strip()
     payload = _normalize_checklist_payload(data)
     Cache.set(
         _checklist_cache_key(user_id, date_value),
@@ -704,7 +704,7 @@ def suggest_day_plan():
     db_path = get_user_db_path(user_id)
     data = request.get_json() or {}
     text = str(data.get('text') or '').strip()
-    date_value = (data.get('date') or datetime.now().date().isoformat()).strip()
+    date_value = (data.get('date') or datetime.now(LOCAL_TZ).date().isoformat()).strip()
     if not text:
         return jsonify({'success': False, 'error': 'Missing text'}), 400
 
@@ -757,7 +757,7 @@ def quick_add_plan_item():
     db_path = get_user_db_path(user_id)
     data = request.get_json() or {}
     text = str(data.get('text') or '').strip()
-    date_value = (data.get('date') or datetime.now().date().isoformat()).strip()
+    date_value = (data.get('date') or datetime.now(LOCAL_TZ).date().isoformat()).strip()
 
     if not text:
         return jsonify({'success': False, 'error': 'Missing text'}), 400

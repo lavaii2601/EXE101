@@ -1321,7 +1321,7 @@ class DayPlanSuggestAgent:
     path Overview already uses, instead of building a second one in chat."""
 
     def handle(self, ctx):
-        date_value = datetime.now().date().isoformat()
+        date_value = datetime.now(LOCAL_TZ).date().isoformat()
         plan = _build_suggested_day_plan(ctx.user_id, ctx.db_path, ctx.user_message, date_value)
         if not plan:
             return None
@@ -1376,7 +1376,7 @@ class ChecklistCreateAgent:
         if not normalized_items:
             return None
 
-        date_value = datetime.now().date().isoformat()
+        date_value = datetime.now(LOCAL_TZ).date().isoformat()
         cache_key = _checklist_cache_key(ctx.user_id, date_value)
         cached = Cache.get(cache_key, db_path=ctx.db_path)
         payload = _normalize_checklist_payload(cached)

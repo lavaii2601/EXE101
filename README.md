@@ -49,6 +49,22 @@ Một số endpoint thường dùng
 - Chat: `/api/chat/*` (gửi câu hỏi, tạo tóm tắt)
 - Lịch: `/api/schedule/*` (tạo, liệt kê, sửa, xóa)
 
+Training Bob bằng knowledge base
+- Bob không fine-tune trọng số model trong repo này; Bob "học" qua bảng knowledge/RAG.
+- Nạp tài liệu `.txt`, `.md`, `.json`, `.csv` vào knowledge base:
+
+```powershell
+python scripts/train_bob.py .\docs\bob-training --tags "noi bo,quy tac,bob"
+```
+
+- Xem trước mà chưa ghi DB:
+
+```powershell
+python scripts/train_bob.py .\docs\bob-training --dry-run
+```
+
+- JSON/CSV nên có cột hoặc field `title`, `content`, `tags` optional.
+
 Dữ liệu & token
 - DB chính: `web/data/assistant.db`
 - DB người dùng: `web/data/users/<user>.db`
