@@ -814,6 +814,10 @@ button {
     flex: 1 1 auto;
     min-height: 0; /* important so children overflow works */
     height: 100%;
+    overflow-y: auto; /* fallback scroll container -- pages with their own
+        internal scrolling list (chat, email) never overflow this since
+        their flex children use min-height:0 + their own overflow-y:auto */
+    -webkit-overflow-scrolling: touch;
 }
 
 /* Pages should use full width of the main content column; avoid forcing a global max-width here */
@@ -1091,6 +1095,35 @@ button {
     min-height: 0; /* allow internal scrolling */
     height: 100%;
     border-radius: 12px;
+    position: relative; /* anchor for .chat-jump-latest */
+}
+
+.chat-jump-latest {
+    display: none;
+    position: absolute;
+    left: 50%;
+    bottom: 84px;
+    transform: translateX(-50%);
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 999px;
+    background: var(--primary);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+    z-index: 5;
+}
+
+.chat-jump-latest.visible {
+    display: inline-flex;
+}
+
+.chat-jump-latest:hover {
+    background: var(--primary-dark);
 }
 
 .chat-container.fixed-height {
@@ -5074,7 +5107,8 @@ body.dark-theme .daily-report-badge.is-meeting {
         height: calc(100dvh - var(--mobile-header-height));
         min-height: 0;
         gap: 0;
-        overflow: hidden;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
     }
 
     #settings-page.page.active {
@@ -5082,7 +5116,8 @@ body.dark-theme .daily-report-badge.is-meeting {
         min-height: 0;
         gap: 0;
         padding: 0;
-        overflow: hidden;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
     }
 
     #overview-page .section-header,

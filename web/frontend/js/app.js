@@ -3,6 +3,7 @@ const API_BASE = '/api';
 
 // DOM Elements - will be selected during initApp after DOM is ready
 let chatMessages;
+let chatJumpLatest;
 let userInput;
 let sendBtn;
 let newChatBtn;
@@ -86,6 +87,7 @@ const I18N = {
         'chat.twoMonths': '2 tháng',
         'chat.threeMonths': '3 tháng',
         'chat.noSaved': 'Chưa có đoạn chat cũ.',
+        'chat.jumpLatest': '↓ Tin nhắn mới nhất',
         'common.clear': 'Xóa',
         'common.refresh': 'Làm mới',
         'overview.title': 'Tổng hợp thông tin',
@@ -131,6 +133,7 @@ const I18N = {
         'chat.twoMonths': '2 months',
         'chat.threeMonths': '3 months',
         'chat.noSaved': 'No saved chats yet.',
+        'chat.jumpLatest': '↓ Latest message',
         'common.clear': 'Clear',
         'common.refresh': 'Refresh',
         'overview.title': 'Daily overview',
@@ -393,6 +396,7 @@ async function initApp() {
     console.log('🚀 Initializing app...');
     // Select DOM elements now that DOMContentLoaded fired
     chatMessages = document.getElementById('chatMessages');
+    chatJumpLatest = document.getElementById('chatJumpLatest');
     userInput = document.getElementById('userInput');
     sendBtn = document.getElementById('sendBtn');
     newChatBtn = document.getElementById('newChatBtn');
@@ -445,6 +449,18 @@ async function initApp() {
         }
         if (chatRetentionSelect) {
             chatRetentionSelect.addEventListener('change', updateChatRetention);
+        }
+        if (chatMessages) {
+            chatMessages.addEventListener('scroll', () => {
+                if (!chatJumpLatest) return;
+                const distFromBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight;
+                chatJumpLatest.classList.toggle('visible', distFromBottom > 200);
+            });
+        }
+        if (chatJumpLatest) {
+            chatJumpLatest.addEventListener('click', () => {
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            });
         }
         
         // Enter key in input
@@ -2637,7 +2653,8 @@ async function sendMessageConfirmed(message, opts = {}) {
                 calendar: ui('Lịch', 'Calendar'),
                 history: ui('Lịch sử', 'History'),
                 profile: ui('Hồ sơ', 'Profile'),
-                knowledge: ui('Kiến thức', 'Knowledge')
+                knowledge: ui('Kiến thức', 'Knowledge'),
+                internet: ui('Internet', 'Internet')
             };
             const workspaceSources = Array.isArray(data.workspace_sources)
                 ? data.workspace_sources.filter(source => sourceLabels[source])
@@ -3272,6 +3289,8 @@ async function loadChatHistory() {
                 addMessage(record.user_message, 'user');
                 addMessage(record.assistant_response, 'assistant');
             });
+            // Scroll to the newest message after the entire history is rendered
+            if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
         }
         updateChatSessionTitle();
     } catch (error) {

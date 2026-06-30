@@ -78,6 +78,7 @@
                 <li>Dữ liệu Gmail cần thiết để hiển thị, tìm kiếm, tóm tắt email và nhận diện việc cần làm, deadline hoặc gợi ý lịch.</li>
                 <li>Dữ liệu Google Calendar cần thiết để đọc lịch, tránh trùng lịch, tạo/cập nhật/xóa sự kiện khi bạn xác nhận.</li>
                 <li>Dữ liệu bạn tạo trong FlowMate: lịch, checklist, lịch sử thao tác, tin nhắn chat, chế độ làm việc và tài liệu knowledge bạn thêm cho Bob.</li>
+                <li>Khi bạn yêu cầu Bob tra cứu Internet hoặc hỏi thông tin cần cập nhật, FlowMate có thể gửi phần truy vấn đã giới hạn ra công cụ tìm kiếm/trang web công khai và lưu tóm tắt kết quả kèm URL nguồn vào knowledge riêng của tài khoản.</li>
                 <li>Thông tin kỹ thuật tối thiểu như session, token đăng nhập mobile, log lỗi không chứa secret để vận hành dịch vụ.</li>
             </ul>
 
@@ -86,6 +87,7 @@
                 <li>Cung cấp chức năng chính: đọc email, tóm tắt email, tìm email, đọc lịch, đồng bộ lịch, tạo checklist và hỗ trợ chat với Bob.</li>
                 <li>Gợi ý hành động hữu ích như deadline cần xử lý, email nên trả lời, thời gian học/làm việc phù hợp hoặc lịch có khả năng trùng.</li>
                 <li>Cải thiện trải nghiệm cá nhân trong phạm vi tài khoản của bạn, ví dụ ghi nhớ sở thích hoặc quy tắc bạn yêu cầu Bob nhớ.</li>
+                <li>Tra cứu web công khai khi prompt cần nguồn ngoài hoặc thông tin mới; Bob chỉ dùng kết quả có giới hạn và cần nêu nguồn khi trả lời.</li>
                 <li>Bảo vệ hệ thống bằng giới hạn tần suất, kiểm tra nguồn request và session bảo mật.</li>
             </ul>
 
@@ -105,7 +107,7 @@
             </ul>
 
             <h2>6. Chia sẻ dữ liệu</h2>
-            <p>FlowMate chỉ chia sẻ dữ liệu với các dịch vụ cần thiết để vận hành tính năng bạn dùng: Google APIs cho Gmail/Calendar, provider AI để xử lý nội dung theo yêu cầu, Railway/PostgreSQL để host và lưu trữ hệ thống. FlowMate không bán dữ liệu cá nhân.</p>
+            <p>FlowMate chỉ chia sẻ dữ liệu với các dịch vụ cần thiết để vận hành tính năng bạn dùng: Google APIs cho Gmail/Calendar, provider AI để xử lý nội dung theo yêu cầu, công cụ tìm kiếm/trang web công khai khi bạn yêu cầu Bob tra cứu Internet hoặc hỏi thông tin cần cập nhật, Railway/PostgreSQL để host và lưu trữ hệ thống. FlowMate không bán dữ liệu cá nhân.</p>
 
             <h2>7. Kiểm soát và xóa dữ liệu</h2>
             <ul>
@@ -128,7 +130,7 @@
                 <h1>FlowMate AI Privacy Policy</h1>
                 <p class="meta">Effective July 1, 2026. Official URL: <a href="https://exe101.up.railway.app/privacy">https://exe101.up.railway.app/privacy</a></p>
                 <p>FlowMate AI helps users manage email, calendar, workflow, study tasks, and AI chat. This policy applies to the Railway web deployment and the Android APK that uses the same backend.</p>
-                <p>FlowMate collects only the account, Gmail, Calendar, chat, schedule, checklist, history, and technical data needed to provide the requested features. Google data is not sold, not used for advertising, and not used to train foundation AI models. When AI processing is needed, only task-relevant content is sent to the configured AI provider.</p>
+                <p>FlowMate collects only the account, Gmail, Calendar, chat, schedule, checklist, history, internet research query/results, and technical data needed to provide the requested features. Google data is not sold, not used for advertising, and not used to train foundation AI models. When AI processing is needed, only task-relevant content is sent to the configured AI provider. When Bob is asked to research the public web or answer current-information prompts, a limited query may be sent to search/web sources and sourced results may be saved to that user's knowledge store.</p>
                 <p>Users can disconnect Google, delete activity history, revoke Google permissions, and request backend data deletion through the project owner or support channel. Secrets and API keys must be stored in Railway Variables, not in source code.</p>
             </section>
         </article>

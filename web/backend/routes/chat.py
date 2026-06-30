@@ -99,6 +99,14 @@ AGENT_CAPABILITIES = [
         'refresh_targets': [],
         'confirmation_required': False,
     },
+    {
+        'id': 'internet.research',
+        'label': 'Tra cứu Internet',
+        'description': 'Tự tra cứu web công khai khi prompt cần thông tin mới/nguồn ngoài, đưa URL nguồn vào câu trả lời và lưu phát hiện có nguồn vào kho kiến thức riêng của user.',
+        'workspace_sources': ['internet'],
+        'refresh_targets': [],
+        'confirmation_required': False,
+    },
 ]
 
 AGENT_SYNC_TARGETS = {
@@ -138,13 +146,14 @@ def _agent_profile():
     return {
         'name': 'Bob',
         'product': 'FlowMate',
-        'version': '2026-06-agent-sync',
+        'version': '2026-07-internet-learning',
         'channels': ['web', 'mobile'],
         'capabilities': AGENT_CAPABILITIES,
         'sync_targets': AGENT_SYNC_TARGETS,
         'confirmation_required_actions': AGENT_CONFIRMATION_REQUIRED,
         'rules': [
             'Dùng dữ liệu workspace thật khi trả lời về email, lịch, lịch sử, hồ sơ.',
+            'Khi cần dữ liệu web công khai hoặc thông tin mới, tra cứu Internet có giới hạn và nêu nguồn.',
             'Không bịa email, người gửi, ngày giờ, deadline hoặc hành động đã hoàn tất.',
             'Chỉ thực hiện hành động ghi dữ liệu sau khi người dùng xác nhận.',
             'Luôn trả refresh_targets để web/mobile đồng bộ màn liên quan.',
@@ -193,6 +202,8 @@ def _build_agent_trace(intent_result, workspace_sources=None, refresh_targets=No
             'calendar': 'lịch',
             'history': 'lịch sử',
             'profile': 'hồ sơ',
+            'knowledge': 'kiến thức',
+            'internet': 'internet',
         }
         steps.append("Kiểm tra " + ", ".join(labels.get(source, source) for source in sources))
     if intent and intent != 'chat.freeform':

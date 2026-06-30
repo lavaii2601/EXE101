@@ -113,6 +113,16 @@ _SEED_DOCUMENTS = [
         "tu hoc,tri nho,memory,bob,rieng tu",
     ),
     (
+        "Bob tra cuu Internet va tu hoc co nguon",
+        "Bob co the tra cuu Internet cong khai khi prompt yeu cau tim tren mang hoac can thong tin "
+        "moi/cap nhat. Ket qua web duoc dua vao context voi URL nguon va Bob phai neu nguon khi "
+        "dung fact ben ngoai. Bob khong tu crawl nen lien tuc; moi lan research bi gioi han so ket "
+        "qua, thoi gian tai va kich thuoc trang. Neu bat WEB_RESEARCH_AUTO_LEARN_ENABLED, Bob luu "
+        "tom tat research kem URL vao kho kien thuc rieng cua dung user do voi source='web' de lan "
+        "sau co the tra cuu lai.",
+        "internet,web,research,tu hoc,nguon,bob",
+    ),
+    (
         "Bob ho tro song ngu Viet-Anh",
         "Bob hieu va phan loai yeu cau dung bang ca tieng Viet lan tieng Anh (vi du 'Schedule a "
         "meeting tomorrow at 3pm' hoac 'tao lich hop luc 3 gio chieu mai' deu duoc hieu giong "

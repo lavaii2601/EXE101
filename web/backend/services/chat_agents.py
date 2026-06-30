@@ -8,11 +8,13 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from config import Config
 from services.ai_service import AIService
 from services.gmail_service import get_cached_gmail_service
 from services.intent_orchestrator import IntentOrchestrator
 from services.schedule_service import ScheduleService
 from services.calendar_service import CalendarService
+from services.web_research_service import web_research_service
 from models.cache import Cache
 from models.history import History
 from models.schedule import Schedule, LOCAL_TZ
@@ -562,6 +564,55 @@ def _format_knowledge_context(message, user_id=None):
     return "\n".join(lines)
 
 
+def _learn_from_web_research(research_result, user_id):
+    if not getattr(Config, 'WEB_RESEARCH_AUTO_LEARN_ENABLED', True):
+        return
+    if not user_id or user_id == 'default':
+        return
+    results = (research_result or {}).get('results') or []
+    query = str((research_result or {}).get('query') or '').strip()
+    if not query or not results:
+        return
+
+    title = f"Web research: {query[:110]}"
+    lines = [f"Query: {query}", "Public web sources Bob used:"]
+    for index, result in enumerate(results[:5], start=1):
+        snippet = re.sub(r'\s+', ' ', str(result.get('snippet') or '')).strip()
+        lines.append(f"{index}. {result.get('title') or result.get('url')}")
+        lines.append(f"   URL: {result.get('url')}")
+        if snippet:
+            lines.append(f"   Note: {snippet[:700]}")
+    content = "\n".join(lines)[:3500]
+
+    existing_match = None
+    try:
+        for result in knowledge_service.search(title, top_k=5, min_score=0.42, user_id=user_id):
+            if result.get("source") == "web" and result.get("user_id") == user_id:
+                existing_match = result
+                break
+    except Exception:
+        existing_match = None
+
+    try:
+        if existing_match:
+            knowledge_service.update_document(
+                existing_match["id"],
+                title=title,
+                content=content,
+                tags="internet,web,research,auto",
+            )
+        else:
+            knowledge_service.add_document(
+                title,
+                content,
+                tags="internet,web,research,auto",
+                source="web",
+                user_id=user_id,
+            )
+    except Exception:
+        logger.warning("Failed to save web research memory for user %s", user_id, exc_info=True)
+
+
 def _build_workspace_context(message, user_id, db_path):
     sources = _intent_sources(message)
     context_parts = []
@@ -582,6 +633,16 @@ def _build_workspace_context(message, user_id, db_path):
     if knowledge_context:
         context_parts.append(knowledge_context)
         sources.add('knowledge')
+
+    try:
+        web_research = web_research_service.research(message, workspace_sources=sources)
+    except Exception:
+        logger.warning("Web research failed for user %s", user_id, exc_info=True)
+        web_research = None
+    if web_research and web_research.get('context'):
+        context_parts.append(web_research['context'])
+        sources.add('internet')
+        _learn_from_web_research(web_research, user_id)
 
     return sources, "\n\n".join(context_parts)
 
@@ -739,6 +800,8 @@ def _build_agent_system_prompt(mode_prompt, agent_capabilities):
         "For sensitive or persistent actions such as creating schedules, changing settings, sending messages, "
         "or modifying external data, ask for or respect explicit confirmation before claiming completion. "
         "Use only provided workspace context for facts about the user's email, calendar, history, or account. "
+        "When INTERNET RESEARCH context is provided, treat it as public web evidence, cite the relevant title "
+        "or URL for external facts, and distinguish it from private workspace data. "
         "If data is missing, say exactly what is missing and give the smallest useful next step. "
         "Do not invent senders, dates, deadlines, meetings, completed actions, or external facts. "
         "Classify useful information as meetings, deadlines, tasks, reminders, important information, or low priority. "
@@ -1469,6 +1532,7 @@ class FreeformChatAgent:
                 "content": (
                     "DỮ LIỆU WORKSPACE THỰC TẾ\n"
                     "Chỉ dùng dữ liệu dưới đây để trả lời câu hỏi tiếp theo. "
+                    "Mục INTERNET RESEARCH (nếu có) là dữ liệu web công khai và phải kèm nguồn khi dùng. "
                     "Không bịa thêm dữ liệu không có trong context. "
                     "Nếu context không đủ, nói rõ thiếu dữ liệu nào.\n\n"
                     + workspace_context

@@ -65,6 +65,8 @@ function formatAgentMeta(data) {
     calendar: 'Lịch',
     history: 'Lịch sử',
     profile: 'Hồ sơ',
+    knowledge: 'Kiến thức',
+    internet: 'Internet',
   };
   const parts = [];
   if (trace.intent || data?.intent?.intent) {
@@ -91,6 +93,7 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
   const [suggestion, setSuggestion] = useState(null);
   const [planSuggestion, setPlanSuggestion] = useState(null);
   const [planLoading, setPlanLoading] = useState(false);
+  const [isAtBottom, setIsAtBottom] = useState(true);
   const listRef = useRef(null);
   const mode = getUserMode(userMode);
 
@@ -117,8 +120,22 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
           { id: `agent-${Date.now()}`, role: 'assistant', text: notice, badge: 'AI Agent' },
         ]);
       }
+      // Always open the chat already scrolled to the newest message --
+      // loadHistory leaves the FlatList at its default top position
+      // otherwise, forcing users to manually scroll down every time.
+      requestAnimationFrame(() => listRef.current?.scrollToEnd?.({ animated: false }));
     })();
   }, [loadHistory]);
+
+  const handleMessagesScroll = useCallback((event) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    setIsAtBottom(distanceFromBottom < 80);
+  }, []);
+
+  const scrollToLatest = useCallback(() => {
+    listRef.current?.scrollToEnd?.({ animated: true });
+  }, []);
 
   const startNewChat = () => {
     setSessionId(createSessionId());
@@ -164,6 +181,7 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
       ]);
     } finally {
       setLoading(false);
+      setIsAtBottom(true);
       requestAnimationFrame(() => listRef.current?.scrollToEnd?.({ animated: true }));
     }
   };
@@ -274,28 +292,40 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
         ]}
       />
 
-      <FlatList
-        ref={listRef}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        refreshing={refreshing}
-        onRefresh={loadHistory}
-        ListEmptyComponent={
-          <EmptyState title="Bắt đầu với FlowMate Agent" detail="Giao việc để agent đọc email, kiểm tra lịch, tóm tắt công việc hoặc chuẩn bị lịch hẹn." />
-        }
-        renderItem={({ item }) => (
-          <View style={[styles.messageRow, item.role === 'user' && styles.messageRowUser]}>
-            {item.badge ? <Text style={styles.agentBadge}>{item.badge}</Text> : null}
-            <View style={[styles.bubble, item.role === 'user' && styles.bubbleUser]}>
-              <Text style={[styles.messageText, item.role === 'user' && styles.messageTextUser]}>
-                {item.text}
-              </Text>
-              {item.meta ? <Text style={styles.agentMeta}>{item.meta}</Text> : null}
+      <View style={styles.listWrap}>
+        <FlatList
+          ref={listRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          refreshing={refreshing}
+          onRefresh={loadHistory}
+          onScroll={handleMessagesScroll}
+          scrollEventThrottle={100}
+          onContentSizeChange={() => {
+            if (isAtBottom) listRef.current?.scrollToEnd?.({ animated: false });
+          }}
+          ListEmptyComponent={
+            <EmptyState title="Bắt đầu với FlowMate Agent" detail="Giao việc để agent đọc email, kiểm tra lịch, tóm tắt công việc hoặc chuẩn bị lịch hẹn." />
+          }
+          renderItem={({ item }) => (
+            <View style={[styles.messageRow, item.role === 'user' && styles.messageRowUser]}>
+              {item.badge ? <Text style={styles.agentBadge}>{item.badge}</Text> : null}
+              <View style={[styles.bubble, item.role === 'user' && styles.bubbleUser]}>
+                <Text style={[styles.messageText, item.role === 'user' && styles.messageTextUser]}>
+                  {item.text}
+                </Text>
+                {item.meta ? <Text style={styles.agentMeta}>{item.meta}</Text> : null}
+              </View>
             </View>
-          </View>
-        )}
-      />
+          )}
+        />
+        {!isAtBottom && messages.length > 0 ? (
+          <TouchableOpacity style={styles.jumpToLatest} onPress={scrollToLatest} activeOpacity={0.85}>
+            <Text style={styles.jumpToLatestText}>↓ Mới nhất</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
 
       <View style={styles.quickPrompts}>
         {mode.prompts.map((prompt) => (
@@ -411,7 +441,21 @@ function makeStyles(colors) {
     headerActions: { flexDirection: 'row', gap: 8 },
     kicker: { color: colors.primary, fontFamily: 'Poppins_700Bold', fontSize: 10, letterSpacing: 1, textTransform: 'uppercase' },
     title: { marginTop: 3, fontSize: 22, fontFamily: 'Poppins_800ExtraBold', color: colors.text },
+    listWrap: { flex: 1, position: 'relative' },
     list:  { padding: 16, gap: 10 },
+    jumpToLatest: {
+      position: 'absolute',
+      bottom: 12,
+      alignSelf: 'center',
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+      ...colors.shadow,
+    },
+    jumpToLatestText: { color: '#ffffff', fontFamily: 'Poppins_700Bold', fontSize: 12 },
     messageRow:     { alignItems: 'flex-start' },
     messageRowUser: { alignItems: 'flex-end' },
     agentBadge: { color: colors.primary, fontFamily: 'Poppins_700Bold', fontSize: 10, letterSpacing: 0.5, marginBottom: 4, textTransform: 'uppercase' },
