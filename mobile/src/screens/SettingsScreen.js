@@ -11,7 +11,9 @@ import {
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import Button from '../components/Button';
+import SegmentedControl from '../components/SegmentedControl';
 import { ACCENTS, useTheme } from '../theme/ThemeContext';
+import { useLanguage } from '../i18n/LanguageContext';
 import { getUserMode } from '../config/userModes';
 import { apiGet, apiPost } from '../api/client';
 
@@ -25,6 +27,7 @@ const ACCENT_OPTIONS = [
 
 export default function SettingsScreen({ profile, status, userMode, onChangeMode, onRefresh, onLogout, onAgentSync, syncEvent }) {
   const { colors, isDark, accent, toggleTheme, setAccent } = useTheme();
+  const { language, setLanguage, t } = useLanguage();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [pushNotif,     setPushNotif]     = useState(false);
@@ -35,8 +38,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const [outlook,       setOutlook]       = useState({ configured: false, connected: false });
   const [outlookLoading, setOutlookLoading] = useState(false);
 
-  const name     = profile?.name || profile?.gmail_name || 'Người dùng';
-  const email    = profile?.gmail_email || profile?.email || 'Chưa kết nối Gmail';
+  const name     = profile?.name || profile?.gmail_name || t('Người dùng', 'User');
+  const email    = profile?.gmail_email || profile?.email || t('Chưa kết nối Gmail', 'Gmail not connected');
   const avatar   = profile?.avatar_url || profile?.gmail_picture;
   const gmailOk  = status?.gmail_configured;
   const initials = name.charAt(0).toUpperCase();
@@ -65,49 +68,59 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   }, [loadOutlookStatus, onRefresh, syncEvent]);
 
   const confirmLogout = () => {
-    Alert.alert('Đăng xuất', 'Bạn có chắc muốn đăng xuất?', [
-      { text: 'Hủy', style: 'cancel' },
-      { text: 'Đăng xuất', style: 'destructive', onPress: onLogout },
+    Alert.alert(t('Đăng xuất', 'Sign out'), t('Bạn có chắc muốn đăng xuất?', 'Are you sure you want to sign out?'), [
+      { text: t('Hủy', 'Cancel'), style: 'cancel' },
+      { text: t('Đăng xuất', 'Sign out'), style: 'destructive', onPress: onLogout },
     ]);
   };
 
-  const comingSoon = (feature) =>
-    Alert.alert('Sắp có', `"${feature}" sẽ có trong phiên bản tiếp theo.`);
+  const comingSoon = (featureVi, featureEn) =>
+    Alert.alert(
+      t('Sắp có', 'Coming soon'),
+      t(`"${featureVi}" sẽ có trong phiên bản tiếp theo.`, `"${featureEn || featureVi}" will be available in a future update.`)
+    );
 
   const clearHistory = () => {
-    Alert.alert('Xóa toàn bộ lịch sử', 'Chat, email và hoạt động lịch đã ghi nhận sẽ bị xóa.', [
-      { text: 'Hủy', style: 'cancel' },
-      {
-        text: 'Xóa',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            const data = await apiPost('/chat/clear-all');
-            Alert.alert('Đã xóa dữ liệu', `${data.deleted_count || 0} mục đã được xóa.`);
-            onAgentSync?.(['history', 'chat', 'overview']);
-          } catch (error) {
-            Alert.alert('Không xóa được dữ liệu', error.message);
-          }
+    Alert.alert(
+      t('Xóa toàn bộ lịch sử', 'Clear all history'),
+      t('Chat, email và hoạt động lịch đã ghi nhận sẽ bị xóa.', 'Saved chat, email activity, and calendar history will be deleted.'),
+      [
+        { text: t('Hủy', 'Cancel'), style: 'cancel' },
+        {
+          text: t('Xóa', 'Delete'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const data = await apiPost('/chat/clear-all');
+              Alert.alert(t('Đã xóa dữ liệu', 'Data deleted'), t(`${data.deleted_count || 0} mục đã được xóa.`, `${data.deleted_count || 0} items deleted.`));
+              onAgentSync?.(['history', 'chat', 'overview']);
+            } catch (error) {
+              Alert.alert(t('Không xóa được dữ liệu', 'Could not delete data'), error.message);
+            }
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   const connectOutlook = async () => {
     setOutlookLoading(true);
     try {
       const data = await apiGet('/outlook/auth-url');
-      if (!data.auth_url) throw new Error('Server chưa trả về đường dẫn đăng nhập Outlook.');
+      if (!data.auth_url) throw new Error(t('Server chưa trả về đường dẫn đăng nhập Outlook.', 'The server did not return an Outlook sign-in link.'));
       await WebBrowser.openBrowserAsync(data.auth_url);
       await loadOutlookStatus();
       onRefresh?.();
       onAgentSync?.(['settings', 'profile', 'email', 'schedule', 'overview']);
     } catch (error) {
       Alert.alert(
-        outlook.configured ? 'Không mở được Outlook OAuth' : 'Outlook chưa được cấu hình',
+        outlook.configured ? t('Không mở được Outlook OAuth', 'Could not open Outlook OAuth') : t('Outlook chưa được cấu hình', 'Outlook is not configured'),
         outlook.configured
           ? error.message
-          : 'Thêm MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET và MICROSOFT_REDIRECT_URI trên Railway trước.'
+          : t(
+              'Thêm MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET và MICROSOFT_REDIRECT_URI trên Railway trước.',
+              'Add MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, and MICROSOFT_REDIRECT_URI on Railway first.'
+            )
       );
     } finally {
       setOutlookLoading(false);
@@ -115,10 +128,10 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   };
 
   const disconnectOutlook = () => {
-    Alert.alert('Ngắt Outlook', 'Bạn có chắc muốn ngắt kết nối Outlook khỏi FlowMate?', [
-      { text: 'Hủy', style: 'cancel' },
+    Alert.alert(t('Ngắt Outlook', 'Disconnect Outlook'), t('Bạn có chắc muốn ngắt kết nối Outlook khỏi FlowMate?', 'Are you sure you want to disconnect Outlook from FlowMate?'), [
+      { text: t('Hủy', 'Cancel'), style: 'cancel' },
       {
-        text: 'Ngắt kết nối',
+        text: t('Ngắt kết nối', 'Disconnect'),
         style: 'destructive',
         onPress: async () => {
           setOutlookLoading(true);
@@ -128,7 +141,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             onRefresh?.();
             onAgentSync?.(['settings', 'profile', 'email', 'schedule', 'overview']);
           } catch (error) {
-            Alert.alert('Không ngắt được Outlook', error.message);
+            Alert.alert(t('Không ngắt được Outlook', 'Could not disconnect Outlook'), error.message);
           } finally {
             setOutlookLoading(false);
           }
@@ -140,11 +153,11 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.body}>
 
-      <Text style={styles.pageTitle}>Cài đặt</Text>
+      <Text style={styles.pageTitle}>{t('Cài đặt', 'Settings')}</Text>
 
       {/* ── Profile ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>TÀI KHOẢN</Text>
+        <Text style={styles.sectionLabel}>{t('TÀI KHOẢN', 'ACCOUNT')}</Text>
         <View style={styles.profileRow}>
           <View style={styles.avatarWrap}>
             {avatar
@@ -156,7 +169,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             <Text style={styles.profileEmail}>{email}</Text>
             <View style={[styles.badge, gmailOk ? styles.badgeOk : styles.badgeWarn]}>
               <Text style={styles.badgeText}>
-                {gmailOk ? '● Gmail đã kết nối' : '● Gmail chưa kết nối'}
+                {gmailOk ? t('● Gmail đã kết nối', '● Gmail connected') : t('● Gmail chưa kết nối', '● Gmail not connected')}
               </Text>
             </View>
           </View>
@@ -167,8 +180,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             <Text style={[styles.modeIcon, { color: colors.accentText }]}>{mode.icon}</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Chế độ người dùng</Text>
-            <Text style={styles.settingSub}>{mode.label} · Chạm để thay đổi</Text>
+            <Text style={styles.settingTitle}>{t('Chế độ người dùng', 'User mode')}</Text>
+            <Text style={styles.settingSub}>{mode.label} · {t('Chạm để thay đổi', 'Tap to change')}</Text>
           </View>
           <Text style={styles.chevron}>›</Text>
         </TouchableOpacity>
@@ -176,15 +189,15 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
       {/* ── Appearance ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>GIAO DIỆN</Text>
+        <Text style={styles.sectionLabel}>{t('GIAO DIỆN', 'APPEARANCE')}</Text>
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: isDark ? '#1e3a5f' : '#e8eef8' }]}>
             <Text style={styles.settingIcon}>{isDark ? '🌙' : '☀️'}</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Chế độ hiển thị</Text>
-            <Text style={styles.settingSub}>{isDark ? 'Đang dùng chế độ tối' : 'Đang dùng chế độ sáng'}</Text>
+            <Text style={styles.settingTitle}>{t('Chế độ hiển thị', 'Display theme')}</Text>
+            <Text style={styles.settingSub}>{isDark ? t('Đang dùng chế độ tối', 'Currently using dark mode') : t('Đang dùng chế độ sáng', 'Currently using light mode')}</Text>
           </View>
           <Switch
             value={isDark}
@@ -197,8 +210,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         <View style={styles.divider} />
 
         <View>
-          <Text style={styles.settingTitle}>Màu sắc chủ đạo</Text>
-          <Text style={styles.settingSubStandalone}>Chọn màu phù hợp với phong cách của bạn</Text>
+          <Text style={styles.settingTitle}>{t('Màu sắc chủ đạo', 'Accent color')}</Text>
+          <Text style={styles.settingSubStandalone}>{t('Chọn màu phù hợp với phong cách của bạn', 'Pick a color that matches your style')}</Text>
           <View style={styles.accentRow}>
             {ACCENT_OPTIONS.map((opt) => (
               <TouchableOpacity
@@ -216,11 +229,26 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             ))}
           </View>
         </View>
+
+        <View style={styles.divider} />
+
+        <View>
+          <Text style={styles.settingTitle}>{t('Ngôn ngữ', 'Language')}</Text>
+          <Text style={styles.settingSubStandalone}>{t('Áp dụng ngay và được ghi nhớ trên thiết bị này.', 'Applied immediately and remembered on this device.')}</Text>
+          <SegmentedControl
+            options={[
+              { value: 'vi', label: 'Tiếng Việt' },
+              { value: 'en', label: 'English' },
+            ]}
+            value={language}
+            onChange={setLanguage}
+          />
+        </View>
       </View>
 
       {/* ── Connections ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>KẾT NỐI DỊCH VỤ</Text>
+        <Text style={styles.sectionLabel}>{t('KẾT NỐI DỊCH VỤ', 'CONNECTED SERVICES')}</Text>
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: '#dbeafe' }]}>
@@ -228,10 +256,10 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>Gmail & Google Calendar</Text>
-            <Text style={styles.settingSub}>{gmailOk ? 'Đã sẵn sàng cho email và lịch Google' : 'Chưa cấu hình hoặc chưa kết nối Gmail'}</Text>
+            <Text style={styles.settingSub}>{gmailOk ? t('Đã sẵn sàng cho email và lịch Google', 'Ready for Gmail and Google Calendar') : t('Chưa cấu hình hoặc chưa kết nối Gmail', 'Not configured or Gmail not connected')}</Text>
           </View>
           <View style={[styles.statusPill, gmailOk ? styles.statusOk : styles.statusWarn]}>
-            <Text style={styles.statusText}>{gmailOk ? 'Đã bật' : 'Chưa bật'}</Text>
+            <Text style={styles.statusText}>{gmailOk ? t('Đã bật', 'Enabled') : t('Chưa bật', 'Disabled')}</Text>
           </View>
         </View>
 
@@ -245,14 +273,14 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             <Text style={styles.settingTitle}>Outlook Mail & Calendar</Text>
             <Text style={styles.settingSub} numberOfLines={2}>
               {outlook.connected
-                ? `Đã kết nối ${outlook.email || 'Outlook'}`
+                ? t(`Đã kết nối ${outlook.email || 'Outlook'}`, `Connected to ${outlook.email || 'Outlook'}`)
                 : outlook.configured
-                  ? 'Tùy chọn thêm để tổng hợp mail và lịch Outlook'
-                  : 'Chưa cấu hình trên Railway'}
+                  ? t('Tùy chọn thêm để tổng hợp mail và lịch Outlook', 'Optional add-on to bring in Outlook mail and calendar')
+                  : t('Chưa cấu hình trên Railway', 'Not configured on Railway')}
             </Text>
           </View>
           <Button
-            title={outlook.connected ? 'Ngắt' : 'Kết nối'}
+            title={outlook.connected ? t('Ngắt', 'Disconnect') : t('Kết nối', 'Connect')}
             variant={outlook.connected ? 'secondary' : 'primary'}
             onPress={outlook.connected ? disconnectOutlook : connectOutlook}
             loading={outlookLoading}
@@ -262,21 +290,21 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
       {/* ── Notifications ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>THÔNG BÁO</Text>
+        <Text style={styles.sectionLabel}>{t('THÔNG BÁO', 'NOTIFICATIONS')}</Text>
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: '#fef3c7' }]}>
             <Text style={styles.settingIcon}>🔔</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Thông báo đẩy</Text>
-            <Text style={styles.settingSub}>Nhận thông báo trực tiếp trên thiết bị</Text>
+            <Text style={styles.settingTitle}>{t('Thông báo đẩy', 'Push notifications')}</Text>
+            <Text style={styles.settingSub}>{t('Nhận thông báo trực tiếp trên thiết bị', 'Get notifications directly on this device')}</Text>
           </View>
           <Switch
             value={pushNotif}
             onValueChange={(v) => {
               setPushNotif(v);
-              if (v) Alert.alert('Đã bật', 'Thông báo đẩy đã được bật!');
+              if (v) Alert.alert(t('Đã bật', 'Enabled'), t('Thông báo đẩy đã được bật!', 'Push notifications are now on!'));
             }}
             trackColor={{ false: colors.border, true: colors.primary }}
             thumbColor="#ffffff"
@@ -290,8 +318,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             <Text style={styles.settingIcon}>📧</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Thông báo email</Text>
-            <Text style={styles.settingSub}>Nhận cập nhật quan trọng qua email</Text>
+            <Text style={styles.settingTitle}>{t('Thông báo email', 'Email notifications')}</Text>
+            <Text style={styles.settingSub}>{t('Nhận cập nhật quan trọng qua email', 'Get important updates by email')}</Text>
           </View>
           <Switch
             value={emailNotif}
@@ -308,8 +336,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             <Text style={styles.settingIcon}>⏰</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Nhắc lịch</Text>
-            <Text style={styles.settingSub}>Nhắc nhở trước khi cuộc hẹn bắt đầu</Text>
+            <Text style={styles.settingTitle}>{t('Nhắc lịch', 'Schedule reminders')}</Text>
+            <Text style={styles.settingSub}>{t('Nhắc nhở trước khi cuộc hẹn bắt đầu', 'Remind you before appointments start')}</Text>
           </View>
           <Switch
             value={reminderNotif}
@@ -322,21 +350,21 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
       {/* ── Security ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>BẢO MẬT</Text>
+        <Text style={styles.sectionLabel}>{t('BẢO MẬT', 'SECURITY')}</Text>
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: '#ede9fe' }]}>
             <Text style={styles.settingIcon}>👆</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Xác thực sinh trắc học</Text>
-            <Text style={styles.settingSub}>Vân tay hoặc nhận dạng khuôn mặt</Text>
+            <Text style={styles.settingTitle}>{t('Xác thực sinh trắc học', 'Biometric authentication')}</Text>
+            <Text style={styles.settingSub}>{t('Vân tay hoặc nhận dạng khuôn mặt', 'Fingerprint or face recognition')}</Text>
           </View>
           <Switch
             value={biometric}
             onValueChange={(v) => {
               if (v) {
-                comingSoon('Xác thực sinh trắc học');
+                comingSoon('Xác thực sinh trắc học', 'Biometric authentication');
                 return;
               }
               setBiometric(false);
@@ -350,15 +378,15 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <TouchableOpacity
           style={styles.settingRow}
-          onPress={() => comingSoon('Đổi mật khẩu')}
+          onPress={() => comingSoon('Đổi mật khẩu', 'Change password')}
           activeOpacity={0.75}
         >
           <View style={[styles.iconWrap, { backgroundColor: '#fce7f3' }]}>
             <Text style={styles.settingIcon}>🔑</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Đổi mật khẩu</Text>
-            <Text style={styles.settingSub}>Thay đổi mật khẩu tài khoản</Text>
+            <Text style={styles.settingTitle}>{t('Đổi mật khẩu', 'Change password')}</Text>
+            <Text style={styles.settingSub}>{t('Thay đổi mật khẩu tài khoản', 'Change your account password')}</Text>
           </View>
           <Text style={styles.chevron}>›</Text>
         </TouchableOpacity>
@@ -370,14 +398,14 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             <Text style={styles.settingIcon}>🛡️</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Xác thực hai yếu tố</Text>
-            <Text style={styles.settingSub}>Tăng cường bảo mật tài khoản (2FA)</Text>
+            <Text style={styles.settingTitle}>{t('Xác thực hai yếu tố', 'Two-factor authentication')}</Text>
+            <Text style={styles.settingSub}>{t('Tăng cường bảo mật tài khoản (2FA)', 'Add extra account security (2FA)')}</Text>
           </View>
           <Switch
             value={twoFactor}
             onValueChange={(v) => {
               if (v) {
-                comingSoon('Xác thực hai yếu tố (2FA)');
+                comingSoon('Xác thực hai yếu tố (2FA)', 'Two-factor authentication (2FA)');
                 return;
               }
               setTwoFactor(false);
@@ -391,15 +419,15 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <TouchableOpacity
           style={styles.settingRow}
-          onPress={() => comingSoon('Quản lý phiên đăng nhập')}
+          onPress={() => comingSoon('Quản lý phiên đăng nhập', 'Manage signed-in devices')}
           activeOpacity={0.75}
         >
           <View style={[styles.iconWrap, { backgroundColor: '#ffedd5' }]}>
             <Text style={styles.settingIcon}>📱</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Phiên đăng nhập</Text>
-            <Text style={styles.settingSub}>Quản lý thiết bị đăng nhập</Text>
+            <Text style={styles.settingTitle}>{t('Phiên đăng nhập', 'Signed-in sessions')}</Text>
+            <Text style={styles.settingSub}>{t('Quản lý thiết bị đăng nhập', 'Manage signed-in devices')}</Text>
           </View>
           <Text style={styles.chevron}>›</Text>
         </TouchableOpacity>
@@ -407,14 +435,14 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
       {/* ── About ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>VỀ ỨNG DỤNG</Text>
+        <Text style={styles.sectionLabel}>{t('VỀ ỨNG DỤNG', 'ABOUT')}</Text>
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: colors.secondaryBg }]}>
             <Text style={styles.settingIcon}>ℹ️</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Phiên bản</Text>
+            <Text style={styles.settingTitle}>{t('Phiên bản', 'Version')}</Text>
             <Text style={styles.settingSub}>1.0.0 (FlowMate AI)</Text>
           </View>
         </View>
@@ -423,15 +451,15 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <TouchableOpacity
           style={styles.settingRow}
-          onPress={() => comingSoon('Chính sách bảo mật')}
+          onPress={() => comingSoon('Chính sách bảo mật', 'Privacy policy')}
           activeOpacity={0.75}
         >
           <View style={[styles.iconWrap, { backgroundColor: colors.secondaryBg }]}>
             <Text style={styles.settingIcon}>📄</Text>
           </View>
           <View style={styles.settingInfo}>
-            <Text style={styles.settingTitle}>Chính sách bảo mật</Text>
-            <Text style={styles.settingSub}>Đọc chính sách sử dụng dữ liệu</Text>
+            <Text style={styles.settingTitle}>{t('Chính sách bảo mật', 'Privacy policy')}</Text>
+            <Text style={styles.settingSub}>{t('Đọc chính sách sử dụng dữ liệu', 'Read our data usage policy')}</Text>
           </View>
           <Text style={styles.chevron}>›</Text>
         </TouchableOpacity>
@@ -439,10 +467,10 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
       {/* ── Data / Logout ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>DỮ LIỆU</Text>
-        <Button title="Làm mới trạng thái" variant="secondary" onPress={onRefresh} />
-        <Button title="Xóa toàn bộ lịch sử" variant="secondary" onPress={clearHistory} />
-        <Button title="Đăng xuất" variant="danger" onPress={confirmLogout} />
+        <Text style={styles.sectionLabel}>{t('DỮ LIỆU', 'DATA')}</Text>
+        <Button title={t('Làm mới trạng thái', 'Refresh status')} variant="secondary" onPress={onRefresh} />
+        <Button title={t('Xóa toàn bộ lịch sử', 'Clear all history')} variant="secondary" onPress={clearHistory} />
+        <Button title={t('Đăng xuất', 'Sign out')} variant="danger" onPress={confirmLogout} />
       </View>
 
     </ScrollView>

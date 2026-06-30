@@ -47,6 +47,9 @@ class IntentOrchestrator:
             intent = "email.latest_summary"
             confidence = 0.93
             entities["count"] = self._latest_email_count(text)
+            date_window = self._email_date_window(text)
+            if date_window:
+                entities["date_window"] = date_window
             refresh_targets = ["email", "overview", "history"]
         elif self._is_mode_update(text):
             intent = "settings.update_mode"
@@ -83,14 +86,23 @@ class IntentOrchestrator:
         elif self._is_email_mark_read(text):
             intent = "email.mark_read"
             confidence = 0.8
+            date_window = self._email_date_window(text)
+            if date_window:
+                entities["date_window"] = date_window
             refresh_targets = ["email", "overview", "history"]
         elif self._is_email_mark_unread(text):
             intent = "email.mark_unread"
             confidence = 0.8
+            date_window = self._email_date_window(text)
+            if date_window:
+                entities["date_window"] = date_window
             refresh_targets = ["email", "overview", "history"]
         elif self._is_email_lookup(text):
             intent = "email.search"
             confidence = 0.74
+            date_window = self._email_date_window(text)
+            if date_window:
+                entities["date_window"] = date_window
             refresh_targets = ["email", "overview", "history"]
 
         return {
@@ -110,6 +122,11 @@ class IntentOrchestrator:
         "start_time = (Thu Nam cua tuan ke tiep tuan chua THOI DIEM HIEN TAI) luc 09:00.\n"
         "- 'Trong 2 tieng nua goi lai cho khach' => schedule.create; "
         "start_time = THOI DIEM HIEN TAI + 2 gio.\n"
+        "- 'Hay tao lich hen hom nay luc 3 gio chieu voi noi dung la: Hop voi khach hang ban ve "
+        "hop dong quy 3' => schedule.create; description='Hop voi khach hang ban ve hop dong quy "
+        "3' (CHI lay phan sau 'noi dung la:', bo qua 'Hay tao lich hen hom nay luc 3 gio chieu voi'); "
+        "vi khong co 'tieu de la...' rieng, title tu dat = 'Hop voi khach hang ban hop dong quy 3' "
+        "(tom tat noi dung, khong copy nguyen ca cau).\n"
         "- 'Tuan sau minh co lich gi khong' => schedule.list; window.label=next_week.\n"
         "- 'Tim email tu chi Lan noi ve hop dong' => email.search; "
         "email_query.keyword='hop dong', email_query.sender='chi Lan' "
@@ -142,6 +159,56 @@ class IntentOrchestrator:
         r"|tuan nay|tuan sau|tuan toi|tuan truoc"
         r"|thu hai|thu ba|thu tu|thu nam|thu sau|thu bay|chu nhat"
         r"|\d{1,3}\s*(?:phut|gio|tieng)\s*nua"
+    )
+
+    # Explicit "content marker" phrases (e.g. "voi noi dung la: xxx") that mark
+    # exactly which part of a scheduling request is the actual event content
+    # -- everything after the marker, and ONLY that, becomes the description,
+    # so a sentence like "Hay tao lich hen hom nay luc 3 gio voi noi dung la: X"
+    # doesn't end up with the whole command text as its content. Matched
+    # directly against the original (accented) message, longest phrase first
+    # so "voi noi dung" doesn't shadow "voi noi dung la".
+    _CONTENT_MARKER_TERMS = (
+        "với nội dung là", "voi noi dung la",
+        "với nội dung", "voi noi dung",
+        "nội dung là", "noi dung la",
+        "nội dung", "noi dung",
+        "ghi chú là", "ghi chu la",
+        "ghi chú", "ghi chu",
+        "mô tả là", "mo ta la",
+        "mô tả", "mo ta",
+    )
+    CONTENT_MARKER_RE = re.compile(
+        r"(?:" + "|".join(re.escape(t) for t in sorted(set(_CONTENT_MARKER_TERMS), key=len, reverse=True)) + r")"
+        r"\s*[:\-]?\s*(.+)$",
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    # Same idea but for an explicit title, e.g. "tieu de la Hop nhom".
+    _TITLE_MARKER_TERMS = (
+        "tiêu đề là", "tieu de la",
+        "tiêu đề", "tieu de",
+        "tên sự kiện là", "ten su kien la",
+        "tên sự kiện", "ten su kien",
+        "tên lịch là", "ten lich la",
+        "tên lịch", "ten lich",
+        "tựa đề là", "tua de la",
+        "tựa đề", "tua de",
+    )
+    TITLE_MARKER_RE = re.compile(
+        r"(?:" + "|".join(re.escape(t) for t in sorted(set(_TITLE_MARKER_TERMS), key=len, reverse=True)) + r")"
+        r"\s*[:\-]?\s*([^,.;\n]+)",
+        re.IGNORECASE,
+    )
+
+    # Leading filler ("Hay", "Ban hay", "Giup toi", ...) stripped before
+    # falling back to the whole message as the title source, so "Hay tao
+    # lich..." doesn't leave "Hay" stuck onto the auto-generated title.
+    LEADING_FILLER_RE = re.compile(
+        r"^\s*(?:xin\s+)?(?:hãy|hay|bạn hãy|ban hay|làm ơn|lam on|giúp tôi|giup toi|"
+        r"giúp mình|giup minh|cho tôi|cho toi|mình muốn|minh muon|tôi muốn|toi muon|"
+        r"vui lòng|vui long)\s+",
+        re.IGNORECASE,
     )
 
     def _has_actionable_hint(self, message):
@@ -287,9 +354,22 @@ class IntentOrchestrator:
             "Chi dien cac truong lien quan toi intent da chon, cac truong khac de null/bo qua. "
             "Neu intent la schedule.create, BAT BUOC tinh start_time tuyet doi (ngay+gio cu the) "
             "dua vao THOI DIEM HIEN TAI o tren khi cau co nhac thoi gian (vd 'chieu mai', "
-            "'thu 5 tuan sau', 'trong 2 tieng nua'). Khong bia dat thong tin ma nguoi dung khong "
-            "cung cap. Dung lich su hoi thoai (neu co) de hieu cau tham chieu/sua doi, "
-            "nhung chi phan loai cau nhan moi nhat.\n\n"
+            "'thu 5 tuan sau', 'trong 2 tieng nua'). Voi schedule.create, neu cau nhan co danh "
+            "dau noi dung ro rang (vd 'noi dung la:', 'voi noi dung:', 'ghi chu:', 'mo ta:'), "
+            "truong schedule.description CHI duoc lay PHAN VAN BAN SAU danh dau do, KHONG duoc "
+            "lay nguyen ca cau lenh (bao gom cum tu yeu cau tao lich va phan ngay/gio). Neu cau "
+            "khong co danh dau nhu vay, dien schedule.description bang noi dung chinh cua su kien "
+            "(bo qua cac cum tu mo dau nhu 'hay', 'ban hay', 'giup toi'). Neu nguoi dung KHONG "
+            "neu ten/tieu de rieng cho lich hen (vd khong co 'tieu de la...', 'ten su kien la...'), "
+            "TU DAT schedule.title bang cach DOC VA HIEU noi dung do roi tom tat thanh mot cum tu "
+            "ngan gon (toi da khoang 8-10 tu), KHONG duoc copy nguyen van ca cau lenh lam tieu de.\n"
+            "Neu intent la email.search, email.latest_summary, email.mark_read hoac "
+            "email.mark_unread VA cau nhan co nhac mot khoang thoi gian cu the ve khi email "
+            "duoc gui/nhan (vd 'hom nay', 'hom qua', 'tuan nay', mot ngay cu the), BAT BUOC dien "
+            "truong \"window\" voi start/end la NGAY (YYYY-MM-DD) bao trum dung khoang do, de ket "
+            "qua chi lay email trong dung khoang thoi gian nguoi dung hoi, khong lay email cu hon "
+            "hoac moi hon. Khong bia dat thong tin ma nguoi dung khong cung cap. Dung lich su hoi "
+            "thoai (neu co) de hieu cau tham chieu/sua doi, nhung chi phan loai cau nhan moi nhat.\n\n"
             f"{history_block}"
             f"CAU NHAN TU NGUOI DUNG: \"{message}\""
         )
@@ -339,6 +419,9 @@ class IntentOrchestrator:
             refresh_targets = ["schedule", "calendar", "overview", "history"]
         elif intent == "email.latest_summary":
             entities["count"] = self._coerce_int(data.get("email_count"), default=1, minimum=1, maximum=5)
+            date_window = self._coerce_ai_date_window(data.get("window") or {})
+            if date_window:
+                entities["date_window"] = date_window
             refresh_targets = ["email", "overview", "history"]
         elif intent == "email.search":
             query = data.get("email_query")
@@ -348,6 +431,9 @@ class IntentOrchestrator:
                     "keyword": str(query.get("keyword") or "").strip(),
                     "unread_only": bool(query.get("unread_only")),
                 }
+            date_window = self._coerce_ai_date_window(data.get("window") or {})
+            if date_window:
+                entities["date_window"] = date_window
             refresh_targets = ["email", "overview", "history"]
         elif intent == "schedule.update":
             entities["new_values"] = self._coerce_ai_schedule(data.get("schedule") or {}, message)
@@ -364,6 +450,9 @@ class IntentOrchestrator:
                     "keyword": str(query.get("keyword") or "").strip(),
                     "unread_only": False,
                 }
+            date_window = self._coerce_ai_date_window(data.get("window") or {})
+            if date_window:
+                entities["date_window"] = date_window
             refresh_targets = ["email", "overview", "history"]
         elif intent == "history.list":
             entities["limit"] = self._coerce_int(data.get("history_limit"), default=8, minimum=1, maximum=20)
@@ -408,10 +497,16 @@ class IntentOrchestrator:
         if not attendees:
             attendees = sorted(set(re.findall(r"[\w\.-]+@[\w\.-]+\.\w+", message or "")))
 
-        title = str(schedule.get("title") or "").strip() or self._schedule_title(message)
+        # Fall back to the same marker-based extraction the rule-based path
+        # uses, in case the AI left title/description blank or just echoed
+        # the raw message back.
+        marked_content = self._extract_marked_content(message)
+        marked_title = self._extract_marked_title(message)
+        description = str(schedule.get("description") or "").strip() or marked_content or str(message or "").strip()
+        title = str(schedule.get("title") or "").strip() or marked_title or self._schedule_title(message, marked_content)
         return {
             "title": title[:150],
-            "description": str(schedule.get("description") or message or "").strip(),
+            "description": description,
             "start_time": start_time,
             "end_time": end_time,
             "attendees": attendees,
@@ -447,6 +542,19 @@ class IntentOrchestrator:
             "start": datetime.combine(start, datetime.min.time()).isoformat(),
             "end": datetime.combine(end + timedelta(days=1), datetime.min.time()).isoformat(),
         }
+
+    @staticmethod
+    def _coerce_ai_date_window(window):
+        if not isinstance(window, dict):
+            return None
+        try:
+            start = datetime.fromisoformat(str(window.get("start"))).date()
+            end = datetime.fromisoformat(str(window.get("end"))).date()
+        except (TypeError, ValueError):
+            return None
+        if end < start:
+            return None
+        return {"start": start.isoformat(), "end": end.isoformat()}
 
     @staticmethod
     def _coerce_int(value, default, minimum, maximum):
@@ -549,6 +657,42 @@ class IntentOrchestrator:
             "start_time": schedule.get("start_time"),
         }
 
+    @classmethod
+    def _extract_marked_content(cls, message):
+        """Return the text after an explicit content marker ('noi dung la:',
+        'ghi chu:', 'mo ta:' ...), or '' if the message doesn't have one."""
+        if not message:
+            return ""
+        match = cls.CONTENT_MARKER_RE.search(message)
+        if not match:
+            return ""
+        return match.group(1).strip(" .,;:-\"'")
+
+    @classmethod
+    def _extract_marked_title(cls, message):
+        """Return an explicitly given title ('tieu de la:', 'ten su kien:' ...),
+        or '' if the message doesn't name one."""
+        if not message:
+            return ""
+        match = cls.TITLE_MARKER_RE.search(message)
+        if not match:
+            return ""
+        return match.group(1).strip(" .,;:-\"'")[:100]
+
+    @staticmethod
+    def _summarize_for_title(text, max_len=70):
+        """Best-effort 'read and understand' for when no explicit title is
+        given: take the content's first clause (it's almost always the gist of
+        the event) and trim it to a short, title-sized phrase."""
+        text = re.sub(r"\s+", " ", text or "").strip(" .,;:-\"'")
+        if not text:
+            return ""
+        first_clause = re.split(r"[.\n;]", text, maxsplit=1)[0].strip()
+        if len(first_clause) > max_len:
+            truncated = first_clause[:max_len].rsplit(" ", 1)[0]
+            first_clause = truncated or first_clause[:max_len]
+        return first_clause[:1].upper() + first_clause[1:] if first_clause else ""
+
     def extract_schedule(self, message):
         text = self.normalize(message)
         now = datetime.now()
@@ -572,10 +716,11 @@ class IntentOrchestrator:
             end_time = (datetime.fromisoformat(start_time) + timedelta(minutes=duration)).isoformat()
 
         attendees = sorted(set(re.findall(r"[\w\.-]+@[\w\.-]+\.\w+", message or "")))
-        title = self._schedule_title(message)
+        marked_content = self._extract_marked_content(message)
+        marked_title = self._extract_marked_title(message)
         return {
-            "title": title,
-            "description": message,
+            "title": marked_title or self._schedule_title(message, marked_content),
+            "description": marked_content or message,
             "start_time": start_time,
             "end_time": end_time,
             "attendees": attendees,
@@ -702,20 +847,54 @@ class IntentOrchestrator:
         end = start + timedelta(days=6)
         return {"label": "this_week", "start": start.isoformat(), "end": end.isoformat()}
 
-    def _extract_date(self, text, now):
+    def _email_date_window(self, text):
+        """Detect an explicit day/week reference in an email-related message
+        (e.g. 'hom nay', 'hom qua', a dd/mm/yyyy date) so email lookups can be
+        scoped to exactly that range -- start/end are inclusive calendar dates
+        in 'YYYY-MM-DD' form -- instead of just returning the most recent mail
+        regardless of when it arrived."""
+        now = datetime.now()
+        explicit = self._explicit_date_from_text(text)
+        if explicit:
+            return {"start": explicit.isoformat(), "end": explicit.isoformat()}
+        if "hom qua" in text or "yesterday" in text:
+            day = (now - timedelta(days=1)).date()
+            return {"start": day.isoformat(), "end": day.isoformat()}
+        if "hom nay" in text or "today" in text:
+            day = now.date()
+            return {"start": day.isoformat(), "end": day.isoformat()}
+        if "tuan truoc" in text or "last week" in text:
+            monday = (now - timedelta(days=now.weekday() + 7)).date()
+            return {"start": monday.isoformat(), "end": (monday + timedelta(days=6)).isoformat()}
+        if "tuan nay" in text or "this week" in text:
+            monday = (now - timedelta(days=now.weekday())).date()
+            return {"start": monday.isoformat(), "end": (monday + timedelta(days=6)).isoformat()}
+        if "tuan sau" in text or "tuan toi" in text or "next week" in text:
+            monday = (now - timedelta(days=now.weekday()) + timedelta(days=7)).date()
+            return {"start": monday.isoformat(), "end": (monday + timedelta(days=6)).isoformat()}
+        return None
+
+    @staticmethod
+    def _explicit_date_from_text(text):
         match = re.search(r"\b(\d{1,4})[/-](\d{1,2})[/-](\d{1,4})\b", text)
-        if match:
-            first, second, third = match.groups()
-            try:
-                if len(first) == 4:
-                    year, month, day = int(first), int(second), int(third)
-                else:
-                    day, month, year = int(first), int(second), int(third)
-                    if year < 100:
-                        year += 2000
-                return datetime(year, month, day).date()
-            except ValueError:
-                return None
+        if not match:
+            return None
+        first, second, third = match.groups()
+        try:
+            if len(first) == 4:
+                year, month, day = int(first), int(second), int(third)
+            else:
+                day, month, year = int(first), int(second), int(third)
+                if year < 100:
+                    year += 2000
+            return datetime(year, month, day).date()
+        except ValueError:
+            return None
+
+    def _extract_date(self, text, now):
+        explicit = self._explicit_date_from_text(text)
+        if explicit:
+            return explicit
         if "ngay mai" in text or "tomorrow" in text:
             return (now + timedelta(days=1)).date()
         if "hom nay" in text or "today" in text:
@@ -759,9 +938,25 @@ class IntentOrchestrator:
         return None
 
     @staticmethod
-    def _schedule_title(message):
+    def _schedule_title(message, content=None):
+        # If we already isolated the event's actual content (e.g. via a
+        # "noi dung la:" marker), summarize THAT instead of the whole command
+        # sentence -- this is what lets "Hay tao lich ... voi noi dung la: Hop
+        # khach hang ban hop dong" produce the title "Hop khach hang ban hop
+        # dong" instead of the entire instruction.
+        if content:
+            summarized = IntentOrchestrator._summarize_for_title(content)
+            if summarized:
+                return summarized
+
         clean = re.sub(r"[\w\.-]+@[\w\.-]+\.\w+", "", message or "")
         clean = re.sub(r"\s+", " ", clean).strip(" .,")
+        for _ in range(3):
+            stripped = IntentOrchestrator.LEADING_FILLER_RE.sub("", clean, count=1)
+            if stripped == clean:
+                break
+            clean = stripped.strip(" .,")
+
         prefixes = (
             "tao lich", "dat lich", "them lich", "book lich", "tao su kien",
             "dat cuoc hop", "nhac toi", "remind me"

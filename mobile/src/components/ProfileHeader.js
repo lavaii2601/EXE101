@@ -1,12 +1,14 @@
 import React from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
+import { useLanguage } from '../i18n/LanguageContext';
 import { getUserMode } from '../config/userModes';
 
 export default function ProfileHeader({ profile, status, userMode, onRefresh, onChangeMode }) {
   const { colors } = useTheme();
-  const name = profile?.name || profile?.gmail_name || 'Nguoi dung';
-  const email = profile?.gmail_email || profile?.email || 'Chua ket noi Gmail';
+  const { t } = useLanguage();
+  const name = profile?.name || profile?.gmail_name || t('Người dùng', 'User');
+  const email = profile?.gmail_email || profile?.email || t('Chưa kết nối Gmail', 'Gmail not connected');
   const avatar = profile?.avatar_url || profile?.gmail_picture;
   const gmailReady = status?.gmail_configured;
   const mode = getUserMode(userMode);
@@ -29,7 +31,7 @@ export default function ProfileHeader({ profile, status, userMode, onRefresh, on
         </Text>
       </TouchableOpacity>
       <View style={[styles.status, gmailReady ? styles.ready : styles.notReady]}>
-        <Text style={styles.statusText}>{gmailReady ? 'Ready' : 'Setup'}</Text>
+        <Text style={styles.statusText}>{gmailReady ? t('Sẵn sàng', 'Ready') : t('Cần thiết lập', 'Setup')}</Text>
       </View>
     </View>
   );

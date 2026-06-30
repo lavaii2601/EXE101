@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, Modal, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
 import Card from '../components/Card';
+import DateTimeField from '../components/DateTimeField';
 import EmptyState from '../components/EmptyState';
 import Field from '../components/Field';
 import Screen from '../components/Screen';
@@ -409,8 +410,8 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
     <Card>
       <Field label="Tiêu đề"         value={form.title}            onChangeText={(v) => setField('title', v)}            placeholder="Họp phụ huynh" />
       <Field label="Mô tả"            value={form.description}      onChangeText={(v) => setField('description', v)}      placeholder="Nội dung lịch hẹn" multiline />
-      <Field label="Bắt đầu"          value={form.start_time}       onChangeText={(v) => setField('start_time', v)}       placeholder="2026-06-05T09:00:00" />
-      <Field label="Kết thúc"         value={form.end_time}         onChangeText={(v) => setField('end_time', v)}         placeholder="2026-06-05T10:00:00" />
+      <DateTimeField label="Bắt đầu" value={form.start_time} onChange={(v) => setField('start_time', v)} placeholder="2026-06-05T09:00:00" />
+      <DateTimeField label="Kết thúc" value={form.end_time} onChange={(v) => setField('end_time', v)} placeholder="2026-06-05T10:00:00" />
       <Field label="Thời lượng (phút)" value={form.duration_minutes} onChangeText={(v) => setField('duration_minutes', v)} placeholder="60" keyboardType="number-pad" />
       <Field label="Địa điểm"         value={form.location}         onChangeText={(v) => setField('location', v)}         placeholder="Phòng họp / online" />
       <Field label="Người tham dự"    value={form.attendees}        onChangeText={(v) => setField('attendees', v)}        placeholder="a@example.com, b@example.com" />
@@ -443,8 +444,8 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
           <Card>
             <Field label="Tiêu đề"         value={editForm.title}            onChangeText={(v) => setEditField('title', v)}            placeholder="Họp phụ huynh" />
             <Field label="Mô tả"            value={editForm.description}      onChangeText={(v) => setEditField('description', v)}      placeholder="Nội dung lịch hẹn" multiline />
-            <Field label="Bắt đầu"          value={editForm.start_time}       onChangeText={(v) => setEditField('start_time', v)}       placeholder="2026-06-05T09:00:00" />
-            <Field label="Kết thúc"         value={editForm.end_time}         onChangeText={(v) => setEditField('end_time', v)}         placeholder="2026-06-05T10:00:00" />
+            <DateTimeField label="Bắt đầu" value={editForm.start_time} onChange={(v) => setEditField('start_time', v)} placeholder="2026-06-05T09:00:00" />
+            <DateTimeField label="Kết thúc" value={editForm.end_time} onChange={(v) => setEditField('end_time', v)} placeholder="2026-06-05T10:00:00" />
             <Field label="Thời lượng (phút)" value={editForm.duration_minutes} onChangeText={(v) => setEditField('duration_minutes', v)} placeholder="60" keyboardType="number-pad" />
             <Field label="Địa điểm"         value={editForm.location}         onChangeText={(v) => setEditField('location', v)}         placeholder="Phòng họp / online" />
             <Field label="Người tham dự"    value={editForm.attendees}        onChangeText={(v) => setEditField('attendees', v)}        placeholder="a@example.com, b@example.com" />

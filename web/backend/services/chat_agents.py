@@ -102,17 +102,18 @@ def _latest_email_count(message):
     return 1
 
 
-def _summarize_latest_emails(user_id, count=1):
+def _summarize_latest_emails(user_id, count=1, query_override=None):
     token_file = get_user_token_file(user_id)
     if not token_file or not os.path.exists(token_file):
         raise RuntimeError('Gmail chưa được kết nối cho tài khoản này.')
 
     service = get_cached_gmail_service(token_file)
     count = max(1, min(int(count or 1), 5))
+    query, include_read = query_override or ('in:inbox', True)
     latest = service.get_emails(
         max_results=count,
-        query='in:inbox',
-        include_read=True
+        query=query,
+        include_read=include_read
     )
     if not latest:
         raise RuntimeError('Không tìm thấy email nào trong hộp thư đến.')
@@ -453,13 +454,36 @@ def _email_lookup_query(message):
     return query, include_read
 
 
+def _gmail_date_query_parts(date_window):
+    """before: is exclusive in Gmail's query syntax, so it's set to the day
+    after the window's (inclusive) end date."""
+    if not isinstance(date_window, dict):
+        return []
+    try:
+        start = datetime.fromisoformat(str(date_window.get('start'))).date()
+        end = datetime.fromisoformat(str(date_window.get('end'))).date()
+    except (TypeError, ValueError):
+        return []
+    if end < start:
+        return []
+    after = start.strftime('%Y/%m/%d')
+    before = (end + timedelta(days=1)).strftime('%Y/%m/%d')
+    return [f'after:{after}', f'before:{before}']
+
+
 def _query_override_from_entities(entities):
-    """Build a Gmail query from an AI-classified `query` entity (sender/keyword/
-    unread_only) instead of re-parsing the raw message text with regex.
+    """Build a Gmail query from AI/rule-classified entities: `query`
+    (sender/keyword/unread_only) and/or `date_window` (a specific day or week
+    the user asked about, e.g. "hom nay"), instead of re-parsing the raw
+    message text with regex.
     """
-    query_info = (entities or {}).get('query')
-    if not isinstance(query_info, dict):
+    entities = entities or {}
+    query_info = entities.get('query')
+    date_window = entities.get('date_window')
+    if not isinstance(query_info, dict) and not date_window:
         return None
+    query_info = query_info if isinstance(query_info, dict) else {}
+
     unread_only = bool(query_info.get('unread_only'))
     include_read = not unread_only
     parts = ['is:unread' if unread_only else 'in:inbox']
@@ -472,6 +496,8 @@ def _query_override_from_entities(entities):
         keyword = f'{sender} {keyword}'.strip()
     if keyword:
         parts.append(f'"{keyword[:80]}"')
+
+    parts.extend(_gmail_date_query_parts(date_window))
 
     if len(parts) == 1:
         return None
@@ -737,7 +763,8 @@ class EmailLatestSummaryAgent:
                 (ctx.intent_result.get('entities') or {}).get('count')
                 or _latest_email_count(ctx.user_message)
             )
-            response, source_emails = _summarize_latest_emails(ctx.user_id, requested_count)
+            query_override = _query_override_from_entities(ctx.intent_result.get('entities'))
+            response, source_emails = _summarize_latest_emails(ctx.user_id, requested_count, query_override=query_override)
             source_email = source_emails[0]
             suggested_actions = [
                 _build_draft_reply_suggestion(email)

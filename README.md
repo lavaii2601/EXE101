@@ -9,14 +9,13 @@ Mục tiêu chính
 
 Cấu trúc thư mục
 - `web/` — backend Flask (`web/backend`) + frontend web (`web/frontend`), dữ liệu (`web/data`) và `web/.env`.
-- `app/` — ứng dụng Android native (TeacherBot) gọi API của `web/backend`.
-- `mobile/` — ứng dụng Expo/React Native (FlowMate AI), cũng gọi API của `web/backend`.
+- `mobile/` — ứng dụng Expo/React Native (FlowMate AI) cho Android/iOS/Web, gọi API của `web/backend`.
+  Đây là bản mobile duy nhất của dự án (bản Android native Java cũ đã được hợp nhất vào đây).
 
-Liên kết web <-> app
-- `app` và `mobile` mặc định gọi backend Railway: `https://exe101.up.railway.app/api`
-  (cấu hình trong `app/app/src/main/res/values/strings.xml` và `mobile/src/api/config.js`).
-- Khi phát triển local, có thể đổi tạm trong Settings của app Android native hoặc đặt
-  `EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:5000/api` cho Expo.
+Liên kết web <-> mobile
+- `mobile` mặc định gọi backend Railway: `https://exe101.up.railway.app/api`
+  (cấu hình trong `mobile/src/api/config.js`).
+- Khi phát triển local, đặt `EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:5000/api` cho Expo.
 
 Nhanh: cài và chạy (development)
 

@@ -10,6 +10,7 @@ import unicodedata
 from email.utils import parsedate_to_datetime
 from threading import Lock
 from io import BytesIO
+from urllib.parse import urlencode
 from flask import Blueprint, request, jsonify, redirect, url_for, session, send_file
 from datetime import datetime, timedelta
 
@@ -113,6 +114,36 @@ def _pop_oauth_code_verifier(state):
     if now - float(record.get('created_at') or 0) > OAUTH_STATE_TTL_SECONDS:
         return None
     return record.get('code_verifier')
+
+
+def _mark_oauth_mobile(state):
+    """Flag an OAuth state as started by the mobile app, so oauth2callback
+    knows to hand the result back via a deep link (access_token in the URL)
+    instead of the cookie/postMessage page built for the web app -- the
+    mobile app's fetch() never shares cookies with the system browser that
+    completes this flow."""
+    if not state:
+        return
+    now = datetime.utcnow().timestamp()
+    with _oauth_state_lock:
+        data = _read_oauth_states()
+        data = {
+            key: value for key, value in data.items()
+            if isinstance(value, dict)
+            and now - float(value.get('created_at') or 0) <= OAUTH_STATE_TTL_SECONDS
+        }
+        record = data.get(state) if isinstance(data.get(state), dict) else {'created_at': now}
+        record['mobile'] = True
+        data[state] = record
+        _write_oauth_states(data)
+
+
+def _is_oauth_mobile(state):
+    if not state:
+        return False
+    data = _read_oauth_states()
+    record = data.get(state)
+    return bool(isinstance(record, dict) and record.get('mobile'))
 
 
 def _get_flow_code_verifier(flow):
@@ -1685,6 +1716,19 @@ def oauth2callback():
 
         logger.info(f"Session variables set. Email: {gmail_email}, Name: {gmail_name}")
 
+        # The mobile app started this flow in a system browser that doesn't
+        # share cookies with its own fetch() calls, so it can't pick up the
+        # session set above. Hand it a signed mobile access token via a deep
+        # link instead -- WebBrowser.openAuthSessionAsync on the app side
+        # captures this redirect and reads the token straight from the URL.
+        if _is_oauth_mobile(state):
+            token_query = urlencode({
+                'access_token': issue_mobile_token(user_id),
+                'user_id': user_id,
+                'email': gmail_email,
+            })
+            return redirect(f"{Config.MOBILE_OAUTH_REDIRECT_URL}?{token_query}")
+
         # Return HTML page that notifies the opener or redirects back to SPA
         html = """<!doctype html>
 <html>
@@ -1738,6 +1782,13 @@ def gmail_auth_url():
         session.modified = True
     except Exception:
         pass
+    # The mobile app's fetch() never shares cookies with the system browser
+    # that completes this flow, so oauth2callback needs to know to hand the
+    # result back via a deep link instead of the cookie/postMessage page.
+    # Call this AFTER _store_oauth_code_verifier (it merges into the same
+    # record rather than overwriting it).
+    if (request.args.get('platform') or '').strip().lower() == 'mobile':
+        _mark_oauth_mobile(state)
     return jsonify({'auth_url': auth_url})
 
 

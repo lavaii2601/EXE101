@@ -10,27 +10,32 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import ProfileHeader from './src/components/ProfileHeader';
 import RoleSelection from './src/components/RoleSelection';
 import { apiGet, apiPost } from './src/api/client';
+import { clearPersistedSession, loadPersistedSession } from './src/api/session';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
+import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
 
 const tabs = [
-  { key: 'overview', icon: 'AI', label: 'Tổng hợp' },
-  { key: 'chat',     icon: '💬', label: 'Chat' },
-  { key: 'emails',   icon: '✉',  label: 'Email' },
-  { key: 'schedule', icon: '📅', label: 'Lịch' },
-  { key: 'history',  icon: '🕐', label: 'Lịch sử' },
-  { key: 'settings', icon: '⚙',  label: 'Cài đặt' },
+  { key: 'overview', icon: 'AI', label: ['Tổng hợp', 'Overview'] },
+  { key: 'chat',     icon: '💬', label: ['Chat', 'Chat'] },
+  { key: 'emails',   icon: '✉',  label: ['Email', 'Email'] },
+  { key: 'schedule', icon: '📅', label: ['Lịch', 'Calendar'] },
+  { key: 'history',  icon: '🕐', label: ['Lịch sử', 'History'] },
+  { key: 'settings', icon: '⚙',  label: ['Cài đặt', 'Settings'] },
 ];
 
 export default function App() {
   return (
     <ThemeProvider>
-      <AppShell />
+      <LanguageProvider>
+        <AppShell />
+      </LanguageProvider>
     </ThemeProvider>
   );
 }
 
 function AppShell() {
   const { colors, isDark } = useTheme();
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState('overview');
   const [profile, setProfile] = useState(null);
   const [status, setStatus] = useState(null);
@@ -59,11 +64,15 @@ function AppShell() {
   }, []);
 
   useEffect(() => {
-    refreshShell();
+    // Restore a previously signed-in session from secure storage BEFORE the
+    // first API call, so the access token is already in place -- otherwise
+    // every app restart silently calls the backend as an anonymous user.
+    loadPersistedSession().finally(refreshShell);
   }, [refreshShell]);
 
   const handleLogout = useCallback(async () => {
     try { await apiPost('/email/logout'); } catch { /* ignore */ }
+    await clearPersistedSession();
     setProfile(null);
     setStatus(null);
     setActiveTab('overview');
@@ -157,7 +166,7 @@ function AppShell() {
                 {tab.icon}
               </Text>
               <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
-                {tab.label}
+                {t(...tab.label)}
               </Text>
             </TouchableOpacity>
           ))}

@@ -17,10 +17,6 @@ mobile/node_modules/
 mobile/.expo/
 mobile/dist/
 mobile/android/
-app/local.properties
-app/.gradle/
-app/build/
-app/app/build/
 
 # IDE
 .idea/

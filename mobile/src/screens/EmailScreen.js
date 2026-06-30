@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, Modal, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Linking as RNLinking, Modal, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import EmptyState from '../components/EmptyState';
@@ -8,7 +9,7 @@ import Field from '../components/Field';
 import Screen from '../components/Screen';
 import SegmentedControl from '../components/SegmentedControl';
 import { apiGet, apiPost } from '../api/client';
-import { setMobileSession, setMobileUserId } from '../api/session';
+import { clearPersistedSession, setMobileSession, setMobileUserId } from '../api/session';
 import { useTheme } from '../theme/ThemeContext';
 import ModeBrief from '../components/ModeBrief';
 
@@ -141,17 +142,35 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
 
   const login = async () => {
     try {
-      const data = await apiGet('/email/auth_url');
+      const data = await apiGet('/email/auth_url?platform=mobile');
       if (data.access_token || data.user_id) {
         await applyNativeAuth(data);
         return;
       }
-      if (data.auth_url) {
-        await WebBrowser.openBrowserAsync(data.auth_url);
-        await loadAuth();
-        onAuthChanged?.();
-        onAgentSync?.(['profile', 'settings', 'email']);
+      if (!data.auth_url) return;
+
+      // openAuthSessionAsync (NOT openBrowserAsync) is required here: the
+      // app's own fetch() never shares cookies with the system browser tab
+      // that completes Google's consent screen, so the backend can't hand
+      // the session back via a cookie. Instead it 302-redirects to our
+      // `flowmateai://oauth-callback?access_token=...` deep link once the
+      // OAuth exchange finishes server-side, and openAuthSessionAsync is the
+      // API that actually captures that redirect and returns its URL to us.
+      const redirectUrl = Linking.createURL('oauth-callback');
+      const result = await WebBrowser.openAuthSessionAsync(data.auth_url, redirectUrl);
+      if (result.type !== 'success' || !result.url) {
+        return;
       }
+      const { queryParams } = Linking.parse(result.url);
+      if (!queryParams?.access_token) {
+        Alert.alert('Đăng nhập Gmail chưa hoàn tất', 'Không nhận được access token từ máy chủ.');
+        return;
+      }
+      await applyNativeAuth({
+        access_token: queryParams.access_token,
+        user_id: queryParams.user_id,
+        email: queryParams.email,
+      });
     } catch (error) {
       Alert.alert('Không mở được Gmail OAuth', error.message);
     }
@@ -177,6 +196,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
   const logout = async () => {
     try {
       await apiPost('/email/logout');
+      await clearPersistedSession();
       setAuth({ authenticated: false });
       setEmails([]);
       onAuthChanged?.();
@@ -467,7 +487,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
         title="Email"
         refreshing={loading}
         onRefresh={refreshEmailsFromGmail}
-        actions={<Button title="Gmail" variant="secondary" onPress={() => Linking.openURL('https://mail.google.com')} />}
+        actions={<Button title="Gmail" variant="secondary" onPress={() => RNLinking.openURL('https://mail.google.com')} />}
       >
         <ModeBrief
           userMode={userMode}

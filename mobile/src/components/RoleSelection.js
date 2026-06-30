@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Button from './Button';
 import { USER_MODES } from '../config/userModes';
 import { useTheme } from '../theme/ThemeContext';
+import { useLanguage } from '../i18n/LanguageContext';
 
 function GradientLine({ width }) {
   return (
@@ -98,6 +99,7 @@ const calendarStyles = StyleSheet.create({
 
 export default function RoleSelection({ initialValue = '', onContinue, saving }) {
   const { colors } = useTheme();
+  const { t } = useLanguage();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [selected, setSelected] = useState(initialValue);
 
@@ -113,9 +115,12 @@ export default function RoleSelection({ initialValue = '', onContinue, saving })
           <CalendarIcon />
         </LinearGradient>
         <Text style={styles.eyebrow}>FLOWMATE AI</Text>
-        <Text style={styles.title}>Chọn chế độ của bạn</Text>
+        <Text style={styles.title}>{t('Chọn chế độ của bạn', 'Choose your mode')}</Text>
         <Text style={styles.subtitle}>
-          FlowMate sẽ thay đổi ưu tiên email, gợi ý lịch và cách AI phản hồi theo vai trò.
+          {t(
+            'FlowMate sẽ thay đổi ưu tiên email, gợi ý lịch và cách AI phản hồi theo vai trò.',
+            'FlowMate adapts email priorities, schedule suggestions, and AI replies to your role.'
+          )}
         </Text>
       </View>
       <ScrollView contentContainerStyle={styles.body}>
@@ -134,13 +139,13 @@ export default function RoleSelection({ initialValue = '', onContinue, saving })
                 </View>
                 <Text style={styles.cardTitle}>{mode.label}</Text>
                 <Text style={styles.cardDescription}>{mode.description}</Text>
-                {active ? <Text style={styles.check}>Đã chọn</Text> : null}
+                {active ? <Text style={styles.check}>{t('Đã chọn', 'Selected')}</Text> : null}
               </TouchableOpacity>
             );
           })}
         </View>
         <Button
-          title="Tiếp tục"
+          title={t('Tiếp tục', 'Continue')}
           disabled={!selected}
           loading={saving}
           onPress={() => onContinue(selected)}
