@@ -28,6 +28,7 @@ from models.schedule import Schedule
 from models.user import User
 from models.cache import Cache
 from models.meeting_suggestion import MeetingSuggestion
+from models import postgres_db as pg
 from config import Config
 from config import GMAIL_CLIENT_ID_KEYS, GMAIL_CLIENT_SECRET_KEYS, GMAIL_CREDENTIALS_JSON_KEYS
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
@@ -81,6 +82,22 @@ def _write_oauth_states(data):
 def _store_oauth_code_verifier(state, code_verifier):
     if not state or not code_verifier:
         return
+    if pg.enabled():
+        with pg.connection() as conn:
+            conn.execute(
+                "DELETE FROM oauth_states WHERE created_at < NOW() - INTERVAL '%s seconds'",
+                (OAUTH_STATE_TTL_SECONDS,),
+            )
+            conn.execute(
+                """
+                INSERT INTO oauth_states (state, code_verifier)
+                VALUES (%s, %s)
+                ON CONFLICT (state) DO UPDATE SET code_verifier = EXCLUDED.code_verifier
+                """,
+                (state, code_verifier),
+            )
+        return
+
     now = datetime.utcnow().timestamp()
     with _oauth_state_lock:
         data = _read_oauth_states()
@@ -99,6 +116,18 @@ def _store_oauth_code_verifier(state, code_verifier):
 def _pop_oauth_code_verifier(state):
     if not state:
         return None
+    if pg.enabled():
+        with pg.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT code_verifier FROM oauth_states
+                WHERE state = %s AND created_at >= NOW() - INTERVAL '%s seconds'
+                """,
+                (state, OAUTH_STATE_TTL_SECONDS),
+            ).fetchone()
+            conn.execute("DELETE FROM oauth_states WHERE state = %s", (state,))
+        return row['code_verifier'] if row else None
+
     now = datetime.utcnow().timestamp()
     with _oauth_state_lock:
         data = _read_oauth_states()
@@ -121,9 +150,24 @@ def _mark_oauth_mobile(state):
     knows to hand the result back via a deep link (access_token in the URL)
     instead of the cookie/postMessage page built for the web app -- the
     mobile app's fetch() never shares cookies with the system browser that
-    completes this flow."""
+    completes this flow. Stored in the shared DB (not a local file): the
+    request that starts the flow and the request Google redirects back to
+    can land on different backend instances behind the load balancer.
+    """
     if not state:
         return
+    if pg.enabled():
+        with pg.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO oauth_states (state, mobile)
+                VALUES (%s, TRUE)
+                ON CONFLICT (state) DO UPDATE SET mobile = TRUE
+                """,
+                (state,),
+            )
+        return
+
     now = datetime.utcnow().timestamp()
     with _oauth_state_lock:
         data = _read_oauth_states()
@@ -141,6 +185,17 @@ def _mark_oauth_mobile(state):
 def _is_oauth_mobile(state):
     if not state:
         return False
+    if pg.enabled():
+        with pg.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT mobile FROM oauth_states
+                WHERE state = %s AND created_at >= NOW() - INTERVAL '%s seconds'
+                """,
+                (state, OAUTH_STATE_TTL_SECONDS),
+            ).fetchone()
+        return bool(row and row['mobile'])
+
     data = _read_oauth_states()
     record = data.get(state)
     return bool(isinstance(record, dict) and record.get('mobile'))
@@ -1617,6 +1672,10 @@ def oauth2callback():
         logger.error(f"Failed to build OAuth flow: {e}")
         return jsonify({'error': str(e)}), 503
 
+    # Must be read BEFORE _pop_oauth_code_verifier below, which deletes the
+    # whole oauth_states row (including this flag) once the verifier is read.
+    is_mobile_flow = _is_oauth_mobile(state)
+
     # restore PKCE code_verifier from session if present
     code_verifier = session.get('oauth_code_verifier') or _pop_oauth_code_verifier(state)
     try:
@@ -1721,7 +1780,7 @@ def oauth2callback():
         # session set above. Hand it a signed mobile access token via a deep
         # link instead -- WebBrowser.openAuthSessionAsync on the app side
         # captures this redirect and reads the token straight from the URL.
-        if _is_oauth_mobile(state):
+        if is_mobile_flow:
             token_query = urlencode({
                 'access_token': issue_mobile_token(user_id),
                 'user_id': user_id,

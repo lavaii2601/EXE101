@@ -7,6 +7,7 @@ import EmailScreen from './src/screens/EmailScreen';
 import ScheduleScreen from './src/screens/ScheduleScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import LoginScreen from './src/screens/LoginScreen';
 import ProfileHeader from './src/components/ProfileHeader';
 import RoleSelection from './src/components/RoleSelection';
 import { apiGet, apiPost } from './src/api/client';
@@ -40,6 +41,9 @@ function AppShell() {
   const [profile, setProfile] = useState(null);
   const [status, setStatus] = useState(null);
   const [userMode, setUserMode] = useState(null);
+  // null = not checked yet (show loading screen), false = no backend session
+  // (show LoginScreen), true = signed in with Google.
+  const [isAuthenticated, setIsAuthenticated] = useState(null);
   const [agentProfile, setAgentProfile] = useState(null);
   const [syncEvent, setSyncEvent] = useState({ id: 0, targets: [] });
   const [savingMode, setSavingMode] = useState(false);
@@ -52,8 +56,14 @@ function AppShell() {
       apiGet('/chat/agent-profile'),
     ]);
     if (profileResult.status === 'fulfilled' && profileResult.value.success) {
+      setIsAuthenticated(true);
       setProfile(profileResult.value.user);
       setUserMode(profileResult.value.user?.user_mode || '');
+    } else if (profileResult.status === 'rejected' && profileResult.reason?.status === 401) {
+      // No backend session yet (fresh install, never signed in, or just
+      // logged out) -- show the login screen instead of leaving the app
+      // stuck on a blank loading screen or inside the authenticated shell.
+      setIsAuthenticated(false);
     }
     if (statusResult.status === 'fulfilled') {
       setStatus(statusResult.value);
@@ -75,8 +85,18 @@ function AppShell() {
     await clearPersistedSession();
     setProfile(null);
     setStatus(null);
+    setUserMode(null);
+    setModePickerOpen(false);
     setActiveTab('overview');
+    // Drives the render below back to LoginScreen instead of leaving the
+    // user stuck inside the authenticated tabs (e.g. still on Settings).
+    setIsAuthenticated(false);
   }, []);
+
+  const handleLoggedIn = useCallback(() => {
+    setIsAuthenticated(null);
+    refreshShell();
+  }, [refreshShell]);
 
   const saveUserMode = useCallback(async (mode) => {
     setSavingMode(true);
@@ -86,7 +106,18 @@ function AppShell() {
       setUserMode(mode);
       setModePickerOpen(false);
     } catch (error) {
-      Alert.alert('Không lưu được chế độ', error.message);
+      // 401 = no backend session yet; 403 = backend also rejects unauthenticated
+      // POSTs that arrive without a browser Origin header (always true for the
+      // native app's fetch). Both mean "not signed in with Google yet" here --
+      // keep the chosen mode locally so the user can reach the app and connect
+      // Gmail from Settings/Email; it persists server-side on the next save
+      // once a backend session exists.
+      if (error.status === 401 || error.status === 403) {
+        setUserMode(mode);
+        setModePickerOpen(false);
+      } else {
+        Alert.alert('Không lưu được chế độ', error.message);
+      }
     } finally {
       setSavingMode(false);
     }
@@ -129,8 +160,17 @@ function AppShell() {
 
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  if (userMode === null) {
+  if (isAuthenticated === null) {
     return <SafeAreaView style={styles.safe}><View style={styles.loadingScreen} /></SafeAreaView>;
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <LoginScreen onLoggedIn={handleLoggedIn} />
+      </SafeAreaView>
+    );
   }
 
   if (!userMode || modePickerOpen) {

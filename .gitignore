@@ -17,6 +17,7 @@ mobile/node_modules/
 mobile/.expo/
 mobile/dist/
 mobile/android/
+mobile/*.apk
 
 # IDE
 .idea/

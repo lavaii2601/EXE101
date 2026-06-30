@@ -95,6 +95,18 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
     CONSTRAINT oauth_tokens_user_provider_unique UNIQUE (user_id, provider)
 );
 
+-- Transient state for an in-progress Google OAuth handshake (PKCE code
+-- verifier, and whether the mobile app started it). Must be in the shared
+-- DB, not a local file: the request that starts the flow (/auth_url) and
+-- the request Google redirects back to (/oauth2callback) can land on
+-- different backend instances behind the load balancer.
+CREATE TABLE IF NOT EXISTS oauth_states (
+    state TEXT PRIMARY KEY,
+    code_verifier TEXT,
+    mobile BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Gmail message metadata and cached body. This replaces ad-hoc JSON cache entries
 -- when you want searchable, queryable email state in Postgres.
 CREATE TABLE IF NOT EXISTS gmail_messages (
