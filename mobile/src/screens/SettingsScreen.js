@@ -16,6 +16,7 @@ import { ACCENTS, useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { getUserMode } from '../config/userModes';
 import { apiGet, apiPost } from '../api/client';
+import { PRIVACY_URL } from '../api/config';
 
 const ACCENT_OPTIONS = [
   { key: 'charcoal', hex: '#242423' },
@@ -79,6 +80,14 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
       t('Sắp có', 'Coming soon'),
       t(`"${featureVi}" sẽ có trong phiên bản tiếp theo.`, `"${featureEn || featureVi}" will be available in a future update.`)
     );
+
+  const openPrivacyPolicy = async () => {
+    try {
+      await WebBrowser.openBrowserAsync(PRIVACY_URL);
+    } catch (error) {
+      Alert.alert(t('Không mở được chính sách', 'Could not open policy'), error.message);
+    }
+  };
 
   const clearHistory = () => {
     Alert.alert(
@@ -451,7 +460,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <TouchableOpacity
           style={styles.settingRow}
-          onPress={() => comingSoon('Chính sách bảo mật', 'Privacy policy')}
+          onPress={openPrivacyPolicy}
           activeOpacity={0.75}
         >
           <View style={[styles.iconWrap, { backgroundColor: colors.secondaryBg }]}>

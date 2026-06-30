@@ -20,14 +20,21 @@ function buildColors(isDark, accentKey) {
       border:           'rgba(255,255,255,0.08)',
       primary,
       primaryDark,
-      primarySoft:      'rgba(108,99,255,0.14)',
-      accentText:       '#a78bfa',
+      primarySoft:      `${primary}24`,
+      accentText:       primary,
       danger:           '#ef4444',
       success:          '#34d399',
       warning:          '#fbbf24',
       secondaryBg:      '#252533',
       secondaryText:    '#d8d8e8',
       inputPlaceholder: '#5c5c70',
+      shadow: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.28,
+        shadowRadius: 14,
+        elevation: 4,
+      },
     };
   }
   return {
@@ -39,14 +46,21 @@ function buildColors(isDark, accentKey) {
     border:           '#dfe6f1',
     primary,
     primaryDark,
-    primarySoft:      'rgba(108,99,255,0.10)',
-    accentText:       '#6c63ff',
+    primarySoft:      `${primary}18`,
+    accentText:       primary,
     danger:           '#dc2626',
     success:          '#16a34a',
     warning:          '#d97706',
     secondaryBg:      '#e8eef8',
     secondaryText:    '#22314a',
     inputPlaceholder: '#9aa8bc',
+    shadow: {
+      shadowColor: '#172033',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.08,
+      shadowRadius: 14,
+      elevation: 4,
+    },
   };
 }
 

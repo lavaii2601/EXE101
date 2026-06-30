@@ -65,7 +65,8 @@ app.config.update(
 # Set permanent session to persist across server restarts
 @app.before_request
 def make_session_permanent():
-    flask_session.permanent = True
+    if request.path != '/privacy':
+        flask_session.permanent = True
     limited = enforce_rate_limit()
     if limited:
         return jsonify(limited[0]), limited[1]
@@ -146,6 +147,13 @@ def serve_frontend():
     """Serve frontend index.html"""
     response = send_from_directory('../frontend', 'index.html')
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
+@app.route('/privacy')
+def serve_privacy_policy():
+    """Public privacy policy for Railway, Google OAuth, and Android APK."""
+    response = send_from_directory('../frontend', 'privacy.html')
+    response.headers['Cache-Control'] = 'public, max-age=3600'
     return response
 
 @app.route('/<path:path>')

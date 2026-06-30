@@ -34,9 +34,9 @@ export default function Button({ title, onPress, variant = 'primary', disabled, 
 function makeStyles(colors) {
   return StyleSheet.create({
     button: {
-      minHeight: 42,
-      paddingHorizontal: 14,
-      borderRadius: 12,
+      minHeight: 44,
+      paddingHorizontal: 16,
+      borderRadius: 8,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.primary,
@@ -44,7 +44,7 @@ function makeStyles(colors) {
     secondary: { backgroundColor: colors.secondaryBg },
     danger:    { backgroundColor: colors.danger },
     disabled:  { opacity: 0.55 },
-    text:      { color: '#ffffff', fontWeight: '700' },
-    secondaryText: { color: colors.secondaryText },
+    text:      { color: '#ffffff', fontWeight: '700', fontSize: 14, fontFamily: 'Poppins_700Bold' },
+    secondaryText: { color: colors.secondaryText, fontFamily: 'Poppins_600SemiBold' },
   });
 }

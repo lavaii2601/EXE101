@@ -10,9 +10,12 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@expo-google-fonts/poppins": "^0.4.1",
+    "@expo/vector-icons": "^15.0.2",
     "@react-native-community/datetimepicker": "9.1.0",
     "expo": "~56.0.12",
     "expo-dev-client": "~56.0.20",
+    "expo-font": "~56.0.7",
     "expo-linear-gradient": "^56.0.4",
     "expo-linking": "~56.0.14",
     "expo-secure-store": "~56.0.4",

@@ -14,8 +14,9 @@ function makeStyles(colors) {
       backgroundColor: colors.panel,
       borderColor: colors.border,
       borderWidth: 1,
-      borderRadius: 16,
+      borderRadius: 14,
       padding: 14,
+      ...colors.shadow,
     },
   });
 }

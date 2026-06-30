@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as WebBrowser from 'expo-web-browser';
 import Button from '../components/Button';
 import { useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { connectGoogleAccount } from '../api/googleAuth';
+import { PRIVACY_URL } from '../api/config';
 
 function PolicyLine({ title, detail, styles }) {
   return (
@@ -34,6 +36,14 @@ export default function LoginScreen({ onLoggedIn }) {
       Alert.alert(t('Không đăng nhập được', 'Sign-in failed'), error.message);
     } finally {
       setSigningIn(false);
+    }
+  };
+
+  const openPrivacyPolicy = async () => {
+    try {
+      await WebBrowser.openBrowserAsync(PRIVACY_URL);
+    } catch (error) {
+      Alert.alert(t('Không mở được chính sách', 'Could not open policy'), error.message);
     }
   };
 
@@ -94,6 +104,9 @@ export default function LoginScreen({ onLoggedIn }) {
           "By continuing, you agree to FlowMate AI's privacy policy and allow the permissions shown on Google's consent screen."
         )}
       </Text>
+      <TouchableOpacity onPress={openPrivacyPolicy} activeOpacity={0.75}>
+        <Text style={styles.policyLink}>{t('Đọc chính sách bảo mật', 'Read privacy policy')}</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -134,5 +147,6 @@ function makeStyles(colors) {
     policyDetail: { marginTop: 2, color: colors.textMuted, fontSize: 13 },
     signInButton: { width: '100%', minHeight: 52, borderRadius: 14 },
     consent: { marginTop: 14, color: colors.textMuted, fontSize: 12, textAlign: 'center' },
+    policyLink: { marginTop: 10, color: colors.primary, fontSize: 13, fontWeight: '700' },
   });
 }

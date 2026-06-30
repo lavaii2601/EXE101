@@ -1,6 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  useFonts,
+  Poppins_400Regular,
+  Poppins_500Medium,
+  Poppins_600SemiBold,
+  Poppins_700Bold,
+  Poppins_800ExtraBold,
+} from '@expo-google-fonts/poppins';
 import ChatScreen from './src/screens/ChatScreen';
 import OverviewScreen from './src/screens/OverviewScreen';
 import EmailScreen from './src/screens/EmailScreen';
@@ -16,15 +25,27 @@ import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
 
 const tabs = [
-  { key: 'overview', icon: 'AI', label: ['Tổng hợp', 'Overview'] },
-  { key: 'chat',     icon: '💬', label: ['Chat', 'Chat'] },
-  { key: 'emails',   icon: '✉',  label: ['Email', 'Email'] },
-  { key: 'schedule', icon: '📅', label: ['Lịch', 'Calendar'] },
-  { key: 'history',  icon: '🕐', label: ['Lịch sử', 'History'] },
-  { key: 'settings', icon: '⚙',  label: ['Cài đặt', 'Settings'] },
+  { key: 'overview', icon: 'stats-chart-outline', label: ['Tổng hợp', 'Overview'] },
+  { key: 'chat',     icon: 'chatbubble-outline',  label: ['Chat', 'Chat'] },
+  { key: 'emails',   icon: 'mail-outline',        label: ['Email', 'Email'] },
+  { key: 'schedule', icon: 'calendar-outline',    label: ['Lịch', 'Calendar'] },
+  { key: 'history',  icon: 'time-outline',        label: ['Lịch sử', 'History'] },
+  { key: 'settings', icon: 'settings-outline',    label: ['Cài đặt', 'Settings'] },
 ];
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Poppins_400Regular,
+    Poppins_500Medium,
+    Poppins_600SemiBold,
+    Poppins_700Bold,
+    Poppins_800ExtraBold,
+  });
+
+  if (!fontsLoaded) {
+    return <View style={{ flex: 1, backgroundColor: '#f5f7fb' }} />;
+  }
+
   return (
     <ThemeProvider>
       <LanguageProvider>
@@ -195,21 +216,26 @@ function AppShell() {
         />
         <View style={styles.content}>{renderScreen()}</View>
         <View style={styles.tabBar}>
-          {tabs.map((tab) => (
-            <TouchableOpacity
-              key={tab.key}
-              style={[styles.tab, activeTab === tab.key && styles.tabActive]}
-              onPress={() => setActiveTab(tab.key)}
-              activeOpacity={0.85}
-            >
-              <Text style={[styles.tabIcon, activeTab === tab.key && styles.tabTextActive]}>
-                {tab.icon}
-              </Text>
-              <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
-                {t(...tab.label)}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {tabs.map((tab) => {
+            const active = activeTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={styles.tab}
+                onPress={() => setActiveTab(tab.key)}
+                activeOpacity={0.85}
+              >
+                <Ionicons
+                  name={tab.icon}
+                  size={20}
+                  color={active ? colors.primary : colors.textMuted}
+                />
+                <Text style={[styles.tabText, active && styles.tabTextActive]}>
+                  {t(...tab.label)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
     </SafeAreaView>
@@ -224,10 +250,9 @@ function makeStyles(colors) {
     content: { flex: 1 },
     tabBar: {
       flexDirection: 'row',
-      gap: 3,
       paddingHorizontal: 5,
-      paddingTop: 8,
-      paddingBottom: 12,
+      paddingTop: 6,
+      paddingBottom: 14,
       backgroundColor: colors.panel,
       borderTopColor: colors.border,
       borderTopWidth: 1,
@@ -237,12 +262,15 @@ function makeStyles(colors) {
       minHeight: 48,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: 12,
-      backgroundColor: 'transparent',
+      paddingVertical: 6,
     },
-    tabActive: { backgroundColor: colors.primarySoft },
-    tabIcon: { color: colors.textMuted, fontWeight: '900', fontSize: 12, marginBottom: 3 },
-    tabText: { color: colors.textMuted, fontWeight: '700', fontSize: 9 },
-    tabTextActive: { color: colors.accentText },
+    tabText: {
+      color: colors.textMuted,
+      fontWeight: '600',
+      fontFamily: 'Poppins_600SemiBold',
+      fontSize: 10,
+      marginTop: 3,
+    },
+    tabTextActive: { color: colors.primary },
   });
 }
