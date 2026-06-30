@@ -677,7 +677,10 @@ function dedupeSchedules(items = []) {
 }
 
 function makeStyles(colors) {
-  const officeFont = 'Times New Roman';
+  const fontRegular  = 'Poppins_400Regular';
+  const fontMedium   = 'Poppins_500Medium';
+  const fontSemiBold = 'Poppins_600SemiBold';
+  const fontBold     = 'Poppins_700Bold';
   return StyleSheet.create({
     heroCard: {
       gap: 6,
@@ -686,16 +689,15 @@ function makeStyles(colors) {
     },
     kicker: {
       color: colors.primary,
-      fontFamily: officeFont,
+      fontFamily: fontSemiBold,
       fontSize: 10,
-      fontWeight: '600',
-      letterSpacing: 0,
+      letterSpacing: 1,
       textTransform: 'uppercase',
     },
-    heroTitle: { color: colors.text, fontFamily: officeFont, fontSize: 18, fontWeight: '600' },
-    heroText: { color: colors.textMuted, fontFamily: officeFont, fontSize: 13, lineHeight: 19 },
-    refreshNote: { marginTop: 4, color: colors.primary, fontFamily: officeFont, fontSize: 12, fontWeight: '500', lineHeight: 18 },
-    sourceText: { marginTop: 4, color: colors.textMuted, fontFamily: officeFont, fontSize: 11, fontWeight: '500' },
+    heroTitle: { color: colors.text, fontFamily: fontSemiBold, fontSize: 18 },
+    heroText: { color: colors.textMuted, fontFamily: fontRegular, fontSize: 13, lineHeight: 19 },
+    refreshNote: { marginTop: 4, color: colors.primary, fontFamily: fontMedium, fontSize: 12, lineHeight: 18 },
+    sourceText: { marginTop: 4, color: colors.textMuted, fontFamily: fontMedium, fontSize: 11 },
     dateCard: { gap: 8 },
     quickCard: { gap: 8 },
     quickActions: {
@@ -709,9 +711,8 @@ function makeStyles(colors) {
     },
     quickMessage: {
       color: colors.success,
-      fontFamily: officeFont,
+      fontFamily: fontSemiBold,
       fontSize: 12,
-      fontWeight: '600',
       lineHeight: 18,
     },
     planBox: {
@@ -728,8 +729,8 @@ function makeStyles(colors) {
       gap: 8,
     },
     planHeaderText: { flex: 1, minWidth: 0 },
-    planTitle: { color: colors.text, fontFamily: officeFont, fontSize: 14, fontWeight: '700' },
-    planMeta: { marginTop: 3, color: colors.textMuted, fontFamily: officeFont, fontSize: 11, fontWeight: '500' },
+    planTitle: { color: colors.text, fontFamily: fontBold, fontSize: 14 },
+    planMeta: { marginTop: 3, color: colors.textMuted, fontFamily: fontMedium, fontSize: 11 },
     planBadge: {
       overflow: 'hidden',
       borderRadius: 999,
@@ -737,9 +738,8 @@ function makeStyles(colors) {
       paddingVertical: 4,
       backgroundColor: `${colors.primary}18`,
       color: colors.primary,
-      fontFamily: officeFont,
+      fontFamily: fontBold,
       fontSize: 10,
-      fontWeight: '700',
     },
     planItem: {
       flexDirection: 'row',
