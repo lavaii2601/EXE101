@@ -910,12 +910,19 @@ def _mentor_candidate_from_raw(raw):
     if confidence < 0.55:
         return None
 
-    title = str(data.get('title') or '').strip()[:150]
-    content = str(data.get('content') or '').strip()[:700]
+    title = _redact_mentor_text(str(data.get('title') or '').strip())[:150]
+    content = _redact_mentor_text(str(data.get('content') or '').strip())[:700]
     tags = str(data.get('tags') or '').strip()[:220]
     if not title or not content:
         return None
     return {'title': title, 'content': content, 'tags': tags, 'confidence': confidence}
+
+
+def _redact_mentor_text(value):
+    text = str(value or '')
+    text = re.sub(r'[\w.+-]+@[\w.-]+\.\w+', '[email]', text)
+    text = re.sub(r'\b(?:\+?\d[\d\s().-]{7,}\d)\b', '[phone]', text)
+    return text
 
 
 def _save_mentor_lesson(candidate, user_id, provider):

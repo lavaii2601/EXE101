@@ -37,6 +37,7 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
   const [editForm, setEditForm] = useState(initialForm);
   const [loading, setLoading] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [weekDays, setWeekDays] = useState({ current: [], next: [] });
   const loadSchedules = useCallback(async (options = {}) => {
     setLoading(true);
     try {
@@ -68,6 +69,10 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
       setWeekSummary({
         current: flattenWeekSchedules(currentWeek.days),
         next: flattenWeekSchedules(nextWeek.days),
+      });
+      setWeekDays({
+        current: Array.isArray(currentWeek.days) ? currentWeek.days : [],
+        next: Array.isArray(nextWeek.days) ? nextWeek.days : [],
       });
     } catch (error) {
       Alert.alert('Lỗi tải lịch', error.message);

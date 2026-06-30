@@ -81,6 +81,22 @@ CLAUDE_API_KEY=
 GEMINI_API_KEY=
 ```
 
+Optional web research and AI mentor learning:
+
+```env
+WEB_RESEARCH_ENABLED=true
+WEB_RESEARCH_AUTO_LEARN_ENABLED=true
+
+AI_MENTOR_LEARNING_ENABLED=true
+AI_MENTOR_ALLOW_PRIVATE_CONTEXT=false
+AI_MENTOR_PROVIDERS=openai,gemini,claude,openrouter,mistral,ollama
+AI_MENTOR_MAX_PROVIDERS=2
+```
+
+`AI_MENTOR_ALLOW_PRIVATE_CONTEXT=false` keeps mentor learning away from turns
+grounded in private email, calendar, history, or profile context unless you
+explicitly choose to allow that data flow.
+
 ## Google OAuth redirect URI
 
 In Google Cloud OAuth Client, add:
