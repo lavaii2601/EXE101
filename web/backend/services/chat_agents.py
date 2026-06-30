@@ -703,6 +703,8 @@ def _learn_from_web_research(research_result, user_id, db_path=None):
     query = str((research_result or {}).get('query') or '').strip()
     if not query or not _should_extract_web_learning(query):
         return
+    if not getattr(ai_service, 'configured_providers', None):
+        return
 
     if not _learning_quota_available(
         user_id,
