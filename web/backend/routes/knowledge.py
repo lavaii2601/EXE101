@@ -65,13 +65,70 @@ _SEED_DOCUMENTS = [
         "hoac noi voi Bob truc tiep, vi du 'tu nay minh lam freelance, doi giup minh'.",
         "mode,che do,settings",
     ),
+    (
+        "Checklist trong tab Tong hop",
+        "Tab Tong hop co mot checklist gop viec tu lich va viec tu them thu cong, sap xep theo "
+        "thu tu: viec chua xong truoc, viec duoc ghim len dau, han gan nhat, do uu tien cao nhat, "
+        "moi tao nhat. Co the them viec qua o 'Them nhanh' bang cau tu nhien (vi du 'tap yoga, "
+        "cham meo, don nha'), hoac noi thang voi Bob trong chat kieu 'hom nay minh co cac hoat "
+        "dong nhu X, Y, Z, dua vao checklist giup minh' -- Bob se tu tach tung viec va them ngay, "
+        "khong can xac nhan vi day la thao tac it rui ro, co the xoa lai duoc. Neu nguoi dung noi "
+        "ro mot viec la 'gap'/'khan cap'/'quan trong', viec do duoc ghim len dau va uu tien cao "
+        "hon; neu noi 'khong gap'/'ranh thi lam', viec do se xuong cuoi danh sach.",
+        "checklist,them nhanh,uu tien,bob,chat",
+    ),
+    (
+        "Goi y lich tu danh sach hoat dong",
+        "Khi nguoi dung liet ke nhieu hoat dong trong chat va noi ro muon 'sap xep lich'/'goi y "
+        "lich' (khac voi chi muon dua vao checklist), Bob se dung engine xep lich gioi thieu khung "
+        "gio cu the cho tung hoat dong, tranh trung voi lich da co san -- vi du yoga thuong duoc "
+        "xep dau gio sang, cham thu cung dau ngay, viec nha vao buoi toi. Day la goi y, Bob KHONG "
+        "tu tao lich that: nguoi dung phai xem va bam 'Ap dung' (co the sua gio/tieu de truoc khi "
+        "ap dung) thi cac su kien moi duoc tao that trong FlowMate va dong bo Google Calendar.",
+        "lich,goi y,sap xep,schedule,bob",
+    ),
+    (
+        "Tab Kien thuc cho Bob",
+        "Tab Kien thuc la noi quan ly toan bo tai lieu Bob dung de tra cuu khi tro chuyen (RAG, "
+        "tim bang TF-IDF). Nguoi dung co the tu them/sua/xoa tai lieu (thuat ngu noi bo, quy tac "
+        "rieng, cach xung ho mong muon...) qua form ngay tren tab nay -- khong can sua code. Moi "
+        "tai lieu co nguon (source): 'seed' la kien thuc goc ve FlowMate, 'manual' la nguoi dung "
+        "tu them, 'auto' la Bob tu hoc duoc tu hoi thoai (xem muc 'Bob tu hoc tri nho').",
+        "kien thuc,knowledge,rag,quan ly",
+    ),
+    (
+        "Bob tu hoc tri nho tu hoi thoai",
+        "Bob khong the 'hoc' theo nghia cap nhat trong so AI that su (gioi han ky thuat chung cua "
+        "moi AI qua API), nhung co the tu dong ghi nho: sau moi tin nhan co dau hieu dang nho (sua "
+        "loi Bob, neu so thich/quy tac ca nhan, cach xung ho rieng...), mot buoc kiem tra ngam se "
+        "trich xuat va luu lai thanh tai lieu kien thuc rieng cho dung nguoi dung do (gan nhan "
+        "source='auto'), khong can nguoi dung tu nhap. Lan chat sau co lien quan, Bob tu tra cuu "
+        "lai. Tri nho tu hoc cua moi nguoi dung hoan toan rieng biet, khong bao gio hien thi cho "
+        "nguoi dung khac; co the xem/sua/xoa trong tab Kien thuc neu Bob nho sai.",
+        "tu hoc,tri nho,memory,bob,rieng tu",
+    ),
+    (
+        "Bob ho tro song ngu Viet-Anh",
+        "Bob hieu va phan loai yeu cau dung bang ca tieng Viet lan tieng Anh (vi du 'Schedule a "
+        "meeting tomorrow at 3pm' hoac 'tao lich hop luc 3 gio chieu mai' deu duoc hieu giong "
+        "nhau). Bob tra loi bang dung ngon ngu nguoi dung vua dung trong tin nhan moi nhat, tru "
+        "khi duoc yeu cau doi ngon ngu khac.",
+        "song ngu,bilingual,tieng anh,tieng viet",
+    ),
 ]
 
 
 def _seed_if_empty():
+    """Despite the legacy name (app.py imports this as `seed_knowledge_base`
+    and calls it once at startup), this now seeds any starter doc whose
+    title doesn't already exist -- not just on a fully empty table -- so
+    new entries added to _SEED_DOCUMENTS later reach installs that already
+    seeded the original set, the next time the app starts. Safe to call
+    repeatedly: matching titles are skipped, never duplicated."""
     try:
-        if KnowledgeDocument.count() == 0:
-            for title, content, tags in _SEED_DOCUMENTS:
+        existing_titles = {doc.get('title') for doc in KnowledgeDocument.get_all(limit=2000)}
+        for title, content, tags in _SEED_DOCUMENTS:
+            if title not in existing_titles:
                 KnowledgeDocument.create(title, content, tags=tags, source='seed')
     except Exception:
         pass
