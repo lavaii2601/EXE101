@@ -85,7 +85,7 @@ def _store_oauth_code_verifier(state, code_verifier):
     if pg.enabled():
         with pg.connection() as conn:
             conn.execute(
-                "DELETE FROM oauth_states WHERE created_at < NOW() - INTERVAL '%s seconds'",
+                "DELETE FROM oauth_states WHERE created_at < NOW() - (%s * INTERVAL '1 second')",
                 (OAUTH_STATE_TTL_SECONDS,),
             )
             conn.execute(
@@ -121,7 +121,7 @@ def _pop_oauth_code_verifier(state):
             row = conn.execute(
                 """
                 SELECT code_verifier FROM oauth_states
-                WHERE state = %s AND created_at >= NOW() - INTERVAL '%s seconds'
+                WHERE state = %s AND created_at >= NOW() - (%s * INTERVAL '1 second')
                 """,
                 (state, OAUTH_STATE_TTL_SECONDS),
             ).fetchone()
@@ -190,7 +190,7 @@ def _is_oauth_mobile(state):
             row = conn.execute(
                 """
                 SELECT mobile FROM oauth_states
-                WHERE state = %s AND created_at >= NOW() - INTERVAL '%s seconds'
+                WHERE state = %s AND created_at >= NOW() - (%s * INTERVAL '1 second')
                 """,
                 (state, OAUTH_STATE_TTL_SECONDS),
             ).fetchone()
