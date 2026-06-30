@@ -14,7 +14,7 @@ export default function ProfileHeader({ profile, status, userMode, onRefresh, on
   const mode = getUserMode(userMode);
 
   return (
-    <View style={[styles.header, { backgroundColor: colors.background }]}>
+    <View style={[styles.header, { backgroundColor: colors.panel, borderBottomColor: colors.border }]}>
       <TouchableOpacity
         style={[styles.avatar, { backgroundColor: colors.primary }]}
         onPress={onRefresh}
@@ -25,8 +25,9 @@ export default function ProfileHeader({ profile, status, userMode, onRefresh, on
           : <Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text>}
       </TouchableOpacity>
       <TouchableOpacity style={styles.info} onPress={onChangeMode} activeOpacity={0.8}>
+        <Text style={[styles.brand, { color: colors.primary }]}>FLOWMATE AI</Text>
         <Text style={[styles.name, { color: colors.text }]}>{name}</Text>
-        <Text style={[styles.detail, { color: colors.accentText }]} numberOfLines={1}>
+        <Text style={[styles.detail, { color: colors.textMuted }]} numberOfLines={1}>
           {mode.label} · {email}
         </Text>
       </TouchableOpacity>
@@ -39,12 +40,13 @@ export default function ProfileHeader({ profile, status, userMode, onRefresh, on
 
 const styles = StyleSheet.create({
   header: {
-    minHeight: 68,
+    minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 10,
+    borderBottomWidth: 1,
   },
   avatar: {
     width: 38,
@@ -54,12 +56,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarImage: { width: 38, height: 38, borderRadius: 19 },
-  avatarText: { color: '#ffffff', fontWeight: '900', fontSize: 15 },
+  avatarText: { color: '#ffffff', fontFamily: 'Poppins_700Bold', fontSize: 15 },
   info: { flex: 1, minWidth: 0 },
-  name: { fontWeight: '800', fontSize: 14 },
-  detail: { marginTop: 3, fontSize: 11 },
-  status: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },
+  brand: { fontFamily: 'Poppins_700Bold', fontSize: 9, letterSpacing: 1, textTransform: 'uppercase' },
+  name: { marginTop: 1, fontFamily: 'Poppins_700Bold', fontSize: 14 },
+  detail: { marginTop: 2, fontFamily: 'Poppins_500Medium', fontSize: 11 },
+  status: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
   ready: { backgroundColor: '#059669' },
   notReady: { backgroundColor: '#d97706' },
-  statusText: { color: '#ffffff', fontWeight: '800', fontSize: 10 },
+  statusText: { color: '#ffffff', fontFamily: 'Poppins_700Bold', fontSize: 11 },
 });

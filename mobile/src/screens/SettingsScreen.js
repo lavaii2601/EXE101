@@ -499,7 +499,7 @@ function makeStyles(colors) {
     pageTitle: {
       color: colors.text,
       fontSize: 26,
-      fontWeight: '800',
+      fontFamily: 'Poppins_800ExtraBold',
       marginBottom: 2,
     },
 
@@ -518,10 +518,10 @@ function makeStyles(colors) {
       justifyContent: 'center',
     },
     avatarImg: { width: 68, height: 68, borderRadius: 34 },
-    avatarText: { color: '#ffffff', fontWeight: '800', fontSize: 26 },
+    avatarText: { color: '#ffffff', fontFamily: 'Poppins_700Bold', fontSize: 26 },
     profileInfo: { flex: 1, gap: 3 },
-    profileName:  { color: colors.text, fontSize: 17, fontWeight: '800' },
-    profileEmail: { color: colors.textMuted, fontSize: 12 },
+    profileName:  { color: colors.text, fontSize: 17, fontFamily: 'Poppins_700Bold' },
+    profileEmail: { color: colors.textMuted, fontFamily: 'Poppins_500Medium', fontSize: 12 },
     badge: {
       alignSelf: 'flex-start',
       marginTop: 4,
@@ -531,7 +531,7 @@ function makeStyles(colors) {
     },
     badgeOk:   { backgroundColor: colors.success },
     badgeWarn: { backgroundColor: colors.warning },
-    badgeText: { color: '#ffffff', fontWeight: '700', fontSize: 11 },
+    badgeText: { color: '#ffffff', fontFamily: 'Poppins_700Bold', fontSize: 11 },
     statusPill: {
       borderRadius: 999,
       paddingHorizontal: 9,
@@ -539,22 +539,24 @@ function makeStyles(colors) {
     },
     statusOk: { backgroundColor: `${colors.success}22` },
     statusWarn: { backgroundColor: `${colors.warning}22` },
-    statusText: { color: colors.text, fontSize: 11, fontWeight: '800' },
+    statusText: { color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 11 },
 
     /* Section */
     section: {
       backgroundColor: colors.panel,
       borderColor: colors.border,
       borderWidth: 1,
-      borderRadius: 12,
+      borderRadius: 14,
       padding: 16,
       gap: 14,
+      ...colors.shadow,
     },
     sectionLabel: {
-      color: colors.textMuted,
-      fontSize: 11,
-      fontWeight: '800',
-      letterSpacing: 0.7,
+      color: colors.primary,
+      fontSize: 10,
+      fontFamily: 'Poppins_700Bold',
+      letterSpacing: 1.2,
+      textTransform: 'uppercase',
     },
     divider: { height: 1, backgroundColor: colors.border },
 
@@ -570,9 +572,9 @@ function makeStyles(colors) {
     settingIcon: { fontSize: 18 },
     modeIcon: { fontSize: 11, fontWeight: '900' },
     settingInfo: { flex: 1 },
-    settingTitle: { color: colors.text, fontWeight: '600', fontSize: 15 },
-    settingSub:   { color: colors.textMuted, fontSize: 12, marginTop: 1 },
-    settingSubStandalone: { color: colors.textMuted, fontSize: 12, marginTop: 3, marginBottom: 10 },
+    settingTitle: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 14 },
+    settingSub:   { color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 12, marginTop: 1 },
+    settingSubStandalone: { color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 12, marginTop: 3, marginBottom: 10 },
     chevron: { color: colors.textMuted, fontSize: 22, fontWeight: '300' },
 
     /* Accent picker */

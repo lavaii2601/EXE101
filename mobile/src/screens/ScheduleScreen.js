@@ -347,7 +347,7 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
         <EmptyState title="Chưa có lịch sắp tới" detail="Tạo lịch mới hoặc kết nối Google/Outlook để đồng bộ lịch." />
       ) : (
         schedules.map((schedule) => (
-          <Card key={schedule.id}>
+          <Card key={schedule.id} style={styles.scheduleCard}>
             <View style={styles.cardHeader}>
               <Text style={styles.title}>{schedule.title}</Text>
               <Text style={[
@@ -621,22 +621,26 @@ function durationMinutes(startValue, endValue) {
 
 function makeStyles(colors) {
   return StyleSheet.create({
-    title: { color: colors.text, fontWeight: '800', fontSize: 16, lineHeight: 22 },
+    scheduleCard: {
+      borderLeftWidth: 4,
+      borderLeftColor: colors.primary,
+    },
+    title: { color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 16, lineHeight: 22 },
     cardHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
-    source: { overflow: 'hidden', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4, fontSize: 11, fontWeight: '800' },
+    source: { overflow: 'hidden', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4, fontFamily: 'Poppins_700Bold', fontSize: 11 },
     sourceSynced: { color: colors.success, backgroundColor: `${colors.success}18` },
     sourceDefault: { color: colors.primary, backgroundColor: `${colors.primary}18` },
     sourceOutlook: { color: '#0369a1', backgroundColor: 'rgba(14,165,233,0.16)' },
-    time:  { marginTop: 6, color: colors.primary, fontWeight: '700' },
-    description: { marginTop: 8,  color: colors.textMuted, lineHeight: 20 },
-    meta:        { marginTop: 6,  color: colors.textMuted },
+    time:  { marginTop: 6, color: colors.primary, fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
+    description: { marginTop: 8,  color: colors.textMuted, fontFamily: 'Poppins_400Regular', lineHeight: 20 },
+    meta:        { marginTop: 6,  color: colors.textMuted, fontFamily: 'Poppins_500Medium' },
     actions:     { marginTop: 12, flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
     editActions: { marginTop: 14, flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
     summaryCard: { gap: 12 },
     suggestionCard: { gap: 12 },
     summaryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-    summaryKicker: { color: colors.textMuted, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
-    summaryTitle: { marginTop: 3, color: colors.text, fontSize: 16, fontWeight: '800' },
+    summaryKicker: { color: colors.primary, fontFamily: 'Poppins_700Bold', fontSize: 10, letterSpacing: 1, textTransform: 'uppercase' },
+    summaryTitle: { marginTop: 3, color: colors.text, fontSize: 16, fontFamily: 'Poppins_700Bold' },
     summaryTotal: {
       minWidth: 42,
       paddingHorizontal: 10,
@@ -646,7 +650,7 @@ function makeStyles(colors) {
       backgroundColor: `${colors.primary}14`,
       color: colors.primary,
       textAlign: 'center',
-      fontWeight: '900',
+      fontFamily: 'Poppins_700Bold',
       fontSize: 18,
     },
     weekNav: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
@@ -659,18 +663,18 @@ function makeStyles(colors) {
       backgroundColor: colors.panelSoft,
     },
     weekSummaryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-    weekTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },
-    weekCount: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
-    weekEmpty: { marginTop: 8, color: colors.textMuted, fontSize: 13 },
+    weekTitle: { color: colors.text, fontSize: 14, fontFamily: 'Poppins_700Bold' },
+    weekCount: { color: colors.textMuted, fontSize: 12, fontFamily: 'Poppins_600SemiBold' },
+    weekEmpty: { marginTop: 8, color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 13 },
     weekItem: { marginTop: 10, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: colors.primary },
-    weekItemTime: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
-    weekItemTitle: { marginTop: 2, color: colors.text, fontSize: 13, fontWeight: '800', lineHeight: 18 },
-    weekMore: { marginTop: 10, color: colors.textMuted, fontSize: 12, fontWeight: '700' },
+    weekItemTime: { color: colors.textMuted, fontSize: 12, fontFamily: 'Poppins_600SemiBold' },
+    weekItemTitle: { marginTop: 2, color: colors.text, fontSize: 13, fontFamily: 'Poppins_700Bold', lineHeight: 18 },
+    weekMore: { marginTop: 10, color: colors.textMuted, fontSize: 12, fontFamily: 'Poppins_600SemiBold' },
     suggestionItem: {
       paddingTop: 12,
       borderTopColor: colors.border,
       borderTopWidth: 1,
     },
-    previewText: { marginTop: 7, color: colors.textMuted, lineHeight: 19 },
+    previewText: { marginTop: 7, color: colors.textMuted, fontFamily: 'Poppins_400Regular', lineHeight: 19 },
   });
 }

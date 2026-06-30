@@ -69,15 +69,21 @@ export default function HistoryScreen({ syncEvent }) {
         <EmptyState title="Chưa có hoạt động" detail="Các lần chat, gửi email và tạo lịch sẽ hiện ở đây." />
       ) : (
         history.map((item) => (
-          <Card key={item.id}>
-            <View style={styles.row}>
-              <Text style={styles.type}>{labels[item.action_type] || item.action_type}</Text>
-              <Text style={styles.date}>{formatDate(item.created_at)}</Text>
+          <View key={item.id} style={styles.timelineRow}>
+            <View style={styles.timelineRail}>
+              <View style={styles.dot} />
+              <View style={styles.line} />
             </View>
-            <Text style={styles.message} numberOfLines={3}>
-              {item.user_message || item.assistant_response}
-            </Text>
-          </Card>
+            <Card style={styles.card}>
+              <View style={styles.row}>
+                <Text style={styles.type}>{labels[item.action_type] || item.action_type}</Text>
+                <Text style={styles.date}>{formatDate(item.created_at)}</Text>
+              </View>
+              <Text style={styles.message} numberOfLines={3}>
+                {item.user_message || item.assistant_response}
+              </Text>
+            </Card>
+          </View>
         ))
       )}
     </Screen>
@@ -98,9 +104,23 @@ function hasSyncTarget(syncEvent, targets) {
 
 function makeStyles(colors) {
   return StyleSheet.create({
+    timelineRow: { flexDirection: 'row', gap: 12 },
+    timelineRail: { width: 8, alignItems: 'center' },
+    dot: { width: 8, height: 8, borderRadius: 4, marginTop: 6, backgroundColor: colors.primary },
+    line: { flex: 1, width: 1, marginTop: 4, backgroundColor: colors.border },
+    card: { flex: 1, marginBottom: 4 },
     row:     { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
-    type:    { flex: 1, color: colors.text, fontWeight: '800' },
-    date:    { color: colors.textMuted, fontSize: 12 },
-    message: { marginTop: 8, color: colors.textMuted, lineHeight: 20 },
+    type: {
+      color: colors.primary,
+      fontFamily: 'Poppins_700Bold',
+      fontSize: 11,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 999,
+      backgroundColor: colors.primarySoft,
+      overflow: 'hidden',
+    },
+    date:    { color: colors.textMuted, fontFamily: 'Poppins_500Medium', fontSize: 12 },
+    message: { marginTop: 8, color: colors.textMuted, fontFamily: 'Poppins_400Regular', lineHeight: 20 },
   });
 }

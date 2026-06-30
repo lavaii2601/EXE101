@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import EmptyState from '../components/EmptyState';
@@ -290,13 +291,18 @@ export default function OverviewScreen({ onAgentSync, syncEvent }) {
       onRefresh={() => loadOverview()}
       actions={<Button title="Tổng hợp lại" variant="secondary" onPress={() => loadOverview({ force: true })} loading={loading} />}
     >
-      <Card style={styles.heroCard}>
+      <LinearGradient
+        colors={[`${colors.primary}1f`, '#0d948814']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.heroCard}
+      >
         <Text style={styles.kicker}>FLOWMATE AI</Text>
         <Text style={styles.heroTitle}>{formatReportDate(date)}</Text>
         <Text style={styles.heroText}>{insight}</Text>
         {refreshNote ? <Text style={styles.refreshNote}>{refreshNote}</Text> : null}
         <Text style={styles.sourceText}>{sourceText}</Text>
-      </Card>
+      </LinearGradient>
 
       <Card style={styles.dateCard}>
         <Field
@@ -684,8 +690,11 @@ function makeStyles(colors) {
   return StyleSheet.create({
     heroCard: {
       gap: 6,
-      backgroundColor: colors.primarySoft,
+      padding: 18,
+      borderRadius: 14,
+      borderWidth: 1,
       borderColor: `${colors.primary}33`,
+      ...colors.shadow,
     },
     kicker: {
       color: colors.primary,
@@ -765,9 +774,8 @@ function makeStyles(colors) {
       marginTop: -2,
       marginBottom: 8,
       color: colors.textMuted,
-      fontFamily: officeFont,
+      fontFamily: fontMedium,
       fontSize: 11,
-      fontWeight: '500',
       lineHeight: 16,
     },
     statsGrid: {
@@ -778,14 +786,16 @@ function makeStyles(colors) {
     statCard: {
       flexGrow: 1,
       flexBasis: '46%',
-      minHeight: 68,
+      minHeight: 76,
+      borderRadius: 12,
+      padding: 13,
       justifyContent: 'center',
     },
-    statValue: { color: colors.text, fontFamily: officeFont, fontSize: 20, fontWeight: '600' },
-    statLabel: { marginTop: 3, color: colors.textMuted, fontFamily: officeFont, fontSize: 12, fontWeight: '500' },
+    statValue: { color: colors.text, fontFamily: fontSemiBold, fontSize: 22 },
+    statLabel: { marginTop: 3, color: colors.textMuted, fontFamily: fontMedium, fontSize: 11 },
     sectionHeader: { marginBottom: 4 },
-    sectionTitle: { marginTop: 2, color: colors.text, fontFamily: officeFont, fontSize: 14, fontWeight: '600' },
-    checklistMeta: { marginTop: 4, color: colors.textMuted, fontFamily: officeFont, fontSize: 11, fontWeight: '500' },
+    sectionTitle: { marginTop: 2, color: colors.text, fontFamily: fontSemiBold, fontSize: 14 },
+    checklistMeta: { marginTop: 4, color: colors.textMuted, fontFamily: fontMedium, fontSize: 11 },
     checklistHeaderRow: {
       flexDirection: 'row',
       alignItems: 'flex-start',
@@ -802,9 +812,8 @@ function makeStyles(colors) {
     },
     sortButtonText: {
       color: colors.primary,
-      fontFamily: officeFont,
+      fontFamily: fontBold,
       fontSize: 11,
-      fontWeight: '700',
     },
     checklistActions: { alignItems: 'flex-end', gap: 4 },
     checklistRemove: {
@@ -817,9 +826,8 @@ function makeStyles(colors) {
     },
     checklistRemoveText: {
       color: colors.danger,
-      fontFamily: officeFont,
+      fontFamily: fontBold,
       fontSize: 13,
-      fontWeight: '700',
       lineHeight: 14,
     },
     checklistItem: {
@@ -846,22 +854,20 @@ function makeStyles(colors) {
     },
     checkboxText: {
       color: colors.panel,
-      fontFamily: officeFont,
-      fontWeight: '600',
+      fontFamily: fontSemiBold,
       lineHeight: 16,
     },
     checkboxTextChecked: { color: '#ffffff' },
     checklistBody: { flex: 1, minWidth: 0 },
-    checklistTitle: { color: colors.text, fontFamily: officeFont, fontSize: 13, fontWeight: '600', lineHeight: 18 },
+    checklistTitle: { color: colors.text, fontFamily: fontSemiBold, fontSize: 13, lineHeight: 18 },
     checklistTitleDone: {
       color: colors.textMuted,
       textDecorationLine: 'line-through',
     },
     checklistSource: {
       color: colors.textMuted,
-      fontFamily: officeFont,
+      fontFamily: fontMedium,
       fontSize: 10,
-      fontWeight: '500',
       textTransform: 'uppercase',
     },
     item: {
@@ -881,11 +887,11 @@ function makeStyles(colors) {
       justifyContent: 'center',
       backgroundColor: `${colors.primary}18`,
     },
-    itemIndexText: { color: colors.primary, fontFamily: officeFont, fontSize: 11, fontWeight: '600' },
+    itemIndexText: { color: colors.primary, fontFamily: fontSemiBold, fontSize: 11 },
     itemBody: { flex: 1, minWidth: 0 },
-    itemTitle: { color: colors.text, fontFamily: officeFont, fontSize: 13, fontWeight: '600', lineHeight: 18 },
-    itemMeta: { marginTop: 3, color: colors.textMuted, fontFamily: officeFont, fontSize: 11, fontWeight: '500' },
-    itemPreview: { marginTop: 6, color: colors.textMuted, fontFamily: officeFont, fontSize: 12, lineHeight: 18 },
+    itemTitle: { color: colors.text, fontFamily: fontSemiBold, fontSize: 13, lineHeight: 18 },
+    itemMeta: { marginTop: 3, color: colors.textMuted, fontFamily: fontMedium, fontSize: 11 },
+    itemPreview: { marginTop: 6, color: colors.textMuted, fontFamily: fontRegular, fontSize: 12, lineHeight: 18 },
     chip: {
       overflow: 'hidden',
       borderRadius: 999,
@@ -893,9 +899,8 @@ function makeStyles(colors) {
       paddingVertical: 4,
       backgroundColor: 'rgba(13,148,136,0.13)',
       color: '#0f766e',
-      fontFamily: officeFont,
+      fontFamily: fontSemiBold,
       fontSize: 10,
-      fontWeight: '600',
     },
     chipStack: { alignItems: 'flex-end', gap: 5 },
     gmailChip: {
@@ -913,9 +918,8 @@ function makeStyles(colors) {
     errorText: {
       marginTop: 10,
       color: colors.danger,
-      fontFamily: officeFont,
+      fontFamily: fontSemiBold,
       fontSize: 12,
-      fontWeight: '600',
     },
   });
 }
