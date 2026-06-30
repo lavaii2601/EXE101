@@ -2663,7 +2663,8 @@ async function sendMessageConfirmed(message, opts = {}) {
                 history: ui('Lịch sử', 'History'),
                 profile: ui('Hồ sơ', 'Profile'),
                 knowledge: ui('Kiến thức', 'Knowledge'),
-                internet: ui('Internet', 'Internet')
+                internet: ui('Internet', 'Internet'),
+                time: ui('Thời gian hệ thống', 'System time')
             };
             const workspaceSources = Array.isArray(data.workspace_sources)
                 ? data.workspace_sources.filter(source => sourceLabels[source])

@@ -67,6 +67,7 @@ function formatAgentMeta(data) {
     profile: 'Hồ sơ',
     knowledge: 'Kiến thức',
     internet: 'Internet',
+    time: 'Thời gian hệ thống',
   };
   const parts = [];
   if (trace.intent || data?.intent?.intent) {

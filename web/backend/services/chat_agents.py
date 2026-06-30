@@ -425,6 +425,38 @@ def _direct_schedule_list_response(message, user_id, db_path, window_override=No
     )
 
 
+_CURRENT_TIME_TERMS = (
+    'may gio', 'bay gio la may gio', 'hien tai may gio', 'gio hien tai',
+    'hom nay ngay may', 'hom nay la ngay nao', 'ngay hien tai',
+    'what time', 'current time', 'time now', 'what date', "today's date",
+)
+
+
+def _direct_current_time_response(message):
+    normalized = _normalize_intent_text(message)
+    if not any(term in normalized for term in _CURRENT_TIME_TERMS):
+        return None
+
+    now = datetime.now(LOCAL_TZ)
+    weekday = (
+        'thứ Hai', 'thứ Ba', 'thứ Tư', 'thứ Năm', 'thứ Sáu', 'thứ Bảy', 'Chủ nhật'
+    )[now.weekday()]
+    time_24 = now.strftime('%H:%M:%S')
+    date_text = f"{weekday}, ngày {now.day:02d}/{now.month:02d}/{now.year}"
+    tz_key = getattr(LOCAL_TZ, 'key', None)
+    tz_label = f"{tz_key}, UTC+7" if tz_key else "UTC+7"
+
+    if any(term in normalized for term in ('what time', 'current time', 'time now', 'what date', "today's date")):
+        return (
+            f"In Vietnam ({tz_label}), it is {time_24} on {date_text}."
+        )
+
+    return (
+        f"Hiện tại ở Việt Nam ({tz_label}) là {time_24}, "
+        f"{date_text}."
+    )
+
+
 WINDOW_LABELS_VN = {
     'today': 'HÔM NAY',
     'yesterday': 'HÔM QUA',
@@ -1733,6 +1765,17 @@ class FreeformChatAgent:
     plus the catch-all chat.freeform fallback for any other/unknown intent."""
 
     def handle(self, ctx):
+        direct_time = _direct_current_time_response(ctx.user_message)
+        if direct_time:
+            return AgentResult(
+                response=direct_time,
+                workspace_sources=['time'],
+                refresh_targets=sorted(set(ctx.refresh_targets)),
+                ai_used=False,
+                grounded=True,
+                action='Đọc thời gian hệ thống theo UTC+7',
+            )
+
         # Local import to avoid a circular import: chat.py imports get_agent
         # from this module, so this module can't import chat.py at module
         # load time. AGENT_CAPABILITIES only exists in chat.py.

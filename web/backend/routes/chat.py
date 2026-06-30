@@ -122,6 +122,14 @@ AGENT_CAPABILITIES = [
         'refresh_targets': [],
         'confirmation_required': False,
     },
+    {
+        'id': 'time.current',
+        'label': 'Đọc thời gian hiện tại',
+        'description': 'Trả lời giờ/ngày hiện tại bằng đồng hồ backend theo múi giờ Việt Nam UTC+7, không để AI tự đoán.',
+        'workspace_sources': ['time'],
+        'refresh_targets': [],
+        'confirmation_required': False,
+    },
 ]
 
 AGENT_SYNC_TARGETS = {
@@ -220,6 +228,7 @@ def _build_agent_trace(intent_result, workspace_sources=None, refresh_targets=No
             'profile': 'hồ sơ',
             'knowledge': 'kiến thức',
             'internet': 'internet',
+            'time': 'thời gian hệ thống',
         }
         steps.append("Kiểm tra " + ", ".join(labels.get(source, source) for source in sources))
     if intent and intent != 'chat.freeform':
