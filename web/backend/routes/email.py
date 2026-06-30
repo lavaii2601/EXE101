@@ -31,7 +31,7 @@ from models.meeting_suggestion import MeetingSuggestion
 from models import postgres_db as pg
 from config import Config
 from config import GMAIL_CLIENT_ID_KEYS, GMAIL_CLIENT_SECRET_KEYS, GMAIL_CREDENTIALS_JSON_KEYS
-from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
+from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file, sanitize_user_id
 from utils.security import issue_mobile_token
 from utils.google_service_cache import invalidate_cached_service
 
@@ -1575,7 +1575,12 @@ def google_auth_native():
         gmail_name = userinfo.get('name', 'Teacher')
         gmail_picture = userinfo.get('picture', '')
 
-        user_id = gmail_email or 'default'
+        # Sanitized immediately so it's identical to what get_current_user_id()
+        # derives later from the session/bearer token -- otherwise this write
+        # lands under the raw email while every other route reads back under
+        # the sanitized id, and the user's profile/schedule/history never
+        # match up after logging in.
+        user_id = sanitize_user_id(gmail_email or 'default')
 
         # Save token to file (Crucial for _load_gmail_service)
         token_file = get_user_token_file(user_id)
@@ -1722,7 +1727,12 @@ def oauth2callback():
         if people_profile.get('picture'):
             gmail_picture = people_profile.get('picture')
 
-        user_id = gmail_email or 'default'
+        # Sanitized immediately so it's identical to what get_current_user_id()
+        # derives later from the session/bearer token -- otherwise this write
+        # lands under the raw email while every other route reads back under
+        # the sanitized id, and the user's profile/schedule/history never
+        # match up after logging in.
+        user_id = sanitize_user_id(gmail_email or 'default')
         logger.info(f"Setting session for user: {user_id}")
 
         # Save token
