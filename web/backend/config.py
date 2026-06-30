@@ -77,6 +77,13 @@ class Config:
     WEB_RESEARCH_MAX_BYTES = int(os.getenv("WEB_RESEARCH_MAX_BYTES", 180000))
     WEB_RESEARCH_MAX_CHARS = int(os.getenv("WEB_RESEARCH_MAX_CHARS", 1800))
 
+    AI_MENTOR_LEARNING_ENABLED = _bool(os.getenv("AI_MENTOR_LEARNING_ENABLED"), default=True)
+    AI_MENTOR_ALLOW_PRIVATE_CONTEXT = _bool(os.getenv("AI_MENTOR_ALLOW_PRIVATE_CONTEXT"), default=False)
+    AI_MENTOR_PROVIDERS = os.getenv("AI_MENTOR_PROVIDERS", "openai,gemini,claude,openrouter,mistral,ollama")
+    AI_MENTOR_MAX_PROVIDERS = int(os.getenv("AI_MENTOR_MAX_PROVIDERS", 2))
+    AI_MENTOR_MAX_TOKENS = int(os.getenv("AI_MENTOR_MAX_TOKENS", 260))
+    AI_MENTOR_MIN_MESSAGE_CHARS = int(os.getenv("AI_MENTOR_MIN_MESSAGE_CHARS", 18))
+
     SESSION_COOKIE_SECURE = _bool(os.getenv("SESSION_COOKIE_SECURE"), default=False)
     MOBILE_TOKEN_MAX_AGE = int(os.getenv("MOBILE_TOKEN_MAX_AGE", 24 * 3600))
     MOBILE_USER_HEADER_ENABLED = _bool(os.getenv("MOBILE_USER_HEADER_ENABLED"), default=DEBUG)

@@ -2049,6 +2049,11 @@ async function checkOAuthCallback() {
             await loadUserProfile();
 
             showNotification(ui('✅ Gmail đã kết nối thành công!', '✅ Gmail connected successfully!'), 'success');
+            // Give user immediate feedback that email is being loaded.
+            setTimeout(() => showNotification(
+                ui('⏳ Đang quét Gmail của bạn, chuyển sang tab Email để xem...', '⏳ Scanning your Gmail, switch to the Email tab to see results...'),
+                'info'
+            ), 800);
             if (userModeRequired) {
                 pendingPageAfterMode = 'overview';
                 return;

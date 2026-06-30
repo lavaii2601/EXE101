@@ -57,6 +57,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
   const [searchInput, setSearchInput] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [cacheMiss, setCacheMiss] = useState(false);
+  const [scanningGmail, setScanningGmail] = useState(false);
 
   const loadAuth = useCallback(async () => {
     try {
@@ -142,8 +143,13 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
   const login = async () => {
     try {
       const result = await connectGoogleAccount();
-      if (!result.connected) return; // user closed the browser without finishing
-      await loadEmails();
+      if (!result.connected) return;
+      setScanningGmail(true);
+      try {
+        await loadEmails();
+      } finally {
+        setScanningGmail(false);
+      }
       onAuthChanged?.();
       onAgentSync?.(['profile', 'settings', 'email']);
     } catch (error) {
@@ -350,6 +356,11 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
           <Switch value={includeRead} onValueChange={setIncludeRead} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#ffffff" />
         </View>
       </Card>
+      {scanningGmail ? (
+        <View style={styles.scanningBanner}>
+          <Text style={styles.scanningText}>⏳ Đang quét Gmail của bạn lần đầu...</Text>
+        </View>
+      ) : null}
       {emails.length === 0 ? (
         cacheMiss ? (
           <Card style={styles.cacheMissCard}>
@@ -610,5 +621,17 @@ function makeStyles(colors) {
     },
     detailButton: { marginTop: 14 },
     applyButton:  { marginBottom: 12 },
+    scanningBanner: {
+      padding: 14,
+      borderRadius: 10,
+      backgroundColor: colors.primarySoft,
+      borderLeftWidth: 3,
+      borderLeftColor: colors.primary,
+    },
+    scanningText: {
+      color: colors.primary,
+      fontFamily: 'Poppins_600SemiBold',
+      fontSize: 13,
+    },
   });
 }

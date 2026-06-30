@@ -6,7 +6,14 @@ import logging
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.chat_agents import ai_service, intent_orchestrator, get_agent, ChatContext, learn_from_exchange_async
+from services.chat_agents import (
+    ai_service,
+    intent_orchestrator,
+    get_agent,
+    ChatContext,
+    learn_from_exchange_async,
+    learn_from_mentors_async,
+)
 from services.gmail_service import get_cached_gmail_service
 from models.history import History
 from models.schedule import Schedule
@@ -107,6 +114,14 @@ AGENT_CAPABILITIES = [
         'refresh_targets': [],
         'confirmation_required': False,
     },
+    {
+        'id': 'mentor.learning',
+        'label': 'Học từ AI mentor',
+        'description': 'Chạy nền để hỏi các provider đã cấu hình như ChatGPT/OpenAI, Gemini, Claude hoặc OpenRouter critique cách Bob xử lý, rồi lưu bài học quy trình vào knowledge riêng của user.',
+        'workspace_sources': ['knowledge'],
+        'refresh_targets': [],
+        'confirmation_required': False,
+    },
 ]
 
 AGENT_SYNC_TARGETS = {
@@ -146,7 +161,7 @@ def _agent_profile():
     return {
         'name': 'Bob',
         'product': 'FlowMate',
-        'version': '2026-07-internet-learning',
+        'version': '2026-07-mentor-learning',
         'channels': ['web', 'mobile'],
         'capabilities': AGENT_CAPABILITIES,
         'sync_targets': AGENT_SYNC_TARGETS,
@@ -154,6 +169,7 @@ def _agent_profile():
         'rules': [
             'Dùng dữ liệu workspace thật khi trả lời về email, lịch, lịch sử, hồ sơ.',
             'Khi cần dữ liệu web công khai hoặc thông tin mới, tra cứu Internet có giới hạn và nêu nguồn.',
+            'Có thể học quy tắc xử lý từ các AI mentor đã cấu hình; bài học được lưu riêng theo user và không thay thế xác nhận của người dùng.',
             'Không bịa email, người gửi, ngày giờ, deadline hoặc hành động đã hoàn tất.',
             'Chỉ thực hiện hành động ghi dữ liệu sau khi người dùng xác nhận.',
             'Luôn trả refresh_targets để web/mobile đồng bộ màn liên quan.',
@@ -326,6 +342,14 @@ def send_message():
 
     save_chat_history(user_message, result.response, action_type=result.action_type)
     learn_from_exchange_async(user_message, result.response, user_id)
+    learn_from_mentors_async(
+        user_message,
+        result.response,
+        user_id,
+        intent_result=intent_result,
+        workspace_sources=result.workspace_sources,
+        primary_provider=result.provider,
+    )
 
     response_payload = {
         'success': True,

@@ -263,6 +263,44 @@ class AIService:
         self.provider_usage['demo'] += 1
         return self._get_demo_response(optimized_messages)
 
+    def generate_with_provider(self, provider, messages, max_tokens=None, task='analyze'):
+        """Generate one response from a specific configured provider.
+
+        Used by background mentor learning so Bob can ask a particular
+        "senior" model for process feedback without changing the normal
+        round-robin/fallback behavior that serves the user's visible answer.
+        """
+        provider = (provider or '').strip().lower()
+        if not provider:
+            raise ValueError("Provider is required")
+        if provider not in self.configured_providers:
+            raise ValueError(f"{provider} chưa được cấu hình")
+        if not self._is_provider_healthy(provider):
+            raise RuntimeError(f"{provider} đang cooldown")
+
+        if max_tokens is None:
+            max_tokens = self.task_max_tokens.get(task, self.default_max_tokens)
+
+        normalized_messages = self._normalize_messages(messages)
+        optimized_messages = self._optimize_messages_for_tokens(normalized_messages)
+
+        try:
+            response = self._call_provider(provider, optimized_messages, max_tokens)
+            if response and response.strip():
+                self.last_provider_used = provider
+                if provider in self.provider_usage:
+                    self.provider_usage[provider] += 1
+                return response
+        except Exception as e:
+            status_code = None
+            if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                status_code = e.response.status_code
+            is_quota = self._is_quota_error(str(e), status_code)
+            self._mark_provider_failed(provider, str(e), is_quota_error=is_quota)
+            raise
+
+        raise RuntimeError(f"{provider} không trả về nội dung")
+
     def _parse_provider_list(self, value):
         if not value:
             return []

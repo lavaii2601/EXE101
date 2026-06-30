@@ -775,6 +775,239 @@ def learn_from_exchange_async(user_message, assistant_response, user_id):
     ).start()
 
 
+_MENTOR_PRIVATE_SOURCES = {'email', 'calendar', 'history', 'profile'}
+_MENTOR_LEARNING_HINT_TERMS = (
+    'hoc hoi', 'tu hoc', 'trau doi', 'dan anh', 'cai thien', 'rut kinh nghiem',
+    'learn from', 'self learn', 'improve', 'mentor', 'critique',
+)
+_MENTOR_ACTION_INTENTS = (
+    'email.', 'schedule.', 'calendar.', 'overview.', 'settings.',
+    'history.', 'knowledge.',
+)
+
+
+def _parse_mentor_providers():
+    aliases = {
+        'chatgpt': 'openai',
+        'gpt': 'openai',
+        'openai': 'openai',
+        'gemini': 'gemini',
+        'google': 'gemini',
+        'claude': 'claude',
+        'anthropic': 'claude',
+        'openrouter': 'openrouter',
+        'mistral': 'mistral',
+        'ollama': 'ollama',
+    }
+    wanted = []
+    for raw in str(getattr(Config, 'AI_MENTOR_PROVIDERS', '') or '').split(','):
+        provider = aliases.get(raw.strip().lower())
+        if provider and provider not in wanted:
+            wanted.append(provider)
+    return wanted
+
+
+def _mentor_learning_allowed(user_message, user_id, intent_result=None, workspace_sources=None):
+    if not getattr(Config, 'AI_MENTOR_LEARNING_ENABLED', True):
+        return False
+    if not user_id or user_id == 'default':
+        return False
+    if len((user_message or '').strip()) < int(getattr(Config, 'AI_MENTOR_MIN_MESSAGE_CHARS', 18)):
+        return False
+    if not getattr(ai_service, 'configured_providers', None):
+        return False
+
+    sources = set(workspace_sources or [])
+    has_private_context = bool(sources & _MENTOR_PRIVATE_SOURCES)
+    if has_private_context and not getattr(Config, 'AI_MENTOR_ALLOW_PRIVATE_CONTEXT', False):
+        return False
+
+    normalized = _normalize_intent_text(user_message)
+    if any(term in normalized for term in _MENTOR_LEARNING_HINT_TERMS):
+        return True
+
+    intent = (intent_result or {}).get('intent') or 'chat.freeform'
+    if any(intent.startswith(prefix) for prefix in _MENTOR_ACTION_INTENTS):
+        return True
+    if sources & {'knowledge', 'internet'}:
+        return True
+    return False
+
+
+def _select_mentor_providers(primary_provider=None):
+    configured = set(getattr(ai_service, 'configured_providers', []) or [])
+    if not configured:
+        return []
+    max_providers = max(1, min(int(getattr(Config, 'AI_MENTOR_MAX_PROVIDERS', 2)), 4))
+    preferred = _parse_mentor_providers()
+    candidates = [provider for provider in preferred if provider in configured]
+    for provider in getattr(ai_service, 'configured_providers', []) or []:
+        if provider not in candidates:
+            candidates.append(provider)
+
+    primary = (primary_provider or '').strip().lower()
+    if primary in candidates and len(candidates) > 1:
+        candidates = [provider for provider in candidates if provider != primary] + [primary]
+
+    healthy = []
+    for provider in candidates:
+        try:
+            if ai_service._is_provider_healthy(provider):
+                healthy.append(provider)
+        except Exception:
+            continue
+    return healthy[:max_providers]
+
+
+def _build_mentor_prompt(user_message, assistant_response, intent_result=None, workspace_sources=None):
+    intent = (intent_result or {}).get('intent') or 'chat.freeform'
+    confidence = (intent_result or {}).get('confidence')
+    sources = ', '.join(sorted(set(workspace_sources or []))) or 'none'
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a senior AI mentor reviewing Bob, a FlowMate workspace agent. "
+                "Your job is to extract at most ONE durable process lesson that would help Bob handle "
+                "future information-processing or action-planning tasks better. "
+                "Do not copy private details, names, emails, calendar contents, or one-off facts. "
+                "Generalize into a reusable rule, checklist, risk reminder, or action policy. "
+                "Return only JSON, no markdown: "
+                '{"should_learn": true/false, "title": "<short>", "content": "<reusable lesson, 1-3 sentences>", '
+                '"tags": "<comma-separated>", "confidence": 0.0-1.0}'
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Intent: {intent}\n"
+                f"Confidence: {confidence}\n"
+                f"Workspace sources used: {sources}\n\n"
+                f"User request:\n{_truncate_for_mentor(user_message, 900)}\n\n"
+                f"Bob response/action:\n{_truncate_for_mentor(assistant_response, 1200)}\n\n"
+                "Extract a durable improvement lesson only if this turn teaches a reusable workflow, "
+                "reasoning, safety, source-use, or action-confirmation pattern."
+            ),
+        },
+    ]
+
+
+def _truncate_for_mentor(value, limit):
+    text = re.sub(r'\s+', ' ', str(value or '')).strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(' ', 1)[0].strip() + '...'
+
+
+def _mentor_candidate_from_raw(raw):
+    data = _parse_memory_json(raw)
+    if not data or not data.get('should_learn'):
+        return None
+    try:
+        confidence = float(data.get('confidence', 0.0))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    if confidence < 0.55:
+        return None
+
+    title = str(data.get('title') or '').strip()[:150]
+    content = str(data.get('content') or '').strip()[:700]
+    tags = str(data.get('tags') or '').strip()[:220]
+    if not title or not content:
+        return None
+    return {'title': title, 'content': content, 'tags': tags, 'confidence': confidence}
+
+
+def _save_mentor_lesson(candidate, user_id, provider):
+    title = f"AI mentor lesson: {candidate['title']}"
+    tags = ','.join(
+        part.strip()
+        for part in f"mentor,ai-peer,{provider},{candidate.get('tags') or ''}".split(',')
+        if part.strip()
+    )[:240]
+    content = (
+        f"Mentor provider: {provider}\n"
+        f"Confidence: {candidate.get('confidence', 0):.2f}\n"
+        f"Lesson: {candidate['content']}"
+    )
+
+    existing_match = None
+    try:
+        for result in knowledge_service.search(title, top_k=5, min_score=0.38, user_id=user_id):
+            if result.get("source") == "mentor" and result.get("user_id") == user_id:
+                existing_match = result
+                break
+    except Exception:
+        existing_match = None
+
+    if existing_match:
+        knowledge_service.update_document(
+            existing_match["id"],
+            title=title,
+            content=content,
+            tags=tags,
+        )
+    else:
+        knowledge_service.add_document(
+            title,
+            content,
+            tags=tags,
+            source="mentor",
+            user_id=user_id,
+        )
+
+
+def learn_from_mentors(user_message, assistant_response, user_id, intent_result=None, workspace_sources=None, primary_provider=None):
+    try:
+        if not _mentor_learning_allowed(
+            user_message,
+            user_id,
+            intent_result=intent_result,
+            workspace_sources=workspace_sources,
+        ):
+            return
+
+        providers = _select_mentor_providers(primary_provider=primary_provider)
+        if not providers:
+            return
+
+        messages = _build_mentor_prompt(
+            user_message,
+            assistant_response,
+            intent_result=intent_result,
+            workspace_sources=workspace_sources,
+        )
+        max_tokens = int(getattr(Config, 'AI_MENTOR_MAX_TOKENS', 260))
+        saved = 0
+        for provider in providers:
+            try:
+                raw = ai_service.generate_with_provider(
+                    provider,
+                    messages,
+                    max_tokens=max_tokens,
+                    task='analyze',
+                )
+                candidate = _mentor_candidate_from_raw(raw)
+                if not candidate:
+                    continue
+                _save_mentor_lesson(candidate, user_id, provider)
+                saved += 1
+                if saved >= 1:
+                    break
+            except Exception:
+                logger.info("AI mentor provider %s did not produce a lesson", provider, exc_info=True)
+    except Exception:
+        logger.warning("learn_from_mentors failed for user %s", user_id, exc_info=True)
+
+
+def learn_from_mentors_async(user_message, assistant_response, user_id, intent_result=None, workspace_sources=None, primary_provider=None):
+    _thr.Thread(
+        target=learn_from_mentors,
+        args=(user_message, assistant_response, user_id, intent_result, workspace_sources, primary_provider),
+        daemon=True,
+    ).start()
+
+
 def _capability_prompt_lines(agent_capabilities):
     lines = []
     for item in agent_capabilities:
@@ -802,6 +1035,8 @@ def _build_agent_system_prompt(mode_prompt, agent_capabilities):
         "Use only provided workspace context for facts about the user's email, calendar, history, or account. "
         "When INTERNET RESEARCH context is provided, treat it as public web evidence, cite the relevant title "
         "or URL for external facts, and distinguish it from private workspace data. "
+        "If mentor-learned knowledge appears in context, use it as a process guideline, not as a factual claim "
+        "about the user's private data or as permission to skip confirmation. "
         "If data is missing, say exactly what is missing and give the smallest useful next step. "
         "Do not invent senders, dates, deadlines, meetings, completed actions, or external facts. "
         "Classify useful information as meetings, deadlines, tasks, reminders, important information, or low priority. "

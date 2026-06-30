@@ -123,6 +123,17 @@ _SEED_DOCUMENTS = [
         "internet,web,research,tu hoc,nguon,bob",
     ),
     (
+        "Bob hoc tu AI mentor",
+        "Bob co the hoc cach xu ly thong tin va hanh dong tu cac AI mentor da cau hinh tren backend "
+        "nhu OpenAI/ChatGPT, Gemini, Claude, OpenRouter, Mistral hoac Ollama. Sau mot luot chat phu "
+        "hop, mot tien trinh nen co the gui yeu cau da gioi han cho 1-2 provider mentor de nho critique "
+        "cach Bob xu ly. Mentor chi duoc tra ve mot bai hoc quy trinh tong quat (source='mentor'), vi du "
+        "cach dung nguon, cach hoi xac nhan, cach tach viec hoac tranh hanh dong rui ro. Bob khong tu "
+        "train lai trong so model nen; day la co che hoc bang knowledge/RAG rieng theo user va khong duoc "
+        "dung de bo qua xac nhan cua nguoi dung.",
+        "mentor,ai-peer,chatgpt,gemini,claude,tu hoc,bob",
+    ),
+    (
         "Bob ho tro song ngu Viet-Anh",
         "Bob hieu va phan loai yeu cau dung bang ca tieng Viet lan tieng Anh (vi du 'Schedule a "
         "meeting tomorrow at 3pm' hoac 'tao lich hop luc 3 gio chieu mai' deu duoc hieu giong "

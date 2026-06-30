@@ -15,9 +15,10 @@ class KnowledgeDocument:
     - Global/product knowledge (user_id IS NULL/empty) -- FlowMate feature
       docs, anything added manually -- visible to every user, exactly like
       before this column existed.
-    - Per-user learned rows (user_id set, source='auto' or source='web') --
-      facts, corrections, preferences, or sourced web research Bob picks up
-      for a specific user. These must NEVER be visible to a different user_id.
+    - Per-user learned rows (user_id set, source='auto', source='web', or
+      source='mentor') -- facts, corrections, preferences, sourced web
+      research, or AI mentor lessons Bob picks up for a specific user. These
+      must NEVER be visible to a different user_id.
     """
 
     _initialized = False
