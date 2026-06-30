@@ -89,13 +89,15 @@ _SEED_DOCUMENTS = [
         "lich,goi y,sap xep,schedule,bob",
     ),
     (
-        "Tab Kien thuc cho Bob",
-        "Tab Kien thuc la noi quan ly toan bo tai lieu Bob dung de tra cuu khi tro chuyen (RAG, "
-        "tim bang TF-IDF). Nguoi dung co the tu them/sua/xoa tai lieu (thuat ngu noi bo, quy tac "
-        "rieng, cach xung ho mong muon...) qua form ngay tren tab nay -- khong can sua code. Moi "
-        "tai lieu co nguon (source): 'seed' la kien thuc goc ve FlowMate, 'manual' la nguoi dung "
-        "tu them, 'auto' la Bob tu hoc duoc tu hoi thoai (xem muc 'Bob tu hoc tri nho').",
-        "kien thuc,knowledge,rag,quan ly",
+        "Kho kien thuc noi bo cua Bob",
+        "Bob dung mot kho tai lieu rieng (RAG, tim bang TF-IDF) de tra cuu khi tro chuyen, nhung "
+        "kho nay AN voi nguoi dung -- khong co tab hay man hinh nao tren web/mobile de nguoi dung "
+        "tu xem, them, sua hay xoa tai lieu. Moi tai lieu co nguon (source): 'seed' la kien thuc "
+        "goc ve FlowMate duoc dong bo san tu code, 'auto' la Bob tu hoc duoc tu hoi thoai (xem muc "
+        "'Bob tu hoc tri nho'). Neu nguoi dung hoi cach them/sua kien thuc cho Bob, tra loi rang "
+        "hien khong co cong cu tu quan ly -- kien thuc duoc Bob tu hoc qua hoi thoai hoac cap nhat "
+        "boi doi phat trien.",
+        "kien thuc,knowledge,rag,noi bo",
     ),
     (
         "Bob tu hoc tri nho tu hoi thoai",
@@ -105,7 +107,9 @@ _SEED_DOCUMENTS = [
         "trich xuat va luu lai thanh tai lieu kien thuc rieng cho dung nguoi dung do (gan nhan "
         "source='auto'), khong can nguoi dung tu nhap. Lan chat sau co lien quan, Bob tu tra cuu "
         "lai. Tri nho tu hoc cua moi nguoi dung hoan toan rieng biet, khong bao gio hien thi cho "
-        "nguoi dung khac; co the xem/sua/xoa trong tab Kien thuc neu Bob nho sai.",
+        "nguoi dung khac. Day la du lieu noi bo, nguoi dung khong co cach nao tu xem/sua/xoa truc "
+        "tiep -- neu Bob nho sai, nguoi dung chi co the noi lai cho Bob biet trong chat de Bob ghi "
+        "nho lai cho dung.",
         "tu hoc,tri nho,memory,bob,rieng tu",
     ),
     (
@@ -209,9 +213,12 @@ def _seed_if_empty():
     - a title not seen before is created
     - an existing seed doc whose content/tags changed here is updated in place
     - a seed doc whose title was REMOVED from the list above is deleted
-    'manual' (user-added via the Knowledge tab) and 'auto' (Bob's per-user
-    learned memories) documents are never touched by any of this -- only
-    source='seed' rows are managed declaratively from this file."""
+    'manual' (legacy rows from the now-removed Knowledge tab UI) and 'auto'
+    (Bob's per-user learned memories) documents are never touched by any of
+    this -- only source='seed' rows are managed declaratively from this
+    file. There is no user-facing UI to create 'manual' documents anymore;
+    this knowledge base is internal to Bob (see knowledge.py routes, still
+    used for RAG search and auto-learned memory storage)."""
     try:
         existing_seed_by_title = {
             doc['title']: doc
