@@ -1,13 +1,41 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import EmptyState from '../components/EmptyState';
+import Field from '../components/Field';
 import { apiGet, apiPost } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 import { getUserMode } from '../config/userModes';
 import ModeBrief from '../components/ModeBrief';
 import { takePendingAgentNotice } from '../state/agentNotices';
+
+function normalizePlanSuggestion(value) {
+  return {
+    ...value,
+    items: Array.isArray(value?.items)
+      ? value.items.map((item) => ({ ...item, selected: true }))
+      : [],
+  };
+}
+
+function toEditableDateTime(value) {
+  if (!value) return '';
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text)) return text.slice(0, 16);
+  return text;
+}
+
+function toPlanPayload(item) {
+  return {
+    title: item.title || '',
+    description: item.description || '',
+    start_time: item.start_time || '',
+    end_time: item.end_time || '',
+    duration_minutes: item.duration_minutes ? Number(item.duration_minutes) : undefined,
+    reason: item.reason || '',
+  };
+}
 
 function mapHistoryItem(item) {
   return [
@@ -61,6 +89,8 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [suggestion, setSuggestion] = useState(null);
+  const [planSuggestion, setPlanSuggestion] = useState(null);
+  const [planLoading, setPlanLoading] = useState(false);
   const listRef = useRef(null);
   const mode = getUserMode(userMode);
 
@@ -94,6 +124,7 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
     setSessionId(createSessionId());
     setMessages([]);
     setSuggestion(null);
+    setPlanSuggestion(null);
     setInput('');
   };
 
@@ -106,6 +137,7 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
     setInput('');
     setLoading(true);
     setSuggestion(null);
+    setPlanSuggestion(null);
 
     try {
       const data = await apiPost('/chat/message', {
@@ -123,6 +155,7 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
       setMessages((current) => [...current, assistantMessage]);
       onAgentSync?.(data.refresh_targets || [], data);
       if (data.schedule_suggestion) setSuggestion(data.schedule_suggestion);
+      if (data.day_plan_suggestion) setPlanSuggestion(normalizePlanSuggestion(data.day_plan_suggestion));
       if (data.schedule_created) Alert.alert('Đã tạo lịch', data.schedule_created.title || 'Lịch hẹn mới');
     } catch (error) {
       setMessages((current) => [
@@ -157,11 +190,58 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
     }
   };
 
+  const updatePlanDraftItem = useCallback((index, key, value) => {
+    setPlanSuggestion((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        items: current.items.map((item, itemIndex) => (
+          itemIndex === index ? { ...item, [key]: value } : item
+        )),
+      };
+    });
+  }, []);
+
+  const togglePlanDraftItem = useCallback((index) => {
+    setPlanSuggestion((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        items: current.items.map((item, itemIndex) => (
+          itemIndex === index ? { ...item, selected: item.selected === false } : item
+        )),
+      };
+    });
+  }, []);
+
+  const applyDayPlanSuggestion = useCallback(async () => {
+    const selectedItems = (planSuggestion?.items || []).filter((item) => item.selected !== false);
+    if (!selectedItems.length) {
+      Alert.alert('Chưa chọn hoạt động', 'Chọn ít nhất một hoạt động để tạo lịch.');
+      return;
+    }
+    setPlanLoading(true);
+    try {
+      const data = await apiPost('/schedule/plan-day/apply', {
+        date: planSuggestion?.date,
+        items: selectedItems.map(toPlanPayload),
+      });
+      setPlanSuggestion(null);
+      Alert.alert('Đã tạo lịch', data.message || `FlowMate đã tạo ${data.created_count || selectedItems.length} hoạt động.`);
+      onAgentSync?.(['schedule', 'calendar', 'overview', 'history'], data);
+    } catch (error) {
+      Alert.alert('Không áp dụng được lịch', error.message);
+    } finally {
+      setPlanLoading(false);
+    }
+  }, [onAgentSync, planSuggestion]);
+
   const clearChat = async () => {
     try {
       await apiPost('/chat/clear');
       setMessages([]);
       setSuggestion(null);
+      setPlanSuggestion(null);
       setSessionId(createSessionId());
       onAgentSync?.(['chat', 'history']);
     } catch (error) {
@@ -237,6 +317,61 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
         </Card>
       ) : null}
 
+      {planSuggestion ? (
+        <Card style={styles.suggestion}>
+          <Text style={styles.suggestionTitle}>
+            Gợi ý lịch cho {planSuggestion.items?.length || 0} hoạt động
+          </Text>
+          {(planSuggestion.items || []).map((item, index) => (
+            <View
+              key={`${item.title || 'item'}-${item.start_time || index}-${index}`}
+              style={[styles.planItem, item.selected === false && styles.planItemMuted]}
+            >
+              <TouchableOpacity
+                style={[styles.checkbox, item.selected !== false && styles.checkboxChecked]}
+                onPress={() => togglePlanDraftItem(index)}
+                activeOpacity={0.78}
+              >
+                <Text style={[styles.checkboxText, item.selected !== false && styles.checkboxTextChecked]}>
+                  {item.selected !== false ? '✓' : ''}
+                </Text>
+              </TouchableOpacity>
+              <View style={styles.planItemBody}>
+                <Field
+                  label="Hoạt động"
+                  value={item.title || ''}
+                  onChangeText={(value) => updatePlanDraftItem(index, 'title', value)}
+                  placeholder="Tên hoạt động"
+                />
+                <View style={styles.planTimeGrid}>
+                  <View style={styles.planTimeField}>
+                    <Field
+                      label="Bắt đầu"
+                      value={toEditableDateTime(item.start_time)}
+                      onChangeText={(value) => updatePlanDraftItem(index, 'start_time', value)}
+                      placeholder="2026-06-30T07:00"
+                    />
+                  </View>
+                  <View style={styles.planTimeField}>
+                    <Field
+                      label="Kết thúc"
+                      value={toEditableDateTime(item.end_time)}
+                      onChangeText={(value) => updatePlanDraftItem(index, 'end_time', value)}
+                      placeholder="2026-06-30T08:00"
+                    />
+                  </View>
+                </View>
+                {item.reason ? <Text style={styles.suggestionMeta}>{item.reason}</Text> : null}
+              </View>
+            </View>
+          ))}
+          <View style={styles.suggestionActions}>
+            <Button title="Áp dụng lịch đã chọn" onPress={applyDayPlanSuggestion} loading={planLoading} />
+            <Button title="Bỏ qua" variant="secondary" onPress={() => setPlanSuggestion(null)} disabled={planLoading} />
+          </View>
+        </Card>
+      ) : null}
+
       <View style={styles.composer}>
         <TextInput
           style={styles.input}
@@ -301,6 +436,39 @@ function makeStyles(colors) {
     suggestionText:  { marginTop: 5, color: colors.text },
     suggestionMeta:  { marginTop: 4, color: colors.textMuted, fontSize: 12 },
     suggestionActions: { flexDirection: 'row', gap: 8, marginTop: 10 },
+    planItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      paddingTop: 10,
+      marginTop: 10,
+      borderTopColor: colors.border,
+      borderTopWidth: 1,
+    },
+    planItemMuted: { opacity: 0.52 },
+    planItemBody: { flex: 1, minWidth: 0 },
+    planTimeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    planTimeField: { flexGrow: 1, flexBasis: '46%', minWidth: 128 },
+    checkbox: {
+      width: 24,
+      height: 24,
+      borderRadius: 8,
+      borderWidth: 2,
+      borderColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.panel,
+    },
+    checkboxChecked: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary,
+    },
+    checkboxText: {
+      color: colors.panel,
+      fontWeight: '600',
+      lineHeight: 16,
+    },
+    checkboxTextChecked: { color: '#ffffff' },
     quickPrompts: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 8 },
     quickPrompt: {
       flex: 1,

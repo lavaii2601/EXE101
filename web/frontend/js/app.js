@@ -2753,6 +2753,97 @@ async function sendMessageConfirmed(message, opts = {}) {
                         }
                     });
                 }
+            } else if (data.day_plan_suggestion) {
+                const plan = data.day_plan_suggestion;
+                const planDiv = document.createElement('div');
+                planDiv.className = 'message assistant';
+                planDiv.innerHTML = `<div class="message-content">${renderOverviewPlanSuggestion(plan)}</div>`;
+                chatMessages.appendChild(planDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+
+                const dismissButton = planDiv.querySelector('[data-plan-dismiss]');
+                const applyButton = planDiv.querySelector('[data-plan-apply]');
+                if (dismissButton) {
+                    dismissButton.addEventListener('click', () => {
+                        planDiv.remove();
+                        showNotification(ui('Đã bỏ qua gợi ý', 'Suggestion dismissed'), 'info');
+                    });
+                }
+                planDiv.querySelectorAll('[data-plan-row]').forEach((row) => {
+                    const checkbox = row.querySelector('[data-plan-select]');
+                    const startInput = row.querySelector('[data-plan-start]');
+                    const endInput = row.querySelector('[data-plan-end]');
+                    const titleInput = row.querySelector('[data-plan-title]');
+                    const index = Number(row.getAttribute('data-plan-index'));
+                    const original = plan.items?.[index] || {};
+                    const originalDuration = getDurationMinutes(original.start_time, original.end_time) || original.duration_minutes || 60;
+                    const updateDisabledState = () => {
+                        const disabled = !checkbox?.checked;
+                        row.classList.toggle('is-disabled', disabled);
+                        [titleInput, startInput, endInput].forEach((input) => {
+                            if (input) input.disabled = disabled;
+                        });
+                    };
+                    if (checkbox) {
+                        checkbox.addEventListener('change', updateDisabledState);
+                        updateDisabledState();
+                    }
+                    if (startInput && endInput) {
+                        startInput.addEventListener('change', () => {
+                            const nextEnd = addMinutesToDatetimeLocal(startInput.value, originalDuration);
+                            if (nextEnd) endInput.value = nextEnd;
+                        });
+                    }
+                });
+                if (applyButton) {
+                    applyButton.addEventListener('click', async () => {
+                        const selectedItems = Array.from(planDiv.querySelectorAll('[data-plan-row]'))
+                            .filter((row) => row.querySelector('[data-plan-select]')?.checked)
+                            .map((row) => {
+                                const index = Number(row.getAttribute('data-plan-index'));
+                                const original = plan.items?.[index] || {};
+                                const title = row.querySelector('[data-plan-title]')?.value?.trim() || original.title || '';
+                                const startTime = row.querySelector('[data-plan-start]')?.value || original.start_time || '';
+                                const endTime = row.querySelector('[data-plan-end]')?.value || original.end_time || '';
+                                return {
+                                    ...original,
+                                    title,
+                                    start_time: startTime,
+                                    end_time: endTime,
+                                    duration_minutes: getDurationMinutes(startTime, endTime) || original.duration_minutes || 60
+                                };
+                            })
+                            .filter((item) => item.title && item.start_time);
+                        if (!selectedItems.length) {
+                            showNotification(ui('Hãy chọn ít nhất một hoạt động để tạo lịch.', 'Select at least one activity to create events.'), 'error');
+                            return;
+                        }
+                        applyButton.disabled = true;
+                        try {
+                            const response = await apiFetch(`${API_BASE}/schedule/plan-day/apply`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ date: plan.date, items: selectedItems })
+                            });
+                            const respData = await response.json();
+                            if (!response.ok || !respData.success) {
+                                throw new Error(respData.error || ui('Không thể áp dụng lịch gợi ý', 'Unable to apply suggested plan'));
+                            }
+                            clearRuntimeCache('schedule:');
+                            showNotification(ui('Đã tạo lịch từ gợi ý', 'Suggested plan applied'), 'success');
+                            planDiv.remove();
+                            await Promise.allSettled([
+                                loadOverviewPage({ force: true }),
+                                loadWeekSchedule({ forceSync: true }),
+                                loadSchedules({ liveGoogle: true })
+                            ]);
+                        } catch (error) {
+                            showNotification(`${ui('Lỗi', 'Error')}: ${error.message}`, 'error');
+                        } finally {
+                            applyButton.disabled = false;
+                        }
+                    });
+                }
             }
 
             if (Array.isArray(data.suggested_actions)) {

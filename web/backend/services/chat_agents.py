@@ -27,6 +27,7 @@ from routes.schedule import (
     _normalize_checklist_payload,
     _sort_custom_items,
     _CHECKLIST_CACHE_TTL_SECONDS,
+    _build_suggested_day_plan,
 )
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ class AgentResult:
     refresh_targets: list = field(default_factory=list)
     schedule_created: dict = None
     schedule_suggestion: dict = None
+    day_plan_suggestion: dict = None
     suggested_actions: list = None
     action: str = None
     action_type: str = 'chat'
@@ -1176,6 +1178,38 @@ class SettingsUpdateModeAgent:
         return _wrap_direct_result(direct_result, ctx)
 
 
+class DayPlanSuggestAgent:
+    """AGENT_CAPABILITIES: roughly 'schedule.manage'. Suggests calendar time
+    slots for the activities listed in the chat message, reusing the exact
+    same day-plan engine (_build_suggested_day_plan) as the Overview
+    quick-add box -- same per-activity time/duration profiles, same
+    conflict-aware slot search against existing schedules. Deliberately
+    does NOT create anything itself: creating schedules always needs
+    explicit confirmation, and the chat UI lets the user review/edit the
+    suggestion and apply it through the existing, already-tested
+    /schedule/plan-day/apply endpoint -- the same confirm-before-create
+    path Overview already uses, instead of building a second one in chat."""
+
+    def handle(self, ctx):
+        date_value = datetime.now().date().isoformat()
+        plan = _build_suggested_day_plan(ctx.user_id, ctx.db_path, ctx.user_message, date_value)
+        if not plan:
+            return None
+
+        lines = [f"Mình gợi ý khung giờ sau cho {len(plan['items'])} hoạt động hôm nay, bạn xem và bấm áp dụng nếu hợp lý:"]
+        for item in plan['items']:
+            time_label = _format_schedule_response_time(item.get('start_time'), item.get('end_time'))
+            lines.append(f"- {item.get('title')}: {time_label}")
+
+        return AgentResult(
+            response="\n".join(lines),
+            day_plan_suggestion=plan,
+            workspace_sources=['calendar'],
+            refresh_targets=ctx.refresh_targets,
+            action='Đề xuất lịch theo hoạt động, cần xác nhận',
+        )
+
+
 _CHECKLIST_PRIORITY_SCORE = {'high': 95, 'normal': 60, 'low': 30}
 _CHECKLIST_PRIORITY_REASON = {
     'high': 'Việc gấp/quan trọng theo yêu cầu của bạn.',
@@ -1436,6 +1470,7 @@ _AGENT_REGISTRY = {
     'history.list': HistoryListAgent(),
     'settings.update_mode': SettingsUpdateModeAgent(),
     'checklist.create': ChecklistCreateAgent(),
+    'schedule.suggest_plan': DayPlanSuggestAgent(),
 }
 
 

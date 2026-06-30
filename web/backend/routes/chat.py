@@ -343,6 +343,8 @@ def send_message():
         response_payload['email_source'] = result.email_source
     if result.email_sources is not None:
         response_payload['email_sources'] = result.email_sources
+    if result.day_plan_suggestion is not None:
+        response_payload['day_plan_suggestion'] = result.day_plan_suggestion
 
     return jsonify(response_payload)
 

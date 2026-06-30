@@ -18,7 +18,8 @@ class IntentOrchestrator:
     AI_INTENTS = (
         "email.latest_summary", "email.search", "schedule.create", "schedule.update",
         "schedule.delete", "schedule.list", "email.mark_read", "email.mark_unread",
-        "history.list", "settings.update_mode", "checklist.create", "chat.freeform",
+        "history.list", "settings.update_mode", "checklist.create",
+        "schedule.suggest_plan", "chat.freeform",
     )
 
     WEEKDAY_NAMES_VN = (
@@ -56,6 +57,16 @@ class IntentOrchestrator:
             confidence = 0.9
             entities["mode"] = self._mode_from_text(text)
             refresh_targets = ["settings", "profile", "history"]
+        elif self._is_day_plan_request(text):
+            intent = "schedule.suggest_plan"
+            # No entity extraction here on purpose -- the agent re-runs the
+            # same day-plan engine (_build_suggested_day_plan) against the
+            # raw message itself, which needs db access (busy-slot lookup)
+            # this orchestrator doesn't have. This is just the routing
+            # decision: "the user wants time-slotted calendar suggestions
+            # for a list of activities", not "a flat checklist".
+            confidence = 0.82
+            refresh_targets = ["schedule", "calendar", "overview", "history"]
         elif self._is_checklist_request(text):
             intent = "checklist.create"
             # Kept just below the AI-assist threshold on purpose: detecting
@@ -152,6 +163,10 @@ class IntentOrchestrator:
         "dua vao checklist giup minh' => checklist.create; checklist_items=[{title:'Nop bao cao',"
         "priority:'high'},{title:'Don ban lam viec',priority:'low'}] (tung viec mang muc do gap "
         "rieng, khong dung chung 1 priority cho ca danh sach).\n"
+        "- 'Hom nay toi co cac hoat dong nhu: tap yoga, cham meo cung, lam viec nha. Hay sap xep "
+        "hoac goi y lich cho toi' => schedule.suggest_plan (KHONG phai checklist.create, vi nguoi "
+        "dung noi ro 'goi y lich' -- ho muon AI xep gio cu the cho tung hoat dong, khong chi liet "
+        "ke thanh danh sach viec).\n"
         "- 'Ban nghi gi ve lam viec tu xa' => chat.freeform (khong khop muc nao tren).\n"
         "- (Vi du bang TIENG ANH, ap dung CACH suy luan giong het cac vi du tieng Viet o tren) "
         "'Schedule a call with the client tomorrow at 3pm' => schedule.create; "
@@ -418,8 +433,15 @@ class IntentOrchestrator:
             "- settings.update_mode: muon doi che do lam viec "
             "(student, worker, freelancer, creator, business, mentor, teacher)\n"
             "- checklist.create: liet ke nhieu viec/hoat dong SAP lam va muon dua vao checklist/to-do "
+            "DON GIAN, KHONG can gio cu the cho tung viec "
             "(vi du 'hom nay co cac hoat dong nhu X, Y, Z, dua vao checklist giup minh') -- KHAC voi "
             "history.list vi day la viec sap toi, khong phai viec da lam\n"
+            "- schedule.suggest_plan: liet ke nhieu hoat dong va muon AI XEP GIO/GOI Y LICH cu the cho "
+            "tung hoat dong do (vi du co tu 'sap xep lich', 'goi y lich', 'xep gium lich', 'suggest a "
+            "schedule', 'plan my day') -- KHAC voi checklist.create vi nguoi dung muon ket qua la LICH "
+            "co khung gio, khong phai danh sach viec don thuan. Neu cau co ca tu 'checklist' LAN tu "
+            "'lich'/'sap xep lich', uu tien y dinh ro rang hon trong cau (thuong la lich neu nguoi dung "
+            "noi ro 'goi y lich'/'sap xep lich')\n"
             "- chat.freeform: tat ca truong hop khac (hoi dap thong thuong)\n\n"
             f"{self.FEW_SHOT_REASONING}\n"
             "Tra ve CHINH XAC mot JSON object theo cau truc:\n"
@@ -574,6 +596,11 @@ class IntentOrchestrator:
                 return None
             entities["items"] = items[:12]
             refresh_targets = ["overview", "history"]
+        elif intent == "schedule.suggest_plan":
+            # No entities to coerce -- the agent rebuilds the suggestion
+            # straight from the raw message via the day-plan engine, same
+            # as the rule-based path.
+            refresh_targets = ["schedule", "calendar", "overview", "history"]
         else:
             return {
                 "intent": "chat.freeform",
@@ -982,6 +1009,31 @@ class IntentOrchestrator:
             "da lam gi", "lam gi roi", "vua lam gi", "nhung gi da lam",
             "what did i do", "what have i done", "what i did",
         ))
+
+    DAY_PLAN_SIGNAL = (
+        "goi y lich", "sap xep lich", "xep lich", "len lich cho",
+        "tao lich tu cac hoat dong", "xep gium lich", "xep giup lich",
+        "suggest a schedule", "suggest times", "plan my day", "schedule my day",
+        "arrange my day", "plan out my day", "organize my day",
+    )
+
+    def _is_day_plan_request(self, text):
+        """A list of activities the user wants slotted onto the CALENDAR
+        (specific times, conflict-aware) -- distinct from
+        _is_checklist_request, which just wants a flat to-do list with no
+        time slots. Checked first in detect() so a message like 'cac hoat
+        dong nhu X, Y, Z... goi y lich giup minh' (which also contains
+        checklist.create's 'cac hoat dong' signal) routes to the calendar
+        suggestion the user explicitly asked for, not a checklist."""
+        if not any(term in text for term in self.DAY_PLAN_SIGNAL):
+            has_arrange_word = any(term in text for term in (
+                "sap xep", "xep", "arrange", "plan", "organize",
+            ))
+            has_schedule_word = any(term in text for term in ("lich", "calendar", "schedule"))
+            if not (has_arrange_word and has_schedule_word):
+                return False
+        from routes.schedule import _split_day_plan_entries
+        return len(_split_day_plan_entries(text)) >= 2
 
     def _is_checklist_request(self, text):
         if not any(term in text for term in self.CHECKLIST_LIST_SIGNAL):

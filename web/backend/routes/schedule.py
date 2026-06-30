@@ -292,6 +292,18 @@ def _split_day_plan_entries(text):
 
     if ':' in raw:
         raw = raw.split(':', 1)[1]
+    # Drop a trailing instruction clause ("Hay sap xep giup minh...",
+    # "Please organize this for me") that often follows the activity list
+    # after a period in a chat-style message -- it isn't an activity, but
+    # its own commas would otherwise get split into bogus entries and glue
+    # onto the last real item's title.
+    raw = re.sub(
+        r'\.\s*(?:hãy|hay|giúp (?:tôi|mình)|giup (?:toi|minh)|dùm|giùm|'
+        r'please|can you|could you|sắp xếp|sap xep|gợi ý|goi y|organize|arrange)\b.*$',
+        '.',
+        raw,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
     raw = re.sub(r'\.{2,}', ',', raw)
     raw = re.sub(r'\b(và|and)\b', ',', raw, flags=re.IGNORECASE)
     raw = re.sub(
