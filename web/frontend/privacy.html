@@ -97,6 +97,7 @@
 
             <h2>4. AI providers</h2>
             <p>FlowMate có thể dùng OpenRouter, OpenAI, Mistral, Claude, Gemini hoặc provider khác do backend cấu hình. Nội dung gửi đến AI được giới hạn theo tác vụ như tóm tắt email, soạn nháp, phân tích lịch hoặc trả lời chat. FlowMate không hiển thị provider/model nền dưới cho người dùng cuối trong trải nghiệm Bob.</p>
+            <p>Nếu bật tính năng AI mentor learning, FlowMate có thể gửi một bản trích yếu giới hạn của lượt chat phù hợp đến 1-2 provider AI đã cấu hình để lấy nhận xét quy trình. Kết quả được lưu thành bài học tổng quát trong knowledge riêng của tài khoản, không dùng để huấn luyện lại model nền và không thay thế xác nhận của bạn cho các hành động nhạy cảm.</p>
 
             <h2>5. Lưu trữ và bảo vệ dữ liệu</h2>
             <ul>
@@ -130,7 +131,7 @@
                 <h1>FlowMate AI Privacy Policy</h1>
                 <p class="meta">Effective July 1, 2026. Official URL: <a href="https://exe101.up.railway.app/privacy">https://exe101.up.railway.app/privacy</a></p>
                 <p>FlowMate AI helps users manage email, calendar, workflow, study tasks, and AI chat. This policy applies to the Railway web deployment and the Android APK that uses the same backend.</p>
-                <p>FlowMate collects only the account, Gmail, Calendar, chat, schedule, checklist, history, internet research query/results, and technical data needed to provide the requested features. Google data is not sold, not used for advertising, and not used to train foundation AI models. When AI processing is needed, only task-relevant content is sent to the configured AI provider. When Bob is asked to research the public web or answer current-information prompts, a limited query may be sent to search/web sources and sourced results may be saved to that user's knowledge store.</p>
+                <p>FlowMate collects only the account, Gmail, Calendar, chat, schedule, checklist, history, internet research query/results, AI mentor learning lessons, and technical data needed to provide the requested features. Google data is not sold, not used for advertising, and not used to train foundation AI models. When AI processing is needed, only task-relevant content is sent to the configured AI provider. When Bob is asked to research the public web or answer current-information prompts, a limited query may be sent to search/web sources and sourced results may be saved to that user's knowledge store. If AI mentor learning is enabled, a limited chat-turn summary may be sent to configured mentor providers for process critique and saved as a user-scoped lesson.</p>
                 <p>Users can disconnect Google, delete activity history, revoke Google permissions, and request backend data deletion through the project owner or support channel. Secrets and API keys must be stored in Railway Variables, not in source code.</p>
             </section>
         </article>
