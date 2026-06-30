@@ -6816,6 +6816,130 @@ body.dark-theme .week-table td.is-today {
     }
 }
 
+/* Checklist layout fix: keep the overview checklist readable when there are
+   many chat-added tasks, instead of squeezing the title/actions into a
+   cramped row or letting item actions cut into the task text. */
+.overview-checklist-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.overview-checklist-panel .overview-panel-head {
+    align-items: flex-start;
+    gap: 14px;
+    padding: 14px 16px 12px;
+}
+
+.overview-checklist-panel .overview-panel-head > div {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.overview-checklist-panel .overview-panel-head strong {
+    max-width: 100%;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.overview-checklist-progress {
+    width: min(220px, 100%);
+    height: 6px;
+    margin-top: 9px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.22);
+}
+
+.overview-checklist-progress span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--primary);
+}
+
+.overview-checklist-list {
+    display: block;
+    max-height: clamp(260px, 46vh, 420px);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+}
+
+.overview-checklist-item {
+    grid-template-columns: 28px minmax(0, 1fr) minmax(78px, auto);
+    align-items: flex-start;
+    gap: 10px;
+    min-height: 64px;
+    padding: 13px 16px;
+}
+
+.overview-check {
+    flex: 0 0 auto;
+    margin-top: 1px;
+}
+
+.overview-checklist-main strong {
+    line-height: 1.38;
+}
+
+.overview-checklist-main span {
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.overview-checklist-actions {
+    align-self: flex-start;
+    padding-top: 1px;
+}
+
+.overview-checklist-source {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 3px 8px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.10);
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.overview-checklist-source.is-schedule {
+    border-color: rgba(37, 99, 235, 0.22);
+    background: rgba(37, 99, 235, 0.08);
+    color: var(--primary);
+}
+
+.overview-checklist-source.is-manual {
+    color: var(--text-secondary);
+}
+
+body.dark-theme .overview-checklist-progress {
+    background: rgba(148, 163, 184, 0.18);
+}
+
+body.dark-theme .overview-checklist-source {
+    border-color: #334155;
+    background: #0f172a;
+}
+
+@media (max-width: 720px) {
+    .overview-checklist-list {
+        max-height: none;
+    }
+
+    .overview-checklist-item {
+        grid-template-columns: 28px minmax(0, 1fr);
+        min-height: 0;
+    }
+
+    .overview-checklist-actions {
+        grid-column: 2;
+        justify-content: flex-start;
+        padding-top: 0;
+    }
+}
+
 /* Knowledge base management page ("Kien thuc cho Bob") */
 .knowledge-form {
     display: flex;

@@ -1522,6 +1522,7 @@ function renderOverviewQuickAdd() {
 function renderOverviewChecklist(schedules, checklistState) {
     const items = buildOverviewChecklistItems(schedules, checklistState);
     const doneCount = items.filter((item) => item.completed).length;
+    const progress = items.length ? Math.round((doneCount / items.length) * 100) : 0;
     const rows = items.length
         ? items.map((item) => `
             <div class="overview-checklist-item">
@@ -1545,10 +1546,13 @@ function renderOverviewChecklist(schedules, checklistState) {
             <div class="overview-panel-head">
                 <div>
                     <span class="overview-kicker">CHECKLIST</span>
-                    <strong>${ui('Việc và lịch được AI sắp xếp', 'AI-arranged tasks and activities')}</strong>
-                    <small>${doneCount}/${items.length} ${ui('đã xong', 'done')}</small>
+                    <strong>${ui('Checklist hôm nay', 'Today checklist')}</strong>
+                    <small>${doneCount}/${items.length} ${ui('hoàn thành', 'done')}</small>
+                    <div class="overview-checklist-progress" aria-hidden="true">
+                        <span style="width: ${progress}%"></span>
+                    </div>
                 </div>
-                <button class="overview-sort-btn" type="button" data-checklist-sort>${ui('Sắp xếp AI', 'AI sort')}</button>
+                <button class="overview-sort-btn" type="button" data-checklist-sort>${ui('Sắp xếp', 'AI sort')}</button>
             </div>
             <div class="overview-checklist-list">${rows}</div>
         </section>
