@@ -61,12 +61,14 @@ Lich tren mobile dang dung che do local-first de mo nhanh:
 Google Calendar van duoc backend sync nen trong nen man hinh khong bi chan boi
 network cham.
 
-## Chính sách bảo mật
+## Chính sách bảo mật và điều khoản
 
-APK trỏ người dùng đến chính sách bảo mật public của bản Railway:
+APK trỏ người dùng đến chính sách bảo mật và điều khoản public của bản Railway:
 
 ```text
 https://exe101.up.railway.app/privacy
+https://exe101.up.railway.app/terms
 ```
 
-URL này dùng cho Google OAuth consent screen và Play Console privacy policy.
+Các URL này dùng cho Google OAuth consent screen, Play Console privacy policy
+và terms of service.

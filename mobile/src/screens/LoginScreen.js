@@ -6,7 +6,7 @@ import Button from '../components/Button';
 import { useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { connectGoogleAccount } from '../api/googleAuth';
-import { PRIVACY_URL } from '../api/config';
+import { PRIVACY_URL, TERMS_URL } from '../api/config';
 
 function PolicyLine({ title, detail, styles }) {
   return (
@@ -44,6 +44,14 @@ export default function LoginScreen({ onLoggedIn }) {
       await WebBrowser.openBrowserAsync(PRIVACY_URL);
     } catch (error) {
       Alert.alert(t('Không mở được chính sách', 'Could not open policy'), error.message);
+    }
+  };
+
+  const openTerms = async () => {
+    try {
+      await WebBrowser.openBrowserAsync(TERMS_URL);
+    } catch (error) {
+      Alert.alert(t('Không mở được điều khoản', 'Could not open terms'), error.message);
     }
   };
 
@@ -100,12 +108,15 @@ export default function LoginScreen({ onLoggedIn }) {
 
       <Text style={styles.consent}>
         {t(
-          'Bằng việc tiếp tục, bạn đồng ý với chính sách quyền riêng tư của FlowMate AI và các quyền hiển thị trên màn hình xác nhận của Google.',
-          "By continuing, you agree to FlowMate AI's privacy policy and allow the permissions shown on Google's consent screen."
+          'Bằng việc tiếp tục, bạn đồng ý với Điều khoản dịch vụ, Chính sách quyền riêng tư của FlowMate AI và các quyền hiển thị trên màn hình xác nhận của Google.',
+          "By continuing, you agree to FlowMate AI's Terms of Service, Privacy Policy, and the permissions shown on Google's consent screen."
         )}
       </Text>
       <TouchableOpacity onPress={openPrivacyPolicy} activeOpacity={0.75}>
         <Text style={styles.policyLink}>{t('Đọc chính sách bảo mật', 'Read privacy policy')}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={openTerms} activeOpacity={0.75}>
+        <Text style={styles.policyLink}>{t('Đọc điều khoản dịch vụ', 'Read terms of service')}</Text>
       </TouchableOpacity>
     </ScrollView>
   );

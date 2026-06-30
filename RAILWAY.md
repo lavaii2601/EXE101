@@ -50,16 +50,18 @@ https://exe101.up.railway.app/api/email/oauth-config-check
 The response should show `has_client_id: true` and `has_client_secret: true`,
 or `has_credentials_json: true`.
 
-## Public privacy policy
+## Public privacy policy and terms
 
-FlowMate serves a public privacy policy from the same Railway deployment:
+FlowMate serves public privacy and terms pages from the same Railway deployment:
 
 ```text
 https://exe101.up.railway.app/privacy
+https://exe101.up.railway.app/terms
 ```
 
-Use this URL for Google OAuth consent screen, Android APK review, Play Console
-privacy policy, and user-facing security/data handling references.
+Use these URLs for Google OAuth consent screen, Android APK review, Play Console
+privacy policy, terms of service, and user-facing security/data handling
+references.
 
 ## AI provider variables
 

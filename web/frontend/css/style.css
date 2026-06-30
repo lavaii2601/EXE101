@@ -5435,6 +5435,21 @@ body.dark-theme .daily-report-badge.is-meeting {
         padding: 12px 0;
     }
 
+    .settings-row > div,
+    .settings-account > div {
+        min-width: 0;
+        flex: 1 1 auto;
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+
+    .settings-card strong,
+    .settings-row strong,
+    .settings-account strong {
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+
     .settings-mode-profile {
         display: flex;
         align-items: flex-start;

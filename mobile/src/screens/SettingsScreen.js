@@ -16,7 +16,7 @@ import { ACCENTS, useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { getUserMode } from '../config/userModes';
 import { apiGet, apiPost } from '../api/client';
-import { PRIVACY_URL } from '../api/config';
+import { PRIVACY_URL, TERMS_URL } from '../api/config';
 
 const ACCENT_OPTIONS = [
   { key: 'charcoal', hex: '#242423' },
@@ -86,6 +86,14 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
       await WebBrowser.openBrowserAsync(PRIVACY_URL);
     } catch (error) {
       Alert.alert(t('Không mở được chính sách', 'Could not open policy'), error.message);
+    }
+  };
+
+  const openTerms = async () => {
+    try {
+      await WebBrowser.openBrowserAsync(TERMS_URL);
+    } catch (error) {
+      Alert.alert(t('Không mở được điều khoản', 'Could not open terms'), error.message);
     }
   };
 
@@ -175,7 +183,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
           </View>
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{name}</Text>
-            <Text style={styles.profileEmail}>{email}</Text>
+            <Text style={styles.profileEmail} numberOfLines={1}>{email}</Text>
             <View style={[styles.badge, gmailOk ? styles.badgeOk : styles.badgeWarn]}>
               <Text style={styles.badgeText}>
                 {gmailOk ? t('● Gmail đã kết nối', '● Gmail connected') : t('● Gmail chưa kết nối', '● Gmail not connected')}
@@ -472,6 +480,23 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
           </View>
           <Text style={styles.chevron}>›</Text>
         </TouchableOpacity>
+
+        <View style={styles.divider} />
+
+        <TouchableOpacity
+          style={styles.settingRow}
+          onPress={openTerms}
+          activeOpacity={0.75}
+        >
+          <View style={[styles.iconWrap, { backgroundColor: colors.secondaryBg }]}>
+            <Text style={styles.settingIcon}>📃</Text>
+          </View>
+          <View style={styles.settingInfo}>
+            <Text style={styles.settingTitle}>{t('Điều khoản dịch vụ', 'Terms of service')}</Text>
+            <Text style={styles.settingSub}>{t('Đọc điều khoản sử dụng FlowMate', 'Read FlowMate usage terms')}</Text>
+          </View>
+          <Text style={styles.chevron}>›</Text>
+        </TouchableOpacity>
       </View>
 
       {/* ── Data / Logout ── */}
@@ -571,10 +596,10 @@ function makeStyles(colors) {
     },
     settingIcon: { fontSize: 18 },
     modeIcon: { fontSize: 11, fontWeight: '900' },
-    settingInfo: { flex: 1 },
-    settingTitle: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 14 },
-    settingSub:   { color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 12, marginTop: 1 },
-    settingSubStandalone: { color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 12, marginTop: 3, marginBottom: 10 },
+    settingInfo: { flex: 1, flexShrink: 1, minWidth: 0 },
+    settingTitle: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 14, flexShrink: 1 },
+    settingSub:   { color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 12, marginTop: 1, flexShrink: 1 },
+    settingSubStandalone: { color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 12, marginTop: 3, marginBottom: 10, flexShrink: 1 },
     chevron: { color: colors.textMuted, fontSize: 22, fontWeight: '300' },
 
     /* Accent picker */

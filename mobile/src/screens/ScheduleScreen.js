@@ -297,6 +297,47 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
     });
   };
 
+  const renderVerticalTimetable = (dayArrays, weekStart) => {
+    const today = formatDateForApi(new Date());
+    const DAY_NAMES = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'CN'];
+    const rows = [];
+    for (let i = 0; i < 7; i++) {
+      const dayDate = new Date(weekStart);
+      dayDate.setDate(dayDate.getDate() + i);
+      const dateStr = formatDateForApi(dayDate);
+      const dayLabel = `${DAY_NAMES[i]}, ${String(dayDate.getDate()).padStart(2, '0')}/${String(dayDate.getMonth() + 1).padStart(2, '0')}`;
+      const isToday = dateStr === today;
+      const events = dedupeSchedules(
+        (Array.isArray(dayArrays[i]) ? dayArrays[i] : [])
+          .filter((ev) => ev && ev.start_time)
+          .slice()
+          .sort((a, b) => new Date(a.start_time) - new Date(b.start_time))
+      );
+      rows.push(
+        <View key={dateStr} style={styles.timetableDay}>
+          <View style={[styles.timetableDayHeader, isToday && styles.timetableDayHeaderToday]}>
+            <Text style={[styles.timetableDayLabel, isToday && styles.timetableDayLabelToday]}>
+              {dayLabel}
+            </Text>
+            {isToday ? <Text style={styles.timetableTodayBadge}>Hôm nay</Text> : null}
+          </View>
+          {events.length === 0 ? (
+            <Text style={styles.timetableEmpty}>Không có lịch hẹn</Text>
+          ) : events.map((ev, idx) => (
+            <View key={`${ev.id || idx}-${ev.start_time}`} style={styles.timetableEvent}>
+              <Text style={styles.timetableEventTime}>{formatScheduleTimeShort(ev.start_time, ev.end_time)}</Text>
+              <View style={styles.timetableEventBody}>
+                <Text style={styles.timetableEventTitle} numberOfLines={2}>{ev.title || 'Sự kiện'}</Text>
+                <Text style={[styles.source, sourceStyle(ev, styles)]}>{sourceLabel(ev)}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      );
+    }
+    return <>{rows}</>;
+  };
+
   const renderList = () => (
     <>
       <Card style={styles.summaryCard}>
@@ -316,6 +357,17 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
           {renderWeekSummary('Tuần đang xem', weekSummary.current)}
           {renderWeekSummary('Tuần kế tiếp', weekSummary.next)}
         </View>
+      </Card>
+
+      <Card style={styles.timetableCard}>
+        <View style={styles.summaryHeader}>
+          <View>
+            <Text style={styles.summaryKicker}>Thời khóa biểu</Text>
+            <Text style={styles.summaryTitle}>{formatWeekRange(currentWeekStart)}</Text>
+          </View>
+          <Text style={styles.summaryTotal}>{weekSummary.current.length}</Text>
+        </View>
+        {renderVerticalTimetable(weekDays.current, currentWeekStart)}
       </Card>
 
       <Card style={styles.suggestionCard}>
@@ -566,6 +618,17 @@ function sourceStyle(schedule, styles) {
   return styles.sourceDefault;
 }
 
+function formatScheduleTimeShort(startValue, endValue) {
+  const start = new Date(startValue);
+  if (Number.isNaN(start.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  const startText = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
+  if (!endValue) return startText;
+  const end = new Date(endValue);
+  if (Number.isNaN(end.getTime())) return startText;
+  return `${startText}–${pad(end.getHours())}:${pad(end.getMinutes())}`;
+}
+
 function formatDate(value) {
   if (!value) return '';
   const raw = typeof value === 'string' ? value : value.dateTime || value.date || '';
@@ -630,6 +693,46 @@ function makeStyles(colors) {
       borderLeftWidth: 4,
       borderLeftColor: colors.primary,
     },
+    timetableCard: { gap: 4 },
+    timetableDay: { marginTop: 8 },
+    timetableDayHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 6,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      marginBottom: 4,
+    },
+    timetableDayHeaderToday: { borderBottomColor: colors.primary },
+    timetableDayLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 13, color: colors.textMuted },
+    timetableDayLabelToday: { color: colors.primary, fontFamily: 'Poppins_700Bold' },
+    timetableTodayBadge: {
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+      color: '#ffffff',
+      fontFamily: 'Poppins_700Bold',
+      fontSize: 10,
+    },
+    timetableEmpty: { color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 12, paddingVertical: 4 },
+    timetableEvent: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+      paddingVertical: 6,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    timetableEventTime: {
+      color: colors.primary,
+      fontFamily: 'Poppins_600SemiBold',
+      fontSize: 12,
+      minWidth: 78,
+    },
+    timetableEventBody: { flex: 1, minWidth: 0 },
+    timetableEventTitle: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 13, lineHeight: 18 },
     title: { color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 16, lineHeight: 22 },
     cardHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
     source: { overflow: 'hidden', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4, fontFamily: 'Poppins_700Bold', fontSize: 11 },
