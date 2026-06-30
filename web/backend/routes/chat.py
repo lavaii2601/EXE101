@@ -6,7 +6,7 @@ import logging
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.chat_agents import ai_service, intent_orchestrator, get_agent, ChatContext
+from services.chat_agents import ai_service, intent_orchestrator, get_agent, ChatContext, learn_from_exchange_async
 from services.gmail_service import get_cached_gmail_service
 from models.history import History
 from models.schedule import Schedule
@@ -314,6 +314,7 @@ def send_message():
         result = get_agent('chat.freeform').handle(ctx)
 
     save_chat_history(user_message, result.response, action_type=result.action_type)
+    learn_from_exchange_async(user_message, result.response, user_id)
 
     response_payload = {
         'success': True,

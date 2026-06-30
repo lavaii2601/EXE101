@@ -9,11 +9,15 @@ from models import postgres_db as pg
 
 
 class KnowledgeDocument:
-    """Shared knowledge base for Bob's RAG lookups.
+    """Knowledge base for Bob's RAG lookups.
 
-    Unlike Schedule/History this is not per-user data -- it's product/feature
-    knowledge (and any open-source reference material fed in later), so it
-    always lives in the shared database rather than a per-user db_path.
+    Two kinds of rows share this table, distinguished by `user_id`:
+    - Global/product knowledge (user_id IS NULL/empty) -- FlowMate feature
+      docs, anything added manually -- visible to every user, exactly like
+      before this column existed.
+    - Per-user auto-learned memories (user_id set, source='auto') -- facts,
+      corrections, and preferences Bob picks up from a specific user's chats.
+      These must NEVER be visible to a different user_id.
     """
 
     _initialized = False
@@ -35,26 +39,34 @@ class KnowledgeDocument:
                 content TEXT NOT NULL,
                 tags TEXT DEFAULT '',
                 source TEXT DEFAULT 'manual',
+                user_id TEXT DEFAULT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        # Add user_id column if missing (pre-existing installs created the
+        # table before per-user auto-learned memories existed).
+        try:
+            cursor.execute('ALTER TABLE knowledge_documents ADD COLUMN user_id TEXT DEFAULT NULL')
+        except sqlite3.OperationalError:
+            pass
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_knowledge_documents_created ON knowledge_documents(created_at DESC)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_knowledge_documents_user ON knowledge_documents(user_id)')
         conn.commit()
         conn.close()
         KnowledgeDocument._initialized = True
 
     @staticmethod
-    def create(title, content, tags='', source='manual'):
+    def create(title, content, tags='', source='manual', user_id=None):
         if pg.enabled():
             with pg.connection() as conn:
                 row = conn.execute(
                     """
-                    INSERT INTO knowledge_documents (title, content, tags, source)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO knowledge_documents (title, content, tags, source, user_id)
+                    VALUES (%s, %s, %s, %s, %s)
                     RETURNING *
                     """,
-                    (title, content, tags, source),
+                    (title, content, tags, source, user_id),
                 ).fetchone()
                 return pg.normalize_row(row)
 
@@ -62,8 +74,8 @@ class KnowledgeDocument:
         conn = sqlite3.connect(Config.DATABASE_PATH)
         cursor = conn.cursor()
         cursor.execute(
-            'INSERT INTO knowledge_documents (title, content, tags, source) VALUES (?, ?, ?, ?)',
-            (title, content, tags, source),
+            'INSERT INTO knowledge_documents (title, content, tags, source, user_id) VALUES (?, ?, ?, ?, ?)',
+            (title, content, tags, source, user_id),
         )
         conn.commit()
         doc_id = cursor.lastrowid
@@ -71,20 +83,38 @@ class KnowledgeDocument:
         return KnowledgeDocument.get_by_id(doc_id)
 
     @staticmethod
-    def get_all(limit=500):
+    def get_all(limit=500, user_id=None, scope_to_user=False):
+        """By default returns every document (back-compat for the admin/
+        manual knowledge UI, which manages the shared/global library).
+        Pass scope_to_user=True to instead get only what a specific user
+        may see: global docs (user_id IS NULL) plus that user's own."""
         if pg.enabled():
             with pg.connection() as conn:
-                rows = conn.execute(
-                    'SELECT * FROM knowledge_documents ORDER BY created_at DESC LIMIT %s',
-                    (limit,),
-                ).fetchall()
+                if scope_to_user:
+                    rows = conn.execute(
+                        'SELECT * FROM knowledge_documents WHERE user_id IS NULL OR user_id = %s '
+                        'ORDER BY created_at DESC LIMIT %s',
+                        (user_id, limit),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        'SELECT * FROM knowledge_documents ORDER BY created_at DESC LIMIT %s',
+                        (limit,),
+                    ).fetchall()
                 return pg.normalize_rows(rows)
 
         KnowledgeDocument.init_db()
         conn = sqlite3.connect(Config.DATABASE_PATH)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM knowledge_documents ORDER BY created_at DESC LIMIT ?', (limit,))
+        if scope_to_user:
+            cursor.execute(
+                'SELECT * FROM knowledge_documents WHERE user_id IS NULL OR user_id = ? '
+                'ORDER BY created_at DESC LIMIT ?',
+                (user_id, limit),
+            )
+        else:
+            cursor.execute('SELECT * FROM knowledge_documents ORDER BY created_at DESC LIMIT ?', (limit,))
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]

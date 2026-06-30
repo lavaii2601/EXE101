@@ -85,7 +85,11 @@ class KnowledgeService:
             vector[term] = tf * idf
         return vector
 
-    def search(self, query, top_k=3, min_score=0.08):
+    def search(self, query, top_k=3, min_score=0.08, user_id=None):
+        """user_id=None searches the whole library (admin/manual UI use).
+        Pass the requesting user's id from chat so per-user auto-learned
+        memories from OTHER users are excluded from candidates -- the
+        shared global docs (user_id IS NULL) are always visible to everyone."""
         self._ensure_index()
         if not self._doc_vectors:
             return []
@@ -98,6 +102,10 @@ class KnowledgeService:
 
         scored = []
         for doc_id, doc_vector in self._doc_vectors.items():
+            if user_id is not None:
+                doc_owner = self._documents_by_id.get(doc_id, {}).get('user_id')
+                if doc_owner and doc_owner != user_id:
+                    continue
             shared_terms = query_vector.keys() & doc_vector.keys()
             if not shared_terms:
                 continue
@@ -114,8 +122,8 @@ class KnowledgeService:
                 results.append({**doc, 'relevance': round(score, 4)})
         return results
 
-    def add_document(self, title, content, tags='', source='manual'):
-        document = KnowledgeDocument.create(title, content, tags=tags, source=source)
+    def add_document(self, title, content, tags='', source='manual', user_id=None):
+        document = KnowledgeDocument.create(title, content, tags=tags, source=source, user_id=user_id)
         self._built = False
         return document
 

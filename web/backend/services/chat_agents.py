@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import logging
@@ -547,9 +548,9 @@ def _direct_email_search_response(message, user_id, limit=8, query_override=None
     return "\n".join(lines)
 
 
-def _format_knowledge_context(message):
+def _format_knowledge_context(message, user_id=None):
     try:
-        results = knowledge_service.search(message, top_k=2)
+        results = knowledge_service.search(message, top_k=2, user_id=user_id)
     except Exception:
         logger.warning("Knowledge base search failed", exc_info=True)
         return ''
@@ -575,13 +576,142 @@ def _build_workspace_context(message, user_id, db_path):
 
     # Always attempt a (free, local) knowledge-base lookup -- the TF-IDF
     # relevance threshold already filters out unrelated chit-chat, so this
-    # only adds context when it actually found something relevant.
-    knowledge_context = _format_knowledge_context(message)
+    # only adds context when it actually found something relevant. Scoped
+    # to this user_id so another user's auto-learned memories never leak in.
+    knowledge_context = _format_knowledge_context(message, user_id=user_id)
     if knowledge_context:
         context_parts.append(knowledge_context)
         sources.add('knowledge')
 
     return sources, "\n\n".join(context_parts)
+
+
+# Cheap, local gate before paying for an AI round-trip to check "is there
+# anything worth remembering here" -- most chat turns aren't (a one-off
+# question, a status check, small talk), so most messages should never reach
+# the AI extraction call at all. Bilingual, mirrors the same pattern used to
+# gate AI-assisted intent classification in intent_orchestrator.py.
+_MEMORY_HINT_TERMS = (
+    "nho la", "nho rang", "tu nay", "tu gio", "luon luon", "moi lan",
+    "goi toi la", "xung ho", "quy tac", "thuc ra", "khong phai", "ma la",
+    "uu tien", "thoi quen", "so thich",
+    "remember", "from now on", "always", "every time", "call me",
+    "actually it's", "actually it is", "note that", "my preference",
+    "rule of thumb", "i prefer", "in the future",
+)
+
+
+def _has_memory_hint(message):
+    normalized = _normalize_intent_text(message)
+    return any(term in normalized for term in _MEMORY_HINT_TERMS)
+
+
+def _parse_memory_json(raw):
+    if not raw:
+        return None
+    cleaned = str(raw).strip()
+    if "```json" in cleaned:
+        cleaned = cleaned.split("```json", 1)[1].split("```", 1)[0].strip()
+    elif "```" in cleaned:
+        cleaned = cleaned.split("```", 1)[1].split("```", 1)[0].strip()
+    try:
+        data = json.loads(cleaned)
+    except (TypeError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _extract_memory_candidate(user_message, assistant_response, user_id):
+    system_message = {
+        "role": "system",
+        "content": (
+            "Ban la module trich xuat tri nho dai han cho tro ly AI Bob. Doc tin nhan cua "
+            "nguoi dung va cau tra loi cua Bob, xac dinh xem co THONG TIN ON DINH dang nho "
+            "lau dai khong: nguoi dung sua loi Bob, neu so thich/quy tac ca nhan, cach xung "
+            "ho rieng, thuat ngu/quy tac nghiep vu rieng cua ho. KHONG trich xuat du lieu "
+            "tam thoi mot lan (mot lich hen cu the, mot email cu the, cau hoi thong thuong, "
+            "small talk). Neu khong co gi dang nho, tra ve should_remember=false. Nguoi dung "
+            "co the viet tieng Viet hoac tieng Anh. TRA VE DUY NHAT JSON, khong giai thich, "
+            "khong dung markdown: "
+            '{"should_remember": true/false, "title": "<ngan gon>", '
+            '"content": "<noi dung can nho, 1-2 cau>", "tags": "<tu khoa, cach nhau boi dau phay>"}'
+        ),
+    }
+    user_turn = {
+        "role": "user",
+        "content": f"TIN NHAN NGUOI DUNG: \"{user_message}\"\n\nTRA LOI CUA BOB: \"{assistant_response}\"",
+    }
+    try:
+        raw = ai_service.generate_response(
+            [system_message, user_turn],
+            max_tokens=220,
+            task="memory_extraction",
+            user_id=user_id,
+        )
+    except Exception:
+        logger.warning("Memory extraction AI call failed", exc_info=True)
+        return None
+    data = _parse_memory_json(raw)
+    if not data or not data.get("should_remember"):
+        return None
+    title = str(data.get("title") or "").strip()[:150]
+    content = str(data.get("content") or "").strip()[:500]
+    tags = str(data.get("tags") or "").strip()[:200]
+    if not title or not content:
+        return None
+    return {"title": title, "content": content, "tags": tags}
+
+
+def learn_from_exchange(user_message, assistant_response, user_id):
+    """Best-effort: silently look for a fact/preference/correction worth
+    remembering in this exchange and save it as a per-user 'auto' knowledge
+    document, so Bob can recall it in later chats without the user ever
+    having to fill in the manual Knowledge form. Must never raise -- this
+    always runs as a fire-and-forget background thread off the chat
+    response path."""
+    try:
+        if not user_id or user_id == 'default' or not _has_memory_hint(user_message):
+            return
+        candidate = _extract_memory_candidate(user_message, assistant_response, user_id)
+        if not candidate:
+            return
+
+        # Look for an existing auto-learned memory on the same topic for
+        # this user and update it in place instead of accumulating
+        # near-duplicate memories every time a similar thing comes up.
+        existing_match = None
+        try:
+            for result in knowledge_service.search(candidate["title"], top_k=3, min_score=0.35, user_id=user_id):
+                if result.get("source") == "auto" and result.get("user_id") == user_id:
+                    existing_match = result
+                    break
+        except Exception:
+            existing_match = None
+
+        if existing_match:
+            knowledge_service.update_document(
+                existing_match["id"],
+                title=candidate["title"],
+                content=candidate["content"],
+                tags=candidate["tags"],
+            )
+            logger.info("Updated auto-learned memory %s for user %s", existing_match["id"], user_id)
+        else:
+            knowledge_service.add_document(
+                candidate["title"], candidate["content"],
+                tags=candidate["tags"], source="auto", user_id=user_id,
+            )
+            logger.info("Saved new auto-learned memory for user %s: %s", user_id, candidate["title"])
+    except Exception:
+        logger.warning("learn_from_exchange failed for user %s", user_id, exc_info=True)
+
+
+def learn_from_exchange_async(user_message, assistant_response, user_id):
+    _thr.Thread(
+        target=learn_from_exchange,
+        args=(user_message, assistant_response, user_id),
+        daemon=True,
+    ).start()
 
 
 def _capability_prompt_lines(agent_capabilities):
