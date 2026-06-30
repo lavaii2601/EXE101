@@ -12,7 +12,8 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#55BEFE"
-      }
+      },
+      "package": "com.anonymous.flowmateai"
     },
     "web": {
       "bundler": "metro"
