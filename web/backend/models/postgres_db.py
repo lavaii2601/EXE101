@@ -6,11 +6,11 @@ from datetime import date, datetime
 try:
     import psycopg
     from psycopg.rows import dict_row
-    from psycopg.types.json import Json
+    from psycopg.types.json import Jsonb
 except ImportError:  # Local SQLite-only development can run before pip install.
     psycopg = None
     dict_row = None
-    Json = None
+    Jsonb = None
 
 try:
     from psycopg_pool import ConnectionPool
@@ -123,7 +123,11 @@ def ensure_user(user_id, name="Teacher", email=""):
 
 
 def json_value(value):
-    return Json(value)
+    # Every JSON-ish column in the shared schema is JSONB, not JSON -- using
+    # psycopg's Json() adapter (plain `json` type) makes operators like
+    # `jsonb || json` fail with "operator does not exist", since Postgres
+    # doesn't implicitly cast between the two JSON types.
+    return Jsonb(value)
 
 
 def normalize_row(row):
