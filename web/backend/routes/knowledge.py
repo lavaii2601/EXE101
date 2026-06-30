@@ -98,6 +98,30 @@ def create_document():
     return jsonify({'success': True, 'document': document}), 201
 
 
+@knowledge_bp.route('/<int:doc_id>', methods=['PUT'])
+def update_document(doc_id):
+    get_current_user_id(request)
+    data = request.get_json() or {}
+    if not KnowledgeDocument.get_by_id(doc_id):
+        return jsonify({'success': False, 'error': 'not_found'}), 404
+
+    title = data.get('title')
+    content = data.get('content')
+    tags = data.get('tags')
+    if title is not None and not title.strip():
+        return jsonify({'success': False, 'error': 'title cannot be empty'}), 400
+    if content is not None and not content.strip():
+        return jsonify({'success': False, 'error': 'content cannot be empty'}), 400
+
+    document = knowledge_service.update_document(
+        doc_id,
+        title=title.strip() if title is not None else None,
+        content=content.strip() if content is not None else None,
+        tags=tags.strip() if tags is not None else None,
+    )
+    return jsonify({'success': True, 'document': document})
+
+
 @knowledge_bp.route('/<int:doc_id>', methods=['DELETE'])
 def delete_document(doc_id):
     get_current_user_id(request)

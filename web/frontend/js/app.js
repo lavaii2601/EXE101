@@ -77,6 +77,15 @@ const I18N = {
         'nav.calendar': 'Lịch',
         'nav.history': 'Lịch sử',
         'nav.settings': 'Cài đặt',
+        'nav.knowledge': 'Kiến thức',
+        'knowledge.title': 'Kiến thức cho Bob',
+        'knowledge.subtitle': 'Thêm thuật ngữ, quy tắc nội bộ hoặc tài liệu riêng để Bob tra cứu khi trả lời chat.',
+        'knowledge.addNew': 'THÊM TÀI LIỆU MỚI',
+        'knowledge.titlePlaceholder': 'Tiêu đề (vd: Quy tắc xưng hô)',
+        'knowledge.tagsPlaceholder': 'Tag, phân cách bằng dấu phẩy (tùy chọn)',
+        'knowledge.contentPlaceholder': 'Nội dung Bob cần biết...',
+        'knowledge.save': 'Lưu tài liệu',
+        'knowledge.cancelEdit': 'Hủy sửa',
         'chat.new': 'Chat mới',
         'chat.newHint': 'Bắt đầu hội thoại sạch',
         'chat.sessions': 'Đoạn chat',
@@ -122,6 +131,15 @@ const I18N = {
         'nav.calendar': 'Calendar',
         'nav.history': 'Activity',
         'nav.settings': 'Settings',
+        'nav.knowledge': 'Knowledge',
+        'knowledge.title': 'Knowledge for Bob',
+        'knowledge.subtitle': 'Add internal terminology, business rules, or your own reference material for Bob to look up while chatting.',
+        'knowledge.addNew': 'ADD NEW DOCUMENT',
+        'knowledge.titlePlaceholder': 'Title (e.g. Addressing rules)',
+        'knowledge.tagsPlaceholder': 'Tags, comma-separated (optional)',
+        'knowledge.contentPlaceholder': 'Content Bob should know...',
+        'knowledge.save': 'Save document',
+        'knowledge.cancelEdit': 'Cancel edit',
         'chat.new': 'New chat',
         'chat.newHint': 'Start a clean conversation',
         'chat.sessions': 'Chats',
@@ -2380,6 +2398,8 @@ async function handlePageChange(btn) {
         loadActivityHistory().catch(err => console.error('History load error:', err));
     } else if (page === 'settings') {
         loadSettingsPage().catch(err => console.error('Settings load error:', err));
+    } else if (page === 'knowledge') {
+        loadKnowledgePage().catch(err => console.error('Knowledge load error:', err));
     }
 }
 
@@ -3044,6 +3064,157 @@ async function loadSettingsPage() {
         setSettingsState(ui('Đã đồng bộ', 'Synced'));
     } catch (error) {
         setSettingsState(`${ui('Lỗi', 'Error')}: ${error.message}`, true);
+    }
+}
+
+async function loadKnowledgePage() {
+    bindKnowledgeForm();
+    const container = document.getElementById('knowledgeList');
+    if (!container) return;
+    container.innerHTML = `<div class="overview-empty">${ui('Đang tải...', 'Loading...')}</div>`;
+    try {
+        const response = await apiFetch(`${API_BASE}/knowledge`);
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || ui('Không tải được danh sách', 'Failed to load list'));
+        }
+        renderKnowledgeList(data.documents || []);
+    } catch (error) {
+        container.innerHTML = `<div class="overview-empty">${ui('Lỗi', 'Error')}: ${escapeHtml(error.message)}</div>`;
+    }
+}
+
+function renderKnowledgeList(documents) {
+    const container = document.getElementById('knowledgeList');
+    if (!container) return;
+    if (!documents.length) {
+        container.innerHTML = `<div class="overview-empty">${ui('Chưa có tài liệu nào. Thêm tài liệu đầu tiên ở form phía trên.', 'No documents yet. Add your first one in the form above.')}</div>`;
+        return;
+    }
+    container.innerHTML = documents.map((doc) => `
+        <article class="knowledge-item" data-knowledge-id="${doc.id}">
+            <div class="knowledge-item-head">
+                <strong>${escapeHtml(doc.title)}</strong>
+                <span class="knowledge-item-source">${escapeHtml(doc.source || 'manual')}</span>
+            </div>
+            <p class="knowledge-item-content">${escapeHtml(doc.content)}</p>
+            ${doc.tags ? `<div class="knowledge-item-tags">${doc.tags.split(',').map((t) => t.trim()).filter(Boolean).map((t) => `<span class="knowledge-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+            <div class="knowledge-item-actions">
+                <button type="button" class="btn-secondary" data-knowledge-edit="${doc.id}">${ui('Sửa', 'Edit')}</button>
+                <button type="button" class="btn-danger" data-knowledge-delete="${doc.id}">${ui('Xóa', 'Delete')}</button>
+            </div>
+        </article>
+    `).join('');
+
+    container.querySelectorAll('[data-knowledge-edit]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const doc = documents.find((item) => String(item.id) === button.dataset.knowledgeEdit);
+            if (doc) startEditKnowledgeDocument(doc);
+        });
+    });
+    container.querySelectorAll('[data-knowledge-delete]').forEach((button) => {
+        button.addEventListener('click', () => deleteKnowledgeDocument(button.dataset.knowledgeDelete));
+    });
+}
+
+function startEditKnowledgeDocument(doc) {
+    const idInput = document.getElementById('knowledgeFormId');
+    const titleInput = document.getElementById('knowledgeFormTitle');
+    const tagsInput = document.getElementById('knowledgeFormTags');
+    const contentInput = document.getElementById('knowledgeFormContent');
+    const submitBtn = document.getElementById('knowledgeFormSubmit');
+    const cancelBtn = document.getElementById('knowledgeFormCancel');
+    if (!idInput || !titleInput || !tagsInput || !contentInput) return;
+    idInput.value = doc.id;
+    titleInput.value = doc.title || '';
+    tagsInput.value = doc.tags || '';
+    contentInput.value = doc.content || '';
+    if (submitBtn) submitBtn.textContent = ui('Cập nhật tài liệu', 'Update document');
+    if (cancelBtn) cancelBtn.hidden = false;
+    titleInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function resetKnowledgeForm() {
+    const idInput = document.getElementById('knowledgeFormId');
+    const titleInput = document.getElementById('knowledgeFormTitle');
+    const tagsInput = document.getElementById('knowledgeFormTags');
+    const contentInput = document.getElementById('knowledgeFormContent');
+    const submitBtn = document.getElementById('knowledgeFormSubmit');
+    const cancelBtn = document.getElementById('knowledgeFormCancel');
+    if (idInput) idInput.value = '';
+    if (titleInput) titleInput.value = '';
+    if (tagsInput) tagsInput.value = '';
+    if (contentInput) contentInput.value = '';
+    if (submitBtn) submitBtn.textContent = ui('Lưu tài liệu', 'Save document');
+    if (cancelBtn) cancelBtn.hidden = true;
+}
+
+async function deleteKnowledgeDocument(docId) {
+    if (!docId) return;
+    if (!confirm(ui('Xóa tài liệu này?', 'Delete this document?'))) return;
+    try {
+        const response = await apiFetch(`${API_BASE}/knowledge/${docId}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || ui('Không xóa được', 'Failed to delete'));
+        }
+        showNotification(ui('Đã xóa tài liệu', 'Document deleted'), 'success');
+        await loadKnowledgePage();
+    } catch (error) {
+        showNotification(`${ui('Lỗi', 'Error')}: ${error.message}`, 'error');
+    }
+}
+
+function bindKnowledgeForm() {
+    const form = document.getElementById('knowledgeForm');
+    const cancelBtn = document.getElementById('knowledgeFormCancel');
+    if (!form || form.dataset.bound === 'true') return;
+    form.dataset.bound = 'true';
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const idInput = document.getElementById('knowledgeFormId');
+        const titleInput = document.getElementById('knowledgeFormTitle');
+        const tagsInput = document.getElementById('knowledgeFormTags');
+        const contentInput = document.getElementById('knowledgeFormContent');
+        const title = titleInput?.value.trim();
+        const content = contentInput?.value.trim();
+        const tags = tagsInput?.value.trim() || '';
+        if (!title || !content) {
+            showNotification(ui('Cần nhập tiêu đề và nội dung', 'Title and content are required'), 'error');
+            return;
+        }
+        const docId = idInput?.value;
+        const submitBtn = document.getElementById('knowledgeFormSubmit');
+        if (submitBtn) submitBtn.disabled = true;
+        try {
+            const response = docId
+                ? await apiFetch(`${API_BASE}/knowledge/${docId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, content, tags })
+                })
+                : await apiFetch(`${API_BASE}/knowledge`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, content, tags })
+                });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || ui('Không lưu được tài liệu', 'Failed to save document'));
+            }
+            showNotification(docId ? ui('Đã cập nhật tài liệu', 'Document updated') : ui('Đã thêm tài liệu', 'Document added'), 'success');
+            resetKnowledgeForm();
+            await loadKnowledgePage();
+        } catch (error) {
+            showNotification(`${ui('Lỗi', 'Error')}: ${error.message}`, 'error');
+        } finally {
+            if (submitBtn) submitBtn.disabled = false;
+        }
+    });
+
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => resetKnowledgeForm());
     }
 }
 

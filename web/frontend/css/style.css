@@ -6765,3 +6765,97 @@ body.dark-theme .week-table td.is-today {
         mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
     }
 }
+
+/* Knowledge base management page ("Kien thuc cho Bob") */
+.knowledge-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.knowledge-form-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.knowledge-form-row input,
+.knowledge-form textarea {
+    flex: 1;
+    min-width: 220px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    color: var(--text);
+    font: inherit;
+}
+
+.knowledge-form textarea {
+    width: 100%;
+    resize: vertical;
+}
+
+.knowledge-form-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.knowledge-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.knowledge-item {
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+}
+
+.knowledge-item-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.knowledge-item-source {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.knowledge-item-content {
+    margin-top: 8px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.knowledge-item-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.knowledge-tag {
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--primary-soft, rgba(108, 99, 255, 0.12));
+    color: var(--primary, #6c63ff);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.knowledge-item-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}

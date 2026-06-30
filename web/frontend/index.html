@@ -149,6 +149,10 @@
                     <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21h-4v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H3v-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V3h4v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.1v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg></span>
                     <span class="nav-label" data-i18n="nav.settings">Cài đặt</span>
                 </button>
+                <button class="nav-btn" data-page="knowledge">
+                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg></span>
+                    <span class="nav-label" data-i18n="nav.knowledge">Kiến thức</span>
+                </button>
             </nav>
 
             <aside class="chat-history-panel sidebar-chat-history" aria-label="Doan chat cu">
@@ -467,6 +471,32 @@
                         </div>
                     </article>
                 </div>
+            </section>
+
+            <section id="knowledge-page" class="page">
+                <div class="section-header">
+                    <div>
+                        <span class="overview-kicker">FLOWMATE WORKSPACE</span>
+                        <h2 data-i18n="knowledge.title">Kiến thức cho Bob</h2>
+                        <p data-i18n="knowledge.subtitle">Thêm thuật ngữ, quy tắc nội bộ hoặc tài liệu riêng để Bob tra cứu khi trả lời chat.</p>
+                    </div>
+                </div>
+
+                <form id="knowledgeForm" class="settings-card knowledge-form">
+                    <span class="settings-section-label" data-i18n="knowledge.addNew">THÊM TÀI LIỆU MỚI</span>
+                    <input type="hidden" id="knowledgeFormId" value="">
+                    <div class="settings-row knowledge-form-row">
+                        <input id="knowledgeFormTitle" type="text" placeholder="Tiêu đề (vd: Quy tắc xưng hô)" data-i18n-placeholder="knowledge.titlePlaceholder" required>
+                        <input id="knowledgeFormTags" type="text" placeholder="Tag, phân cách bằng dấu phẩy (tùy chọn)" data-i18n-placeholder="knowledge.tagsPlaceholder">
+                    </div>
+                    <textarea id="knowledgeFormContent" rows="4" placeholder="Nội dung Bob cần biết..." data-i18n-placeholder="knowledge.contentPlaceholder" required></textarea>
+                    <div class="knowledge-form-actions">
+                        <button type="submit" class="btn-primary" id="knowledgeFormSubmit" data-i18n="knowledge.save">Lưu tài liệu</button>
+                        <button type="button" class="btn-secondary" id="knowledgeFormCancel" hidden data-i18n="knowledge.cancelEdit">Hủy sửa</button>
+                    </div>
+                </form>
+
+                <div id="knowledgeList" class="knowledge-list"></div>
             </section>
         </main>
 

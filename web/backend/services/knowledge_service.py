@@ -119,6 +119,12 @@ class KnowledgeService:
         self._built = False
         return document
 
+    def update_document(self, doc_id, title=None, content=None, tags=None):
+        document = KnowledgeDocument.update(doc_id, title=title, content=content, tags=tags)
+        if document:
+            self._built = False
+        return document
+
     def delete_document(self, doc_id):
         deleted = KnowledgeDocument.delete(doc_id)
         if deleted:

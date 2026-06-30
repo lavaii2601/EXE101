@@ -108,6 +108,40 @@ class KnowledgeDocument:
         return dict(row) if row else None
 
     @staticmethod
+    def update(doc_id, title=None, content=None, tags=None):
+        fields = {}
+        if title is not None:
+            fields['title'] = title
+        if content is not None:
+            fields['content'] = content
+        if tags is not None:
+            fields['tags'] = tags
+        if not fields:
+            return KnowledgeDocument.get_by_id(doc_id)
+
+        if pg.enabled():
+            with pg.connection() as conn:
+                set_clause = ', '.join(f'{key} = %s' for key in fields) + ', updated_at = NOW()'
+                conn.execute(
+                    f'UPDATE knowledge_documents SET {set_clause} WHERE id = %s',
+                    (*fields.values(), doc_id),
+                )
+            return KnowledgeDocument.get_by_id(doc_id)
+
+        KnowledgeDocument.init_db()
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        cursor = conn.cursor()
+        set_clause = ', '.join(f'{key} = ?' for key in fields) + ', updated_at = CURRENT_TIMESTAMP'
+        cursor.execute(
+            f'UPDATE knowledge_documents SET {set_clause} WHERE id = ?',
+            (*fields.values(), doc_id),
+        )
+        conn.commit()
+        updated = cursor.rowcount
+        conn.close()
+        return KnowledgeDocument.get_by_id(doc_id) if updated else None
+
+    @staticmethod
     def delete(doc_id):
         if pg.enabled():
             with pg.connection() as conn:
