@@ -134,7 +134,7 @@ body.workspace-ready .workspace-app {
     position: relative;
     z-index: 1;
     width: min(500px, 100%);
-    padding: 50px;
+    padding: 46px 50px 42px;
     border: 1px solid rgba(180, 184, 232, .2);
     border-radius: 28px;
     background: rgba(25, 29, 68, .9);
@@ -148,7 +148,7 @@ body.workspace-ready .workspace-app {
     place-items: center;
     width: 90px;
     height: 90px;
-    margin: 0 auto 34px;
+    margin: 0 auto 30px;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
@@ -168,7 +168,7 @@ body.workspace-ready .workspace-app {
 
 .auth-card p {
     max-width: 360px;
-    margin: 22px auto 36px;
+    margin: 22px auto 34px;
     color: #d3d5ef;
     font-size: 18px;
     line-height: 1.55;
@@ -231,15 +231,21 @@ body.workspace-ready .workspace-app {
 
 .auth-gate-status {
     min-height: 20px;
-    margin: 14px 0 26px;
+    margin: 14px 0 20px;
     color: #aeb2d7;
     font-size: 13px;
 }
 
-.auth-card a {
-    display: block;
-    padding-top: 26px;
+.auth-links {
+    display: grid;
+    gap: 12px;
+    padding-top: 22px;
     border-top: 1px solid rgba(190, 194, 238, .14);
+}
+
+.auth-card a {
+    display: inline-flex;
+    justify-content: center;
     color: #c7c9e5;
     font-size: 12px;
     letter-spacing: .08em;

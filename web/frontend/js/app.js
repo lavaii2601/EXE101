@@ -2307,12 +2307,7 @@ async function gmailLogout() {
             userModeRequired = false;
             pendingPageAfterMode = '';
             userModeModal?.classList.remove('show', 'is-required');
-            showAuthGate(ui(
-                'Bạn đã đăng xuất. Đăng nhập để tiếp tục.',
-                'You are signed out. Sign in to continue.'
-            ));
-            const emailsList = document.getElementById('emailsList');
-            if (emailsList) emailsList.innerHTML = `<p>${ui('Đã đăng xuất Gmail. Vui lòng đăng nhập lại.', 'You have signed out of Gmail. Please sign in again.')}</p>`;
+            window.location.replace('/');
         }
     } catch (err) {
         alert(ui('Lỗi: ', 'Error: ') + err.message);
