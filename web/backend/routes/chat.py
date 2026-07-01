@@ -13,6 +13,7 @@ from services.chat_agents import (
     ChatContext,
     learn_from_exchange_async,
     learn_from_mentors_async,
+    normalize_agent_result_language,
 )
 from services.gmail_service import get_cached_gmail_service
 from models.history import History
@@ -348,6 +349,7 @@ def send_message():
     result = agent.handle(ctx)
     if result is None:
         result = get_agent('chat.freeform').handle(ctx)
+    result = normalize_agent_result_language(result, user_message, user_id=user_id)
 
     save_chat_history(user_message, result.response, action_type=result.action_type)
     learn_from_exchange_async(user_message, result.response, user_id)

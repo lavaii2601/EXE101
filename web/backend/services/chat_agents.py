@@ -82,6 +82,186 @@ def _normalize_intent_text(value):
     return value.replace('đ', 'd')
 
 
+_VIETNAMESE_CHAR_RE = re.compile(r'[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]', re.IGNORECASE)
+_VIETNAMESE_HINTS = (
+    'toi', 'minh', 'ban', 'hay', 'giup', 'giup minh', 'cho minh', 'vui long',
+    'lich', 'hom nay', 'ngay mai', 'tuan nay', 'tuan sau', 'email moi',
+    'hop thu', 'cong viec', 'cuoc hop', 'su kien', 'tao lich', 'xoa lich',
+    'doi lich', 'tom tat', 'tra loi', 'chua doc', 'da doc', 'khong', 'co the',
+)
+_ENGLISH_HINTS = (
+    'i ', 'me ', 'my ', 'you ', 'please', 'can you', 'could you', 'would you',
+    'what', 'when', 'where', 'how', 'why', 'today', 'tomorrow', 'this week',
+    'next week', 'calendar', 'schedule', 'meeting', 'appointment', 'email',
+    'inbox', 'summarize', 'reply', 'mark as read', 'mark unread', 'delete',
+    'create', 'update', 'find', 'search',
+)
+
+
+def _contains_language_hint(text, hints):
+    text = str(text or '')
+    for term in hints:
+        if ' ' in term:
+            if term in text:
+                return True
+            continue
+        if re.search(rf'(?<!\w){re.escape(term)}(?!\w)', text):
+            return True
+    return False
+
+
+def detect_prompt_language(message):
+    """Return the language Bob should answer in for the latest user turn.
+
+    FlowMate supports Vietnamese and English. Mixed prompts intentionally
+    default to Vietnamese to match the product's primary locale and the
+    system-prompt contract.
+    """
+    raw = str(message or '').strip()
+    if not raw:
+        return 'vi'
+    lowered = raw.lower()
+    normalized = _normalize_intent_text(raw)
+    has_vi = bool(_VIETNAMESE_CHAR_RE.search(raw)) or _contains_language_hint(normalized, _VIETNAMESE_HINTS)
+    has_en = _contains_language_hint(lowered, _ENGLISH_HINTS)
+    if has_vi:
+        return 'vi'
+    if has_en or re.search(r'[a-zA-Z]', raw):
+        return 'en'
+    return 'vi'
+
+
+def _detect_text_language(text):
+    raw = str(text or '').strip()
+    if not raw:
+        return 'vi'
+    normalized = _normalize_intent_text(raw)
+    if _VIETNAMESE_CHAR_RE.search(raw) or _contains_language_hint(normalized, _VIETNAMESE_HINTS):
+        return 'vi'
+    if _contains_language_hint(raw.lower(), _ENGLISH_HINTS):
+        return 'en'
+    return 'en' if re.search(r'\b(the|and|you|your|this|that|with|for|from|calendar|schedule|email)\b', raw.lower()) else 'vi'
+
+
+def _fallback_translate_common_response(response, target_language):
+    if target_language != 'en':
+        return response
+    translated = str(response or '')
+    replacements = [
+        ('Gmail chưa được kết nối, nên mình chưa thể xem email thật của bạn.', "Gmail is not connected yet, so I can't read your real emails."),
+        ('Gmail chưa được kết nối cho tài khoản này.', 'Gmail is not connected for this account.'),
+        ('Không tìm thấy email phù hợp trong Gmail theo dữ liệu hiện tại.', "I couldn't find matching emails in Gmail with the current data."),
+        ('Mình không tìm thấy email phù hợp trong Gmail theo dữ liệu hiện tại.', "I couldn't find matching emails in Gmail with the current data."),
+        ('Mình tìm thấy email nhưng không thể đánh dấu được, bạn thử lại sau nhé.', "I found matching emails, but couldn't mark them. Please try again later."),
+        ('EMAIL TÌM THẤY', 'EMAILS FOUND'),
+        ('Nguồn: Gmail thật, truy vấn:', 'Source: real Gmail, query:'),
+        ('Người gửi:', 'Sender:'),
+        ('Thời gian:', 'Time:'),
+        ('Trạng thái:', 'Status:'),
+        ('Xem trước:', 'Preview:'),
+        ('Chưa đọc', 'Unread'),
+        ('Đã đọc', 'Read'),
+        ('Không xác định', 'Unknown'),
+        ('Không có tiêu đề', 'No subject'),
+        ('Không có nội dung xem trước', 'No preview available'),
+        ('Mình không tự kết luận nội dung ngoài phần Gmail trả về ở trên.', "I won't infer anything beyond the Gmail data shown above."),
+        ('Mình chưa hiểu bạn muốn đổi sang ngày/giờ nào, bạn nói rõ hơn giúp mình nhé.', "I don't yet understand the new date/time. Please tell me more clearly."),
+        ('Mình không tìm thấy lịch hẹn phù hợp trong 14 ngày tới. Bạn cho mình biết rõ tên lịch hẹn nhé.', "I couldn't find a matching appointment in the next 14 days. Please tell me the appointment name more clearly."),
+        ('Mình không tìm thấy lịch hẹn phù hợp để xóa trong 14 ngày tới.', "I couldn't find a matching appointment to delete in the next 14 days."),
+        ('Lịch hẹn này không còn tồn tại, có thể đã bị xóa trước đó.', 'This appointment no longer exists; it may have already been deleted.'),
+        ('Không có thay đổi nào để cập nhật.', 'There are no changes to update.'),
+        ('Các việc này đã có trong checklist hôm nay rồi.', "These tasks are already in today's checklist."),
+        ('Mình đã thêm vào checklist hôm nay:', "I've added these to today's checklist:"),
+        ('Mình gợi ý khung giờ sau cho', 'I suggest these time slots for'),
+        ('hoạt động hôm nay, bạn xem và bấm áp dụng nếu hợp lý:', 'activities today. Please review and apply them if they look right:'),
+        ('Mình thấy vài lịch khớp, bạn muốn sửa cái nào? Hãy nói rõ hơn nhé.', 'I found a few matching events. Which one do you want to update? Please be more specific.'),
+        ('Mình thấy vài lịch khớp, bạn muốn xóa cái nào? Hãy nói rõ hơn nhé.', 'I found a few matching events. Which one do you want to delete? Please be more specific.'),
+        ('Minh co the tao lich, nhung ban cho minh them ngay/gio cu the nhe.', 'I can create the event, but please give me a specific date/time.'),
+        ('Minh da hieu ban muon tao lich. Hay xac nhan neu thong tin nay dung:', 'I understand you want to create an event. Please confirm if this information is correct:'),
+        ('Minh chua tao duoc lich vi thieu ngay/gio bat dau.', "I couldn't create the event because the start date/time is missing."),
+        ('Da tao lich:', 'Created event:'),
+        ('Khong the tao lich:', "Couldn't create the event:"),
+        ('luc', 'at'),
+    ]
+    for source, target in replacements:
+        translated = translated.replace(source, target)
+    translated = re.sub(r"Đã cập nhật lịch '([^']+)' sang ([^.]+)\.", r"Updated event '\1' to \2.", translated)
+    translated = re.sub(r"Không thể cập nhật lịch: (.+)", r"Couldn't update the event: \1", translated)
+    translated = re.sub(r"Đã xóa lịch '([^']+)'\.", r"Deleted event '\1'.", translated)
+    translated = re.sub(r"Không thể xóa lịch: (.+)", r"Couldn't delete the event: \1", translated)
+    translated = re.sub(r"Đã đánh dấu đã đọc: (.+)", r"Marked as read: \1", translated)
+    translated = re.sub(r"Đã đánh dấu chưa đọc: (.+)", r"Marked as unread: \1", translated)
+    translated = re.sub(r"Khong the lay email gan nhat tu Gmail: (.+)", r"Couldn't fetch the latest email from Gmail: \1", translated)
+    return translated
+
+
+def _translate_response_language(response, target_language, user_message, user_id=None):
+    response = str(response or '')
+    if not response.strip():
+        return response
+
+    if not getattr(ai_service, 'configured_providers', None):
+        return _fallback_translate_common_response(response, target_language)
+
+    target_name = 'English' if target_language == 'en' else 'Vietnamese'
+    source_name = 'Vietnamese' if target_language == 'en' else 'English'
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                f"Translate the assistant response from {source_name} to {target_name}. "
+                "Preserve all factual data exactly: names, email addresses, IDs, dates, "
+                "times, URLs, quoted titles, bullet structure, and code-like values. "
+                "Do not add new facts, explanations, greetings, or markdown fences. "
+                "Return only the translated response."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Latest user message:\n{user_message}\n\n"
+                f"Assistant response to translate:\n{response}"
+            ),
+        },
+    ]
+    try:
+        translated = ai_service.generate_response(
+            messages,
+            max_tokens=min(max(220, len(response) // 2 + 160), 900),
+            task='chat',
+            user_id=user_id,
+        )
+        translated = translated.strip() or response
+        if _detect_text_language(translated) != target_language:
+            return _fallback_translate_common_response(response, target_language)
+        return translated
+    except Exception:
+        logger.warning("Response language normalization failed", exc_info=True)
+        return response
+
+
+def normalize_agent_result_language(result, user_message, user_id=None):
+    """Ensure direct/tool responses follow the latest prompt language.
+
+    Freeform model replies are already guided by the system prompt, but direct
+    agents and the intent orchestrator may return deterministic Vietnamese
+    text. This post-pass keeps Bob's visible answer aligned with the user's
+    latest prompt without changing structured payloads.
+    """
+    if not result or not getattr(result, 'response', None):
+        return result
+    target_language = detect_prompt_language(user_message)
+    response_language = _detect_text_language(result.response)
+    if response_language != target_language:
+        result.response = _translate_response_language(
+            result.response,
+            target_language,
+            user_message,
+            user_id=user_id,
+        )
+    return result
+
+
 def _latest_email_count(message):
     normalized = _normalize_intent_text(message)
     email_word = r'(?:e-?mails?|gmails?|mails?|thu|hop thu)'
@@ -1194,9 +1374,10 @@ def _build_agent_system_prompt(mode_prompt, agent_capabilities):
         "calendar, schedules, history, and user settings. If asked your name, say Bob. "
         "Never mention which underlying AI provider or model powers you. " + mode_prompt
         + " The user may write in Vietnamese or English. Detect the language of "
-        "their latest message and answer in that same language; if a message mixes "
-        "both, default to Vietnamese. Switch language immediately if the user "
-        "explicitly asks you to. "
+        "their latest message, not older chat history or workspace context, and "
+        "answer in that same language. If the latest message mixes both languages, "
+        "default to Vietnamese. Switch language immediately if the user explicitly "
+        "asks you to. "
         "Operate like an agent: identify the user's goal, inspect available workspace context, "
         "decide the next best action, and produce a useful result. "
         "When a supported direct action is needed, rely on the app tools/orchestrator instead of pretending. "
