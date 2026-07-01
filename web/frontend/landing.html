@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flowmate AI — Smart AI Workspace</title>
+  <meta name="description" content="Flowmate AI is an intelligent AI-powered workspace that organizes your Gmail, Google Calendar, and daily tasks. Summarize emails, manage schedules, and get AI assistance — all in one place.">
+  <meta property="og:title" content="Flowmate AI — Smart AI Workspace">
+  <meta property="og:description" content="AI-powered workspace for emails, calendar, and tasks. Sign in with Google to get started.">
+  <meta property="og:type" content="website">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --grad-start: #55BEFE;
+      --grad-mid: #5A54FB;
+      --grad-end: #D65EFC;
+      --text: #172033;
+      --text-secondary: #5f6f89;
+      --border: #dfe6f1;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --shadow: 0 14px 40px rgba(23, 32, 51, 0.09);
+    }
+
+    body {
+      font-family: 'Poppins', Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(245, 247, 251, 0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 40px;
+      height: 64px;
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: var(--text);
+    }
+
+    .nav-logo {
+      width: 36px;
+      height: 36px;
+      flex-shrink: 0;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      transition: color 0.15s;
+    }
+
+    .nav-links a:hover { color: var(--primary); }
+
+    .nav-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--primary);
+      color: #fff;
+      font-size: 0.875rem;
+      font-weight: 600;
+      padding: 9px 20px;
+      border-radius: 8px;
+      transition: background 0.15s, transform 0.1s;
+      white-space: nowrap;
+    }
+
+    .nav-cta:hover { background: var(--primary-dark); transform: translateY(-1px); }
+
+    /* ── HERO ── */
+    .hero {
+      padding: 96px 40px 80px;
+      text-align: center;
+      position: relative;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(85, 190, 254, 0.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-badge {
+      display: inline-block;
+      background: linear-gradient(135deg, rgba(85,190,254,0.15), rgba(214,94,252,0.15));
+      border: 1px solid rgba(90, 84, 251, 0.2);
+      color: var(--primary);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 5px 14px;
+      border-radius: 999px;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      font-size: clamp(2.4rem, 6vw, 3.8rem);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 20px;
+      color: var(--text);
+    }
+
+    .hero h1 .gradient-text {
+      background: linear-gradient(135deg, var(--grad-start) 0%, var(--grad-mid) 50%, var(--grad-end) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-subtitle {
+      font-size: 1.125rem;
+      color: var(--text-secondary);
+      max-width: 560px;
+      margin: 0 auto 36px;
+      font-weight: 400;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(135deg, var(--grad-start), var(--grad-mid), var(--grad-end));
+      color: #fff;
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 14px 28px;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s, box-shadow 0.15s;
+      box-shadow: 0 4px 20px rgba(90, 84, 251, 0.35);
+      text-decoration: none;
+    }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px rgba(90, 84, 251, 0.45);
+    }
+
+    .btn-outline {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--panel);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 13px 24px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.1s;
+      text-decoration: none;
+    }
+
+    .btn-outline:hover { border-color: var(--primary); color: var(--primary); transform: translateY(-2px); }
+
+    .google-g {
+      width: 20px;
+      height: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      color: #4285F4;
+      font-size: 0.8rem;
+      font-weight: 700;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── APP PREVIEW / FEATURE GRID ── */
+    .features {
+      padding: 80px 40px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      text-align: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--primary);
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 48px;
+      color: var(--text);
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+    }
+
+    .feature-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 32px 28px;
+      box-shadow: var(--shadow);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 50px rgba(23, 32, 51, 0.12);
+    }
+
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      font-size: 1.5rem;
+    }
+
+    .feature-icon.blue  { background: linear-gradient(135deg, #dbeafe, #bfdbfe); }
+    .feature-icon.purple{ background: linear-gradient(135deg, #ede9fe, #ddd6fe); }
+    .feature-icon.pink  { background: linear-gradient(135deg, #fce7f3, #fbcfe8); }
+    .feature-icon.green { background: linear-gradient(135deg, #dcfce7, #bbf7d0); }
+
+    .feature-card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+
+    .feature-card p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      line-height: 1.65;
+    }
+
+    /* ── HOW IT WORKS ── */
+    .how-it-works {
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 80px 40px;
+    }
+
+    .steps {
+      display: flex;
+      justify-content: center;
+      gap: 0;
+      max-width: 900px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .steps::before {
+      content: '';
+      position: absolute;
+      top: 24px;
+      left: calc(16.66% + 16px);
+      right: calc(16.66% + 16px);
+      height: 2px;
+      background: linear-gradient(90deg, var(--grad-start), var(--grad-end));
+      opacity: 0.3;
+    }
+
+    .step {
+      flex: 1;
+      text-align: center;
+      padding: 0 16px;
+    }
+
+    .step-num {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--grad-start), var(--grad-mid));
+      color: #fff;
+      font-size: 1.1rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .step h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 6px; }
+    .step p  { font-size: 0.83rem; color: var(--text-secondary); }
+
+    /* ── CTA ── */
+    .cta-section {
+      padding: 96px 40px;
+      text-align: center;
+      background: linear-gradient(135deg, rgba(85,190,254,0.06) 0%, rgba(214,94,252,0.06) 100%);
+    }
+
+    .cta-section h2 {
+      font-size: clamp(1.8rem, 4vw, 2.8rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+
+    .cta-section p {
+      font-size: 1rem;
+      color: var(--text-secondary);
+      margin-bottom: 40px;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      background: var(--text);
+      color: rgba(255,255,255,0.7);
+      padding: 40px;
+      text-align: center;
+    }
+
+    .footer-brand {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      color: #fff;
+      font-weight: 700;
+      font-size: 1rem;
+    }
+
+    .footer-links {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      list-style: none;
+      margin-bottom: 20px;
+    }
+
+    .footer-links a { color: rgba(255,255,255,0.6); font-size: 0.875rem; transition: color 0.15s; }
+    .footer-links a:hover { color: #fff; }
+
+    .footer-copy { font-size: 0.8rem; opacity: 0.5; }
+
+    /* ── LANG TOGGLE ── */
+    .lang-toggle {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .lang-btn {
+      background: none;
+      border: 1.5px solid var(--border);
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .lang-btn.active,
+    .lang-btn:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      nav { padding: 0 20px; }
+      .nav-links { display: none; }
+      .hero { padding: 64px 20px 56px; }
+      .features, .how-it-works, .cta-section { padding: 60px 20px; }
+      .steps { flex-direction: column; gap: 32px; }
+      .steps::before { display: none; }
+      footer { padding: 32px 20px; }
+    }
+
+    /* ── i18n content ── */
+    [data-lang="vi"] { display: none; }
+    body.lang-vi [data-lang="vi"] { display: revert; }
+    body.lang-vi [data-lang="en"] { display: none; }
+  </style>
+</head>
+<body class="lang-en">
+
+<!-- NAV -->
+<nav>
+  <a class="nav-brand" href="/">
+    <svg class="nav-logo" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="navBg" x1="0" y1="0" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stop-color="#55BEFE"/>
+          <stop offset="40%"  stop-color="#5A54FB"/>
+          <stop offset="75%"  stop-color="#8171FD"/>
+          <stop offset="100%" stop-color="#D65EFC"/>
+        </linearGradient>
+        <linearGradient id="navLine" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%"   stop-color="#ff6fd8"/>
+          <stop offset="100%" stop-color="#946BFD"/>
+        </linearGradient>
+      </defs>
+      <rect width="56" height="56" rx="14" fill="url(#navBg)"/>
+      <rect x="9" y="16" width="38" height="30" rx="4" fill="white" opacity="0.95"/>
+      <rect x="18" y="11" width="7" height="10" rx="3.5" fill="white" opacity="0.95"/>
+      <rect x="31" y="11" width="7" height="10" rx="3.5" fill="white" opacity="0.95"/>
+      <rect x="13" y="25" width="25" height="4" rx="2" fill="url(#navLine)"/>
+      <rect x="13" y="32" width="20" height="4" rx="2" fill="url(#navLine)" opacity="0.85"/>
+      <rect x="13" y="39" width="14" height="4" rx="2" fill="url(#navLine)" opacity="0.70"/>
+      <line x1="45" y1="9" x2="45" y2="17" stroke="white" stroke-width="2" stroke-linecap="round"/>
+      <line x1="41" y1="13" x2="49" y2="13" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    Flowmate AI
+  </a>
+
+  <ul class="nav-links">
+    <li><a href="#features" data-lang="en">Features</a><a href="#features" data-lang="vi">Tính năng</a></li>
+    <li><a href="#how-it-works" data-lang="en">How it works</a><a href="#how-it-works" data-lang="vi">Cách dùng</a></li>
+    <li><a href="/privacy" target="_blank" rel="noopener" data-lang="en">Privacy</a><a href="/privacy" target="_blank" rel="noopener" data-lang="vi">Bảo mật</a></li>
+    <li><a href="/terms" target="_blank" rel="noopener" data-lang="en">Terms</a><a href="/terms" target="_blank" rel="noopener" data-lang="vi">Điều khoản</a></li>
+  </ul>
+
+  <div style="display:flex;align-items:center;gap:12px;">
+    <div class="lang-toggle">
+      <button class="lang-btn active" id="btnEn" onclick="setLang('en')">EN</button>
+      <button class="lang-btn" id="btnVi" onclick="setLang('vi')">VI</button>
+    </div>
+    <a class="nav-cta" href="/app">
+      <span data-lang="en">Sign In</span>
+      <span data-lang="vi">Đăng nhập</span>
+    </a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">
+    <span data-lang="en">AI-Powered Workspace</span>
+    <span data-lang="vi">Không gian làm việc AI</span>
+  </div>
+
+  <h1>
+    <span data-lang="en">Meet <span class="gradient-text">Flowmate AI</span><br>Your intelligent work companion</span>
+    <span data-lang="vi">Chào mừng đến với <span class="gradient-text">Flowmate AI</span><br>Trợ lý làm việc thông minh của bạn</span>
+  </h1>
+
+  <p class="hero-subtitle">
+    <span data-lang="en">Flowmate AI connects your Gmail and Google Calendar to give you a unified, AI-powered workspace. Summarize emails, manage your schedule, and get instant answers — all in one place.</span>
+    <span data-lang="vi">Flowmate AI kết nối Gmail và Google Calendar của bạn, tạo ra không gian làm việc thông minh. Tóm tắt email, quản lý lịch và nhận câu trả lời tức thì — tất cả ở một nơi.</span>
+  </p>
+
+  <div class="hero-actions">
+    <a class="btn-primary" href="/app">
+      <span class="google-g">G</span>
+      <span data-lang="en">Sign in with Google</span>
+      <span data-lang="vi">Đăng nhập với Google</span>
+    </a>
+    <a class="btn-outline" href="#features">
+      <span data-lang="en">Learn more</span>
+      <span data-lang="vi">Tìm hiểu thêm</span>
+      &darr;
+    </a>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="features" id="features">
+  <p class="section-label">
+    <span data-lang="en">What Flowmate AI does</span>
+    <span data-lang="vi">Flowmate AI làm được gì</span>
+  </p>
+  <h2 class="section-title">
+    <span data-lang="en">Everything you need, powered by AI</span>
+    <span data-lang="vi">Mọi thứ bạn cần, được hỗ trợ bởi AI</span>
+  </h2>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon blue">📧</div>
+      <h3 data-lang="en">Smart Email Management</h3>
+      <h3 data-lang="vi">Quản lý Email thông minh</h3>
+      <p data-lang="en">Connect your Gmail and let Flowmate AI read, categorize, summarize, and draft replies to your emails automatically.</p>
+      <p data-lang="vi">Kết nối Gmail và để Flowmate AI đọc, phân loại, tóm tắt và soạn thảo email trả lời tự động.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon purple">📅</div>
+      <h3 data-lang="en">Calendar &amp; Schedule</h3>
+      <h3 data-lang="vi">Lịch &amp; Kế hoạch</h3>
+      <p data-lang="en">View your Google Calendar events in a weekly view, create new events, and get AI-suggested meeting times based on your emails.</p>
+      <p data-lang="vi">Xem sự kiện Google Calendar theo tuần, tạo cuộc hẹn mới và nhận gợi ý thời gian họp từ AI dựa trên email của bạn.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon pink">🤖</div>
+      <h3 data-lang="en">AI Chat Assistant</h3>
+      <h3 data-lang="vi">Trợ lý Chat AI</h3>
+      <p data-lang="en">Chat with an AI that understands your workspace context — ask questions, get summaries, and automate repetitive tasks.</p>
+      <p data-lang="vi">Trò chuyện với AI hiểu ngữ cảnh công việc của bạn — đặt câu hỏi, nhận tóm tắt và tự động hóa các tác vụ lặp đi lặp lại.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon green">📊</div>
+      <h3 data-lang="en">Daily AI Overview</h3>
+      <h3 data-lang="vi">Tổng hợp ngày bằng AI</h3>
+      <p data-lang="en">Get a personalized daily summary that combines your most important emails, upcoming events, and pending tasks into one view.</p>
+      <p data-lang="vi">Nhận bản tóm tắt ngày được cá nhân hóa, kết hợp email quan trọng nhất, sự kiện sắp tới và nhiệm vụ còn lại vào một trang.</p>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="how-it-works" id="how-it-works">
+  <p class="section-label">
+    <span data-lang="en">Getting started</span>
+    <span data-lang="vi">Bắt đầu</span>
+  </p>
+  <h2 class="section-title">
+    <span data-lang="en">Up and running in 3 steps</span>
+    <span data-lang="vi">Bắt đầu chỉ trong 3 bước</span>
+  </h2>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <h3 data-lang="en">Sign in with Google</h3>
+      <h3 data-lang="vi">Đăng nhập bằng Google</h3>
+      <p data-lang="en">Use your existing Google account — no new password needed.</p>
+      <p data-lang="vi">Dùng tài khoản Google hiện có — không cần mật khẩu mới.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <h3 data-lang="en">Connect Gmail &amp; Calendar</h3>
+      <h3 data-lang="vi">Kết nối Gmail &amp; Calendar</h3>
+      <p data-lang="en">Grant access so Flowmate AI can read and organize your data.</p>
+      <p data-lang="vi">Cấp quyền để Flowmate AI có thể đọc và tổ chức dữ liệu của bạn.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <h3 data-lang="en">Work smarter</h3>
+      <h3 data-lang="vi">Làm việc thông minh hơn</h3>
+      <p data-lang="en">Your AI workspace is ready. Chat, summarize, schedule — all from one dashboard.</p>
+      <p data-lang="vi">Không gian AI của bạn đã sẵn sàng. Chat, tóm tắt, lên lịch — tất cả từ một bảng điều khiển.</p>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="cta-section">
+  <h2>
+    <span data-lang="en">Ready to work smarter?</span>
+    <span data-lang="vi">Sẵn sàng làm việc thông minh hơn?</span>
+  </h2>
+  <p>
+    <span data-lang="en">Join Flowmate AI and take control of your inbox, calendar, and tasks with the power of AI.</span>
+    <span data-lang="vi">Tham gia Flowmate AI và kiểm soát hộp thư, lịch và nhiệm vụ của bạn với sức mạnh của AI.</span>
+  </p>
+  <a class="btn-primary" href="/app">
+    <span class="google-g">G</span>
+    <span data-lang="en">Get started free</span>
+    <span data-lang="vi">Bắt đầu miễn phí</span>
+  </a>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-brand">
+    <svg width="28" height="28" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="ftBg" x1="0" y1="0" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stop-color="#55BEFE"/>
+          <stop offset="100%" stop-color="#D65EFC"/>
+        </linearGradient>
+        <linearGradient id="ftLine" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%"   stop-color="#ff6fd8"/>
+          <stop offset="100%" stop-color="#946BFD"/>
+        </linearGradient>
+      </defs>
+      <rect width="56" height="56" rx="14" fill="url(#ftBg)"/>
+      <rect x="9" y="16" width="38" height="30" rx="4" fill="white" opacity="0.95"/>
+      <rect x="18" y="11" width="7" height="10" rx="3.5" fill="white" opacity="0.95"/>
+      <rect x="31" y="11" width="7" height="10" rx="3.5" fill="white" opacity="0.95"/>
+      <rect x="13" y="25" width="25" height="4" rx="2" fill="url(#ftLine)"/>
+      <rect x="13" y="32" width="20" height="4" rx="2" fill="url(#ftLine)" opacity="0.85"/>
+      <rect x="13" y="39" width="14" height="4" rx="2" fill="url(#ftLine)" opacity="0.70"/>
+    </svg>
+    Flowmate AI
+  </div>
+  <ul class="footer-links">
+    <li><a href="/app" data-lang="en">Open App</a><a href="/app" data-lang="vi">Mở ứng dụng</a></li>
+    <li><a href="/privacy" target="_blank" rel="noopener" data-lang="en">Privacy Policy</a><a href="/privacy" target="_blank" rel="noopener" data-lang="vi">Chính sách bảo mật</a></li>
+    <li><a href="/terms" target="_blank" rel="noopener" data-lang="en">Terms of Service</a><a href="/terms" target="_blank" rel="noopener" data-lang="vi">Điều khoản dịch vụ</a></li>
+  </ul>
+  <p class="footer-copy">&copy; 2026 Flowmate AI. All rights reserved.</p>
+</footer>
+
+<script>
+  function setLang(lang) {
+    document.body.className = 'lang-' + lang;
+    document.getElementById('btnEn').classList.toggle('active', lang === 'en');
+    document.getElementById('btnVi').classList.toggle('active', lang === 'vi');
+    localStorage.setItem('flowmate_lang', lang);
+  }
+
+  // Restore preferred language
+  const saved = localStorage.getItem('flowmate_lang');
+  if (saved === 'vi') setLang('vi');
+
+  // Smooth scroll for anchor links
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const el = document.querySelector(a.getAttribute('href'));
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    });
+  });
+</script>
+</body>
+</html>

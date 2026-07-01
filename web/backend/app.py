@@ -143,8 +143,15 @@ start_overview_scheduler()
 
 # Serve frontend
 @app.route('/')
+def serve_landing():
+    """Serve public landing page (no login required)."""
+    response = send_from_directory('../frontend', 'landing.html')
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
+@app.route('/app')
 def serve_frontend():
-    """Serve frontend index.html"""
+    """Serve the authenticated workspace app."""
     response = send_from_directory('../frontend', 'index.html')
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response

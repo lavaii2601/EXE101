@@ -1812,10 +1812,10 @@ def oauth2callback():
           window.opener.postMessage({type: 'gmail_auth', status: 'success'}, window.location.origin);
           window.close();
         } else {
-          window.location.replace('/?gmail_auth=success');
+          window.location.replace('/app?gmail_auth=success');
         }
       } catch (e) {
-        window.location.replace('/?gmail_auth=success');
+        window.location.replace('/app?gmail_auth=success');
       }
     </script>
     <p>Đang chuyển hướng...</p>
