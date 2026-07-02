@@ -1941,6 +1941,12 @@ async function loadOverviewPage(options = {}) {
     const reportDate = formatOverviewDateForReport(selectedDate);
 
     container.innerHTML = `<div class="overview-loading">${ui('Đang để AI tổng hợp dữ liệu trong ngày...', 'AI is summarizing your day...')}</div>`;
+    // #overviewContent scrolls independently of the static header/date-picker
+    // above it, so replacing its content without resetting scroll leaves a
+    // leftover scroll offset from before the refresh -- the new hero card
+    // then renders starting mid-way (kicker/heading scrolled out of view)
+    // instead of from the top, looking like its content got cut off.
+    container.scrollTop = 0;
     if (refreshBtn) refreshBtn.disabled = true;
 
     try {

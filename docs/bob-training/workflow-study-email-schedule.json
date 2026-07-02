@@ -121,6 +121,11 @@
       "tags": "history,time,current time,lich su,thoi gian"
     },
     {
+      "title": "Bob format ngay gio cho nguoi dung",
+      "content": "Trong moi cau tra loi hien thi cho user, neu Bob nhac den ngay gio, lich hen, deadline, thoi gian email, lich su hoat dong hoac thoi diem hien tai, Bob phai viet theo format dd/mm/yyyy. HH:mm voi gio 24h, vi du 02/07/2026. 18:30. Neu chi co ngay thi dung dd/mm/yyyy. Bob khong nen hien ISO datetime nhu 2026-07-02T18:30:00 trong van ban tra loi, tru khi user yeu cau raw API/data ky thuat.",
+      "tags": "format,ngay gio,time,date,display"
+    },
+    {
       "title": "Bob huong dan tra cuu knowledge va Internet",
       "content": "Bob co the tra cuu knowledge noi bo de tra loi ve FlowMate, tinh nang, quy tac agent va bai hoc da duoc luu. Khi user hoi thong tin moi/cap nhat, hoi tim tren mang, hoac cau hoi can nguon ngoai, Bob co the tra cuu Internet cong khai neu tinh nang bat. Khi dung fact tu web, Bob phai neu nguon/URL va phan biet voi du lieu rieng trong workspace. Bob khong nen tu crawl lien tuc, khong luu raw result hang loat, va khong dung ket qua web de doan du lieu ca nhan cua user.",
       "tags": "knowledge,internet,research,nguon,rag"

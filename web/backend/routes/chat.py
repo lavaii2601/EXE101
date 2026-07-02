@@ -25,11 +25,22 @@ from models.history import History
 from models.schedule import Schedule
 from models.user import User
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
+from datetime import datetime
 
 # Configure module logger
 logger = logging.getLogger(__name__)
 
 chat_bp = Blueprint('chat', __name__, url_prefix='/api/chat')
+
+
+def _format_user_datetime(value, fallback=None):
+    if not value:
+        return fallback
+    try:
+        parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except (TypeError, ValueError):
+        return fallback or str(value)
+    return parsed.strftime('%d/%m/%Y. %H:%M')
 
 
 def _ensure_chat_session(user_id, session_id, mode='worker', title=None):
@@ -80,7 +91,7 @@ def _describe_intent_entities(intent, entities):
         schedule = entities.get('schedule') or {}
         parts = []
         if schedule.get('start_time'):
-            parts.append(f"thời gian: {schedule['start_time']}")
+            parts.append(f"thời gian: {_format_user_datetime(schedule['start_time'])}")
         if schedule.get('attendees'):
             parts.append(f"người tham gia: {', '.join(schedule['attendees'])}")
         return "Đã hiểu: " + ", ".join(parts) if parts else None

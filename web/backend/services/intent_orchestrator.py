@@ -13,6 +13,16 @@ from services.schedule_service import ScheduleService
 logger = logging.getLogger(__name__)
 
 
+def _format_user_datetime(value, fallback="khong ro thoi gian"):
+    if not value:
+        return fallback
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return fallback
+    return parsed.strftime("%d/%m/%Y. %H:%M")
+
+
 class IntentOrchestrator:
     """Normalize user prompts into canonical workspace actions."""
 
@@ -831,7 +841,7 @@ class IntentOrchestrator:
             else:
                 lines = ["Lich su hoat dong gan day:"]
                 for index, record in enumerate(records, start=1):
-                    created_at = record.get("created_at") or "khong ro thoi gian"
+                    created_at = _format_user_datetime(record.get("created_at"))
                     action_type = record.get("action_type") or "activity"
                     user_text = self._squash(record.get("user_message"))[:140] or "(khong co noi dung)"
                     lines.append(f"{index}. [{action_type}] {created_at}: {user_text}")
@@ -856,7 +866,7 @@ class IntentOrchestrator:
             return {
                 "response": (
                     "Minh da hieu ban muon tao lich. Hay xac nhan neu thong tin nay dung: "
-                    f"{schedule.get('title') or 'Lich hen'} luc {schedule.get('start_time')}."
+                    f"{schedule.get('title') or 'Lich hen'} luc {_format_user_datetime(schedule.get('start_time'))}."
                 ),
                 "schedule_suggestion": schedule,
                 "workspace_sources": ["calendar"],

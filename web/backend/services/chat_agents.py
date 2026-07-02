@@ -446,6 +446,23 @@ def _parse_schedule_datetime(value):
         return None
 
 
+def _format_user_datetime(value, fallback='Khong xac dinh'):
+    parsed = _parse_schedule_datetime(value)
+    if not parsed:
+        return fallback
+    return parsed.strftime('%d/%m/%Y. %H:%M')
+
+
+def _format_user_date(value, fallback='Khong xac dinh'):
+    parsed = _parse_schedule_datetime(value)
+    if parsed:
+        return parsed.strftime('%d/%m/%Y')
+    try:
+        return datetime.fromisoformat(str(value)).date().strftime('%d/%m/%Y')
+    except (TypeError, ValueError):
+        return fallback
+
+
 def _schedule_response_key(title, start_value):
     start_dt = _parse_schedule_datetime(start_value)
     normalized_title = ' '.join(str(title or '').strip().lower().split())
@@ -458,13 +475,12 @@ def _format_schedule_response_time(start_value, end_value):
     end_dt = _parse_schedule_datetime(end_value)
     if not start_dt:
         return 'Khong xac dinh'
-    date_text = start_dt.strftime('%d/%m/%Y')
-    start_text = start_dt.strftime('%H:%M')
+    start_text = _format_user_datetime(start_value)
     if end_dt:
         if end_dt.date() == start_dt.date():
-            return f'{date_text}, {start_text} - {end_dt.strftime("%H:%M")} (GMT+7)'
-        return f'{date_text}, {start_text} - {end_dt.strftime("%d/%m/%Y %H:%M")} (GMT+7)'
-    return f'{date_text}, {start_text} (GMT+7)'
+            return f'{start_text} - {end_dt.strftime("%H:%M")} (GMT+7)'
+        return f'{start_text} - {_format_user_datetime(end_value)} (GMT+7)'
+    return f'{start_text} (GMT+7)'
 
 
 def _format_calendar_context(message, user_id, db_path, window_override=None):
@@ -474,7 +490,7 @@ def _format_calendar_context(message, user_id, db_path, window_override=None):
         window_start, window_end, window_label = _calendar_window(message)
     lines = [
         f"LICH VA SU KIEN {window_label}",
-        f"Khoang thoi gian: {window_start.date().isoformat()} den {(window_end - timedelta(days=1)).date().isoformat()}",
+        f"Khoang thoi gian: {_format_user_date(window_start)} den {_format_user_date(window_end - timedelta(days=1))}",
     ]
     token_file = get_user_token_file(user_id)
     google_events = []
@@ -592,7 +608,7 @@ def _format_history_context(db_path):
         result_text = re.sub(r'\s+', ' ', record.get('assistant_response', '') or '').strip()
         lines.extend([
             f"{index}. Loại: {record.get('action_type') or 'activity'}",
-            f"   Thời gian: {record.get('created_at') or 'Không xác định'}",
+            f"   Thời gian: {_format_user_datetime(record.get('created_at'), fallback='Không xác định')}",
             f"   Nội dung: {request_text[:240] or 'Không có'}",
             f"   Kết quả: {result_text[:320] or 'Không có'}",
         ])
@@ -636,19 +652,17 @@ def _direct_current_time_response(message):
     weekday = (
         'thứ Hai', 'thứ Ba', 'thứ Tư', 'thứ Năm', 'thứ Sáu', 'thứ Bảy', 'Chủ nhật'
     )[now.weekday()]
-    time_24 = now.strftime('%H:%M:%S')
-    date_text = f"{weekday}, ngày {now.day:02d}/{now.month:02d}/{now.year}"
+    date_time_text = now.strftime('%d/%m/%Y. %H:%M')
     tz_key = getattr(LOCAL_TZ, 'key', None)
     tz_label = f"{tz_key}, UTC+7" if tz_key else "UTC+7"
 
     if any(term in normalized for term in ('what time', 'current time', 'time now', 'what date', "today's date")):
         return (
-            f"In Vietnam ({tz_label}), it is {time_24} on {date_text}."
+            f"In Vietnam ({tz_label}), it is {date_time_text} ({weekday})."
         )
 
     return (
-        f"Hiện tại ở Việt Nam ({tz_label}) là {time_24}, "
-        f"{date_text}."
+        f"Hiện tại ở Việt Nam ({tz_label}) là {date_time_text} ({weekday})."
     )
 
 
@@ -1393,6 +1407,10 @@ def _build_agent_system_prompt(mode_prompt, agent_capabilities):
         "answer in that same language. If the latest message mixes both languages, "
         "default to Vietnamese. Switch language immediately if the user explicitly "
         "asks you to. "
+        "For any user-facing date or time you mention, format it as dd/mm/yyyy. HH:mm "
+        "in 24-hour time, for example 02/07/2026. 18:30. For date-only values use "
+        "dd/mm/yyyy. Do not expose ISO datetime strings in prose unless the user asks "
+        "for raw API data. "
         "Operate like an agent: identify the user's goal, inspect available workspace context, "
         "decide the next best action, and produce a useful result. "
         "If the user asks what FlowMate/Bob can do, explain only supported capabilities and give "
@@ -1645,7 +1663,10 @@ class ScheduleCreateAgent:
                     ctx.db_path,
                 )
                 schedule_created['calendar_sync_pending'] = calendar_sync_pending
-                response = f"Da tao lich: {schedule_created.get('title')} luc {schedule_created.get('start_time')}."
+                response = (
+                    f"Da tao lich: {schedule_created.get('title')} luc "
+                    f"{_format_user_datetime(schedule_created.get('start_time'))}."
+                )
                 if calendar_sync_pending:
                     response += " Minh dang dong bo len Google Calendar."
                 History.create(
@@ -1672,7 +1693,7 @@ class ScheduleCreateAgent:
 def _format_match_list(matches, verb):
     lines = [f"Mình thấy vài lịch khớp, bạn muốn {verb} cái nào? Hãy nói rõ hơn nhé."]
     for index, sched in enumerate(matches[:5], start=1):
-        lines.append(f"{index}. {sched.get('title')} - {sched.get('start_time')}")
+        lines.append(f"{index}. {sched.get('title')} - {_format_user_datetime(sched.get('start_time'))}")
     return "\n".join(lines)
 
 
@@ -1728,7 +1749,7 @@ class ScheduleUpdateAgent:
         }
         return AgentResult(
             response=(
-                f"Mình tìm thấy lịch '{sched.get('title')}' lúc {sched.get('start_time')}. "
+                f"Mình tìm thấy lịch '{sched.get('title')}' lúc {_format_user_datetime(sched.get('start_time'))}. "
                 "Xác nhận đổi sang thời gian mới?"
             ),
             schedule_suggestion=suggestion,
@@ -1773,7 +1794,7 @@ class ScheduleUpdateAgent:
                 related_id=schedule_id,
                 db_path=ctx.db_path,
             )
-            response = f"Đã cập nhật lịch '{updated.get('title')}' sang {updated.get('start_time')}."
+            response = f"Đã cập nhật lịch '{updated.get('title')}' sang {_format_user_datetime(updated.get('start_time'))}."
         except Exception as e:
             logger.exception("Failed to update schedule %s via chat", schedule_id)
             response = f"Không thể cập nhật lịch: {e}"
@@ -1817,7 +1838,7 @@ class ScheduleDeleteAgent:
             'end_time': sched.get('end_time'),
         }
         return AgentResult(
-            response=f"Mình tìm thấy lịch '{sched.get('title')}' lúc {sched.get('start_time')}. Xác nhận xóa?",
+            response=f"Mình tìm thấy lịch '{sched.get('title')}' lúc {_format_user_datetime(sched.get('start_time'))}. Xác nhận xóa?",
             schedule_suggestion=suggestion,
             workspace_sources=['calendar'],
             action='Đề xuất xóa lịch cần xác nhận',
