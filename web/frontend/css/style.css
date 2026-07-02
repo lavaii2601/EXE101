@@ -5106,6 +5106,15 @@ body.dark-theme .daily-report-badge.is-meeting {
         min-height: 72px;
     }
 
+    /* No overflow-y here on purpose: each page's own content div
+       (#overviewContent, .tab-content, #historyList, .settings-grid --
+       see the flex:1 1 auto + overflow:auto rule further below) already
+       owns scrolling on mobile. Also setting overflow-y:auto here made
+       the page section a SECOND, nested scroll container around that
+       same content, which on phones caused the page to open already
+       scrolled a bit into the content (title/kicker of the AI summary
+       card scrolled out of view above the fold, looking like it got cut
+       off) instead of showing from the top. */
     #overview-page.page.active,
     #emails-page.page.active,
     #schedule-page.page.active,
@@ -5113,8 +5122,7 @@ body.dark-theme .daily-report-badge.is-meeting {
         height: calc(100dvh - var(--mobile-header-height));
         min-height: 0;
         gap: 0;
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
+        overflow: hidden;
     }
 
     #settings-page.page.active {
@@ -5122,8 +5130,7 @@ body.dark-theme .daily-report-badge.is-meeting {
         min-height: 0;
         gap: 0;
         padding: 0;
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
+        overflow: hidden;
     }
 
     #overview-page .section-header,
