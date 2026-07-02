@@ -843,6 +843,51 @@ function isScheduleIntent(text) {
     return keywords.some(k => t.includes(k));
 }
 
+async function fetchScheduleDraft(message) {
+    try {
+        const resp = await apiFetch(`${API_BASE}/schedule/parse-draft`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message })
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'parse-draft failed');
+        return {
+            title: data.title || '',
+            date: data.date || '',
+            startTime: data.start_time || '',
+            endTime: data.end_time || '',
+            format: detectScheduleFormat(message),
+            attendees: (Array.isArray(data.attendees) && data.attendees.length)
+                ? data.attendees.join(', ')
+                : detectAttendeesByName(message),
+            content: message
+        };
+    } catch (err) {
+        console.warn('⚠️ /schedule/parse-draft failed, using local draft guess', err);
+        return extractScheduleDraft(message);
+    }
+}
+
+// Meeting format isn't extracted by the backend -- only guess it when the
+// message actually names one, otherwise leave it for the user to pick.
+function detectScheduleFormat(text) {
+    const lower = (text || '').toLowerCase();
+    if (lower.includes('online') || lower.includes('trực tuyến') || lower.includes('truc tuyen')) return 'Online';
+    if (lower.includes('điện thoại') || lower.includes('dien thoai') || lower.includes('phone')) return 'Điện thoại';
+    if (lower.includes('trực tiếp') || lower.includes('truc tiep') || lower.includes('in person')) return 'Trực tiếp';
+    return '';
+}
+
+// Best-effort "với <tên>" fallback when the message names someone without
+// an email address. Only used when the backend found no email attendees.
+function detectAttendeesByName(text) {
+    const withMatch = (text || '').match(/(?:với|voi)\s+([^,.!?;:]+?)(?:\s+(?:lúc|vao|vào|ngày|ngay|tại|tai)\b|[,.!?;:]|$)/i);
+    return withMatch ? withMatch[1].trim() : '';
+}
+
+// Offline fallback only (used when /schedule/parse-draft is unreachable) --
+// the backend extractor above is the source of truth for date/time/title.
 function extractScheduleDraft(text) {
     const source = (text || '').trim();
     const lower = source.toLowerCase();
@@ -851,7 +896,7 @@ function extractScheduleDraft(text) {
         date: '',
         startTime: '',
         endTime: '',
-        format: 'Trực tiếp',
+        format: detectScheduleFormat(source),
         attendees: '',
         content: source
     };
@@ -873,39 +918,46 @@ function extractScheduleDraft(text) {
         draft.date = new Date().toISOString().slice(0, 10);
     }
 
+    // "sáng/chiều/tối/trưa" period-of-day words, applied the same way the
+    // backend does: hour 1-11 + one of these => PM (+12).
+    const periodRe = /(sáng|sang|chiều|chieu|tối|toi|trưa|trua)/;
+    const applyPeriod = (hour) => (hour >= 1 && hour <= 11 && periodRe.test(lower)) ? hour + 12 : hour;
+
     const rangeMatch = source.match(/(\d{1,2})\s*(?::|h|giờ)\s*(\d{0,2})\s*(?:-|đến|toi|tới|to|->)\s*(\d{1,2})\s*(?::|h|giờ)\s*(\d{0,2})/i);
     if (rangeMatch) {
         const startHour = parseInt(rangeMatch[1], 10);
         const startMinute = parseInt(rangeMatch[2] || '0', 10) || 0;
         const endHour = parseInt(rangeMatch[3], 10);
         const endMinute = parseInt(rangeMatch[4] || '0', 10) || 0;
-        if (!Number.isNaN(startHour)) draft.startTime = `${startHour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`;
-        if (!Number.isNaN(endHour)) draft.endTime = `${endHour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
+        if (!Number.isNaN(startHour)) draft.startTime = `${applyPeriod(startHour).toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`;
+        if (!Number.isNaN(endHour)) draft.endTime = `${applyPeriod(endHour).toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
     } else {
         const timeMatch = source.match(/(\d{1,2})\s*(?::|h|giờ)\s*(\d{1,2})?/i);
         if (timeMatch) {
             const hour = parseInt(timeMatch[1], 10);
             const minute = parseInt(timeMatch[2] || '0', 10) || 0;
-            if (!Number.isNaN(hour)) draft.startTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+            if (!Number.isNaN(hour)) draft.startTime = `${applyPeriod(hour).toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
         }
-    }
-
-    if (lower.includes('online') || lower.includes('trực tuyến') || lower.includes('truc tuyen')) {
-        draft.format = 'Online';
-    } else if (lower.includes('điện thoại') || lower.includes('dien thoai') || lower.includes('phone')) {
-        draft.format = 'Điện thoại';
     }
 
     const emailMatches = source.match(/[\w.-]+@[\w.-]+\.[A-Za-z]{2,}/g);
     if (emailMatches && emailMatches.length) {
         draft.attendees = Array.from(new Set(emailMatches)).join(', ');
     } else {
-        const withMatch = source.match(/(?:với|voi)\s+([^,.!?;:]+?)(?:\s+(?:lúc|vao|vào|ngày|ngay|tại|tai)\b|[,.!?;:]|$)/i);
-        if (withMatch) draft.attendees = withMatch[1].trim();
+        draft.attendees = detectAttendeesByName(source);
     }
 
-    const titleMatch = source.match(/(?:tạo|lên|đặt)?\s*lịch(?:\s+hẹn)?\s*(?:cho|với|họp|hop|meeting)?\s*[:\-]?\s*([^,.!?;:]+)?/i);
-    if (titleMatch && titleMatch[1]) {
+    // Drop date/time/content-marker clauses before using whatever remains
+    // as the title, so "... lúc 7 giờ tối ngày 2/7/2026 nội dung là X"
+    // doesn't dump the entire sentence into the title field.
+    let titleSource = source
+        .replace(/(?:nội dung|noi dung|ghi chú|ghi chu|mô tả|mo ta)\s*(?:là|la)?\s*[:\-]?\s*.*$/i, '')
+        .replace(/\b(?:lúc|luc|vào|vao|at)\b/gi, ' ')
+        .replace(/\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?/g, ' ')
+        .replace(/\d{1,2}\s*(?::|h|giờ)\s*\d{0,2}\s*(?:sáng|sang|chiều|chieu|tối|toi|trưa|trua)?/gi, ' ')
+        .replace(/\b(?:ngày mai|ngay mai|hôm nay|hom nay|tomorrow|today)\b/gi, ' ');
+    const titleMatch = titleSource.match(/(?:tạo|lên|đặt)?\s*lịch(?:\s+hẹn)?\s*(?:cho|với|họp|hop|meeting)?\s*[:\-]?\s*([^,.!?;:]+)?/i);
+    if (titleMatch && titleMatch[1] && titleMatch[1].trim()) {
         draft.title = titleMatch[1].trim().slice(0, 80);
     }
     if (!draft.title) {
@@ -2503,7 +2555,7 @@ function handleTabChange(btn) {
 
 // CHAT FUNCTIONS (CRITICAL FIX)
 // sendMessage wrapper: detect scheduling intent and prompt confirmation before sending
-function sendMessage() {
+async function sendMessage() {
     const message = userInput.value.trim();
     if (!message) {
         console.warn('⚠️ Empty message');
@@ -2522,8 +2574,12 @@ function sendMessage() {
             return;
         }
 
-        // populate modal fields
-        const draft = extractScheduleDraft(message);
+        // Ask the backend to parse the message with the same extractor the
+        // chat flow uses (IntentOrchestrator.extract_schedule) instead of
+        // guessing client-side -- this is what correctly turns "7 giờ tối"
+        // into 19:00 and keeps a "nội dung là:" marker out of the title.
+        // Falls back to the local heuristic only if the request fails.
+        const draft = await fetchScheduleDraft(message);
         const titleEl = document.getElementById('confirmScheduleTitle');
         const dateEl = document.getElementById('confirmScheduleDate');
         const startEl = document.getElementById('confirmScheduleStartTime');
@@ -2545,7 +2601,7 @@ function sendMessage() {
                 <div style="margin-top:8px; font-size:13px; line-height:1.5;">
                     ${ui('Ngày', 'Date')}: ${escapeHtml(draft.date || ui('Chưa xác định', 'Not specified'))}<br>
                     ${ui('Thời gian', 'Time')}: ${escapeHtml(draft.startTime ? (draft.endTime ? `${draft.startTime} - ${draft.endTime}` : draft.startTime) : ui('Chưa xác định', 'Not specified'))}<br>
-                    ${ui('Hình thức', 'Format')}: ${escapeHtml(draft.format || ui('Trực tiếp', 'In person'))}<br>
+                    ${ui('Hình thức', 'Format')}: ${escapeHtml(draft.format || ui('Chưa xác định', 'Not specified'))}<br>
                     ${ui('Đối tượng', 'Participants')}: ${escapeHtml(draft.attendees || ui('Chưa xác định', 'Not specified'))}
                 </div>
             `;

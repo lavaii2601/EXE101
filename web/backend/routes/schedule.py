@@ -18,6 +18,7 @@ from models.schedule import Schedule, LOCAL_TZ
 from models.history import History
 from models.sync_job import SyncJob
 from services.overview_service import invalidate_daily_overview
+from services.intent_orchestrator import IntentOrchestrator
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from utils.google_service_cache import get_cached_service
 
@@ -25,6 +26,10 @@ from utils.google_service_cache import get_cached_service
 logger = logging.getLogger(__name__)
 
 schedule_bp = Blueprint('schedule', __name__, url_prefix='/api/schedule')
+# Stateless (regex-based) -- shared here instead of importing the singleton
+# from services.chat_agents, which would create a circular import (that
+# module already imports several helpers back from this one).
+_draft_orchestrator = IntentOrchestrator()
 _week_sync_lock = threading.Lock()
 _week_sync_inflight = set()
 _week_sync_recent = {}
@@ -748,6 +753,45 @@ def apply_day_plan():
     except Exception as e:
         logger.error("Apply day plan failed: %s", e, exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@schedule_bp.route('/parse-draft', methods=['POST'])
+def parse_schedule_draft():
+    """Parse free text into schedule fields using the same extractor the
+    chat flow uses (IntentOrchestrator.extract_schedule), so the pre-send
+    confirm modal reflects Bob's actual understanding -- including
+    period-of-day words (sang/chieu/toi) and "noi dung la:" content markers
+    -- instead of a separate, cruder client-side guess. Fields the extractor
+    isn't confident about (no date/time signal, no content marker) come
+    back empty rather than guessed."""
+    data = request.get_json() or {}
+    message = str(data.get('message') or '').strip()
+    if not message:
+        return jsonify({'success': False, 'error': 'Missing message'}), 400
+
+    parsed = _draft_orchestrator.extract_schedule(message)
+
+    date_value = ''
+    start_clock = ''
+    end_clock = ''
+    if parsed.get('start_time'):
+        start_dt = datetime.fromisoformat(parsed['start_time'])
+        date_value = start_dt.date().isoformat()
+        start_clock = start_dt.strftime('%H:%M')
+    if parsed.get('end_time'):
+        end_dt = datetime.fromisoformat(parsed['end_time'])
+        end_clock = end_dt.strftime('%H:%M')
+
+    return jsonify({
+        'success': True,
+        'title': parsed.get('title') or '',
+        'description': parsed.get('description') or '',
+        'date': date_value,
+        'start_time': start_clock,
+        'end_time': end_clock,
+        'attendees': parsed.get('attendees') or [],
+        'location': parsed.get('location') or '',
+    })
 
 
 @schedule_bp.route('/quick-add', methods=['POST'])

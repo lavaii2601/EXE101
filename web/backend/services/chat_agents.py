@@ -1630,6 +1630,7 @@ class ScheduleCreateAgent:
 
     def _handle_confirmed(self, ctx):
         schedule_created = None
+        calendar_sync_pending = False
         response = "Minh chua tao duoc lich vi thieu ngay/gio bat dau."
         try:
             schedule_created = intent_orchestrator.create_schedule_from_intent(
@@ -1638,7 +1639,15 @@ class ScheduleCreateAgent:
                 ctx.db_path
             )
             if schedule_created:
+                calendar_sync_pending = _sync_schedule_to_calendar_async(
+                    ctx.user_id,
+                    schedule_created.get('id'),
+                    ctx.db_path,
+                )
+                schedule_created['calendar_sync_pending'] = calendar_sync_pending
                 response = f"Da tao lich: {schedule_created.get('title')} luc {schedule_created.get('start_time')}."
+                if calendar_sync_pending:
+                    response += " Minh dang dong bo len Google Calendar."
                 History.create(
                     f"Tao lich hen: {schedule_created.get('title')}",
                     "Lich hen duoc tao tu xac nhan cua nguoi dung",
@@ -1653,7 +1662,7 @@ class ScheduleCreateAgent:
         return AgentResult(
             response=response,
             workspace_sources=['calendar'],
-            refresh_targets=['schedule', 'history'],
+            refresh_targets=['schedule', 'calendar', 'overview', 'history'],
             schedule_created=schedule_created,
             schedule_suggestion=None if schedule_created else (ctx.intent_result.get('entities') or {}).get('schedule'),
             action='Tạo lịch sau xác nhận' if schedule_created else 'Cần bổ sung thông tin lịch',
