@@ -332,8 +332,8 @@ const USER_MODES = {
         initial: 'ST',
         label: 'Sinh viên',
         labelEn: 'Student',
-        description: 'Ưu tiên bài tập, deadline, email lớp và lịch học.',
-        descriptionEn: 'Prioritize assignments, deadlines, class email, and study schedules.'
+        description: 'Ưu tiên môn học, bài tập, deadline, email lớp, lịch thi và kế hoạch ôn tập.',
+        descriptionEn: 'Prioritize courses, assignments, deadlines, class email, exams, and study plans.'
     },
     worker: {
         initial: 'VP',
@@ -379,7 +379,7 @@ const USER_MODES = {
     }
 };
 
-const ONBOARDING_MODE_KEYS = ['student', 'worker', 'mentor', 'teacher', 'freelancer', 'creator'];
+const ONBOARDING_MODE_KEYS = ['student', 'worker', 'freelancer', 'mentor', 'teacher', 'business', 'creator'];
 
 function modeLabel(mode) {
     return currentLanguage === 'en' ? (mode.labelEn || mode.label) : mode.label;
@@ -2606,6 +2606,8 @@ function sendMessage() {
 async function sendMessageConfirmed(message, opts = {}) {
     const confirmed = !!opts.confirmedSchedule;
     const override = opts.scheduleOverride || null;
+    const actionConfirmed = !!opts.confirmedAction;
+    const actionOverride = opts.actionOverride || null;
     console.log(`📨 Sending message: ${message.substring(0, 50)}...`);
     addMessage(message, 'user');
     userInput.value = '';
@@ -2627,7 +2629,9 @@ async function sendMessageConfirmed(message, opts = {}) {
                 session_id: activeChatSessionId,
                 mode: currentUserMode,
                 confirmed_schedule: confirmed,
-                schedule_override: override
+                schedule_override: override,
+                confirmed_action: actionConfirmed,
+                action_override: actionOverride
             })
         });
 
@@ -2866,6 +2870,35 @@ async function sendMessageConfirmed(message, opts = {}) {
                         }
                     });
                 }
+            } else if (data.pending_action) {
+                // Generic confirm card for any non-schedule write tool
+                // (settings.update_mode, email.mark_read/unread,
+                // checklist.create). data.response already carries the
+                // proposal text, so this card only needs the buttons.
+                const pending = data.pending_action;
+                const pendingDiv = document.createElement('div');
+                pendingDiv.className = 'message assistant';
+                pendingDiv.innerHTML = `
+                    <div class="message-content">
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn-primary confirm-pending-action">${ui('Xác nhận', 'Confirm')}</button>
+                            <button class="btn-secondary dismiss-pending-action">${ui('Bỏ qua', 'Dismiss')}</button>
+                        </div>
+                    </div>
+                `;
+                chatMessages.appendChild(pendingDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+
+                pendingDiv.querySelector('.dismiss-pending-action').addEventListener('click', () => {
+                    pendingDiv.remove();
+                    showNotification(ui('Đã bỏ qua gợi ý', 'Suggestion dismissed'), 'info');
+                });
+
+                pendingDiv.querySelector('.confirm-pending-action').addEventListener('click', () => {
+                    pendingDiv.querySelectorAll('button').forEach(b => b.disabled = true);
+                    sendMessageConfirmed(message, { confirmedAction: true, actionOverride: pending.arguments });
+                    pendingDiv.remove();
+                });
             }
 
             if (Array.isArray(data.suggested_actions)) {

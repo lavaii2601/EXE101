@@ -7,7 +7,9 @@ FlowMate co 2 phan chinh dung chung backend Flask.
 - `web/backend/`: Flask API, models, services, routes.
 - `web/frontend/`: web UI tinh, duoc Flask serve truc tiep.
 - `mobile/`: Expo/React Native app (Android/iOS/Web) - ban mobile duy nhat cua du an.
-- `image/`: tai lieu hinh anh phuc vu README/quickstart.
+- `docs/bob-training/`: tai lieu training/RAG de nap vao knowledge base cua Bob.
+- `database/`: PostgreSQL schema va migration.
+- `scripts/`: script deploy schema va import training cho Bob.
 
 ## Runtime and generated directories
 
@@ -17,6 +19,7 @@ Cac thu muc/file sau khong commit:
 - `web/data/`: SQLite DB, Gmail token, cache runtime.
 - `web/backend-local.pid`: PID cua backend local.
 - `mobile/node_modules/`, `mobile/.expo/`, `mobile/dist/`, `mobile/android/`.
+- `mobile/*.apk`: APK build artifact local.
 - `__pycache__/`, `*.pyc`, `*.log`, `*.pid`.
 
 ## Dependency sources
@@ -32,6 +35,8 @@ cap nhat theo thu tu:
 1. Backend route/service/model trong `web/backend`.
 2. Web client trong `web/frontend/js/app.js`.
 3. Expo client trong `mobile/src`.
+4. Neu la tinh nang Bob/agent, dong bo capability trong
+   `web/backend/services/tool_catalog.py` va training trong `docs/bob-training`.
 
 Lich nen uu tien local-first de UI nhanh:
 

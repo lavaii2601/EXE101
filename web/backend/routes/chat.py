@@ -16,6 +16,11 @@ from services.chat_agents import (
     normalize_agent_result_language,
 )
 from services.gmail_service import get_cached_gmail_service
+from services.tool_catalog import (
+    AGENT_CAPABILITIES,
+    AGENT_SYNC_TARGETS,
+    AGENT_CONFIRMATION_REQUIRED,
+)
 from models.history import History
 from models.schedule import Schedule
 from models.user import User
@@ -25,135 +30,6 @@ from utils.user_context import get_current_user_id, get_user_db_path, get_user_t
 logger = logging.getLogger(__name__)
 
 chat_bp = Blueprint('chat', __name__, url_prefix='/api/chat')
-
-AGENT_CAPABILITIES = [
-    {
-        'id': 'overview.daily_brief',
-        'label': 'Tổng hợp ngày',
-        'description': 'Gom email, lịch, deadline, task và checklist thành bức tranh ưu tiên trong ngày.',
-        'workspace_sources': ['email', 'calendar', 'history'],
-        'refresh_targets': ['overview', 'email', 'schedule', 'history'],
-        'confirmation_required': False,
-    },
-    {
-        'id': 'email.inbox_triage',
-        'label': 'Phân loại email',
-        'description': 'Đọc inbox Gmail/Outlook đã kết nối, tìm email quan trọng, email chưa đọc, email cần phản hồi.',
-        'workspace_sources': ['email'],
-        'refresh_targets': ['email', 'overview', 'history'],
-        'confirmation_required': False,
-    },
-    {
-        'id': 'email.summary_reply',
-        'label': 'Tóm tắt và soạn trả lời',
-        'description': 'Tóm tắt nội dung email, tạo nháp trả lời lịch sự và chỉ gửi email khi người dùng xác nhận.',
-        'workspace_sources': ['email'],
-        'refresh_targets': ['email', 'history'],
-        'confirmation_required': True,
-    },
-    {
-        'id': 'email.meeting_scan',
-        'label': 'Quét lịch hẹn từ email',
-        'description': 'Phát hiện email có tín hiệu họp/lịch hẹn và biến thành gợi ý lịch cần xác nhận.',
-        'workspace_sources': ['email', 'calendar'],
-        'refresh_targets': ['email', 'schedule', 'overview', 'history'],
-        'confirmation_required': True,
-    },
-    {
-        'id': 'schedule.manage',
-        'label': 'Quản lý lịch',
-        'description': 'Tạo, sửa, hủy, xóa lịch FlowMate và đồng bộ Google/Outlook Calendar khi có kết nối.',
-        'workspace_sources': ['calendar'],
-        'refresh_targets': ['schedule', 'calendar', 'overview', 'history'],
-        'confirmation_required': True,
-    },
-    {
-        'id': 'calendar.sync',
-        'label': 'Đồng bộ calendar',
-        'description': 'Đọc lịch Google/Outlook, hợp nhất với lịch FlowMate và tránh hiển thị trùng sự kiện.',
-        'workspace_sources': ['calendar'],
-        'refresh_targets': ['schedule', 'calendar', 'overview'],
-        'confirmation_required': False,
-    },
-    {
-        'id': 'history.audit',
-        'label': 'Tra cứu lịch sử',
-        'description': 'Tóm tắt các lần chat, email, lịch và thao tác agent đã thực hiện.',
-        'workspace_sources': ['history'],
-        'refresh_targets': ['history'],
-        'confirmation_required': False,
-    },
-    {
-        'id': 'settings.profile_mode',
-        'label': 'Hồ sơ và chế độ làm việc',
-        'description': 'Đọc hồ sơ, kết nối dịch vụ, đổi chế độ làm việc và áp dụng cùng một mode cho web/mobile.',
-        'workspace_sources': ['profile'],
-        'refresh_targets': ['settings', 'profile', 'history'],
-        'confirmation_required': True,
-    },
-    {
-        'id': 'provider.status',
-        'label': 'Trạng thái AI provider',
-        'description': 'Theo dõi provider AI, demo mode và fallback để người dùng biết phản hồi đến từ đâu.',
-        'workspace_sources': ['profile'],
-        'refresh_targets': ['providers', 'settings'],
-        'confirmation_required': False,
-    },
-    {
-        'id': 'knowledge.lookup',
-        'label': 'Tra cứu kiến thức',
-        'description': 'Tìm đoạn kiến thức FlowMate/mã nguồn mở liên quan (TF-IDF, không cần model embedding) để trả lời có căn cứ.',
-        'workspace_sources': ['knowledge'],
-        'refresh_targets': [],
-        'confirmation_required': False,
-    },
-    {
-        'id': 'internet.research',
-        'label': 'Tra cứu Internet',
-        'description': 'Tự tra cứu web công khai khi prompt cần thông tin mới/nguồn ngoài, đưa URL nguồn vào câu trả lời; chỉ lưu long-term lesson đã lọc khi research có giá trị học hỏi/quy trình.',
-        'workspace_sources': ['internet'],
-        'refresh_targets': [],
-        'confirmation_required': False,
-    },
-    {
-        'id': 'mentor.learning',
-        'label': 'Học từ AI mentor',
-        'description': 'Chạy nền có quota để hỏi provider như ChatGPT/OpenAI, Gemini, Claude hoặc OpenRouter critique cách Bob xử lý, rồi chỉ lưu bài học quy trình đã lọc/dedupe vào knowledge riêng của user.',
-        'workspace_sources': ['knowledge'],
-        'refresh_targets': [],
-        'confirmation_required': False,
-    },
-    {
-        'id': 'time.current',
-        'label': 'Đọc thời gian hiện tại',
-        'description': 'Trả lời giờ/ngày hiện tại bằng đồng hồ backend theo múi giờ Việt Nam UTC+7, không để AI tự đoán.',
-        'workspace_sources': ['time'],
-        'refresh_targets': [],
-        'confirmation_required': False,
-    },
-]
-
-AGENT_SYNC_TARGETS = {
-    'overview': 'Tải lại tổng hợp ngày và checklist.',
-    'email': 'Tải lại inbox, cache email và gợi ý họp.',
-    'schedule': 'Tải lại lịch FlowMate, Google/Outlook Calendar và tuần hiện tại.',
-    'calendar': 'Tải lại dữ liệu calendar hợp nhất.',
-    'history': 'Tải lại lịch sử hoạt động/chat.',
-    'settings': 'Tải lại cài đặt và kết nối dịch vụ.',
-    'profile': 'Tải lại hồ sơ và mode người dùng.',
-    'providers': 'Tải lại trạng thái AI provider.',
-    'chat': 'Tải lại phiên chat hiện tại.',
-}
-
-AGENT_CONFIRMATION_REQUIRED = [
-    'send_email',
-    'create_schedule',
-    'update_schedule',
-    'delete_schedule',
-    'change_user_mode',
-    'disconnect_account',
-    'clear_history',
-]
 
 
 def _ensure_chat_session(user_id, session_id, mode='worker', title=None):
@@ -270,8 +146,18 @@ def send_message():
     mode = (data.get('mode') or stored_user.get('user_mode') or 'worker').strip().lower()
     mode_prompts = {
         'student': (
-            "Student Mode: prioritize assignments, class email, study deadlines, "
-            "group projects, and clear study plans."
+            "Student Mode: treat the user's academic life as the primary workspace. "
+            "Prioritize assignments, exams, class email, teacher/school messages, "
+            "course materials, group projects, tuition or administration notices, "
+            "and study deadlines before general productivity items. When planning, "
+            "separate work into subjects/courses, deadlines, difficulty, energy level, "
+            "available calendar gaps, and concrete next study blocks. Prefer concise "
+            "study plans with time blocks, review cycles, deliverables, and a short "
+            "next action. For ambiguous student requests, first look for class/email/"
+            "calendar/checklist context, then ask only the smallest missing question. "
+            "Use student-friendly coaching: break big assignments into steps, suggest "
+            "Pomodoro or spaced-repetition when useful, protect sleep/rest, and avoid "
+            "inventing grades, deadlines, classes, or school policies not in context."
         ),
         'freelancer': (
             "Freelancer Mode: prioritize client communication, project delivery, "
@@ -343,6 +229,8 @@ def send_message():
         refresh_targets=refresh_targets,
         client_confirm=bool(data.get('confirmed_schedule')),
         schedule_override=data.get('schedule_override') or {},
+        action_confirm=bool(data.get('confirmed_action')),
+        action_override=data.get('action_override') or {},
     )
 
     agent = get_agent(intent_result.get('intent'))
@@ -371,6 +259,8 @@ def send_message():
         'demo_mode': result.demo_mode,
         'schedule_created': result.schedule_created,
         'schedule_suggestion': result.schedule_suggestion,
+        'pending_action': result.pending_action,
+        'action_applied': result.action_applied,
         'intent': intent_result,
         'refresh_targets': result.refresh_targets,
         'agent_trace': _build_agent_trace(

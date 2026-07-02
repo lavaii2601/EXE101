@@ -1,0 +1,154 @@
+{
+  "documents": [
+    {
+      "title": "English semantics - polite requests are still actions",
+      "content": "When the user writes English phrases like 'could you', 'can you', 'would you', 'please', 'I need you to', or 'I'd like you to', Bob should treat the sentence as an actionable request if it contains a supported feature. Example: 'Could you schedule a call tomorrow at 3?' means schedule.create, not casual chat.",
+      "tags": "english,semantics,polite request,intent"
+    },
+    {
+      "title": "English semantics - schedule verbs",
+      "content": "English verbs such as schedule, book, set up, put on my calendar, add to my calendar, pencil in, block time, reserve time, move, reschedule, postpone, cancel, and remove usually refer to calendar actions. Bob should map them to create/update/delete/list depending on whether the event is new or already exists.",
+      "tags": "english,schedule,calendar,verbs"
+    },
+    {
+      "title": "English semantics - reminders",
+      "content": "English requests like 'remind me', 'set a reminder', 'don't let me forget', and 'ping me about' usually mean schedule.create or a reminder-like calendar entry when a time is provided. If the time is missing, Bob should ask for the missing time instead of inventing it.",
+      "tags": "english,reminder,schedule"
+    },
+    {
+      "title": "English semantics - calendar lookup",
+      "content": "Questions like 'what's on my calendar', 'what do I have today', 'am I free tomorrow', 'do I have anything next week', and 'what meetings are coming up' mean schedule.list. Bob should answer only from real calendar/workspace data.",
+      "tags": "english,calendar,list"
+    },
+    {
+      "title": "English semantics - reschedule existing events",
+      "content": "Phrases like 'move my meeting', 'push the call back', 'bring it forward', 'shift the appointment', and 'reschedule my class' refer to schedule.update for an existing event. Bob should identify the event and ask for confirmation before applying changes.",
+      "tags": "english,schedule,update"
+    },
+    {
+      "title": "English semantics - delete or cancel events",
+      "content": "Phrases like 'cancel my meeting', 'remove the event', 'delete that appointment', 'drop it from my calendar', and 'clear my 3pm slot' mean schedule.delete if they refer to an existing calendar item. Bob must confirm before deleting.",
+      "tags": "english,schedule,delete,confirmation"
+    },
+    {
+      "title": "English semantics - time phrases",
+      "content": "English time phrases like today, tomorrow, tonight, later today, this morning, this afternoon, this evening, next week, this weekend, next Monday, in two hours, by Friday, noon, midnight, and EOD must be resolved from the backend current time in GMT+7. Bob should use concrete dates when there is risk of confusion.",
+      "tags": "english,time,date,timezone"
+    },
+    {
+      "title": "English semantics - deadline language",
+      "content": "Words like due, deadline, by, submit, turn in, hand in, finish by, deliver by, and final date signal a deadline. In Student Mode, Bob should treat these as assignment/exam priorities and suggest checklist or calendar actions depending on the user's wording.",
+      "tags": "english,deadline,student"
+    },
+    {
+      "title": "English semantics - student assignments",
+      "content": "English education words like assignment, homework, essay, lab report, project, group project, quiz, midterm, final, syllabus, rubric, lecture, class, course, professor, instructor, and office hours are student context. Bob should prioritize academic planning when the user is in Student Mode.",
+      "tags": "english,student,academic"
+    },
+    {
+      "title": "English semantics - email summary",
+      "content": "Requests like 'summarize my latest emails', 'what did I get today', 'what's important in my inbox', and 'give me the key emails from this morning' mean email.latest_summary or email.search with a date window. Bob should not invent emails if Gmail is not connected.",
+      "tags": "english,email,summary"
+    },
+    {
+      "title": "English semantics - email search",
+      "content": "Requests like 'find the email from Sarah', 'look for the message about tuition', 'search my inbox for the assignment', and 'do I have an email from my professor this week' mean email.search. Sender, keyword, unread status, and date window should be extracted when present.",
+      "tags": "english,email,search"
+    },
+    {
+      "title": "English semantics - email reply drafts",
+      "content": "Phrases like 'draft a reply', 'write back', 'respond to this email', 'help me reply politely', and 'prepare an email response' mean Bob should draft text, not send it automatically. Bob must make clear that the user confirms sending.",
+      "tags": "english,email,draft,reply"
+    },
+    {
+      "title": "English semantics - mark email state",
+      "content": "Phrases like 'mark this as read', 'mark those emails unread', 'set the email from John as unread', and 'I've already seen it' refer to email.mark_read or email.mark_unread. If multiple emails match, Bob should clarify or propose the limited set before applying.",
+      "tags": "english,email,mark read"
+    },
+    {
+      "title": "English semantics - checklist creation",
+      "content": "Phrases like 'add these to my checklist', 'put this on my to-do list', 'make a task list', 'track these tasks', and 'I need to do A, B, C today' mean checklist.create when the user wants a simple to-do list without calendar times.",
+      "tags": "english,checklist,todo"
+    },
+    {
+      "title": "English semantics - schedule suggestion vs checklist",
+      "content": "If the user says 'plan my day', 'time-block these', 'suggest a schedule', 'fit these into my calendar', or 'when should I do these', Bob should use schedule.suggest_plan. If the user says 'add to checklist' or 'make a to-do list', Bob should use checklist.create.",
+      "tags": "english,schedule,checklist,intent"
+    },
+    {
+      "title": "English semantics - urgency",
+      "content": "English urgency signals include urgent, ASAP, important, high priority, right away, immediately, before EOD, due soon, and can't miss. Low urgency signals include no rush, whenever, when I have time, low priority, not urgent, and optional. Bob should use these to rank tasks.",
+      "tags": "english,urgency,priority"
+    },
+    {
+      "title": "English semantics - history lookup",
+      "content": "Questions like 'what did I do today', 'what have you done for me', 'show my activity', 'what happened yesterday', and 'review my recent actions' mean history.list. Bob should not confuse these with future tasks.",
+      "tags": "english,history,audit"
+    },
+    {
+      "title": "English semantics - future tasks vs past activity",
+      "content": "'I need to do...' and 'things I have to do...' usually describe future tasks; 'I did...', 'what did I do...', and 'what have I already done...' refer to history. Bob should use tense and auxiliaries to separate checklist.create from history.list.",
+      "tags": "english,tense,history,checklist"
+    },
+    {
+      "title": "English semantics - mode switching",
+      "content": "Phrases like 'switch me to Student mode', 'I'm a freelancer now', 'set my workspace to business', 'I'm teaching this semester', and 'use creator mode' mean settings.update_mode when the requested mode is clear.",
+      "tags": "english,mode,settings"
+    },
+    {
+      "title": "English semantics - ambiguous role statements",
+      "content": "If an English role statement is ambiguous, Bob should ask one short question. Example: 'I work with students' could mean Teacher, Mentor, or Student depending on context; Bob should not switch mode unless the intended mode is clear.",
+      "tags": "english,mode,ambiguous"
+    },
+    {
+      "title": "English semantics - pronoun references",
+      "content": "English follow-ups like 'move it to 4', 'delete that', 'mark it unread', and 'add those too' depend on recent chat context. Bob may use recent turns to resolve the reference, but if more than one item is possible, Bob should ask which one.",
+      "tags": "english,reference,context"
+    },
+    {
+      "title": "English semantics - title description location markers",
+      "content": "Markers like 'title:', 'title is', 'call it', 'description:', 'note:', 'details:', 'location:', 'venue:', and 'address:' should be treated as explicit fields for schedule extraction. Bob should not copy the whole command into title or description.",
+      "tags": "english,schedule,fields"
+    },
+    {
+      "title": "English semantics - meeting participants",
+      "content": "Phrases like 'with Sarah', 'invite John', 'meeting with my team', and 'call with the client' indicate participants or title context. Bob may store attendees if supported, but must not send invitations or emails unless the user confirms and the app supports it.",
+      "tags": "english,schedule,attendees"
+    },
+    {
+      "title": "English semantics - freeform questions",
+      "content": "If an English message asks for an opinion or explanation without a supported action, such as 'what do you think about remote work' or 'explain spaced repetition', Bob should answer as chat.freeform. If current facts are needed, Bob should research with sources.",
+      "tags": "english,freeform,chat"
+    },
+    {
+      "title": "English semantics - web research triggers",
+      "content": "English phrases like 'look this up', 'search the web', 'latest', 'current', 'today's news', 'what changed', and 'find sources' signal Internet research if enabled. Bob should cite URLs for external facts and distinguish them from private workspace data.",
+      "tags": "english,internet,research"
+    },
+    {
+      "title": "English semantics - confirmation language",
+      "content": "English confirmations include yes, yep, sure, correct, go ahead, do it, confirm, apply it, looks good, and proceed. Rejections include no, cancel, don't, never mind, skip it, and not now. Bob should respect these in confirmation flows.",
+      "tags": "english,confirmation"
+    },
+    {
+      "title": "English semantics - soft constraints",
+      "content": "Words like preferably, if possible, around, roughly, maybe, ideally, and sometime indicate flexibility. Bob should treat these as preferences, not hard facts. For calendar writes, Bob should show the proposed interpretation and ask for confirmation.",
+      "tags": "english,semantics,constraints"
+    },
+    {
+      "title": "English semantics - hard constraints",
+      "content": "Words like must, has to, no later than, exactly, before, after, not before, and not after are stronger constraints. Bob should preserve them in planning and scheduling, and avoid proposing times that violate them.",
+      "tags": "english,semantics,constraints"
+    },
+    {
+      "title": "English semantics - negative instructions",
+      "content": "English negation matters. 'Don't schedule this', 'do not send it', 'don't mark it read', and 'not urgent' should prevent the corresponding action or lower priority. Bob should not ignore not, never, no, without, or unless.",
+      "tags": "english,negation,safety"
+    },
+    {
+      "title": "English semantics - mixed Vietnamese and English",
+      "content": "When a user mixes Vietnamese and English, Bob should use the latest message to infer language and intent. If mixed, default the reply to Vietnamese, but preserve English names, titles, email subjects, and quoted phrases exactly when useful.",
+      "tags": "english,vietnamese,mixed language"
+    }
+  ]
+}

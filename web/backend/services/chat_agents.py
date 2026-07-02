@@ -13,11 +13,13 @@ from services.ai_service import AIService
 from services.gmail_service import get_cached_gmail_service
 from services.intent_orchestrator import IntentOrchestrator
 from services.schedule_service import ScheduleService
+from services import tool_catalog
 from services.calendar_service import CalendarService
 from services.web_research_service import web_research_service
 from models.cache import Cache
 from models.history import History
 from models.schedule import Schedule, LOCAL_TZ
+from models.user import User
 from utils.user_context import get_user_token_file
 from routes.knowledge import knowledge_service
 from routes.schedule import (
@@ -55,6 +57,12 @@ class ChatContext:
     refresh_targets: list = field(default_factory=list)
     client_confirm: bool = False
     schedule_override: dict = field(default_factory=dict)
+    # Generic propose -> confirm -> apply gate for any write tool that
+    # isn't schedule.* (which keeps using client_confirm/schedule_override
+    # above -- the frontend already has a dedicated card wired to those
+    # field names). See tool_catalog.WRITE_TOOL_NAMES.
+    action_confirm: bool = False
+    action_override: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -74,6 +82,13 @@ class AgentResult:
     demo_mode: bool = False
     email_source: dict = None
     email_sources: list = None
+    # Generic counterpart to schedule_suggestion/schedule_created, used by
+    # every non-schedule write tool (settings.update_mode, email.mark_read/
+    # unread, checklist.create). pending_action holds {tool, summary,
+    # arguments} while awaiting confirmation; action_applied holds the
+    # result once the write actually happened.
+    pending_action: dict = None
+    action_applied: dict = None
 
 
 def _normalize_intent_text(value):
@@ -1380,6 +1395,9 @@ def _build_agent_system_prompt(mode_prompt, agent_capabilities):
         "asks you to. "
         "Operate like an agent: identify the user's goal, inspect available workspace context, "
         "decide the next best action, and produce a useful result. "
+        "If the user asks what FlowMate/Bob can do, explain only supported capabilities and give "
+        "natural-language examples. If the user directly asks to use a supported feature, perform "
+        "or trigger that feature through the available agent path instead of only describing steps. "
         "When a supported direct action is needed, rely on the app tools/orchestrator instead of pretending. "
         "For sensitive or persistent actions such as creating schedules, changing settings, sending messages, "
         "or modifying external data, ask for or respect explicit confirmation before claiming completion. "
@@ -1543,6 +1561,7 @@ def _wrap_direct_result(direct_result, ctx):
         workspace_sources=direct_result.get('workspace_sources') or [],
         refresh_targets=direct_result.get('refresh_targets') or ctx.refresh_targets,
         schedule_suggestion=direct_result.get('schedule_suggestion'),
+        pending_action=direct_result.get('pending_action'),
         action_type=direct_result.get('action_type') or 'chat',
         action='Thực hiện hành động trực tiếp',
     )
@@ -1863,6 +1882,15 @@ class EmailSearchAgent:
 
 
 def _mark_emails(ctx, read):
+    """Write tool -- always proposes which emails would be marked first,
+    only calls Gmail's mark_as_read/unread once the user confirms (see
+    tool_catalog.WRITE_TOOL_NAMES)."""
+    if ctx.action_confirm and (ctx.action_override or {}).get('email_ids'):
+        return _mark_emails_apply(ctx, read)
+    return _mark_emails_propose(ctx, read)
+
+
+def _mark_emails_propose(ctx, read):
     token_file = get_user_token_file(ctx.user_id)
     if not token_file or not os.path.exists(token_file):
         return AgentResult(response="Gmail chưa được kết nối cho tài khoản này.", action='Gmail chưa kết nối')
@@ -1879,61 +1907,83 @@ def _mark_emails(ctx, read):
         )
 
     targets = emails[:3]
+    label = 'đã đọc' if read else 'chưa đọc'
+    titles = [email.get('subject') or '(không có tiêu đề)' for email in targets]
+    extra = (
+        f" (còn {len(emails) - len(targets)} email khác khớp, bạn nói rõ hơn để mình xử lý tiếp nếu cần)"
+        if len(emails) > len(targets) else ""
+    )
+    tool_name = 'email.mark_read' if read else 'email.mark_unread'
+    return AgentResult(
+        response=f"Mình sẽ đánh dấu {label}: {', '.join(titles)}.{extra} Xác nhận nhé?",
+        pending_action={
+            'tool': tool_name,
+            'arguments': {'email_ids': [e.get('id') for e in targets], 'titles': titles},
+        },
+        workspace_sources=['email'],
+        action=f"Đề xuất đánh dấu email {label}, cần xác nhận",
+    )
+
+
+def _mark_emails_apply(ctx, read):
+    token_file = get_user_token_file(ctx.user_id)
+    if not token_file or not os.path.exists(token_file):
+        return AgentResult(response="Gmail chưa được kết nối cho tài khoản này.", action='Gmail chưa kết nối')
+
+    email_ids = ctx.action_override.get('email_ids') or []
+    titles = ctx.action_override.get('titles') or []
+    service = get_cached_gmail_service(token_file)
+
     marked = []
-    for email in targets:
+    for index, email_id in enumerate(email_ids):
         try:
             if read:
-                service.mark_as_read(email.get('id'))
+                service.mark_as_read(email_id)
             else:
-                service.mark_as_unread(email.get('id'))
-            marked.append(email)
+                service.mark_as_unread(email_id)
+            marked.append(titles[index] if index < len(titles) else email_id)
         except Exception:
-            logger.exception("Failed to mark email %s as %s", email.get('id'), 'read' if read else 'unread')
+            logger.exception("Failed to mark email %s as %s", email_id, 'read' if read else 'unread')
+
+    if not marked:
+        return AgentResult(
+            response="Mình không đánh dấu được email nào, bạn thử lại sau nhé.",
+            workspace_sources=['email'],
+            action='Không đánh dấu được email',
+        )
 
     from routes.email import _clear_email_list_cache
     _clear_email_list_cache(ctx.user_id)
 
     label = 'đã đọc' if read else 'chưa đọc'
-    action_type = 'chat'
-    for email in marked:
+    for title in marked:
         History.create(
-            f"Đánh dấu email {label}: {email.get('subject') or '(không có tiêu đề)'}",
-            "Đánh dấu qua chat",
-            action_type=action_type,
+            f"Đánh dấu email {label}: {title}",
+            "Đánh dấu qua chat sau xác nhận",
+            action_type='chat',
             db_path=ctx.db_path,
         )
 
-    if not marked:
-        return AgentResult(
-            response="Mình tìm thấy email nhưng không thể đánh dấu được, bạn thử lại sau nhé.",
-            workspace_sources=['email'],
-            action='Không đánh dấu được email',
-        )
-
-    titles = ", ".join(e.get('subject') or '(không có tiêu đề)' for e in marked)
-    extra = (
-        f" (còn {len(emails) - len(targets)} email khác khớp, bạn nói rõ hơn để mình xử lý tiếp nếu cần)"
-        if len(emails) > len(targets) else ""
-    )
     return AgentResult(
-        response=f"Đã đánh dấu {label}: {titles}.{extra}",
+        response=f"Đã đánh dấu {label}: {', '.join(marked)}.",
         workspace_sources=['email'],
         refresh_targets=['email', 'overview', 'history'],
-        action=f"Đánh dấu email {label}",
+        action_applied={'tool': 'email.mark_read' if read else 'email.mark_unread', 'marked': marked},
+        action=f"Đã đánh dấu email {label}",
     )
 
 
 class EmailMarkReadAgent:
-    """AGENT_CAPABILITIES: roughly 'email.inbox_triage'. No confirmation
-    needed -- marking read/unread is low-risk and trivially reversible,
-    unlike schedule mutation or sending email."""
+    """AGENT_CAPABILITIES: roughly 'email.inbox_triage'. Write tool --
+    proposes before marking (see _mark_emails)."""
 
     def handle(self, ctx):
         return _mark_emails(ctx, read=True)
 
 
 class EmailMarkUnreadAgent:
-    """AGENT_CAPABILITIES: roughly 'email.inbox_triage'."""
+    """AGENT_CAPABILITIES: roughly 'email.inbox_triage'. Write tool --
+    proposes before marking (see _mark_emails)."""
 
     def handle(self, ctx):
         return _mark_emails(ctx, read=False)
@@ -1948,13 +1998,41 @@ class HistoryListAgent:
 
 
 class SettingsUpdateModeAgent:
-    """AGENT_CAPABILITIES: roughly 'settings.profile_mode'. Can return None
-    (when the mode entity couldn't be resolved), signalling the caller to
-    fall through to FreeformChatAgent -- mirrors today's behavior exactly."""
+    """AGENT_CAPABILITIES: roughly 'settings.profile_mode'. Write tool --
+    always proposes the mode change first and only calls User.update() once
+    the user has explicitly confirmed (see tool_catalog.WRITE_TOOL_NAMES).
+    Can return None (when the mode entity couldn't be resolved), signalling
+    the caller to fall through to FreeformChatAgent."""
 
     def handle(self, ctx):
+        if ctx.action_confirm and (ctx.action_override or {}).get('mode'):
+            return self._handle_confirmed(ctx)
         direct_result = intent_orchestrator.execute_direct(ctx.intent_result, ctx.user_id, ctx.db_path)
         return _wrap_direct_result(direct_result, ctx)
+
+    def _handle_confirmed(self, ctx):
+        mode = ctx.action_override.get('mode')
+        User.get_or_create(ctx.user_id)
+        User.update(
+            ctx.user_id,
+            user_mode=mode,
+            user_mode_selected_at=datetime.now().isoformat(),
+        )
+        label = intent_orchestrator.MODE_LABELS.get(mode, mode)
+        History.create(
+            f"Doi che do lam viec sang {label}",
+            "Che do duoc doi qua xac nhan trong chat",
+            action_type='settings_updated',
+            db_path=ctx.db_path,
+        )
+        return AgentResult(
+            response=f"Đã cập nhật chế độ làm việc sang {label}.",
+            workspace_sources=['profile'],
+            refresh_targets=['settings', 'profile', 'history'],
+            action_applied={'tool': 'settings.update_mode', 'mode': mode},
+            action_type='settings_updated',
+            action='Đã đổi chế độ làm việc sau xác nhận',
+        )
 
 
 class DayPlanSuggestAgent:
@@ -1997,33 +2075,69 @@ _CHECKLIST_PRIORITY_REASON = {
 }
 
 
+def _normalize_checklist_entries(raw_items):
+    normalized_items = []
+    for entry in raw_items or []:
+        if isinstance(entry, dict):
+            title = str(entry.get('title') or '').strip()
+            priority = str(entry.get('priority') or 'normal').strip().lower()
+        else:
+            title = str(entry or '').strip()
+            priority = 'normal'
+        if not title:
+            continue
+        if priority not in _CHECKLIST_PRIORITY_SCORE:
+            priority = 'normal'
+        normalized_items.append((title, priority))
+    return normalized_items
+
+
 class ChecklistCreateAgent:
-    """AGENT_CAPABILITIES: roughly 'overview.daily_brief'. Adds the
-    activities listed in the chat message straight to today's checklist --
-    same no-confirmation behavior as the existing quick-add checklist path,
-    since checklist items are low-risk/reversible (no calendar side effect),
-    unlike schedule.create which always proposes first. Each item carries
-    its own urgency (extracted per-item by the intent orchestrator, not one
-    flat priority for the whole list) so wording like 'gap'/'khong gap' in
-    the original message actually changes where it lands in the checklist."""
+    """AGENT_CAPABILITIES: roughly 'overview.daily_brief'. Write tool --
+    always proposes the parsed item list first and only writes to the
+    checklist once the user confirms (see tool_catalog.WRITE_TOOL_NAMES).
+    Each item carries its own urgency (extracted per-item by the intent
+    orchestrator, not one flat priority for the whole list) so wording like
+    'gap'/'khong gap' in the original message actually changes where it
+    lands in the checklist."""
 
     def handle(self, ctx):
+        if ctx.action_confirm and (ctx.action_override or {}).get('items'):
+            return self._apply(ctx, ctx.action_override.get('items'))
+        return self._propose(ctx)
+
+    def _propose(self, ctx):
         raw_items = (ctx.intent_result.get('entities') or {}).get('items') or []
-        normalized_items = []
-        for entry in raw_items:
-            if isinstance(entry, dict):
-                title = str(entry.get('title') or '').strip()
-                priority = str(entry.get('priority') or 'normal').strip().lower()
-            else:
-                title = str(entry or '').strip()
-                priority = 'normal'
-            if not title:
-                continue
-            if priority not in _CHECKLIST_PRIORITY_SCORE:
-                priority = 'normal'
-            normalized_items.append((title, priority))
+        normalized_items = _normalize_checklist_entries(raw_items)
         if not normalized_items:
             return None
+
+        titles = [title for title, _ in normalized_items]
+        response = (
+            "Mình sẽ thêm vào checklist hôm nay:\n"
+            + "\n".join(f"- {title}" for title in titles)
+            + "\nXác nhận nhé?"
+        )
+        return AgentResult(
+            response=response,
+            pending_action={
+                'tool': 'checklist.create',
+                'arguments': {
+                    'items': [{'title': title, 'priority': priority} for title, priority in normalized_items],
+                },
+            },
+            workspace_sources=['overview'],
+            action='Đề xuất thêm việc vào checklist, cần xác nhận',
+        )
+
+    def _apply(self, ctx, raw_items):
+        normalized_items = _normalize_checklist_entries(raw_items)
+        if not normalized_items:
+            return AgentResult(
+                response="Không có việc nào để thêm.",
+                workspace_sources=['overview'],
+                action='Không có việc cần thêm',
+            )
 
         date_value = datetime.now(LOCAL_TZ).date().isoformat()
         cache_key = _checklist_cache_key(ctx.user_id, date_value)
@@ -2062,13 +2176,20 @@ class ChecklistCreateAgent:
         payload['custom_items'] = _sort_custom_items(payload['custom_items'])
         Cache.set(cache_key, payload, ttl=_CHECKLIST_CACHE_TTL_SECONDS, db_path=ctx.db_path)
         _clear_overview_cache(ctx.user_id)
+        History.create(
+            "Them viec vao checklist: " + ", ".join(added),
+            "Them qua xac nhan trong chat",
+            action_type='chat',
+            db_path=ctx.db_path,
+        )
 
         response = "Mình đã thêm vào checklist hôm nay:\n" + "\n".join(f"- {title}" for title in added)
         return AgentResult(
             response=response,
             workspace_sources=['overview'],
             refresh_targets=sorted(set(ctx.refresh_targets) | {'overview'}),
-            action='Đã thêm việc vào checklist',
+            action_applied={'tool': 'checklist.create', 'added': added},
+            action='Đã thêm việc vào checklist sau xác nhận',
         )
 
 
@@ -2088,14 +2209,30 @@ class FreeformChatAgent:
                 action='Đọc thời gian hệ thống theo UTC+7',
             )
 
-        # Local import to avoid a circular import: chat.py imports get_agent
-        # from this module, so this module can't import chat.py at module
-        # load time. AGENT_CAPABILITIES only exists in chat.py.
-        from routes.chat import AGENT_CAPABILITIES
+        # The message hinted at a real domain (lich/email/checklist/mode/...)
+        # -- see IntentOrchestrator.ACTIONABLE_HINTS -- but neither the rules
+        # nor the AI classifier could match it to any tool in tool_catalog.
+        # Say so explicitly instead of silently chatting as if nothing was
+        # requested, so the user isn't left thinking an action happened.
+        if ctx.intent_result.get('intent') == 'chat.freeform' and intent_orchestrator.has_actionable_hint(ctx.user_message):
+            response = (
+                "Mình chưa hiểu đây là yêu cầu thực hiện việc gì, hoặc việc này Bob chưa hỗ trợ. "
+                "Hiện Bob có thể giúp:\n"
+                f"{tool_catalog.build_capabilities_summary()}\n"
+                "Bạn thử nói rõ hơn theo một trong các việc trên nhé."
+            )
+            return AgentResult(
+                response=response,
+                workspace_sources=[],
+                refresh_targets=sorted(set(ctx.refresh_targets)),
+                ai_used=False,
+                grounded=False,
+                action='Không khớp năng lực nào, phản hồi minh bạch',
+            )
 
         messages = [{
             "role": "system",
-            "content": _build_agent_system_prompt(ctx.mode_prompt, AGENT_CAPABILITIES)
+            "content": _build_agent_system_prompt(ctx.mode_prompt, tool_catalog.AGENT_CAPABILITIES)
         }]
 
         workspace_sources = set()

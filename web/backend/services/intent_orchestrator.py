@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from models.history import History
 from models.schedule import Schedule
 from models.user import User
+from services import tool_catalog
 from services.schedule_service import ScheduleService
 
 logger = logging.getLogger(__name__)
@@ -15,38 +16,41 @@ logger = logging.getLogger(__name__)
 class IntentOrchestrator:
     """Normalize user prompts into canonical workspace actions."""
 
-    AI_INTENTS = (
-        "email.latest_summary", "email.search", "schedule.create", "schedule.update",
-        "schedule.delete", "schedule.list", "email.mark_read", "email.mark_unread",
-        "history.list", "settings.update_mode", "checklist.create",
-        "schedule.suggest_plan", "chat.freeform",
-    )
+    # Sourced from services/tool_catalog.py -- the single place that lists
+    # every capability Bob supports. See that module for how to add a new one.
+    AI_INTENTS = tool_catalog.TOOL_NAMES + ("chat.freeform",)
 
     # Intents safe for the AI-classification cache (services/
     # intent_pattern_cache.py) to short-circuit: every one of these always
-    # shows the user a suggestion/confirmation before anything is written
-    # (schedule.create/update/delete require explicit confirm; suggest_plan
-    # only ever proposes slots, applied through a separate endpoint). A
-    # wrong cache hit here can only ever produce a rejectable suggestion,
-    # never a silent wrong write -- unlike checklist.create/history.list/
-    # etc., which write immediately and so always go through the AI when
-    # rules are unsure, never the cache.
-    CACHEABLE_INTENTS = {
-        "schedule.create", "schedule.update", "schedule.delete", "schedule.suggest_plan",
-    }
+    # shows the user a suggestion/confirmation before anything is written.
+    # A wrong cache hit here can then only ever produce a rejectable
+    # suggestion, never a silent wrong write -- unlike an intent that would
+    # write immediately, which must always go through the AI when rules are
+    # unsure, never the cache. See tool_catalog.Tool.cacheable.
+    CACHEABLE_INTENTS = tool_catalog.CACHEABLE_INTENTS
 
     WEEKDAY_NAMES_VN = (
         "Thu Hai", "Thu Ba", "Thu Tu", "Thu Nam", "Thu Sau", "Thu Bay", "Chu Nhat",
     )
 
     MODE_ALIASES = {
-        "student": ("student", "sinh vien", "hoc sinh", "di hoc"),
-        "worker": ("worker", "nhan vien", "di lam", "cong so", "van phong"),
-        "freelancer": ("freelancer", "tu do", "lam freelance", "freelance"),
-        "creator": ("creator", "sang tao", "content", "creator"),
-        "business": ("business", "kinh doanh", "doanh nghiep", "chu doanh nghiep"),
-        "mentor": ("mentor", "co van", "huong dan"),
-        "teacher": ("teacher", "giao vien", "giang vien", "day hoc"),
+        "student": ("student", "sinh vien", "hoc sinh", "di hoc", "college student", "university student"),
+        "worker": ("worker", "nhan vien", "di lam", "cong so", "van phong", "office worker", "employee"),
+        "freelancer": ("freelancer", "tu do", "lam freelance", "freelance", "contractor", "independent worker"),
+        "creator": ("creator", "sang tao", "content", "creator", "content creator", "influencer"),
+        "business": ("business", "kinh doanh", "doanh nghiep", "chu doanh nghiep", "entrepreneur", "founder", "owner"),
+        "mentor": ("mentor", "co van", "huong dan", "coach", "advisor"),
+        "teacher": ("teacher", "giao vien", "giang vien", "day hoc", "lecturer", "instructor", "professor"),
+    }
+
+    MODE_LABELS = {
+        "student": "Student",
+        "worker": "Worker",
+        "freelancer": "Freelancer",
+        "creator": "Creator",
+        "business": "Business",
+        "mentor": "Mentor",
+        "teacher": "Teacher",
     }
 
     def detect(self, message):
@@ -200,12 +204,16 @@ class IntentOrchestrator:
     ACTIONABLE_HINTS = (
         "lich", "hen", "hop", "su kien", "gap mat", "gap nhau", "nhac", "remind",
         "meeting", "appointment", "calendar", "book", "dat lich", "dat cho",
-        "goi lai", "goi cho", "goi dien",
-        "email", "mail", "gmail", "hop thu", "inbox", "thu tu",
+        "schedule", "reschedule", "cancel", "postpone", "move", "set up", "set a reminder",
+        "goi lai", "goi cho", "goi dien", "call back",
+        "email", "mail", "gmail", "hop thu", "inbox", "thu tu", "message", "draft",
+        "reply", "respond", "summarize", "summary", "find", "search", "mark as read", "mark unread",
         "lich su", "hoat dong", "history", "activity",
         "da lam gi", "lam gi roi", "nho lai", "nhac lai", "vua nay", "vua roi",
-        "mode", "che do lam viec", "doi che do", "chuyen che do",
+        "mode", "che do lam viec", "doi che do", "chuyen che do", "switch mode", "change mode",
         "checklist", "to-do", "todo", "danh sach cong viec", "danh sach viec",
+        "task", "tasks", "assignment", "homework", "deadline", "due", "exam", "quiz", "class",
+        "plan my day", "plan my week",
     )
 
     # Signals that the message is asking to turn a list of upcoming
@@ -228,9 +236,13 @@ class IntentOrchestrator:
         r"|thu hai|thu ba|thu tu|thu nam|thu sau|thu bay|chu nhat"
         r"|\d{1,3}\s*(?:phut|gio|tieng)\s*nua"
         r"|\btomorrow\b|\btoday\b|\byesterday\b|\btonight\b"
+        r"|\blater today\b|\btomorrow night\b|\bthis weekend\b|\bnext weekend\b"
         r"|\bthis morning\b|\bthis afternoon\b|\bthis evening\b|\btomorrow morning\b|\btomorrow afternoon\b"
         r"|\bthis week\b|\bnext week\b|\blast week\b"
+        r"|\bnext monday\b|\bnext tuesday\b|\bnext wednesday\b|\bnext thursday\b|\bnext friday\b|\bnext saturday\b|\bnext sunday\b"
         r"|\bmonday\b|\btuesday\b|\bwednesday\b|\bthursday\b|\bfriday\b|\bsaturday\b|\bsunday\b"
+        r"|\bnoon\b|\bmidnight\b|\bend of day\b|\beod\b"
+        r"|\bby monday\b|\bby tuesday\b|\bby wednesday\b|\bby thursday\b|\bby friday\b|\bby saturday\b|\bby sunday\b"
         r"|\bin \d{1,3}\s*(?:minutes?|mins?|hours?)\b"
     )
 
@@ -250,6 +262,9 @@ class IntentOrchestrator:
         "ghi chú", "ghi chu",
         "mô tả là", "mo ta la",
         "mô tả", "mo ta",
+        "with description", "description is", "description:",
+        "with note", "note is", "note:",
+        "details are", "details:",
     )
     CONTENT_MARKER_RE = re.compile(
         r"(?:" + "|".join(re.escape(t) for t in sorted(set(_CONTENT_MARKER_TERMS), key=len, reverse=True)) + r")"
@@ -267,6 +282,9 @@ class IntentOrchestrator:
         "tên lịch", "ten lich",
         "tựa đề là", "tua de la",
         "tựa đề", "tua de",
+        "title is", "title:",
+        "event title is", "event title:",
+        "name it", "call it",
     )
     TITLE_MARKER_RE = re.compile(
         r"(?:" + "|".join(re.escape(t) for t in sorted(set(_TITLE_MARKER_TERMS), key=len, reverse=True)) + r")"
@@ -284,6 +302,9 @@ class IntentOrchestrator:
         "địa chỉ là", "dia chi la",
         "địa chỉ", "dia chi",
         "location la", "location:",
+        "location is", "at location",
+        "address is", "address:",
+        "venue is", "venue:",
     )
     LOCATION_MARKER_RE = re.compile(
         r"(?:" + "|".join(re.escape(t) for t in sorted(set(_LOCATION_MARKER_TERMS), key=len, reverse=True)) + r")"
@@ -318,7 +339,7 @@ class IntentOrchestrator:
         re.IGNORECASE,
     )
 
-    def _has_actionable_hint(self, message):
+    def has_actionable_hint(self, message):
         text = self.normalize(message)
         if any(hint in text for hint in self.ACTIONABLE_HINTS):
             return True
@@ -351,7 +372,7 @@ class IntentOrchestrator:
         result = self.detect(message)
         if result.get("confidence", 0) >= confidence_threshold or not ai_service:
             return result
-        if not self._has_actionable_hint(message):
+        if not self.has_actionable_hint(message):
             return result
 
         cached = self._lookup_cached_intent(message)
@@ -416,6 +437,23 @@ class IntentOrchestrator:
             pass
         elif intent == "schedule.suggest_plan":
             base["requires_confirmation"] = False
+        elif intent == "settings.update_mode":
+            mode = self._mode_from_text(self.normalize(message))
+            if not mode:
+                return None
+            base["entities"] = {"mode": mode}
+            base["refresh_targets"] = ["settings", "profile", "history"]
+        elif intent in ("email.mark_read", "email.mark_unread"):
+            date_window = self._email_date_window(self.normalize(message))
+            if date_window:
+                base["entities"] = {"date_window": date_window}
+            base["refresh_targets"] = ["email", "overview", "history"]
+        elif intent == "checklist.create":
+            items = self._checklist_items_from_text(message)
+            if not items:
+                return None
+            base["entities"] = {"items": items}
+            base["refresh_targets"] = ["overview", "history"]
         else:
             return None
         return base
@@ -500,32 +538,7 @@ class IntentOrchestrator:
         return (
             f"THOI DIEM HIEN TAI: {now.strftime('%Y-%m-%d %H:%M')} ({weekday}), GMT+7\n\n"
             "Cac loai y dinh hop le (chon dung 1 gia tri cho truong \"intent\"):\n"
-            "- schedule.create: muon tao lich hen/su kien/nhac nho moi\n"
-            "- schedule.update: muon doi/sua thoi gian hoac thong tin cua lich hen DA CO san "
-            "(vi du 'doi gio hop voi sep', 'chuyen lich kham rang sang ngay khac')\n"
-            "- schedule.delete: muon xoa/huy lich hen DA CO san "
-            "(vi du 'xoa lich hop ngay mai', 'huy cuoc hen voi khach')\n"
-            "- schedule.list: muon xem lich/su kien da co\n"
-            "- email.latest_summary: muon tom tat (cac) email moi nhat trong hop thu\n"
-            "- email.search: muon tim/xem email theo tu khoa hoac nguoi gui\n"
-            "- email.mark_read: muon danh dau (cac) email DA DOC "
-            "(vi du 'danh dau da xem email tu chi Lan')\n"
-            "- email.mark_unread: muon danh dau (cac) email CHUA DOC "
-            "(vi du 'danh dau email do la chua xem')\n"
-            "- history.list: muon xem lai lich su hoat dong DA LAM trong qua khu\n"
-            "- settings.update_mode: muon doi che do lam viec "
-            "(student, worker, freelancer, creator, business, mentor, teacher)\n"
-            "- checklist.create: liet ke nhieu viec/hoat dong SAP lam va muon dua vao checklist/to-do "
-            "DON GIAN, KHONG can gio cu the cho tung viec "
-            "(vi du 'hom nay co cac hoat dong nhu X, Y, Z, dua vao checklist giup minh') -- KHAC voi "
-            "history.list vi day la viec sap toi, khong phai viec da lam\n"
-            "- schedule.suggest_plan: liet ke nhieu hoat dong va muon AI XEP GIO/GOI Y LICH cu the cho "
-            "tung hoat dong do (vi du co tu 'sap xep lich', 'goi y lich', 'xep gium lich', 'suggest a "
-            "schedule', 'plan my day') -- KHAC voi checklist.create vi nguoi dung muon ket qua la LICH "
-            "co khung gio, khong phai danh sach viec don thuan. Neu cau co ca tu 'checklist' LAN tu "
-            "'lich'/'sap xep lich', uu tien y dinh ro rang hon trong cau (thuong la lich neu nguoi dung "
-            "noi ro 'goi y lich'/'sap xep lich')\n"
-            "- chat.freeform: tat ca truong hop khac (hoi dap thong thuong)\n\n"
+            f"{tool_catalog.build_catalog_prompt_block()}\n\n"
             f"{self.FEW_SHOT_REASONING}\n"
             "Tra ve CHINH XAC mot JSON object theo cau truc:\n"
             "{\n"
@@ -791,29 +804,23 @@ class IntentOrchestrator:
         entities = intent_result.get("entities") or {}
 
         if intent == "settings.update_mode":
+            # Deliberately does NOT write here -- settings.update_mode is a
+            # write tool per tool_catalog, so it must only propose. The
+            # actual User.update() call happens in
+            # SettingsUpdateModeAgent._handle_confirmed() once the user
+            # has explicitly confirmed.
             mode = entities.get("mode")
             if not mode:
                 return None
-            User.get_or_create(user_id)
-            User.update(
-                user_id,
-                user_mode=mode,
-                user_mode_selected_at=datetime.now().isoformat(),
-            )
-            labels = {
-                "student": "Student",
-                "worker": "Worker",
-                "freelancer": "Freelancer",
-                "creator": "Creator",
-                "business": "Business",
-                "mentor": "Mentor",
-                "teacher": "Teacher",
-            }
             return {
-                "response": f"Da cap nhat che do lam viec sang {labels.get(mode, mode)}.",
+                "response": (
+                    f"Ban muon doi che do lam viec sang {self.MODE_LABELS.get(mode, mode)}, "
+                    "dung khong? Xac nhan de minh ap dung."
+                ),
+                "pending_action": {"tool": "settings.update_mode", "arguments": {"mode": mode}},
                 "workspace_sources": ["profile"],
                 "refresh_targets": ["settings", "profile", "history"],
-                "action_type": "settings_updated",
+                "action_type": "chat",
             }
 
         if intent == "history.list":

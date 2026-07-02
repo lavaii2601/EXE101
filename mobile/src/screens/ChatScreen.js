@@ -79,6 +79,9 @@ function formatAgentMeta(data) {
   if (trace.requires_confirmation || data?.schedule_suggestion) {
     parts.push('Cần xác nhận');
   }
+  if (data?.pending_action) {
+    parts.push('Cần xác nhận hành động');
+  }
   return parts.join(' · ');
 }
 
@@ -92,6 +95,7 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [suggestion, setSuggestion] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null);
   const [planSuggestion, setPlanSuggestion] = useState(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -142,26 +146,43 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
     setSessionId(createSessionId());
     setMessages([]);
     setSuggestion(null);
+    setPendingAction(null);
     setPlanSuggestion(null);
     setInput('');
   };
 
-  const sendMessage = async () => {
-    const text = input.trim();
-    if (!text || loading) return;
+  const submitChatMessage = useCallback(async (text, options = {}) => {
+    const trimmed = String(text || '').trim();
+    if (!trimmed || loading) return;
 
-    const userMessage = { id: `u-${Date.now()}`, role: 'user', text };
-    setMessages((current) => [...current, userMessage]);
-    setInput('');
+    const {
+      addUserMessage = true,
+      confirmedAction = false,
+      actionOverride = null,
+      confirmedSchedule = false,
+      scheduleOverride = null,
+    } = options;
+
+    if (addUserMessage) {
+      const userMessage = { id: `u-${Date.now()}`, role: 'user', text: trimmed };
+      setMessages((current) => [...current, userMessage]);
+      setInput('');
+    }
+
     setLoading(true);
     setSuggestion(null);
+    setPendingAction(null);
     setPlanSuggestion(null);
 
     try {
       const data = await apiPost('/chat/message', {
-        message: text,
+        message: trimmed,
         mode: userMode,
         session_id: sessionId,
+        confirmed_schedule: confirmedSchedule,
+        schedule_override: scheduleOverride,
+        confirmed_action: confirmedAction,
+        action_override: actionOverride,
       });
       const assistantMessage = {
         id: `a-${Date.now()}`,
@@ -172,9 +193,21 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
       };
       setMessages((current) => [...current, assistantMessage]);
       onAgentSync?.(data.refresh_targets || [], data);
-      if (data.schedule_suggestion) setSuggestion(data.schedule_suggestion);
+      if (data.schedule_suggestion) {
+        setSuggestion({
+          ...data.schedule_suggestion,
+          message: trimmed,
+        });
+      }
+      if (data.pending_action) {
+        setPendingAction({
+          ...data.pending_action,
+          message: trimmed,
+        });
+      }
       if (data.day_plan_suggestion) setPlanSuggestion(normalizePlanSuggestion(data.day_plan_suggestion));
       if (data.schedule_created) Alert.alert('Đã tạo lịch', data.schedule_created.title || 'Lịch hẹn mới');
+      if (data.action_applied) Alert.alert('Đã thực hiện', data.response || 'Hành động đã được áp dụng.');
     } catch (error) {
       setMessages((current) => [
         ...current,
@@ -185,10 +218,24 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
       setIsAtBottom(true);
       requestAnimationFrame(() => listRef.current?.scrollToEnd?.({ animated: true }));
     }
+  }, [loading, onAgentSync, sessionId, userMode]);
+
+  const sendMessage = async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+    submitChatMessage(text);
   };
 
   const createSuggestedSchedule = async () => {
     if (!suggestion) return;
+    if (suggestion.action === 'update' || suggestion.action === 'delete') {
+      submitChatMessage(suggestion.message || 'Xác nhận lịch', {
+        addUserMessage: false,
+        confirmedSchedule: true,
+        scheduleOverride: suggestion,
+      });
+      return;
+    }
     setLoading(true);
     try {
       const data = await apiPost('/schedule/create', {
@@ -208,6 +255,15 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
       setLoading(false);
     }
   };
+
+  const confirmPendingAction = useCallback(() => {
+    if (!pendingAction) return;
+    submitChatMessage(pendingAction.message || 'Xác nhận', {
+      addUserMessage: false,
+      confirmedAction: true,
+      actionOverride: pendingAction.arguments || {},
+    });
+  }, [pendingAction, submitChatMessage]);
 
   const updatePlanDraftItem = useCallback((index, key, value) => {
     setPlanSuggestion((current) => {
@@ -260,6 +316,7 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
       await apiPost('/chat/clear');
       setMessages([]);
       setSuggestion(null);
+      setPendingAction(null);
       setPlanSuggestion(null);
       setSessionId(createSessionId());
       onAgentSync?.(['chat', 'history']);
@@ -338,12 +395,37 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
 
       {suggestion ? (
         <Card style={styles.suggestion}>
-          <Text style={styles.suggestionTitle}>Gợi ý tạo lịch</Text>
+          <Text style={styles.suggestionTitle}>
+            {suggestion.action === 'delete'
+              ? 'Gợi ý xóa lịch'
+              : suggestion.action === 'update'
+                ? 'Gợi ý sửa lịch'
+                : 'Gợi ý tạo lịch'}
+          </Text>
           <Text style={styles.suggestionText}>{suggestion.title || 'Lịch hẹn'}</Text>
-          <Text style={styles.suggestionMeta}>{suggestion.start_time || 'Chưa có thời gian'}</Text>
+          <Text style={styles.suggestionMeta}>
+            {suggestion.new_start_time
+              ? `${suggestion.start_time || ''} → ${suggestion.new_start_time}`
+              : suggestion.start_time || 'Chưa có thời gian'}
+          </Text>
           <View style={styles.suggestionActions}>
-            <Button title="Tạo lịch" onPress={createSuggestedSchedule} loading={loading} />
+            <Button
+              title={suggestion.action === 'delete' ? 'Xóa lịch' : suggestion.action === 'update' ? 'Cập nhật' : 'Tạo lịch'}
+              onPress={createSuggestedSchedule}
+              loading={loading}
+            />
             <Button title="Bỏ qua" variant="secondary" onPress={() => setSuggestion(null)} />
+          </View>
+        </Card>
+      ) : null}
+
+      {pendingAction ? (
+        <Card style={styles.suggestion}>
+          <Text style={styles.suggestionTitle}>Xác nhận hành động</Text>
+          <Text style={styles.suggestionMeta}>{pendingAction.tool || 'Hành động từ Bob'}</Text>
+          <View style={styles.suggestionActions}>
+            <Button title="Xác nhận" onPress={confirmPendingAction} loading={loading} />
+            <Button title="Bỏ qua" variant="secondary" onPress={() => setPendingAction(null)} disabled={loading} />
           </View>
         </Card>
       ) : null}

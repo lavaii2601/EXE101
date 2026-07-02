@@ -4,8 +4,8 @@ export const USER_MODES = [
     icon: 'ST',
     label: 'Sinh viên',
     shortLabel: 'Học tập',
-    description: 'Bài tập, deadline, email lớp và lịch học.',
-    prompts: ['Tóm tắt email lớp hôm nay', 'Lập kế hoạch học trong tuần'],
+    description: 'Môn học, bài tập, deadline, email lớp, lịch thi và kế hoạch ôn tập.',
+    prompts: ['Tóm tắt deadline học tập hôm nay', 'Lập kế hoạch ôn tập trong tuần'],
   },
   {
     value: 'worker',
@@ -26,10 +26,18 @@ export const USER_MODES = [
   {
     value: 'mentor',
     icon: 'MT',
-    label: 'Mentor / Giáo viên',
+    label: 'Mentor',
     shortLabel: 'Giảng dạy',
-    description: 'Học viên, lịch hướng dẫn và hạn phản hồi.',
+    description: 'Học viên, lịch hướng dẫn, phản hồi và theo dõi tiến độ.',
     prompts: ['Tóm tắt email học viên', 'Lịch hướng dẫn tiếp theo'],
+  },
+  {
+    value: 'teacher',
+    icon: 'GV',
+    label: 'Giáo viên',
+    shortLabel: 'Lớp học',
+    description: 'Lớp học, giáo án, học sinh, chấm bài và lịch giảng dạy.',
+    prompts: ['Tóm tắt email lớp học', 'Deadline chấm bài nào gần nhất?'],
   },
   {
     value: 'business',
