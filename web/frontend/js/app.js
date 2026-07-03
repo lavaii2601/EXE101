@@ -3762,29 +3762,6 @@ const agentNotifiedMeetingSuggestionIds = new Set(loadAgentNotifiedMeetingSugges
 let lastMeetingSuggestionScanAt = 0;
 let meetingSuggestionRefreshTimer = null;
 
-async function toggleEmailReadStatus(emailId, isUnread) {
-    try {
-        const endpoint = isUnread ? 'mark-as-read' : 'mark-as-unread';
-        const response = await apiFetch(`${API_BASE}/email/${endpoint}/${emailId}`, {
-            method: 'POST'
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            const action = isUnread ? ui('đã đọc', 'read') : ui('chưa đọc', 'unread');
-            showNotification(ui(`✅ Đã đánh dấu email ${action}`, `✅ Email marked as ${action}`), 'success');
-            // Reload emails to reflect the change
-            await loadEmails(currentEmailPage, { cacheOnly: true });
-        } else {
-            showNotification(`${ui('❌ Lỗi', '❌ Error')}: ${data.error || ui('Không thể đánh dấu email', 'Unable to update email')}`, 'error');
-        }
-    } catch (error) {
-        console.error('Error toggling email read status:', error);
-        showNotification(`${ui('❌ Lỗi', '❌ Error')}: ${error.message}`, 'error');
-    }
-}
-
 async function checkRuntimeConfig() {
     try {
         const response = await apiFetch(`${API_BASE}/chat/providers`);
@@ -4000,98 +3977,6 @@ async function loadEmails(page = 1, options = {}) {
             }
         }
         
-        return;
-        
-        
-        function renderEmailItem(email, container) {
-            const emailDiv = document.createElement('div');
-            emailDiv.className = 'email-item';
-            
-            // Add visual indicator for unread emails
-            const readStatus = email.is_unread ? 
-                `<span style="display: inline-block; width: 8px; height: 8px; background: #4CAF50; border-radius: 50%; margin-right: 6px;" title="${ui('Chưa đọc', 'Unread')}"></span>` :
-                `<span style="display: inline-block; width: 8px; height: 8px; background: #ccc; border-radius: 50%; margin-right: 6px;" title="${ui('Đã đọc', 'Read')}"></span>`;
-            
-            const markButtonText = email.is_unread ? ui('✅ Đánh dấu đã đọc', '✅ Mark as read') : ui('📧 Đánh dấu chưa đọc', '📧 Mark as unread');
-            const markButtonClass = email.is_unread ? 'mark-read-btn' : 'mark-unread-btn';
-            
-            // Tag styling
-            const tagColors = {
-                'education': '#4CAF50',
-                'business': '#2196F3',
-                'ads': '#FF9800',
-                'notification': '#9C27B0',
-                'personal': '#F44336',
-                'social': '#00BCD4',
-                'other': '#757575'
-            };
-            const tagColor = tagColors[email.tag] || tagColors['other'];
-            const tagHTML = email.tag ? 
-                `<span style="display: inline-block; background: ${tagColor}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-right: 6px; font-weight: bold;">${email.tag}</span>` : '';
-            
-            // Summary display
-            const summaryHTML = email.summary ? 
-                `<div class="email-item-summary" style="font-size: 13px; color: #666; margin-top: 6px; font-style: italic;">${escapeHtml(email.summary)}</div>` : '';
-            
-            emailDiv.innerHTML = `
-                <div class="email-item-header">
-                    <span class="email-item-subject">${readStatus}${tagHTML}${escapeHtml(email.subject)}</span>
-                </div>
-                <div class="email-item-sender">${ui('Từ', 'From')}: ${escapeHtml(email.sender)}</div>
-                ${summaryHTML}
-                <div class="email-item-snippet" style="color: #888; font-size: 12px; margin-top: 4px;">${escapeHtml(email.snippet)}</div>
-                <div class="email-item-actions" style="margin-top: 8px; display: flex; gap: 6px;">
-                    <button class="email-view-detail-btn" style="padding: 4px 12px; font-size: 12px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer;">👁️ Xem</button>
-                    <button class="${markButtonClass}" data-email-id="${email.id}" data-is-unread="${email.is_unread}" style="padding: 4px 12px; font-size: 12px; background: ${email.is_unread ? '#4CAF50' : '#FF9800'}; color: white; border: none; border-radius: 4px; cursor: pointer;">${markButtonText}</button>
-                </div>
-            `;
-            
-            emailDiv.querySelector('.email-view-detail-btn').addEventListener('click', (e) => {
-                e.stopPropagation();
-                showFormattedEmailDetail(email);
-            });
-
-            // Click on the item opens the full-email modal
-            emailDiv.addEventListener('click', (e) => {
-                if (e.target && e.target.closest('button')) return;
-                showFormattedEmailDetail(email);
-            });
-            
-            // Add mark as read/unread handler
-            const markButton = emailDiv.querySelector(`.${markButtonClass}`);
-            markButton.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                await toggleEmailReadStatus(email.id, email.is_unread);
-            });
-            
-            container.appendChild(emailDiv);
-        }
-        
-        // Pagination
-        if (data.pagination && data.pagination.total_pages > 1) {
-            const { current_page, total_pages } = data.pagination;
-            const paginationDiv = document.createElement('div');
-            paginationDiv.style.cssText = 'padding: 16px; display: flex; justify-content: center; gap: 8px; margin-top: 16px;';
-            
-            const prevBtn = document.createElement('button');
-            prevBtn.textContent = ui('◀ Trang trước', '◀ Previous');
-            prevBtn.disabled = current_page === 1;
-            prevBtn.addEventListener('click', () => loadEmails(current_page - 1));
-            paginationDiv.appendChild(prevBtn);
-            
-            const pageInfo = document.createElement('span');
-            pageInfo.textContent = `Trang ${current_page} / ${total_pages}`;
-            pageInfo.style.cssText = 'font-weight: bold; padding: 0 16px;';
-            paginationDiv.appendChild(pageInfo);
-            
-            const nextBtn = document.createElement('button');
-            nextBtn.textContent = 'Trang sau ▶';
-            nextBtn.disabled = current_page === total_pages;
-            nextBtn.addEventListener('click', () => loadEmails(current_page + 1));
-            paginationDiv.appendChild(nextBtn);
-            
-            emailsList.appendChild(paginationDiv);
-        }
     } catch (error) {
         console.error('Email load error:', error);
         emailsList.innerHTML = `<p>${ui('❌ Lỗi', '❌ Error')}: ${escapeHtml(error.message)}</p>`;
@@ -4353,71 +4238,6 @@ async function showFormattedEmailDetail(email) {
         email,
         formatEmailText(email.body || ui('Email không có nội dung.', 'This email has no content.'))
     );
-}
-
-async function showEmailDetail(email) {
-    const emailDetail = document.getElementById('emailDetail');
-    if (!emailDetail) return;
-    currentDetailEmail = email;
-
-    // Tag styling
-    const tagColors = {
-        'education': '#4CAF50',
-        'business': '#2196F3',
-        'ads': '#FF9800',
-        'notification': '#9C27B0',
-        'personal': '#F44336',
-        'social': '#00BCD4',
-        'other': '#757575'
-    };
-    const tagColor = tagColors[email.tag] || tagColors['other'];
-    const tagHTML = email.tag ? 
-        `<div style="margin: 12px 0;"><span style="display: inline-block; background: ${tagColor}; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold;">📁 ${email.tag.toUpperCase()}</span></div>` : '';
-    
-    const summaryHTML = email.summary ? 
-        `<div style="margin: 12px 0; padding: 12px; background: #F5F5F5; border-left: 3px solid ${tagColor}; border-radius: 4px;">
-            <strong style="color: #333;">📋 ${ui('Tóm tắt', 'Summary')}:</strong>
-            <p style="margin: 6px 0 0 0; color: #666;">${escapeHtml(email.summary)}</p>
-        </div>` : '';
-    
-    emailDetail.innerHTML = `
-        <div class="email-detail-subject">${escapeHtml(email.subject)}</div>
-        ${tagHTML}
-        ${summaryHTML}
-        <div class="email-detail-meta">
-            <strong>${ui('Từ', 'From')}:</strong> ${escapeHtml(email.sender)}<br>
-            <strong>${ui('Ngày', 'Date')}:</strong> ${escapeHtml(email.date)}
-        </div>
-        <div class="email-detail-body" style="color: #666; font-style: italic;">${ui('Đang tải nội dung...', 'Loading content...')}</div>
-    `;
-    
-    if (emailDetailModal) emailDetailModal.classList.add('show');
-    
-    // Lazy load body
-    if (!email.body || !Array.isArray(email.attachments)) {
-        try {
-            const response = await apiFetch(`${API_BASE}/email/get-email-body/${email.id}`);
-            const data = await response.json();
-            email.body = data.success ? data.body : ui('Không thể tải nội dung', 'Unable to load content');
-            email.attachments = data.success && Array.isArray(data.email?.attachments)
-                ? data.email.attachments
-                : [];
-        } catch (error) {
-            email.body = ui('Lỗi: ', 'Error: ') + error.message;
-            email.attachments = [];
-        }
-    }
-    
-    emailDetail.innerHTML = `
-        <div class="email-detail-subject">${escapeHtml(email.subject)}</div>
-        ${tagHTML}
-        ${summaryHTML}
-        <div class="email-detail-meta">
-            <strong>${ui('Từ', 'From')}:</strong> ${escapeHtml(email.sender)}<br>
-            <strong>${ui('Ngày', 'Date')}:</strong> ${escapeHtml(email.date)}
-        </div>
-        <div class="email-detail-body">${formatEmailText(email.body)}</div>
-    `;
 }
 
 // Note: Preview pane removed — email items open the modal showing full content.

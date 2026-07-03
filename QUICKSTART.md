@@ -64,7 +64,7 @@ curl http://127.0.0.1:5000/api/status
 6) OAuth (Gmail/Calendar)
 - Nếu chạy local, đặt `GMAIL_CLIENT_ID` và `GMAIL_CLIENT_SECRET` trong `web/.env`.
 - Trong Google Cloud OAuth Client, thêm redirect URI `http://127.0.0.1:5000/api/email/oauth2callback` và `http://localhost:5000/api/email/oauth2callback`.
-- Nếu chạy trên Vercel, `web/.env` không được đọc từ máy bạn. Vào Vercel Project Settings -> Environment Variables và set `GMAIL_CLIENT_ID` + `GMAIL_CLIENT_SECRET`, hoặc set `GMAIL_CREDENTIALS_JSON` bằng toàn bộ nội dung file JSON OAuth client, rồi deploy lại.
+- Nếu chạy trên Railway, `web/.env` không được đọc từ máy bạn. Vào Railway Variables và set `GMAIL_CLIENT_ID` + `GMAIL_CLIENT_SECRET`, hoặc set `GMAIL_CREDENTIALS_JSON` bằng toàn bộ nội dung file JSON OAuth client, rồi deploy lại (xem `RAILWAY.md`).
 
 7) Lưu ý bảo mật
 - Không lưu `data/` hoặc file token (`*.pickle`) trong Git. `.gitignore` đã loại trừ các tệp này.

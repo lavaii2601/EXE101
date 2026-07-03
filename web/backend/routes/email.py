@@ -17,8 +17,6 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from google_auth_oauthlib.flow import Flow
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
 from googleapiclient.discovery import build
 from services.gmail_service import GmailService, get_cached_gmail_service
 from services.mistral_service import MistralService

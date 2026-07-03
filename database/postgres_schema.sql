@@ -359,9 +359,8 @@ CREATE TABLE IF NOT EXISTS sync_jobs (
     CONSTRAINT sync_jobs_status_check CHECK (status IN ('pending', 'running', 'success', 'failed', 'skipped'))
 );
 
--- Knowledge base for Bob's RAG lookups. Global rows (user_id IS NULL) are
--- shared product/feature/FAQ knowledge; rows with user_id set are per-user
--- learned facts, see web/backend/models/knowledge.py for details.
+-- Shared knowledge base for Bob's RAG lookups (not per-user -- product/feature
+-- knowledge, FAQ, and any open-source reference material fed in later).
 CREATE TABLE IF NOT EXISTS knowledge_documents (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     title TEXT NOT NULL,

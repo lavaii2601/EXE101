@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
 from services.openrouter_service import OpenRouterService
 from models.cache import Cache
-from utils.user_context import get_user_db_path, get_current_user_id
+from utils.user_context import get_user_db_path
 import hashlib
 
 # Configure module logger
@@ -105,7 +105,6 @@ class AIService:
 
         if not self.configured_providers:
             logger.warning("⚠️  Không có AI provider khả dụng - sử dụng Demo Mode")
-            print("⚠️  Không có AI provider khả dụng - sử dụng Demo Mode")
     def _is_quota_error(self, error_message, status_code=None):
         """Detect if error is related to quota/rate limits"""
         if status_code in [429, 402, 403]:  # Too many requests, payment required, forbidden
