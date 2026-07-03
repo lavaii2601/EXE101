@@ -4156,6 +4156,19 @@ async function summarizeEnhancedEmail(email, emailDiv, button) {
     }
 }
 
+function formatEmailListDate(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleString(currentLanguage === 'en' ? 'en-US' : 'vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
 function renderEnhancedEmailItem(email, container) {
     const emailDiv = document.createElement('div');
     emailDiv.className = `email-item ${email.is_unread ? 'is-unread' : 'is-read'}`;
@@ -4180,6 +4193,8 @@ function renderEnhancedEmailItem(email, container) {
     const snippetHTML = normalizedSnippet && normalizedSnippet !== normalizedSummary
         ? `<div class="email-item-snippet">${escapeHtml(email.snippet)}</div>`
         : '';
+    const dateText = formatEmailListDate(email.date);
+    const dateHTML = dateText ? `<span class="email-item-date">${escapeHtml(dateText)}</span>` : '';
 
     emailDiv.innerHTML = `
         <div class="email-item-header">
@@ -4187,6 +4202,7 @@ function renderEnhancedEmailItem(email, container) {
                 <span class="email-read-state">${email.is_unread ? ui('Chưa đọc', 'Unread') : ui('Đã đọc', 'Read')}</span>
                 ${tagHTML}${escapeHtml(email.subject || ui('(Không có tiêu đề)', '(No subject)'))}
             </span>
+            ${dateHTML}
         </div>
         <div class="email-item-sender">${ui('Từ', 'From')}: ${escapeHtml(email.sender || ui('Không xác định', 'Unknown'))}</div>
         ${summaryHTML}

@@ -2394,10 +2394,21 @@ select:focus {
 }
 
 .email-item .email-item-subject {
+    flex: 1 1 auto;
+    min-width: 0;
     color: var(--text);
     font-size: 15px;
     font-weight: 700;
     line-height: 1.4;
+}
+
+.email-item .email-item-date {
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
 }
 
 .email-item .email-item-sender,
@@ -2443,6 +2454,14 @@ select:focus {
     .email-item {
         padding: 14px;
         border-radius: 12px;
+    }
+
+    .email-item .email-item-header {
+        flex-wrap: wrap;
+    }
+
+    .email-item .email-item-date {
+        margin-left: 0;
     }
 
     .email-item-actions {
