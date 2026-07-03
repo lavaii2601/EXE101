@@ -58,6 +58,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
   const [searchKeyword, setSearchKeyword] = useState('');
   const [cacheMiss, setCacheMiss] = useState(false);
   const [scanningGmail, setScanningGmail] = useState(false);
+  const [calendarPermissionAttempted, setCalendarPermissionAttempted] = useState(false);
 
   const loadAuth = useCallback(async () => {
     try {
@@ -144,6 +145,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
     try {
       const result = await connectGoogleAccount();
       if (!result.connected) return;
+      await loadAuth();
       setScanningGmail(true);
       try {
         await loadEmails();
@@ -156,6 +158,17 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
       Alert.alert('Không mở được Gmail OAuth', error.message);
     }
   };
+
+  useEffect(() => {
+    if (
+      auth?.authenticated
+      && auth.calendar_write_connected === false
+      && !calendarPermissionAttempted
+    ) {
+      setCalendarPermissionAttempted(true);
+      login();
+    }
+  }, [auth, calendarPermissionAttempted]);
 
   const applyMobileUser = async () => {
     setMobileUserId(userIdInput);

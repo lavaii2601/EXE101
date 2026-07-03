@@ -42,6 +42,7 @@ let pendingUserMode = '';
 let userModeRequired = false;
 let pendingPageAfterMode = '';
 let isAuthenticated = false;
+let lastAuthStatus = null;
 let currentLanguage = localStorage.getItem('flowmate-language') === 'en' ? 'en' : 'vi';
 let activeChatSessionId = localStorage.getItem('flowmate-active-chat-session') || createChatSessionId();
 let activeChatSessionTitle = localStorage.getItem('flowmate-active-chat-title') || '';
@@ -748,6 +749,10 @@ async function initApp() {
         return;
     }
 
+    if (await ensureGoogleCalendarPermission()) {
+        return;
+    }
+
     await loadUserProfile();
     if (!userModeRequired) {
         showWorkspace();
@@ -820,9 +825,11 @@ async function resolveInitialAuthState() {
             headers: { Accept: 'application/json' }
         });
         const data = await response.json();
+        lastAuthStatus = data;
         isAuthenticated = !!(response.ok && data.authenticated);
     } catch (error) {
         console.error('Initial auth check failed:', error);
+        lastAuthStatus = null;
         isAuthenticated = false;
     }
 
@@ -833,6 +840,50 @@ async function resolveInitialAuthState() {
         ));
     }
     return isAuthenticated;
+}
+
+function calendarPermissionAttemptKey(authStatus) {
+    const userId = authStatus?.user_id || authStatus?.gmail_email || 'default';
+    return `flowmate-calendar-permission-attempt:${userId}`;
+}
+
+async function ensureGoogleCalendarPermission(options = {}) {
+    const authStatus = options.authStatus || lastAuthStatus;
+    if (!authStatus?.authenticated || authStatus.calendar_write_connected) return false;
+
+    const attemptKey = calendarPermissionAttemptKey(authStatus);
+    if (sessionStorage.getItem(attemptKey) === '1') return false;
+    sessionStorage.setItem(attemptKey, '1');
+
+    showAuthGate(ui(
+        'Đang hoàn tất quyền Google Calendar...',
+        'Finishing Google Calendar permission...'
+    ), true);
+
+    try {
+        const response = await fetch(`${API_BASE}/email/auth_url?reason=calendar_scope`, {
+            credentials: 'include',
+            headers: { Accept: 'application/json' }
+        });
+        const data = await response.json();
+        if (!response.ok || !data.auth_url) {
+            console.warn('Unable to start Calendar permission OAuth:', data);
+            showAuthGate(ui(
+                'Không thể tự cấp quyền Calendar. Bạn vẫn có thể vào app và cấp lại quyền trong Cài đặt.',
+                'Unable to auto-grant Calendar permission. You can still open the app and reconnect in Settings.'
+            ));
+            return false;
+        }
+        window.location.href = data.auth_url;
+        return true;
+    } catch (error) {
+        console.warn('Calendar permission OAuth failed:', error);
+        showAuthGate(ui(
+            'Không thể kết nối Google để hoàn tất quyền Calendar.',
+            'Unable to reach Google to finish Calendar permission.'
+        ));
+        return false;
+    }
 }
 
 // Simple intent detection for scheduling prompts (Vietnamese + English keywords)

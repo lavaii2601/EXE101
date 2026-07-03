@@ -1654,7 +1654,8 @@ def gmail_auth():
 
     auth_url, state = flow.authorization_url(
         access_type='offline',
-        prompt='select_account consent'
+        prompt='select_account consent',
+        include_granted_scopes='true'
     )
     # store the state and PKCE code_verifier in session; do not pickle the flow object
     session['oauth_state'] = state
@@ -1847,7 +1848,8 @@ def gmail_auth_url():
 
     auth_url, state = flow.authorization_url(
         access_type='offline',
-        prompt='select_account consent'
+        prompt='select_account consent',
+        include_granted_scopes='true'
     )
     session['oauth_state'] = state
     # store PKCE verifier as well so callback can exchange token
