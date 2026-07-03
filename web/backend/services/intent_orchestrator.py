@@ -894,7 +894,11 @@ class IntentOrchestrator:
         return {
             "id": schedule_id,
             "title": schedule.get("title"),
+            "description": schedule.get("description") or "",
             "start_time": schedule.get("start_time"),
+            "end_time": schedule.get("end_time"),
+            "attendees": schedule.get("attendees") or [],
+            "location": schedule.get("location") or "",
         }
 
     @classmethod

@@ -2324,14 +2324,17 @@ class FreeformChatAgent:
                     'description': ctx.schedule_override.get('description') or schedule_info.get('description'),
                     'start_time': ctx.schedule_override.get('start_time') or schedule_info.get('start_time'),
                     'end_time': ctx.schedule_override.get('end_time') or schedule_info.get('end_time'),
-                    'attendees': ctx.schedule_override.get('attendees') or schedule_info.get('attendees')
+                    'attendees': ctx.schedule_override.get('attendees') or schedule_info.get('attendees'),
+                    'location': ctx.schedule_override.get('location') or schedule_info.get('location'),
                 }
                 try:
                     schedule_id = ScheduleService.create_schedule(
                         title=payload['title'],
                         description=payload['description'],
                         start_time=payload['start_time'],
+                        end_time=payload.get('end_time'),
                         attendees=payload.get('attendees') or [],
+                        location=payload.get('location') or None,
                         db_path=ctx.db_path
                     )
 
@@ -2347,51 +2350,20 @@ class FreeformChatAgent:
                     schedule_created = {
                         'id': schedule_id,
                         'title': payload['title'],
-                        'start_time': payload['start_time']
+                        'description': payload.get('description') or '',
+                        'start_time': payload['start_time'],
+                        'end_time': payload.get('end_time'),
+                        'attendees': payload.get('attendees') or [],
+                        'location': payload.get('location') or '',
                     }
 
                     logger.info(f"Created schedule (confirmed): {payload['title']}")
-                except Exception as e:
-                    logger.error(f"Failed to create schedule on confirmation: {e}")
-
-                # Spawn background calendar sync for created schedule
-                try:
-                    user_id = ctx.user_id
-                    db_path = ctx.db_path
-
-                    def _bg_sync():
-                        try:
-                            token_file = get_user_token_file(user_id)
-                            if not token_file or not os.path.exists(token_file):
-                                return
-                            cal = CalendarService(token_file=token_file)
-                            schedule = Schedule.get_by_id(schedule_id, db_path=db_path)
-                            if not schedule:
-                                return
-                            if schedule.get('calendar_event_id'):
-                                cal.update_event(
-                                    event_id=schedule.get('calendar_event_id'),
-                                    title=schedule.get('title'),
-                                    description=schedule.get('description'),
-                                    start_time=schedule.get('start_time'),
-                                    end_time=schedule.get('end_time'),
-                                    attendees=[a.strip() for a in (schedule.get('attendees') or '').split(',') if a.strip()]
-                                )
-                            else:
-                                event_id = cal.create_event(
-                                    title=schedule.get('title'),
-                                    description=schedule.get('description'),
-                                    start_time=schedule.get('start_time'),
-                                    end_time=schedule.get('end_time'),
-                                    attendees=[a.strip() for a in (schedule.get('attendees') or '').split(',') if a.strip()]
-                                )
-                                if event_id:
-                                    Schedule.update(schedule_id, calendar_event_id=event_id, db_path=db_path)
-                        except Exception:
-                            pass
-                    _thr.Thread(target=_bg_sync, daemon=True).start()
                 except Exception:
-                    pass
+                    logger.exception("Failed to create schedule on confirmation")
+
+                if schedule_created:
+                    calendar_sync_pending = _sync_schedule_to_calendar_async(ctx.user_id, schedule_id, ctx.db_path)
+                    schedule_created['calendar_sync_pending'] = calendar_sync_pending
             else:
                 # Do not create schedule automatically - return suggestion for client to confirm
                 schedule_created = None
@@ -2399,6 +2371,9 @@ class FreeformChatAgent:
         schedule_suggestion = None
         if schedule_info and not schedule_created:
             schedule_suggestion = schedule_info
+        refresh_targets = set(ctx.refresh_targets)
+        if schedule_info:
+            refresh_targets.update(['schedule', 'calendar', 'overview', 'history'])
 
         return AgentResult(
             response=response,
@@ -2407,10 +2382,10 @@ class FreeformChatAgent:
             schedule_created=schedule_created,
             schedule_suggestion=schedule_suggestion,
             workspace_sources=sorted(workspace_sources),
-            refresh_targets=sorted(set(ctx.refresh_targets)),
+            refresh_targets=sorted(refresh_targets),
             ai_used=True,
             grounded=bool(workspace_sources),
-            action='Đề xuất lịch cần xác nhận' if schedule_suggestion else None,
+            action='Tạo lịch sau xác nhận' if schedule_created else ('Đề xuất lịch cần xác nhận' if schedule_suggestion else None),
         )
 
 

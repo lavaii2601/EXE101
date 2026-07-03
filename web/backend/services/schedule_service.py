@@ -61,12 +61,16 @@ class ScheduleService:
             duration = duration_minutes if isinstance(duration_minutes, int) and duration_minutes > 0 else 60
             end_dt = datetime.fromisoformat(start_time) + timedelta(minutes=duration)
             end_time = end_dt.isoformat()
+        if isinstance(attendees, str):
+            attendees_value = [item.strip() for item in attendees.split(',') if item.strip()]
+        else:
+            attendees_value = [str(item).strip() for item in (attendees or []) if str(item).strip()]
         schedule_id = Schedule.create(
             title,
             description,
             start_time,
             end_time,
-            ','.join(attendees),
+            ','.join(attendees_value),
             email_body='',
             location=location,
             db_path=db_path
