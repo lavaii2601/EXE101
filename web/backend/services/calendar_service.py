@@ -10,6 +10,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from config import Config
 from models.schedule import LOCAL_TZ
+from utils.user_context import persist_google_credentials, user_id_from_token_file
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ class CalendarService:
             if not creds or not creds.valid:
                 if creds and creds.expired and creds.refresh_token:
                     creds.refresh(Request())
+                    self._persist_refreshed_credentials(creds)
                 else:
                     logger.warning(f"No valid credentials found in {self.token_file}")
                     return False
@@ -51,6 +53,14 @@ class CalendarService:
         except Exception as e:
             logger.error(f"Calendar authentication error: {str(e)}")
             return False
+
+    def _persist_refreshed_credentials(self, creds):
+        try:
+            user_id = user_id_from_token_file(self.token_file)
+            if user_id and user_id != 'default':
+                persist_google_credentials(user_id, creds)
+        except Exception:
+            logger.debug("Could not persist refreshed Calendar credentials", exc_info=True)
     
     def get_events(self, max_results=10, time_min=None, time_max=None):
         """Get upcoming calendar events"""

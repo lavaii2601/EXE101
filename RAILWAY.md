@@ -37,6 +37,11 @@ You can use either:
 
 After changing variables, redeploy the Railway service.
 
+Google OAuth tokens are persisted in PostgreSQL (`oauth_tokens`) and cached in
+the Railway container only at runtime. If users connected Google before the
+database-backed token persistence shipped, ask them to reconnect Google once
+after redeploy so the token can be stored durably.
+
 On each deploy, `python scripts/deploy_postgres_schema.py` runs first. It is
 idempotent: existing tables/data are preserved, and only missing schema pieces
 or safe migrations are applied.

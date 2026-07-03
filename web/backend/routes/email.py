@@ -31,7 +31,14 @@ from models.meeting_suggestion import MeetingSuggestion
 from models import postgres_db as pg
 from config import Config
 from config import GMAIL_CLIENT_ID_KEYS, GMAIL_CLIENT_SECRET_KEYS, GMAIL_CREDENTIALS_JSON_KEYS
-from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file, sanitize_user_id
+from utils.user_context import (
+    delete_google_credentials,
+    get_current_user_id,
+    get_user_db_path,
+    get_user_token_file,
+    persist_google_credentials,
+    sanitize_user_id,
+)
 from utils.security import issue_mobile_token
 from utils.google_service_cache import invalidate_cached_service
 
@@ -777,13 +784,7 @@ def _load_gmail_service(user_id):
 
 def _clear_oauth_state(user_id):
     """Clear OAuth token/session so another user can sign in."""
-    token_file = get_user_token_file(user_id)
-
-    if os.path.exists(token_file):
-        try:
-            os.remove(token_file)
-        except Exception as e:
-            print(f"Error deleting token file: {e}")
+    token_file = delete_google_credentials(user_id)
     invalidate_cached_service(token_file)
 
     # Clear oauth session keys
@@ -1582,10 +1583,8 @@ def google_auth_native():
         # match up after logging in.
         user_id = sanitize_user_id(gmail_email or 'default')
 
-        # Save token to file (Crucial for _load_gmail_service)
-        token_file = get_user_token_file(user_id)
-        with open(token_file, 'wb') as token:
-            pickle.dump(creds, token)
+        # Save token durably for Railway and cache it locally for this worker.
+        persist_google_credentials(user_id, creds, account_email=gmail_email)
 
         # Update User in Database
         db_path = get_user_db_path(user_id)
@@ -1735,10 +1734,8 @@ def oauth2callback():
         user_id = sanitize_user_id(gmail_email or 'default')
         logger.info(f"Setting session for user: {user_id}")
 
-        # Save token
-        token_file = get_user_token_file(user_id)
-        with open(token_file, 'wb') as token:
-            pickle.dump(creds, token)
+        # Save token durably for Railway and cache it locally for this worker.
+        token_file = persist_google_credentials(user_id, creds, account_email=gmail_email)
         logger.info(f"Token saved for user: {token_file}")
 
         # Save user info to database and initialize per-user DB

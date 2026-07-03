@@ -14,6 +14,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from config import Config
 from utils.google_service_cache import get_cached_service
+from utils.user_context import persist_google_credentials, user_id_from_token_file
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -71,12 +72,21 @@ class GmailService:
                 # Save the credentials for the next run
                 with open(self.token_file, 'wb') as token:
                     pickle.dump(creds, token)
+                self._persist_refreshed_credentials(creds)
             
             self.service = build('gmail', 'v1', credentials=creds)
             return True
         except Exception as e:
             print(f"Gmail authentication error: {str(e)}")
             return False
+
+    def _persist_refreshed_credentials(self, creds):
+        try:
+            user_id = user_id_from_token_file(self.token_file)
+            if user_id and user_id != 'default':
+                persist_google_credentials(user_id, creds)
+        except Exception:
+            logger.debug("Could not persist refreshed Gmail credentials", exc_info=True)
     
     def get_emails(self, max_results=10, query='is:unread', include_read=False):
         """Get emails from inbox with lazy body loading"""
