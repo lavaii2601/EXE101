@@ -7,6 +7,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = PROJECT_ROOT / "database" / "postgres_schema.sql"
 MIGRATIONS_DIR = PROJECT_ROOT / "database" / "migrations"
 EMAIL_TRAINING_PATH = PROJECT_ROOT / "docs" / "bob-training" / "email-150-knowledge.json"
+EXPANDED_TRAINING_PATH = PROJECT_ROOT / "docs" / "bob-training" / "bob-200-expanded-contexts.json"
+STUDENT_PRIVACY_RESEARCH_PATH = PROJECT_ROOT / "docs" / "bob-training" / "bob-student-privacy-research.json"
 
 
 def apply_sql_file(conn, path):
@@ -17,33 +19,40 @@ def apply_sql_file(conn, path):
 
 
 def import_bob_email_training():
-    if not EMAIL_TRAINING_PATH.exists():
+    training_sets = [
+        (EMAIL_TRAINING_PATH, "email,gmail,bob,training", "bob-email-150"),
+        (EXPANDED_TRAINING_PATH, "expanded,bob,training", "bob-expanded-200"),
+        (STUDENT_PRIVACY_RESEARCH_PATH, "student,privacy,research,bob,training", "bob-student-privacy-research"),
+    ]
+    existing_sets = [item for item in training_sets if item[0].exists()]
+    if not existing_sets:
         return
 
     sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
     from train_bob import _init_storage, _load_documents, import_documents
 
-    documents = _load_documents(
-        [EMAIL_TRAINING_PATH],
-        default_tags="email,gmail,bob,training",
-        chunk_chars=3500,
-    )
-    if not documents:
-        print("No Bob email training documents found.")
-        return
-
     _init_storage()
-    created, updated, skipped = import_documents(
-        documents,
-        source="bob-email-150",
-        user_id=None,
-        update_existing=True,
-        dry_run=False,
-    )
-    print(
-        f"Bob email training import completed: "
-        f"{created} created, {updated} updated, {skipped} skipped."
-    )
+    for path, default_tags, source in existing_sets:
+        documents = _load_documents(
+            [path],
+            default_tags=default_tags,
+            chunk_chars=3500,
+        )
+        if not documents:
+            print(f"No Bob training documents found in {path.name}.")
+            continue
+
+        created, updated, skipped = import_documents(
+            documents,
+            source=source,
+            user_id=None,
+            update_existing=True,
+            dry_run=False,
+        )
+        print(
+            f"Bob training import completed for {path.name}: "
+            f"{created} created, {updated} updated, {skipped} skipped."
+        )
 
 
 def main():

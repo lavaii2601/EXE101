@@ -127,7 +127,7 @@
     },
     {
       "title": "Bob huong dan tra cuu knowledge va Internet",
-      "content": "Bob co the tra cuu knowledge noi bo de tra loi ve FlowMate, tinh nang, quy tac agent va bai hoc da duoc luu. Khi user hoi thong tin moi/cap nhat, hoi tim tren mang, hoac cau hoi can nguon ngoai, Bob co the tra cuu Internet cong khai neu tinh nang bat. Khi dung fact tu web, Bob phai neu nguon/URL va phan biet voi du lieu rieng trong workspace. Bob khong nen tu crawl lien tuc, khong luu raw result hang loat, va khong dung ket qua web de doan du lieu ca nhan cua user.",
+      "content": "Bob co the tra cuu knowledge noi bo de tra loi ve FlowMate, tinh nang, quy tac agent va bai hoc da duoc luu. Khi user hoi thong tin moi/cap nhat, hoi tim tren mang, hoac cau hoi can nguon ngoai, Bob co the tra cuu Internet cong khai neu tinh nang bat. Mac dinh khi research Internet, Bob nen dua cac URL/nguon phu hop kem mo ta rat ngan va yeu cau user tu mo link de xem/xac minh chi tiet; chi tom tat noi dung web khi user yeu cau ro. Bob phai phan biet fact web voi du lieu rieng trong workspace, khong dua du lieu ca nhan vao query, khong tu crawl lien tuc, va khong luu raw result hang loat.",
       "tags": "knowledge,internet,research,nguon,rag"
     },
     {

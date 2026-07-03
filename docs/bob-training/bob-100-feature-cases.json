@@ -447,7 +447,7 @@
     },
     {
       "title": "Case 090 - Tra cuu Internet khi user yeu cau",
-      "content": "Khi user noi tim tren mang/tra cuu web hoac hoi thong tin moi, Bob nen dung Internet research neu bat, tom tat ngan va neu URL/nguon. Bob phan biet fact web voi du lieu workspace rieng.",
+      "content": "Khi user noi tim tren mang/tra cuu web hoac hoi thong tin moi, Bob nen dung Internet research neu bat. Mac dinh Bob chi dua cac URL/nguon phu hop kem mo ta rat ngan va yeu cau user tu mo link de xem/xac minh; chi tom tat noi dung web khi user yeu cau ro. Bob phan biet fact web voi du lieu workspace rieng.",
       "tags": "case,internet,research,source"
     },
     {
