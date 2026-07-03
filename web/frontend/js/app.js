@@ -2342,7 +2342,10 @@ async function refreshAuthButtons() {
         const profileEmail = gmailInfo.gmail_email || (data && data.gmail_email) || '';
         const profilePicture = gmailInfo.gmail_picture || (data && data.gmail_picture) || '';
         
-        gmailLoginBtn.style.display = isAuth ? 'none' : 'inline-block';
+        gmailLoginBtn.style.display = 'inline-block';
+        gmailLoginBtn.textContent = isAuth
+            ? ui('Cấp lại quyền Google', 'Reconnect Google')
+            : ui('Đăng nhập / Đổi tài khoản', 'Sign in / Switch account');
         gmailLogoutBtn.style.display = isAuth ? 'inline-block' : 'none';
         if (openGmailBtn) openGmailBtn.style.display = isAuth ? 'inline-block' : 'none';
 
@@ -3186,7 +3189,7 @@ async function loadSettingsPage() {
             ? ui('Đã kết nối và sẵn sàng đồng bộ.', 'Connected and ready to sync.')
             : ui('Chưa kết nối tài khoản Google.', 'Google account not connected.');
         if (googleBtn) {
-            googleBtn.textContent = connected ? ui('Mở Gmail', 'Open Gmail') : ui('Kết nối', 'Connect');
+            googleBtn.textContent = connected ? ui('Cấp lại quyền', 'Reconnect') : ui('Kết nối', 'Connect');
             googleBtn.dataset.connected = connected ? 'true' : 'false';
         }
         updateUserModeUI(user.user_mode || currentUserMode);
@@ -3197,12 +3200,7 @@ async function loadSettingsPage() {
 }
 
 function handleSettingsGoogleAction() {
-    const button = document.getElementById('settingsGoogleBtn');
-    if (button?.dataset.connected === 'true') {
-        openExternalUrl('https://mail.google.com');
-    } else {
-        gmailLogin();
-    }
+    gmailLogin();
 }
 
 async function clearAllUserHistory() {

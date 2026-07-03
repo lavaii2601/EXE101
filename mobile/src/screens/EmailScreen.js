@@ -7,7 +7,7 @@ import Field from '../components/Field';
 import Screen from '../components/Screen';
 import SegmentedControl from '../components/SegmentedControl';
 import { apiGet, apiPost } from '../api/client';
-import { clearPersistedSession, setMobileUserId } from '../api/session';
+import { setMobileUserId } from '../api/session';
 import { connectGoogleAccount } from '../api/googleAuth';
 import { useTheme } from '../theme/ThemeContext';
 import ModeBrief from '../components/ModeBrief';
@@ -164,19 +164,6 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
     onAgentSync?.(['profile', 'email']);
   };
 
-  const logout = async () => {
-    try {
-      await apiPost('/email/logout');
-      await clearPersistedSession();
-      setAuth({ authenticated: false });
-      setEmails([]);
-      onAuthChanged?.();
-      onAgentSync?.(['profile', 'settings', 'email']);
-    } catch (error) {
-      Alert.alert('Không đăng xuất được', error.message);
-    }
-  };
-
   const openEmail = async (email) => {
     setSelectedEmail(email);
     setEmailBody('');
@@ -323,9 +310,9 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
             <Text style={styles.muted} numberOfLines={1}>{auth?.gmail_email || 'Đăng nhập để đọc và gửi email.'}</Text>
           </View>
           <Button
-            title={auth?.authenticated ? 'Đăng xuất' : 'Đăng nhập'}
+            title={auth?.authenticated ? 'Đăng nhập lại' : 'Đăng nhập'}
             variant={auth?.authenticated ? 'secondary' : 'primary'}
-            onPress={auth?.authenticated ? logout : login}
+            onPress={login}
           />
         </View>
       </Card>
