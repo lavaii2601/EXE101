@@ -1032,7 +1032,7 @@ async function refreshCalendarScheduleData(options = {}) {
                     showNotification(ui('Chưa kết nối Google Calendar', 'Google Calendar is not connected'), 'info');
                 }
             } else {
-                throw new Error(data.error || ui('Không thể cập nhật lịch', 'Unable to refresh calendar'));
+                throw new Error(data.message || data.error || ui('Không thể cập nhật lịch', 'Unable to refresh calendar'));
             }
         } else {
             syncedGoogle = true;
@@ -1053,7 +1053,9 @@ async function refreshCalendarScheduleData(options = {}) {
     ]);
 
     if (options.notify && syncedGoogle) {
-        if (syncResult?.push_failed_count > 0) {
+        if (syncResult?.calendar_sync_error?.message) {
+            showNotification(syncResult.calendar_sync_error.message, 'warning');
+        } else if (syncResult?.push_failed_count > 0) {
             showNotification(ui('⚠️ Chưa đẩy được một số lịch lên Google Calendar. Hãy đăng nhập lại Google rồi thử đồng bộ.', '⚠️ Some events could not be pushed to Google Calendar. Reconnect Google and try syncing again.'), 'warning');
         } else if (syncResult?.pushed_count > 0) {
             showNotification(ui(`✅ Đã đồng bộ ${syncResult.pushed_count} lịch lên Google Calendar`, `✅ Synced ${syncResult.pushed_count} event(s) to Google Calendar`), 'success');
@@ -5329,6 +5331,8 @@ async function handleScheduleSubmit(e) {
             }
             if (data.calendar_event_id) {
                 showNotification(ui('✅ Lịch hẹn đã được tạo và đồng bộ Google Calendar', '✅ Appointment created and synced with Google Calendar'), 'success');
+            } else if (data.calendar_sync_error?.message) {
+                showNotification(data.calendar_sync_error.message, 'warning');
             } else {
                 showNotification(ui('✅ Đã tạo lịch hẹn. Đang đồng bộ với Google Calendar...', '✅ Appointment created. Syncing with Google Calendar...'), 'info');
             }
@@ -5343,7 +5347,7 @@ async function handleScheduleSubmit(e) {
             await refreshLocalScheduleViews();
 
             // If calendar_event_id not present, poll for status in background
-            if (!data.calendar_event_id && sid) {
+            if (!data.calendar_event_id && sid && !data.calendar_sync_error) {
                 pollScheduleSync(sid, 30000).then(synced => {
                     if (synced) {
                         showNotification(ui('✅ Lịch hẹn đã được đồng bộ với Google Calendar', '✅ Appointment synced with Google Calendar'), 'success');

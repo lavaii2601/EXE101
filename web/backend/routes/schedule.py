@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import pickle
 import re
 import threading
 import time
@@ -38,6 +39,7 @@ _SCHEDULE_CACHE_TTL_SECONDS = 15
 _FULL_SYNC_DAYS = int(os.getenv('SCHEDULE_FULL_SYNC_DAYS', '90'))
 _LOCAL_EDIT_SYNC_GRACE_SECONDS = 180
 _CHECKLIST_CACHE_TTL_SECONDS = 365 * 24 * 60 * 60
+_GOOGLE_CALENDAR_WRITE_SCOPE = 'https://www.googleapis.com/auth/calendar.events'
 
 _DATE_WORDS = {
     'today': 0,
@@ -130,11 +132,85 @@ def _load_calendar_service(user_id):
     return None
 
 
+def _google_calendar_token_status(user_id):
+    """Return token presence and whether it includes Calendar write scope."""
+    if not user_id or user_id == 'default':
+        return {
+            'has_token': False,
+            'has_calendar_write_scope': False,
+            'scopes': [],
+            'error': 'not_authenticated',
+        }
+    token_file = get_user_token_file(user_id)
+    if not os.path.exists(token_file):
+        return {
+            'has_token': False,
+            'has_calendar_write_scope': False,
+            'scopes': [],
+            'error': 'not_authenticated',
+        }
+    try:
+        with open(token_file, 'rb') as token_handle:
+            creds = pickle.load(token_handle)
+        scopes = list(getattr(creds, 'scopes', None) or getattr(creds, 'granted_scopes', None) or [])
+        return {
+            'has_token': True,
+            'has_calendar_write_scope': _GOOGLE_CALENDAR_WRITE_SCOPE in scopes,
+            'scopes': scopes,
+            'error': None,
+        }
+    except Exception as exc:
+        logger.warning("Could not inspect Google token scopes for %s: %s", user_id, exc)
+        return {
+            'has_token': True,
+            'has_calendar_write_scope': False,
+            'scopes': [],
+            'error': 'token_unreadable',
+        }
+
+
 def _has_calendar_token(user_id):
     """Fast connectivity check without constructing a Google API client."""
     if not user_id or user_id == 'default':
         return False
     return os.path.exists(get_user_token_file(user_id))
+
+
+def _calendar_sync_error_payload(calendar_service=None, fallback='calendar_sync_failed'):
+    reason = getattr(calendar_service, 'last_error_reason', None)
+    status = getattr(calendar_service, 'last_error_status', None)
+    detail = getattr(calendar_service, 'last_error', None)
+    error = fallback
+    message = 'Không thể đồng bộ Google Calendar.'
+    if status in (401, 403) or reason in {'insufficientPermissions', 'authError', 'forbidden'}:
+        error = 'calendar_permission_required'
+        message = 'Token Google hiện tại thiếu quyền ghi Calendar. Hãy đăng xuất/kết nối lại Gmail & Google Calendar rồi thử đồng bộ.'
+    return {
+        'error': error,
+        'message': message,
+        'google_status': status,
+        'google_reason': reason,
+        'google_error': detail,
+    }
+
+
+def _calendar_auth_failure_payload(user_id):
+    status = _google_calendar_token_status(user_id)
+    if not status.get('has_token'):
+        return {
+            'success': False,
+            'error': 'not_authenticated',
+            'message': 'User not authenticated with Google Calendar',
+            'calendar_token_status': status,
+        }
+    if not status.get('has_calendar_write_scope'):
+        return {
+            'success': False,
+            'error': 'calendar_permission_required',
+            'message': 'Token Google hiện tại thiếu quyền ghi Calendar. Hãy đăng xuất/kết nối lại Gmail & Google Calendar rồi thử đồng bộ.',
+            'calendar_token_status': status,
+        }
+    return None
 
 
 def _parse_quick_base_date(value):
@@ -547,6 +623,11 @@ def _normalize_attendees(attendees_value):
 
 def _sync_schedule_to_calendar(user_id, schedule_id, schedule_payload, db_path):
     """Create or update the corresponding Google Calendar event."""
+    auth_failure = _calendar_auth_failure_payload(user_id)
+    if auth_failure:
+        logger.warning("Skipping Google Calendar sync for schedule %s: %s", schedule_id, auth_failure.get('error'))
+        return None
+
     calendar_service = _load_calendar_service(user_id)
     if not calendar_service:
         return None
@@ -587,6 +668,11 @@ def _sync_schedule_to_calendar(user_id, schedule_id, schedule_payload, db_path):
             _clear_schedule_cache(db_path)
             logger.info(f"Schedule {schedule_id} synced to Google Calendar: {new_event_id}")
             return new_event_id
+        logger.warning(
+            "Failed to sync schedule %s to Google Calendar: %s",
+            schedule_id,
+            _calendar_sync_error_payload(calendar_service),
+        )
     except Exception as e:
         logger.warning(f"Failed to sync schedule {schedule_id} to Google Calendar: {e}")
 
@@ -594,7 +680,7 @@ def _sync_schedule_to_calendar(user_id, schedule_id, schedule_payload, db_path):
 
 
 def _sync_schedule_to_calendar_async(user_id, schedule_id, db_path):
-    if not _has_calendar_token(user_id):
+    if _calendar_auth_failure_payload(user_id):
         return False
 
     def _bg():
@@ -611,11 +697,13 @@ def _sync_schedule_to_calendar_async(user_id, schedule_id, db_path):
 
 def _push_unsynced_local_schedules_to_calendar(user_id, db_path, start_time, end_time, google_events=None):
     """Retry FlowMate-created future schedules that do not yet have a Google ID."""
-    if not _has_calendar_token(user_id):
+    auth_failure = _calendar_auth_failure_payload(user_id)
+    if auth_failure:
         return {
             'pushed_count': 0,
             'push_failed_count': 0,
             'push_skipped_count': 0,
+            'calendar_sync_error': auth_failure,
         }
 
     live_fingerprints = {
@@ -656,7 +744,7 @@ def _push_unsynced_local_schedules_to_calendar(user_id, db_path, start_time, end
 
 
 def _delete_calendar_event_async(user_id, calendar_event_id, db_path):
-    if not calendar_event_id or not _has_calendar_token(user_id):
+    if not calendar_event_id or _calendar_auth_failure_payload(user_id):
         return False
 
     def _bg():
@@ -964,7 +1052,7 @@ def create_schedule():
         event_start = created_schedule.get('start_time') if created_schedule else start_time
         event_end = created_schedule.get('end_time') if created_schedule else end_time
         calendar_event_id = created_schedule.get('calendar_event_id') if created_schedule else None
-        
+        calendar_sync_error = _calendar_auth_failure_payload(user_id)
         calendar_sync_pending = _sync_schedule_to_calendar_async(user_id, schedule_id, db_path)
         
         # Save to history
@@ -985,6 +1073,7 @@ def create_schedule():
             'calendar_event_id': calendar_event_id,
             'synced_to_calendar': bool(calendar_event_id),
             'calendar_sync_pending': calendar_sync_pending,
+            'calendar_sync_error': calendar_sync_error,
             'start_time': event_start,
             'end_time': event_end,
             'message': 'Lịch hẹn đã được tạo' + (' và đồng bộ với Google Calendar' if calendar_event_id else '')
@@ -1348,6 +1437,7 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
     pushed_count = push_result.get('pushed_count', 0)
     push_failed_count = push_result.get('push_failed_count', 0)
     push_skipped_count = push_result.get('push_skipped_count', 0)
+    calendar_sync_error = push_result.get('calendar_sync_error')
 
     pruned_count = _prune_expired_google_backed_schedules(db_path)
     duplicate_deleted_count = _prune_local_duplicates_for_google_events(db_path)
@@ -1362,6 +1452,7 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
         'pushed_count': pushed_count,
         'push_failed_count': push_failed_count,
         'push_skipped_count': push_skipped_count,
+        'calendar_sync_error': calendar_sync_error,
         'changed_count': changed_count,
     }
 
@@ -1403,12 +1494,9 @@ def sync_schedules():
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
 
-    if not _has_calendar_token(user_id):
-        return jsonify({
-            'success': False,
-            'error': 'not_authenticated',
-            'message': 'User not authenticated with Google Calendar'
-        })
+    auth_failure = _calendar_auth_failure_payload(user_id)
+    if auth_failure:
+        return jsonify(auth_failure)
 
     try:
         now = datetime.now()

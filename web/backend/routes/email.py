@@ -1419,11 +1419,20 @@ def gmail_auth_status():
     token_file = get_user_token_file(user_id)
     authenticated = user_id != 'default' and os.path.exists(token_file)
     connected_at = None
+    google_scopes = []
+    calendar_write_connected = False
     if os.path.exists(token_file):
         try:
             connected_at = os.path.getmtime(token_file)
         except Exception:
             connected_at = None
+        try:
+            with open(token_file, 'rb') as token_handle:
+                creds = pickle.load(token_handle)
+            google_scopes = list(getattr(creds, 'scopes', None) or getattr(creds, 'granted_scopes', None) or [])
+            calendar_write_connected = 'https://www.googleapis.com/auth/calendar.events' in google_scopes
+        except Exception:
+            google_scopes = []
 
     return jsonify({
         'success': True,
@@ -1432,7 +1441,9 @@ def gmail_auth_status():
         'gmail_name': session.get('gmail_user_name'),
         'gmail_picture': session.get('gmail_user_picture'),
         'connected_at': connected_at,
-        'authenticated': authenticated
+        'authenticated': authenticated,
+        'google_scopes': google_scopes,
+        'calendar_write_connected': calendar_write_connected
     })
 
 

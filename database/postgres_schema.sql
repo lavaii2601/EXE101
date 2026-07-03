@@ -359,14 +359,16 @@ CREATE TABLE IF NOT EXISTS sync_jobs (
     CONSTRAINT sync_jobs_status_check CHECK (status IN ('pending', 'running', 'success', 'failed', 'skipped'))
 );
 
--- Shared knowledge base for Bob's RAG lookups (not per-user -- product/feature
--- knowledge, FAQ, and any open-source reference material fed in later).
+-- Knowledge base for Bob's RAG lookups. Global rows (user_id IS NULL) are
+-- shared product/feature/FAQ knowledge; rows with user_id set are per-user
+-- learned facts, see web/backend/models/knowledge.py for details.
 CREATE TABLE IF NOT EXISTS knowledge_documents (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     title TEXT NOT NULL,
     content TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '',
     source TEXT NOT NULL DEFAULT 'manual',
+    user_id TEXT DEFAULT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -378,6 +380,9 @@ ALTER TABLE chat_sessions
     ADD COLUMN IF NOT EXISTS retention_days SMALLINT NOT NULL DEFAULT 90,
     ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '90 days'),
     ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+
+ALTER TABLE knowledge_documents
+    ADD COLUMN IF NOT EXISTS user_id TEXT DEFAULT NULL;
 
 DO $$
 BEGIN
@@ -465,6 +470,7 @@ CREATE INDEX IF NOT EXISTS idx_ai_requests_provider_task ON ai_requests (provide
 CREATE INDEX IF NOT EXISTS idx_sync_jobs_user_type_status ON sync_jobs (user_id, job_type, status, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_documents_created ON knowledge_documents (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_knowledge_documents_user ON knowledge_documents (user_id);
 
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$

@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from config import Config
 from models.schedule import LOCAL_TZ
 from utils.user_context import persist_google_credentials, user_id_from_token_file
@@ -26,7 +27,31 @@ class CalendarService:
     def __init__(self, token_file=None):
         self.service = None
         self.token_file = token_file or Config.GMAIL_TOKEN_FILE
+        self.last_error = None
+        self.last_error_status = None
+        self.last_error_reason = None
         self._authenticate()
+
+    def _remember_error(self, error):
+        self.last_error = str(error)
+        self.last_error_status = getattr(getattr(error, 'resp', None), 'status', None)
+        self.last_error_reason = None
+        if isinstance(error, HttpError):
+            try:
+                import json
+                payload = json.loads(error.content.decode('utf-8'))
+                details = payload.get('error') or {}
+                errors = details.get('errors') or []
+                if errors:
+                    self.last_error_reason = errors[0].get('reason')
+                self.last_error = details.get('message') or self.last_error
+            except Exception:
+                pass
+
+    def clear_last_error(self):
+        self.last_error = None
+        self.last_error_status = None
+        self.last_error_reason = None
     
     def _authenticate(self):
         """Authenticate with Google Calendar API using stored credentials."""
@@ -114,6 +139,7 @@ class CalendarService:
     def create_event(self, title, description='', start_time=None, end_time=None, attendees=None, location=''):
         """Create a new calendar event"""
         try:
+            self.clear_last_error()
             if not self.service:
                 logger.warning("Calendar service not initialized")
                 return None
@@ -180,12 +206,14 @@ class CalendarService:
             logger.info(f"Event created with ID: {created_event.get('id')}")
             return created_event.get('id')
         except Exception as e:
+            self._remember_error(e)
             logger.error(f"Error creating calendar event: {str(e)}")
             return None
     
     def update_event(self, event_id, title=None, description=None, start_time=None, end_time=None, attendees=None, location=None):
         """Update an existing calendar event"""
         try:
+            self.clear_last_error()
             if not self.service:
                 logger.warning("Calendar service not initialized")
                 return False
@@ -245,12 +273,14 @@ class CalendarService:
             logger.info(f"Event {event_id} updated successfully")
             return True
         except Exception as e:
+            self._remember_error(e)
             logger.error(f"Error updating calendar event: {str(e)}")
             return False
     
     def delete_event(self, event_id):
         """Delete a calendar event"""
         try:
+            self.clear_last_error()
             if not self.service:
                 logger.warning("Calendar service not initialized")
                 return False
@@ -269,6 +299,7 @@ class CalendarService:
             if status in (404, 410):
                 logger.info(f"Event {event_id} already deleted or gone")
                 return True
+            self._remember_error(e)
             logger.error(f"Error deleting calendar event: {str(e)}")
             return False
 
