@@ -1021,6 +1021,7 @@ async function refreshLocalScheduleViews() {
 async function refreshCalendarScheduleData(options = {}) {
     invalidateScheduleCaches();
     let syncedGoogle = false;
+    let syncResult = null;
     try {
         const syncDays = Number.isFinite(options.days) ? options.days : 90;
         const response = await apiFetch(`${API_BASE}/schedule/sync?days=${syncDays}`, { method: 'POST' });
@@ -1035,6 +1036,7 @@ async function refreshCalendarScheduleData(options = {}) {
             }
         } else {
             syncedGoogle = true;
+            syncResult = data;
         }
     } catch (error) {
         if (!options.silent) {
@@ -1051,8 +1053,26 @@ async function refreshCalendarScheduleData(options = {}) {
     ]);
 
     if (options.notify && syncedGoogle) {
-        showNotification(ui('✅ Đã cập nhật lịch', '✅ Calendar refreshed'), 'success');
+        if (syncResult?.push_failed_count > 0) {
+            showNotification(ui('⚠️ Chưa đẩy được một số lịch lên Google Calendar. Hãy đăng nhập lại Google rồi thử đồng bộ.', '⚠️ Some events could not be pushed to Google Calendar. Reconnect Google and try syncing again.'), 'warning');
+        } else if (syncResult?.pushed_count > 0) {
+            showNotification(ui(`✅ Đã đồng bộ ${syncResult.pushed_count} lịch lên Google Calendar`, `✅ Synced ${syncResult.pushed_count} event(s) to Google Calendar`), 'success');
+        } else {
+            showNotification(ui('✅ Đã cập nhật lịch', '✅ Calendar refreshed'), 'success');
+        }
     }
+}
+
+function syncSchedulesAfterLocalCreate(scheduleCreated = {}) {
+    const shouldRetry = scheduleCreated.calendar_sync_pending || !scheduleCreated.calendar_event_id;
+    if (!shouldRetry) return;
+    window.setTimeout(() => {
+        refreshCalendarScheduleData({
+            days: 365,
+            silent: true,
+            continueOnError: true
+        }).catch(err => console.warn('Post-create calendar sync retry failed', err));
+    }, 4800);
 }
 
 const QUICK_ACTIONS = {
@@ -2195,6 +2215,7 @@ function showNotification(message, type = 'info') {
             if (data.schedule_created) {
                 try { await loadSchedules(); } catch (e) { /* ignore */ }
                 try { await loadWeekSchedule(); } catch (e) { /* ignore */ }
+                syncSchedulesAfterLocalCreate(data.schedule_created);
                 showNotification(`${ui('✅ Đã tạo lịch', '✅ Event created')}: ${data.schedule_created.title || ui('Lịch hẹn', 'Appointment')}`, 'success');
                 return;
             }
@@ -2454,6 +2475,8 @@ async function handlePageChange(btn) {
     } else if (page === 'schedule') {
         loadWeekSchedule().catch(err => console.error('Week schedule load error:', err));
         loadSchedules().catch(err => console.error('Schedule load error:', err));
+        refreshCalendarScheduleData({ days: 365, silent: true, continueOnError: true })
+            .catch(err => console.warn('Calendar background sync error:', err));
     } else if (page === 'history') {
         loadActivityHistory().catch(err => console.error('History load error:', err));
     } else if (page === 'settings') {
@@ -2758,6 +2781,7 @@ async function sendMessageConfirmed(message, opts = {}) {
                 // Server already created the schedule (user confirmed or server-side)
                 try { await loadSchedules(); } catch (e) { /* ignore */ }
                 try { await loadWeekSchedule(); } catch (e) { /* ignore */ }
+                syncSchedulesAfterLocalCreate(data.schedule_created);
                 showNotification(`${ui('✅ Đã tạo lịch', '✅ Event created')}: ${data.schedule_created.title || ui('Lịch hẹn', 'Appointment')}`, 'success');
             } else if (data.schedule_suggestion && (data.schedule_suggestion.action ? true : isScheduleIntent(message))) {
                 const suggested = data.schedule_suggestion;
@@ -2827,8 +2851,14 @@ async function sendMessageConfirmed(message, opts = {}) {
                             });
                             const j = await resp.json();
                             if (resp.ok && j.success) {
+                                syncSchedulesAfterLocalCreate({
+                                    id: j.schedule_id,
+                                    title: suggested.title,
+                                    calendar_event_id: j.calendar_event_id,
+                                    calendar_sync_pending: j.calendar_sync_pending
+                                });
                                 showNotification(`${ui('✅ Đã tạo lịch', '✅ Event created')}: ${j.calendar_event_id ? ui('đã đồng bộ Google Calendar', 'synced with Google Calendar') : suggested.title}`, 'success');
-                                await refreshWorkspaceTargets(['schedule', 'history']);
+                                await refreshWorkspaceTargets(['schedule', 'calendar', 'overview', 'history']);
                                 suggestionDiv.remove();
                             } else {
                                 showNotification(ui('❌ Không thể tạo lịch: ', '❌ Could not create event: ') + (j.error || resp.statusText || ui('lỗi', 'error')), 'error');
@@ -4518,6 +4548,13 @@ function dedupeSchedules(schedules = []) {
     return result;
 }
 
+function isUnsyncedLocalSchedule(schedule, googleConnected = true) {
+    if (!googleConnected || !schedule) return false;
+    const hasLocalId = schedule.local_id !== null && schedule.local_id !== undefined;
+    const hasGoogleId = Boolean(schedule.calendar_event_id || schedule.google_event_id);
+    return hasLocalId && !hasGoogleId && (schedule.source || 'local') !== 'google';
+}
+
 async function loadWeekSchedule(options = {}) {
     const headerRow = document.getElementById('weekTableHeader');
     const tableBody = document.getElementById('weekTableBody');
@@ -4565,6 +4602,7 @@ async function loadWeekSchedule(options = {}) {
             return;
         }
 
+        const googleConnected = Boolean(data.calendar_connected || data.google_calendar_connected);
         const days = (Array.isArray(data.days) ? data.days : []).map((dayEvents) =>
             dedupeSchedules(Array.isArray(dayEvents) ? dayEvents : [])
         );
@@ -4602,11 +4640,14 @@ async function loadWeekSchedule(options = {}) {
                     .forEach((schedule) => {
                     const eventDiv = document.createElement('div');
                     eventDiv.className = 'week-event';
+                    const unsyncedLocal = isUnsyncedLocalSchedule(schedule, googleConnected);
+                    if (unsyncedLocal) eventDiv.classList.add('is-unsynced');
                     const range = formatScheduleRange(schedule.start_time, schedule.end_time);
 
                     eventDiv.innerHTML = `
                         <div class="week-event-title">${escapeHtml(schedule.title)}</div>
                         <div class="week-event-time">${escapeHtml(range.time)}</div>
+                        ${unsyncedLocal ? `<div class="week-event-sync unsynced">${ui('Chưa đồng bộ Google', 'Not synced to Google')}</div>` : ''}
                     `;
                     eventDiv.addEventListener('click', () => openEditSchedule(schedule.id));
                     td.appendChild(eventDiv);
@@ -4625,7 +4666,7 @@ async function loadWeekSchedule(options = {}) {
             }, 1800);
         }
     } catch (error) {
-        tableBody.innerHTML = `<tr><td colspan="6" class="week-loading">${ui('Không thể tải lịch tuần', 'Unable to load weekly calendar')}</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="8" class="week-loading">${ui('Không thể tải lịch tuần', 'Unable to load weekly calendar')}</td></tr>`;
     }
 }
 
@@ -4739,6 +4780,7 @@ async function loadSchedules(options = {}) {
                 : ui('Lịch FlowMate', 'FlowMate Calendar');
         }
 
+        const googleConnected = Boolean(data.calendar_connected || data.google_calendar_connected);
         const schedules = Array.isArray(data.items) ? data.items : [];
         if (data.success && schedules.length > 0) {
             schedulesList.innerHTML = '';
@@ -4752,14 +4794,19 @@ async function loadSchedules(options = {}) {
                     ? ui('Đã hoàn thành', 'Completed')
                     : ui('Chưa hoàn thành', 'Pending');
                 const isLocal = schedule.local_id !== null && schedule.local_id !== undefined;
+                const unsyncedLocal = isUnsyncedLocalSchedule(schedule, googleConnected);
                 const sourceValue = schedule.provider || schedule.source || '';
                 const sourceText = sourceValue === 'outlook' || sourceValue === 'microsoft'
                     ? 'Outlook Calendar'
+                    : unsyncedLocal
+                    ? ui('Chưa đồng bộ Google', 'Not synced to Google')
                     : schedule.source === 'synced'
                     ? 'FlowMate + Google'
                     : schedule.source === 'google' ? 'Google Calendar' : 'FlowMate';
                 const sourceClass = sourceValue === 'outlook' || sourceValue === 'microsoft'
                     ? 'outlook'
+                    : unsyncedLocal
+                    ? 'local-unsynced'
                     : schedule.source === 'synced'
                     ? 'synced'
                     : schedule.source === 'google' ? 'google' : 'local';
@@ -4773,6 +4820,7 @@ async function loadSchedules(options = {}) {
                         ${schedule.status === 'completed'
                             ? `<button class="btn-check" onclick="markScheduleIncomplete(${schedule.local_id})">${ui('↩ Chưa xong', '↩ Mark pending')}</button>`
                             : `<button class="btn-check" onclick="markScheduleComplete(${schedule.local_id})">${ui('✓ Hoàn thành', '✓ Complete')}</button>`}
+                        ${unsyncedLocal ? `<button class="btn-sync-google" data-sync-google>${ui('Đồng bộ Google', 'Sync Google')}</button>` : ''}
                         <button class="btn-edit" onclick="openEditSchedule(${schedule.local_id})">${ui('Sửa', 'Edit')}</button>
                         <button class="btn-delete" onclick="deleteSchedule(${schedule.local_id})">${ui('Xóa', 'Delete')}</button>
                     `
@@ -4816,6 +4864,14 @@ async function loadSchedules(options = {}) {
                 const openEventButton = scheduleDiv.querySelector('[data-open-event-link]');
                 if (openEventButton) {
                     openEventButton.addEventListener('click', () => openExternalUrl(openEventButton.dataset.openEventLink));
+                }
+                const syncGoogleButton = scheduleDiv.querySelector('[data-sync-google]');
+                if (syncGoogleButton) {
+                    syncGoogleButton.addEventListener('click', async () => {
+                        syncGoogleButton.disabled = true;
+                        syncGoogleButton.textContent = ui('Đang đồng bộ...', 'Syncing...');
+                        await refreshCalendarScheduleData({ days: 365, notify: true, continueOnError: true });
+                    });
                 }
                 schedulesList.appendChild(scheduleDiv);
             });
@@ -5278,6 +5334,12 @@ async function handleScheduleSubmit(e) {
             }
             scheduleForm.reset();
             closeNewScheduleModal();
+            syncSchedulesAfterLocalCreate({
+                id: sid,
+                title,
+                calendar_event_id: data.calendar_event_id,
+                calendar_sync_pending: data.calendar_sync_pending
+            });
             await refreshLocalScheduleViews();
 
             // If calendar_event_id not present, poll for status in background

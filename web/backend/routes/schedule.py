@@ -609,6 +609,52 @@ def _sync_schedule_to_calendar_async(user_id, schedule_id, db_path):
     return True
 
 
+def _push_unsynced_local_schedules_to_calendar(user_id, db_path, start_time, end_time, google_events=None):
+    """Retry FlowMate-created future schedules that do not yet have a Google ID."""
+    if not _has_calendar_token(user_id):
+        return {
+            'pushed_count': 0,
+            'push_failed_count': 0,
+            'push_skipped_count': 0,
+        }
+
+    live_fingerprints = {
+        _event_fingerprint(event.get('title'), event.get('start'))
+        for event in (google_events or [])
+        if event.get('title') and event.get('start')
+    }
+    pushed_count = 0
+    failed_count = 0
+    skipped_count = 0
+
+    for schedule in Schedule.get_between(start_time, end_time, limit=1000, db_path=db_path):
+        if schedule.get('calendar_event_id'):
+            continue
+        if _recently_updated(schedule, seconds=4):
+            skipped_count += 1
+            continue
+        if str(schedule.get('status') or '').lower() in ('cancelled', 'dismissed'):
+            skipped_count += 1
+            continue
+        fingerprint = _schedule_fingerprint(schedule)
+        if fingerprint in live_fingerprints:
+            skipped_count += 1
+            continue
+
+        event_id = _sync_schedule_to_calendar(user_id, schedule.get('id'), schedule, db_path)
+        if event_id:
+            live_fingerprints.add(fingerprint)
+            pushed_count += 1
+        else:
+            failed_count += 1
+
+    return {
+        'pushed_count': pushed_count,
+        'push_failed_count': failed_count,
+        'push_skipped_count': skipped_count,
+    }
+
+
 def _delete_calendar_event_async(user_id, calendar_event_id, db_path):
     if not calendar_event_id or not _has_calendar_token(user_id):
         return False
@@ -1292,9 +1338,20 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
             deleted_count += 1
             logger.info(f"Removed local schedule for deleted Google event: {calendar_event_id}")
 
+    push_result = _push_unsynced_local_schedules_to_calendar(
+        user_id,
+        db_path,
+        start_time,
+        end_time,
+        google_events=gcal_events,
+    )
+    pushed_count = push_result.get('pushed_count', 0)
+    push_failed_count = push_result.get('push_failed_count', 0)
+    push_skipped_count = push_result.get('push_skipped_count', 0)
+
     pruned_count = _prune_expired_google_backed_schedules(db_path)
     duplicate_deleted_count = _prune_local_duplicates_for_google_events(db_path)
-    changed_count = created_count + updated_count + deleted_count + pruned_count + duplicate_deleted_count
+    changed_count = created_count + updated_count + deleted_count + pushed_count + pruned_count + duplicate_deleted_count
     if changed_count:
         _clear_schedule_cache(db_path)
     return {
@@ -1302,6 +1359,9 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
         'updated_count': updated_count,
         'deleted_count': deleted_count + pruned_count + duplicate_deleted_count,
         'unchanged_count': unchanged_count,
+        'pushed_count': pushed_count,
+        'push_failed_count': push_failed_count,
+        'push_skipped_count': push_skipped_count,
         'changed_count': changed_count,
     }
 
@@ -1519,6 +1579,7 @@ def get_week_schedules():
         'week_start': monday.date().isoformat(),
         'week_end': (monday + timedelta(days=6)).date().isoformat(),
         'days': days,
+        'calendar_connected': _has_calendar_token(user_id),
         'calendar_sync_pending': sync_started
     }
     Cache.set(cache_key, payload, ttl=_SCHEDULE_CACHE_TTL_SECONDS, db_path=db_path)

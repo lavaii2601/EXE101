@@ -7046,3 +7046,109 @@ body.dark-theme .overview-checklist-source {
     gap: 8px;
     margin-top: 12px;
 }
+
+/* Readability and sync-state polish */
+body.dark-theme .email-detail-summary,
+body.dark-theme .email-detail-meta {
+    border-color: #334155;
+    background: #111827;
+    color: #f8fafc;
+}
+
+body.dark-theme .email-detail-summary {
+    border-left-color: #8b7cff;
+}
+
+body.dark-theme .email-detail-summary strong,
+body.dark-theme .email-detail-meta strong,
+body.dark-theme .email-detail-body {
+    color: #f8fafc;
+}
+
+body.dark-theme .email-detail-summary p,
+body.dark-theme .email-detail-meta span {
+    color: #cbd5e1;
+}
+
+body.dark-theme .email-detail-modal-content .modal-actions {
+    border-top-color: #334155;
+    background: #111827;
+}
+
+.week-table-wrapper {
+    scrollbar-gutter: stable both-edges;
+}
+
+.week-nav .btn-secondary {
+    padding-inline: 14px;
+    color: var(--text);
+    white-space: nowrap;
+}
+
+.week-table {
+    table-layout: fixed;
+}
+
+.week-table th,
+.week-table td {
+    vertical-align: top;
+}
+
+.week-table th:first-child,
+.week-table td:first-child {
+    min-width: 72px;
+    width: 72px;
+}
+
+.week-event {
+    min-height: 76px;
+}
+
+.week-event-title,
+.week-event-time,
+.week-event-sync {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.week-event-time {
+    line-height: 1.35;
+}
+
+.week-event.is-unsynced {
+    border-color: #f59e0b;
+    background: #31220f;
+    color: #fff7ed;
+}
+
+.week-event-sync {
+    margin-top: 7px;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.week-event-sync.unsynced {
+    color: #fed7aa;
+}
+
+.schedule-source-badge.local-unsynced {
+    color: #7c2d12;
+    background: #ffedd5;
+}
+
+.schedule-item-actions .btn-sync-google {
+    border: 1px solid #2563eb;
+    background: #2563eb;
+    color: #fff;
+}
+
+.schedule-item-actions .btn-sync-google:disabled {
+    opacity: 0.72;
+    cursor: wait;
+}
+
+body.dark-theme .schedule-source-badge.local-unsynced {
+    color: #fed7aa;
+    background: rgba(245, 158, 11, 0.18);
+}

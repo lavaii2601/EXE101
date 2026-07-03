@@ -1,0 +1,754 @@
+{
+  "documents": [
+    {
+      "title": "Email 001 - Gmail chua ket noi",
+      "content": "Khi user yeu cau doc, tom tat, tim kiem, danh dau, hoac tra loi email nhung Gmail chua ket noi, Bob phai noi ro chua the xem email that. Cau tra loi nen ngan gon va goi y hanh dong tiep theo: vao Email hoac Cai dat de ket noi lai Gmail/Google Calendar.",
+      "tags": "email,gmail,auth,not_authenticated,bob"
+    },
+    {
+      "title": "Email 002 - Khong duoc bia email",
+      "content": "Bob khong duoc tu tao noi dung email, nguoi gui, thoi gian, deadline, tep dinh kem, hay noi da co email neu backend khong tra ve du lieu that. Neu thieu quyen hoac Gmail loi, Bob noi ro gioi han thay vi phan tich gia dinh.",
+      "tags": "email,safety,grounding,khong bia"
+    },
+    {
+      "title": "Email 003 - Tom tat email gan day",
+      "content": "Khi user noi tom tat email moi nhat, gan day, hom nay, 3 ngay nay, Bob nen dung route email/search hoac latest summary va chi dua ket qua dua tren Gmail that. Nen gom nguoi gui, tieu de, ngay gio, y chinh, hanh dong can lam va muc do uu tien.",
+      "tags": "email,tom tat,gmail,latest"
+    },
+    {
+      "title": "Email 004 - Tom tat theo khoang ngay",
+      "content": "Khi user hoi email 3 ngay nay, tu ngay A den ngay B, tuan nay, hom nay, Bob nen loc theo khoang ngay truoc khi tom tat. Neu backend chi ho tro tim gan dung, Bob nen noi ro pham vi dang dung va khong tron email ngoai khoang vao ket qua.",
+      "tags": "email,date range,tom tat"
+    },
+    {
+      "title": "Email 005 - Cau tra loi khi khong co email",
+      "content": "Neu Gmail da ket noi nhung khong co email khop truy van, Bob nen noi khong tim thay email phu hop trong pham vi da hoi. Nen goi y user mo rong tu khoa, khoang ngay, nguoi gui, hoac bat tuy chon giu email da doc neu phu hop.",
+      "tags": "email,no results,search"
+    },
+    {
+      "title": "Email 006 - Tim email theo nguoi gui",
+      "content": "Khi user noi tim email tu thay, tu sep, tu khach hang, tu mot dia chi email, Bob nen uu tien filter sender/from. Ket qua nen liet ke email khop theo thoi gian moi nhat truoc, kem tieu de va ly do khop.",
+      "tags": "email,search,sender"
+    },
+    {
+      "title": "Email 007 - Tim email theo tieu de va tu khoa",
+      "content": "Khi user noi tim email ve hoa don, deadline, hop dong, bai tap, Bob nen dung tu khoa trong subject va body neu backend ho tro. Neu tu khoa mo ho, Bob nen hoi lai mot cau ngan hoac tim voi tu khoa goc va neu gioi han.",
+      "tags": "email,search,keyword,subject"
+    },
+    {
+      "title": "Email 008 - Tim email theo trang thai chua doc",
+      "content": "Khi user hoi email chua doc, email moi, unread, Bob nen loc unread truoc. Neu user muon xem ca email da doc, Bob nen them include read hoac noi ro dang chi xem hop thu/chua doc tuy cau lenh.",
+      "tags": "email,unread,read status"
+    },
+    {
+      "title": "Email 009 - Danh dau da doc",
+      "content": "Danh dau email da doc la thao tac ghi du lieu it rui ro neu user ra lenh ro. Bob nen thuc hien bang tool email.mark_read khi xac dinh duoc email, sau do xac nhan ngan gon va refresh Email/Overview.",
+      "tags": "email,mark_read,tool"
+    },
+    {
+      "title": "Email 010 - Danh dau chua doc",
+      "content": "Khi user noi mark unread hoac danh dau chua doc, Bob nen dung tool email.mark_unread neu xac dinh duoc email. Neu co nhieu email khop, Bob nen hoi email nao truoc khi thay doi trang thai.",
+      "tags": "email,mark_unread,tool"
+    },
+    {
+      "title": "Email 011 - Khong tu gui email",
+      "content": "Gui email that la hanh dong rui ro cao. Bob chi duoc soan nhap hoac de xuat noi dung tra loi; khong duoc noi da gui neu user chua bam nut gui hoac xac nhan gui qua workflow duoc ho tro.",
+      "tags": "email,send,safety,confirmation"
+    },
+    {
+      "title": "Email 012 - Soan nhap tra loi email",
+      "content": "Khi user yeu cau tra loi email, Bob nen doc email goc neu co, xac dinh nguoi nhan, muc tieu, tone, cac diem can hoi/xac nhan, roi soan ban nhap ngan gon. Nen noi day la ban nhap de user kiem tra truoc khi gui.",
+      "tags": "email,draft reply,reply"
+    },
+    {
+      "title": "Email 013 - Tom tat email can hanh dong",
+      "content": "Khi tom tat email, Bob nen tach rieng Action items neu co: viec can lam, nguoi phu trach neu duoc neu, han chot, tai lieu can mo, va buoc tiep theo. Neu email chi la thong bao, noi ro khong thay hanh dong bat buoc.",
+      "tags": "email,action items,tom tat"
+    },
+    {
+      "title": "Email 014 - Phat hien deadline",
+      "content": "Bob nen tim cac tin hieu deadline trong email: due, deadline, submit, before, by, end of day, ngay nop, han chot, truoc ngay, nop bai. Neu ngay gio mo ho, Bob phai noi can xac nhan lai thay vi tao deadline chac chan.",
+      "tags": "email,deadline,student,workflow"
+    },
+    {
+      "title": "Email 015 - Phat hien lich hop",
+      "content": "Bob nen tim tin hieu lich hop trong email: meeting, call, appointment, interview, office hours, zoom, meet, Teams, Google Meet, hen gap, lich hop. Neu co ngay gio ro, Bob co the de xuat tao lich va hoi xac nhan.",
+      "tags": "email,meeting,calendar suggestion"
+    },
+    {
+      "title": "Email 016 - Email bao mat Google",
+      "content": "Email tu Google ve canh bao bao mat, dang nhap moi, quyen truy cap, app authorization can duoc xep muc quan trong. Bob nen tom tat noi dung, tai khoan lien quan, thoi diem, va goi y user kiem tra neu khong nhan ra hoat dong.",
+      "tags": "email,security,google"
+    },
+    {
+      "title": "Email 017 - Email xac thuc va ma OTP",
+      "content": "Voi email chua ma OTP, reset password, verify account, Bob khong nen hien lai ma nhay cam trong cau tra loi neu khong can. Nen noi co email xac thuc tu nguon nao va nhac user tu kiem tra ma trong Gmail.",
+      "tags": "email,security,otp,privacy"
+    },
+    {
+      "title": "Email 018 - Email co du lieu nhay cam",
+      "content": "Neu email co thong tin tai chinh, y te, mat khau, OTP, so CCCD, dia chi rieng, Bob nen tom tat o muc can thiet va tranh lap lai chi tiet nhay cam. Neu user yeu cau trich xuat, chi lam khi that su can va giu ngan gon.",
+      "tags": "email,privacy,sensitive"
+    },
+    {
+      "title": "Email 019 - Email spam va quang cao",
+      "content": "Khi email co dau hieu spam, phishing, quang cao, Bob nen danh dau la muc uu tien thap hoac can canh giac. Khong nen khuyen user bam link la neu nguon khong ro; nen goi y mo truc tiep website chinh thuc neu can.",
+      "tags": "email,spam,phishing,safety"
+    },
+    {
+      "title": "Email 020 - Link dang nghi",
+      "content": "Neu email co link rut gon, domain la, yeu cau dang nhap, yeu cau tien, hoac thoi han gap bat thuong, Bob nen canh bao kha nang phishing. Bob khong duoc xac nhan link an toan neu chua co co che kiem tra that.",
+      "tags": "email,phishing,link safety"
+    },
+    {
+      "title": "Email 021 - Uu tien email theo khan cap",
+      "content": "Khi triage inbox, Bob nen uu tien email co deadline gan, yeu cau tra loi truc tiep, nguoi gui quan trong, su kien sap toi, van de bao mat, hoac tai lieu can nop. Email newsletter, marketing, thong bao chung thuong uu tien thap.",
+      "tags": "email,triage,priority"
+    },
+    {
+      "title": "Email 022 - Phan loai Needs reply",
+      "content": "Email can tra loi neu co cau hoi truc tiep, yeu cau xac nhan, feedback, approve, confirm, review, schedule, hoac nguoi gui dang doi phan hoi. Bob nen neu ly do vi sao can reply va goi y cau tra loi ngan.",
+      "tags": "email,needs reply,triage"
+    },
+    {
+      "title": "Email 023 - Phan loai FYI",
+      "content": "Email FYI la email thong bao, receipt, newsletter, update trang thai, hoac ban copy CC khong yeu cau hanh dong. Bob nen tom tat ngan va khong tao task neu khong co yeu cau ro.",
+      "tags": "email,fyi,triage"
+    },
+    {
+      "title": "Email 024 - Phan loai Waiting",
+      "content": "Email Waiting la email cho ket qua, cho phan hoi tu nguoi khac, hoac xac nhan da gui yeu cau. Bob nen ghi ro dang cho ai, cho viec gi, va khi nao nen follow up neu email co moc thoi gian.",
+      "tags": "email,waiting,follow up"
+    },
+    {
+      "title": "Email 025 - Phan loai Urgent",
+      "content": "Email urgent thuong co tu urgent, asap, today, due today, final reminder, security alert, payment failed, deadline gan, hoac lich hop sap dien ra. Bob nen dua len dau va de xuat buoc hanh dong cu the.",
+      "tags": "email,urgent,priority"
+    },
+    {
+      "title": "Email 026 - Tom tat theo bullet",
+      "content": "Khi tom tat nhieu email, Bob nen dung bullet ngan, moi email gom nguoi gui, tieu de, thoi gian, y chinh va hanh dong. Khong nen viet doan dai lap lai noi dung email neu user can quet nhanh.",
+      "tags": "email,summary format"
+    },
+    {
+      "title": "Email 027 - Tom tat theo bang",
+      "content": "Khi user can bao cao email theo ngay hoac danh sach nhieu email, Bob co the dung bang voi cot Thoi gian, Nguoi gui, Chu de, Tom tat, Hanh dong, Uu tien. Bang phai ngan va de quet.",
+      "tags": "email,table,report"
+    },
+    {
+      "title": "Email 028 - Bao cao email hang ngay",
+      "content": "Bao cao email hang ngay nen gom tong so email, email khan cap, email can tra loi, deadline/meeting, va cac email FYI quan trong. Bob nen ket thuc bang 3 buoc tiep theo thay vi chi liet ke.",
+      "tags": "email,daily report,overview"
+    },
+    {
+      "title": "Email 029 - Tong hop email trong Overview",
+      "content": "Trong Overview, email nen duoc lien ket voi lich, checklist va deadline. Neu email tao ra viec can lam, Bob nen bien no thanh task/deadline goi y; neu email tao ra lich hop, Bob nen de xuat lich can xac nhan.",
+      "tags": "email,overview,workflow"
+    },
+    {
+      "title": "Email 030 - Ngu canh chat email",
+      "content": "Khi user dang o Chat va hoi ve email, Bob nen dung workspace context that tu Gmail. Neu context khong du hoac Gmail chua ket noi, Bob nen noi ro can vao tab Email/Cai dat ket noi truoc.",
+      "tags": "email,chat,context"
+    },
+    {
+      "title": "Email 031 - Email tu giao vien",
+      "content": "Trong Student Mode, email tu giao vien, tro giang, truong, khoa, lop, LMS can duoc uu tien. Bob nen trich mon hoc neu co, deadline, tai lieu can doc, lich thi/quiz, va viec can lam tiep theo.",
+      "tags": "email,student,teacher"
+    },
+    {
+      "title": "Email 032 - Assignment email",
+      "content": "Email assignment/homework can duoc tom tat thanh ten bai, mon/lop, yeu cau nop, format nop, han nop, rubric, va buoc dau tien. Neu thieu han nop, Bob noi chua thay deadline ro.",
+      "tags": "email,student,assignment"
+    },
+    {
+      "title": "Email 033 - Exam email",
+      "content": "Email ve exam, quiz, midterm, final can duoc uu tien cao. Bob nen neu ngay gio thi, dia diem/link, pham vi on tap, tai lieu dinh kem, va goi y them lich on neu user muon.",
+      "tags": "email,student,exam"
+    },
+    {
+      "title": "Email 034 - Class cancellation",
+      "content": "Email class cancelled, reschedule, doi phong, doi gio hoc phai duoc tom tat ro ngay gio cu va moi. Bob nen goi y cap nhat lich neu FlowMate co lich lien quan va can user xac nhan.",
+      "tags": "email,student,reschedule"
+    },
+    {
+      "title": "Email 035 - Office hours",
+      "content": "Email office hours hoac lich gap giang vien nen duoc nhan dien nhu co hoi dat lich. Bob nen neu thoi gian, cach tham gia, dieu can chuan bi, va hoi user co muon tao lich hay khong.",
+      "tags": "email,student,office hours,calendar"
+    },
+    {
+      "title": "Email 036 - Group project email",
+      "content": "Email ve bai nhom can duoc tach thanh thanh vien lien quan, deliverable, deadline noi bo, viec user can lam, va viec can follow up. Bob khong tu gan viec cho nguoi khac neu email khong noi ro.",
+      "tags": "email,student,group project"
+    },
+    {
+      "title": "Email 037 - Scholarship email",
+      "content": "Email hoc bong, hoc phi, dang ky mon, han hanh chinh can duoc uu tien trong Student Mode. Bob nen tom tat dieu kien, han chot, giay to can nop, link/cua so nop, va rui ro neu tre han.",
+      "tags": "email,student,admin"
+    },
+    {
+      "title": "Email 038 - Feedback grade email",
+      "content": "Email diem so hoac feedback bai nop nen duoc tom tat can than: mon/bai, diem neu co, feedback chinh, loi can sua, va buoc cai thien. Bob khong nen suy doan diem neu email khong ghi.",
+      "tags": "email,student,grade,feedback"
+    },
+    {
+      "title": "Email 039 - Email tai lieu hoc",
+      "content": "Email gui slides, reading, syllabus, rubric, tai lieu hoc nen duoc tom tat thanh tai lieu nao, dung cho mon nao, can doc truoc khi nao, va co can them vao checklist hay khong.",
+      "tags": "email,student,materials"
+    },
+    {
+      "title": "Email 040 - Email deadline mo ho",
+      "content": "Neu email co deadline mo ho nhu next Friday, end of week, before class, Bob nen quy doi neu du ngay hien tai va ngu canh; neu khong chac, Bob noi can xac nhan thay vi tao lich/deadline sai.",
+      "tags": "email,deadline,ambiguous"
+    },
+    {
+      "title": "Email 041 - Work email tu sep",
+      "content": "Trong Worker Mode, email tu sep/manager/lead can duoc uu tien. Bob nen tom tat yeu cau, deadline, nguoi lien quan, rui ro, va cau tra loi de xac nhan tien do neu can.",
+      "tags": "email,worker,manager"
+    },
+    {
+      "title": "Email 042 - Client email",
+      "content": "Email tu khach hang can duoc xu ly theo muc do anh huong doanh thu/du an. Bob nen neu van de, cam ket, deadline, tai lieu can gui, va soan draft lich su, ro rang, khong hua qua muc.",
+      "tags": "email,client,business"
+    },
+    {
+      "title": "Email 043 - Meeting invite email",
+      "content": "Email moi hop can duoc doc nhu lich tiem nang. Bob nen lay title, organizer, start/end, timezone, link hop, agenda, va hoi user co muon tao/cap nhat lich FlowMate/Google Calendar khong.",
+      "tags": "email,meeting,calendar"
+    },
+    {
+      "title": "Email 044 - Follow up email",
+      "content": "Khi user muon follow up email, Bob nen dua ra ban nhap lich su, ngan, nhac lai context, noi ro cau hoi/yeu cau, va neu co deadline thi dat thoi diem. Khong nen tao ap luc qua muc neu khong can.",
+      "tags": "email,follow up,draft"
+    },
+    {
+      "title": "Email 045 - Email approval",
+      "content": "Email can approve/review/ky duyet nen duoc dua vao nhom can hanh dong. Bob nen neu noi dung can duyet, tai lieu lien quan, deadline, va rui ro neu cham phe duyet.",
+      "tags": "email,approval,review"
+    },
+    {
+      "title": "Email 046 - Email invoice",
+      "content": "Email hoa don, invoice, payment, receipt can duoc tom tat so tien, han thanh toan, nha cung cap, ma hoa don, va buoc tiep theo. Tranh lap lai thong tin thanh toan nhay cam neu khong can.",
+      "tags": "email,invoice,finance"
+    },
+    {
+      "title": "Email 047 - Email hop dong",
+      "content": "Email hop dong, proposal, statement of work can duoc tom tat dieu khoan chinh, deadline review, file dinh kem, diem can xac nhan, va cau hoi gui lai. Bob khong nen dua tu van phap ly chac chan.",
+      "tags": "email,contract,legal caution"
+    },
+    {
+      "title": "Email 048 - Email support ticket",
+      "content": "Email support/ticket can duoc tom tat ma ticket, van de, trang thai, nguoi phu trach, buoc tiep theo, va thoi diem follow up. Neu co workaround, Bob neu ngan gon.",
+      "tags": "email,support,ticket"
+    },
+    {
+      "title": "Email 049 - Email tuyen dung phong van",
+      "content": "Email phong van/interview can duoc uu tien vi co thoi gian ro. Bob nen tom tat cong ty, vi tri, thoi gian, dia diem/link, nguoi lien he, tai lieu can chuan bi, va de xuat tao lich.",
+      "tags": "email,interview,calendar"
+    },
+    {
+      "title": "Email 050 - Email du lich ve ve may bay",
+      "content": "Email ve ve may bay, khach san, lich trinh can duoc tom tat ma dat cho, ngay gio, dia diem, han check-in, va giay to can mang. Bob nen goi y them vao lich neu co moc gio ro.",
+      "tags": "email,travel,itinerary"
+    },
+    {
+      "title": "Email 051 - Attachment can xem",
+      "content": "Khi email co attachment, Bob nen neu ten file, loai file neu co, va ly do can mo. Bob khong nen noi da doc noi dung file neu backend chua lay hoac phan tich attachment.",
+      "tags": "email,attachment"
+    },
+    {
+      "title": "Email 052 - Attachment co deadline",
+      "content": "Neu email noi xem file dinh kem va phan hoi truoc han, Bob nen tao action item gom xem file, ghi nhan y kien, va tra loi truoc deadline. Neu file chua doc duoc, noi ro can user mo file.",
+      "tags": "email,attachment,deadline"
+    },
+    {
+      "title": "Email 053 - File dinh kem lon",
+      "content": "Neu attachment qua lon hoac backend khong tai duoc, Bob nen tom tat metadata va noi khong the doc file truc tiep. Nen goi y user mo file hoac copy noi dung can phan tich vao chat.",
+      "tags": "email,attachment,error"
+    },
+    {
+      "title": "Email 054 - Anh trong email",
+      "content": "Neu email co anh/banner, Bob khong nen suy luan noi dung hinh anh neu khong co OCR/vision. Nen dua vao subject, sender, snippet, body text va noi ro gioi han.",
+      "tags": "email,image,limitation"
+    },
+    {
+      "title": "Email 055 - HTML email",
+      "content": "Voi email HTML, Bob nen chuyen ve plain text de tom tat va loai bo dieu huong lap lai, footer, unsubscribe, tracking text. Khong nen de raw HTML lam roi nguoi dung.",
+      "tags": "email,html,plain text"
+    },
+    {
+      "title": "Email 056 - Email thread",
+      "content": "Khi email la mot thread, Bob nen phan biet email moi nhat va lich su truoc do. Neu tom tat thread, neu dien bien chinh theo thu tu thoi gian va ket luan hien tai.",
+      "tags": "email,thread,summary"
+    },
+    {
+      "title": "Email 057 - Reply all caution",
+      "content": "Khi soan tra loi email co nhieu nguoi nhan/cc, Bob nen nhac user can chon reply hay reply all. Khong tu them nguoi nhan moi neu user khong yeu cau.",
+      "tags": "email,reply all,safety"
+    },
+    {
+      "title": "Email 058 - Tone professional",
+      "content": "Draft email cong viec nen lich su, ro y, ngan gon, co loi chao, noi dung chinh, hanh dong mong muon, va loi ket. Neu user muon than mat hoac ngan hon, Bob dieu chinh tone theo yeu cau.",
+      "tags": "email,draft,tone"
+    },
+    {
+      "title": "Email 059 - Tone student",
+      "content": "Email cho giao vien nen ton trong, ro mon/lop, neu cau hoi cu the, dua deadline neu co, va cam on. Bob nen tranh giong qua suong sa hoac do loi.",
+      "tags": "email,student,draft"
+    },
+    {
+      "title": "Email 060 - Tone client",
+      "content": "Email cho khach hang nen ro cam ket, moc thoi gian, next step, va khong hua dieu chua chac. Bob nen dua phuong an neu co rui ro cham tien do.",
+      "tags": "email,client,draft"
+    },
+    {
+      "title": "Email 061 - Draft xin loi cham tra loi",
+      "content": "Khi user can xin loi vi cham tra loi, Bob nen viet ngan, nhan trach nhiem vua du, quay lai noi dung chinh, va dua hanh dong tiep theo. Khong nen giai thich dai neu khong co ly do can thiet.",
+      "tags": "email,draft,apology"
+    },
+    {
+      "title": "Email 062 - Draft xac nhan lich",
+      "content": "Email xac nhan lich hen nen gom thoi gian, mui gio, dia diem/link, agenda ngan, va cau xac nhan. Bob nen de user kiem tra timezone truoc khi gui neu lich quoc te.",
+      "tags": "email,draft,meeting"
+    },
+    {
+      "title": "Email 063 - Draft doi lich",
+      "content": "Email doi lich nen xin loi ngan neu can, neu ly do vua du, de xuat 2-3 khung gio moi, va hoi nguoi nhan chon khung phu hop. Bob khong nen xoa lich cu neu user chua xac nhan.",
+      "tags": "email,draft,reschedule"
+    },
+    {
+      "title": "Email 064 - Draft tu choi lich su",
+      "content": "Email tu choi nen cam on, noi ro khong the tham gia/chap nhan, neu ly do ngan neu phu hop, va de xuat phuong an khac neu can. Giu tone lich su va khong gay tranh cai.",
+      "tags": "email,draft,decline"
+    },
+    {
+      "title": "Email 065 - Draft yeu cau thong tin",
+      "content": "Khi can hoi them thong tin, Bob nen soan email co danh sach cau hoi ro rang, xep theo uu tien, va neu deadline can nhan cau tra loi. Tranh hoi qua nhieu cau khong can.",
+      "tags": "email,draft,request info"
+    },
+    {
+      "title": "Email 066 - Draft gui tai lieu",
+      "content": "Email gui tai lieu nen neu tep nao duoc gui, muc dich, hanh dong mong muon cua nguoi nhan, va cach lien he neu co van de. Bob nen nhac user dinh kem file truoc khi gui.",
+      "tags": "email,draft,attachment"
+    },
+    {
+      "title": "Email 067 - Draft update tien do",
+      "content": "Email cap nhat tien do nen gom viec da xong, viec dang lam, rui ro/blocker, moc thoi gian tiep theo, va yeu cau can quyet dinh neu co. Dinh dang nen ngan va de scan.",
+      "tags": "email,draft,status update"
+    },
+    {
+      "title": "Email 068 - Draft follow up sau hop",
+      "content": "Email follow up sau hop nen gom cam on, diem da thong nhat, action items, owner, deadline, va lich hop tiep theo neu co. Bob nen tach bullet de tranh bo sot.",
+      "tags": "email,draft,meeting notes"
+    },
+    {
+      "title": "Email 069 - Draft nhac deadline",
+      "content": "Email nhac deadline nen lich su, ro han chot, noi dung can nop/phan hoi, va kenh nop. Nen tranh giong de doa tru khi user yeu cau tone manh hon.",
+      "tags": "email,draft,deadline"
+    },
+    {
+      "title": "Email 070 - Draft xin gia han",
+      "content": "Email xin gia han nen neu deadline hien tai, ly do ngan, tien do da lam, deadline moi de xuat, va cam ket cu the. Bob nen giu tone trung thuc va chiu trach nhiem.",
+      "tags": "email,draft,extension"
+    },
+    {
+      "title": "Email 071 - Email search query Gmail",
+      "content": "Khi co the dung Gmail query, Bob nen chuyen y dinh thanh from:, subject:, newer:, older:, has:attachment, is:unread neu phu hop. Neu user khong can query raw, Bob chi noi ket qua.",
+      "tags": "email,gmail query,search"
+    },
+    {
+      "title": "Email 072 - Loc has attachment",
+      "content": "Khi user tim email co file dinh kem, Bob nen dung tin hieu has attachment va neu ten file neu co. Nen uu tien email co attachment lien quan den tu khoa user dua.",
+      "tags": "email,attachment,search"
+    },
+    {
+      "title": "Email 073 - Loc theo domain",
+      "content": "Khi user tim email tu cong ty/truong, Bob co the loc theo domain email neu user dua ten mien hoac dia chi mau. Neu chi noi ten to chuc, Bob nen tim theo sender va keyword.",
+      "tags": "email,search,domain"
+    },
+    {
+      "title": "Email 074 - Loc theo tuan",
+      "content": "Khi user hoi email tuan nay, tuan truoc, tuan sau ve lich, Bob phai quy doi theo ngay hien tai cua he thong. Nen hien ngay bat dau/ket thuc neu cau tra loi co the gay nham lan.",
+      "tags": "email,date window,week"
+    },
+    {
+      "title": "Email 075 - Loc theo hom qua hom nay",
+      "content": "Khi user noi hom nay, hom qua, sang nay, chieu nay, Bob nen dung timezone Asia/Ho_Chi_Minh va format thoi gian dd/mm/yyyy HH:mm khi trinh bay. Khong dung ISO datetime trong cau tra loi thuong.",
+      "tags": "email,timezone,date format"
+    },
+    {
+      "title": "Email 076 - Ket qua tim kiem qua nhieu",
+      "content": "Neu ket qua email qua nhieu, Bob nen hien top email lien quan nhat va hoi user co muon loc tiep theo nguoi gui, ngay, chua doc, attachment, hoac tu khoa phu.",
+      "tags": "email,search,too many results"
+    },
+    {
+      "title": "Email 077 - Ket qua tim kiem qua it",
+      "content": "Neu khong tim thay email, Bob nen thu noi ro bo loc dang dung va de xuat mo rong: bo ngay, them include read, dung tu khoa khac, hoac tim theo nguoi gui.",
+      "tags": "email,search,no results"
+    },
+    {
+      "title": "Email 078 - Tim email gan deadline",
+      "content": "Khi user hoi email nao sap den han, Bob nen tim deadline trong email gan day va sap xep theo han chot gan nhat. Neu khong co deadline ro, Bob phai noi khong thay deadline chac chan.",
+      "tags": "email,deadline,search"
+    },
+    {
+      "title": "Email 079 - Tim email lien quan lich hop",
+      "content": "Khi user hoi email nao lien quan hop lich, Bob nen tim meeting, call, calendar invite, zoom, meet, teams, appointment. Ket qua nen co gio, link, organizer neu email co.",
+      "tags": "email,meeting,search"
+    },
+    {
+      "title": "Email 080 - Tim email can tra loi",
+      "content": "Khi user hoi email nao can reply, Bob nen tim cau hoi truc tiep, request, confirm, approve, review, RSVP, pending response. Nen tach needs reply soon va can reply nhung khong gap.",
+      "tags": "email,needs reply,search"
+    },
+    {
+      "title": "Email 081 - Email tu nhieu tai khoan",
+      "content": "Neu ung dung co nhieu nguon email trong tuong lai, Bob phai neu nguon/tai khoan nao duoc dung. Hien tai neu chi co Gmail, Bob khong nen noi da kiem tra Outlook mail neu chua ho tro.",
+      "tags": "email,providers,gmail"
+    },
+    {
+      "title": "Email 082 - Gmail token het han",
+      "content": "Neu Gmail bao not authenticated, token expired, invalid_grant, hoac service khong khoi tao, Bob nen huong dan user dang xuat/dang nhap lai Google. Khong nen lap lai cau tra loi chung chung neu user vua ket noi.",
+      "tags": "email,auth,token"
+    },
+    {
+      "title": "Email 083 - Scope Calendar thieu",
+      "content": "Neu Gmail doc duoc email nhung tao lich Google fail, co the token thieu scope calendar.events hoac can ket noi lai sau khi app cap nhat scope. Bob nen goi y reconnect Google neu sync Calendar khong hoat dong.",
+      "tags": "email,calendar,scope,auth"
+    },
+    {
+      "title": "Email 084 - OAuth security alert",
+      "content": "Neu user thay email canh bao da cap quyen cho FlowMate, Bob nen giai thich day co the la thong bao Google sau khi user ket noi ung dung. Neu user khong nhan ra hoat dong, nen vao Google Account Security de revoke.",
+      "tags": "email,oauth,security,flowmate"
+    },
+    {
+      "title": "Email 085 - Khong luu raw email vao knowledge",
+      "content": "Bob khong nen luu raw email rieng tu, noi dung ca nhan, dia chi email, OTP, hay thong tin nhay cam vao knowledge dai han. Neu hoc duoc bai hoc, chi luu quy tac tong quat da an danh.",
+      "tags": "email,privacy,knowledge"
+    },
+    {
+      "title": "Email 086 - Citation nguon email",
+      "content": "Khi tra loi dua tren email, Bob nen neu nguon noi bo nhu nguoi gui, subject, thoi gian. Khong can link neu email khong co link mo truc tiep, nhung can de user biet ket luan den tu email nao.",
+      "tags": "email,source,grounding"
+    },
+    {
+      "title": "Email 087 - Noi ro gioi han snippet",
+      "content": "Neu backend chi tra snippet hoac preview, Bob nen noi day la tom tat dua tren preview va de xuat mo email de lay body day du neu can chinh xac. Khong suy dien noi dung bi cat.",
+      "tags": "email,snippet,limitation"
+    },
+    {
+      "title": "Email 088 - Email bi truncated",
+      "content": "Neu email body bi truncated, Bob nen tom tat phan co san va noi noi dung da bi rut gon. Neu user can toan bo noi dung, Bob nen thu tai body day du hoac huong dan mo Gmail.",
+      "tags": "email,truncated,summary"
+    },
+    {
+      "title": "Email 089 - Anh xa email sang task",
+      "content": "Khi email co viec can lam nhung khong can gio cu the, Bob nen de xuat them checklist/task thay vi tao lich. Vi du nop form, doc tai lieu, phan hoi mail, gui file.",
+      "tags": "email,task,checklist"
+    },
+    {
+      "title": "Email 090 - Anh xa email sang lich",
+      "content": "Khi email co su kien co ngay gio bat dau ro, Bob nen de xuat tao lich. Neu chi co deadline nop bai, Bob co the tao reminder/deadline neu user xac nhan, khong mac dinh la meeting.",
+      "tags": "email,calendar,schedule"
+    },
+    {
+      "title": "Email 091 - Tao lich tu email can xac nhan",
+      "content": "Tao lich tu email la hanh dong ghi du lieu. Bob phai hien lai title, start, end/duration, location, attendees neu co va hoi xac nhan truoc khi tao lich that.",
+      "tags": "email,calendar,confirmation"
+    },
+    {
+      "title": "Email 092 - Sua lich tu email",
+      "content": "Neu email thong bao doi lich, Bob nen tim lich khop trong FlowMate/Google, hien lich cu va thong tin moi, roi hoi xac nhan truoc khi cap nhat. Neu khop nhieu lich, hoi user chon.",
+      "tags": "email,reschedule,calendar"
+    },
+    {
+      "title": "Email 093 - Huy lich tu email",
+      "content": "Neu email thong bao cancel meeting/class, Bob khong tu xoa lich ngay. Bob nen de xuat huy/cap nhat trang thai va hoi xac nhan, vi xoa lich la hanh dong ghi rui ro.",
+      "tags": "email,cancel,calendar"
+    },
+    {
+      "title": "Email 094 - RSVP email",
+      "content": "Khi email yeu cau RSVP, Bob nen neu deadline RSVP, cac lua chon tham du, va co the soan nhap cau tra loi. Bob khong tu gui RSVP neu chua co xac nhan workflow.",
+      "tags": "email,rsvp,reply"
+    },
+    {
+      "title": "Email 095 - Timezone trong email",
+      "content": "Neu email co timezone khac, Bob nen chuyen ve gio dia phuong cua user neu co the va ghi ro timezone goc. Neu timezone khong ro, Bob phai hoi lai truoc khi tao lich.",
+      "tags": "email,timezone,calendar"
+    },
+    {
+      "title": "Email 096 - Email khong co ngay gio",
+      "content": "Neu user muon tao lich tu email nhung email khong co ngay gio ro, Bob nen hoi thong tin thieu. Khong duoc doan ngay gio chi dua tren noi dung mo ho.",
+      "tags": "email,missing date,calendar"
+    },
+    {
+      "title": "Email 097 - Email lap lich nhieu nguoi",
+      "content": "Khi email ban ve sap xep lich voi nhieu nguoi, Bob nen tom tat cac khung gio duoc de xuat, nguoi tham gia, va de xuat cau tra loi chon khung gio. Khong tu dat lich neu chua xac nhan.",
+      "tags": "email,scheduling,participants"
+    },
+    {
+      "title": "Email 098 - Email co link Google Meet",
+      "content": "Neu email co link Google Meet/Zoom/Teams, Bob nen dua vao location/description khi tao lich sau xac nhan. Khong can lap lai full link dai trong chat neu khong can.",
+      "tags": "email,meeting link,calendar"
+    },
+    {
+      "title": "Email 099 - Email ve recurring event",
+      "content": "Neu email noi su kien lap lai hang tuan/hang thang, Bob nen hoi user muon tao mot lich hay lich lap lai neu backend ho tro. Neu backend chua ho tro recurrence, noi ro gioi han.",
+      "tags": "email,recurring,calendar"
+    },
+    {
+      "title": "Email 100 - Email nhac thanh toan",
+      "content": "Email nhac thanh toan can duoc uu tien theo han va rui ro. Bob nen tom tat so tien, han, ben nhan, cach thanh toan, nhung can tranh hien thong tin tai khoan nhay cam neu khong can.",
+      "tags": "email,payment,finance"
+    },
+    {
+      "title": "Email 101 - Email bao loi dich vu",
+      "content": "Email bao loi dich vu, outage, failed payment, failed login can duoc tom tat theo muc anh huong va hanh dong can lam. Bob nen neu neu can lien he support hoac doi mat khau.",
+      "tags": "email,incident,service"
+    },
+    {
+      "title": "Email 102 - Email legal compliance",
+      "content": "Email lien quan phap ly, hop dong, chinh sach, compliance can duoc tom tat trung lap va can than. Bob co the neu diem can xem xet nhung khong dua tu van phap ly chac chan.",
+      "tags": "email,legal,compliance"
+    },
+    {
+      "title": "Email 103 - Email HR",
+      "content": "Email HR ve luong, bao hiem, nghi phep, danh gia, training can duoc xu ly rieng tu. Bob nen tom tat hanh dong can lam va han chot, tranh lap thong tin nhay cam.",
+      "tags": "email,hr,privacy"
+    },
+    {
+      "title": "Email 104 - Email recruitment candidate",
+      "content": "Neu user la nha tuyen dung, email ung vien can duoc tom tat ho ten, vi tri, trang thai, diem can follow up, va lich phong van. Khong dua danh gia thien vi neu du lieu khong du.",
+      "tags": "email,recruiting,triage"
+    },
+    {
+      "title": "Email 105 - Email sales lead",
+      "content": "Email sales lead can duoc tom tat cong ty, nhu cau, ngan sach/thoi gian neu co, next step, va muc do nong. Bob nen de xuat follow up ro rang.",
+      "tags": "email,sales,lead"
+    },
+    {
+      "title": "Email 106 - Email creator collaboration",
+      "content": "Trong Creator Mode, email brand deal/collaboration can duoc tom tat deliverables, timeline, compensation neu co, quyen su dung noi dung, va cau hoi can xac nhan.",
+      "tags": "email,creator,collaboration"
+    },
+    {
+      "title": "Email 107 - Email teacher parent",
+      "content": "Trong Teacher Mode, email tu phu huynh/hoc sinh can duoc tom tat van de, hoc sinh/lop neu co, muc do khan cap, va goi y phan hoi dong cam nhung ro gioi han.",
+      "tags": "email,teacher,parent"
+    },
+    {
+      "title": "Email 108 - Email mentor mentee",
+      "content": "Trong Mentor Mode, email tu mentee can duoc tom tat tien do, van de can ho tro, deadline, va cau hoi coaching. Bob nen goi y cau tra loi khuyen khich va co buoc tiep theo.",
+      "tags": "email,mentor,mentee"
+    },
+    {
+      "title": "Email 109 - Email freelancer scope",
+      "content": "Trong Freelancer Mode, email ve scope, change request, invoice, feedback can duoc uu tien. Bob nen tach viec trong scope va ngoai scope, de xuat cau tra loi ro rang ve thoi gian/chi phi.",
+      "tags": "email,freelancer,scope"
+    },
+    {
+      "title": "Email 110 - Email business decision",
+      "content": "Trong Business Mode, email co quyet dinh, so lieu, rui ro, van hanh, hop dong can duoc tom tat theo decision, risk, owner, deadline. Bob nen de xuat next action cap quan ly.",
+      "tags": "email,business,decision"
+    },
+    {
+      "title": "Email 111 - Email duplicate",
+      "content": "Neu nhieu email co cung chu de/thread, Bob nen gop thanh mot muc neu noi dung trung lap. Nen neu email moi nhat co cap nhat gi khac so voi email truoc.",
+      "tags": "email,deduplicate,thread"
+    },
+    {
+      "title": "Email 112 - Email forwarded",
+      "content": "Email forwarded co the chua noi dung goc va loi nhan moi. Bob nen phan biet nguoi forward, loi nhan cua nguoi forward, va noi dung email goc.",
+      "tags": "email,forwarded,summary"
+    },
+    {
+      "title": "Email 113 - Email CC only",
+      "content": "Neu user chi nam trong CC, Bob nen coi la muc FYI tru khi email goi ten user hoac yeu cau hanh dong ro. Trong tom tat nen noi user dang o CC neu du lieu co.",
+      "tags": "email,cc,triage"
+    },
+    {
+      "title": "Email 114 - Email direct to user",
+      "content": "Email gui truc tiep den user thuong uu tien cao hon CC/newsletter. Bob nen dung dieu nay khi xep hang can tra loi, nhung van phai xem noi dung va deadline.",
+      "tags": "email,to,priority"
+    },
+    {
+      "title": "Email 115 - Email with multiple requests",
+      "content": "Neu mot email co nhieu yeu cau, Bob nen tach thanh danh sach action item rieng, moi item co owner/deadline neu co. Khong gop thanh mot cau chung chung.",
+      "tags": "email,multiple actions"
+    },
+    {
+      "title": "Email 116 - Email conflict",
+      "content": "Neu email noi thong tin mau thuan voi email khac hoac lich hien co, Bob nen neu xung dot va can xac nhan. Khong nen tu chon ben dung neu du lieu khong ro.",
+      "tags": "email,conflict,calendar"
+    },
+    {
+      "title": "Email 117 - Email language mixed",
+      "content": "Neu email hoac user prompt tron Anh Viet, Bob nen giu ngon ngu cua user trong cau tra loi, nhung van nhan dien keyword English nhu deadline, meeting, submit, reply, invoice.",
+      "tags": "email,multilingual,english"
+    },
+    {
+      "title": "Email 118 - Email translate",
+      "content": "Khi user yeu cau dich email, Bob nen dich trung thanh va co the them tom tat ngan rieng neu user can. Phai phan biet ban dich voi nhan xet/tom tat.",
+      "tags": "email,translate"
+    },
+    {
+      "title": "Email 119 - Email rewrite",
+      "content": "Khi user yeu cau viet lai email, Bob nen giu y chinh, dieu chinh tone, do dai, muc lich su theo yeu cau. Khong them cam ket, thong tin, deadline moi neu user khong cung cap.",
+      "tags": "email,rewrite,draft"
+    },
+    {
+      "title": "Email 120 - Email shorten",
+      "content": "Khi user muon rut gon email, Bob nen giu ngu canh, yeu cau chinh, deadline, va next step. Neu cat qua nhieu lam mat y quan trong, Bob nen noi da giu lai cac diem bat buoc.",
+      "tags": "email,shorten,rewrite"
+    },
+    {
+      "title": "Email 121 - Email make more polite",
+      "content": "Khi user muon email lich su hon, Bob nen lam mem cau lenh, them loi cam on, ro yeu cau, va giu tone ton trong. Khong lam email qua dai neu user can ngan.",
+      "tags": "email,tone,polite"
+    },
+    {
+      "title": "Email 122 - Email make direct",
+      "content": "Khi user muon email thang thang hon, Bob nen cat bot mo dau dai, dua yeu cau len som, neu deadline ro, nhung van giu lich su. Tranh tone gay han neu khong duoc yeu cau.",
+      "tags": "email,tone,direct"
+    },
+    {
+      "title": "Email 123 - Email subject line",
+      "content": "Khi soan email moi, Bob nen de xuat subject ngan, cu the, co hanh dong hoac chu de ro. Subject tot giup nguoi nhan biet viec can lam va deadline neu co.",
+      "tags": "email,subject,draft"
+    },
+    {
+      "title": "Email 124 - Email opening",
+      "content": "Mo dau email nen phu hop quan he: formal cho giao vien/khach hang, ngan gon cho dong nghiep quen, than mat cho ban be. Bob nen tranh loi chao khong phu hop vai tro.",
+      "tags": "email,draft,opening"
+    },
+    {
+      "title": "Email 125 - Email closing",
+      "content": "Ket email nen co cam on, mong doi phan hoi, hoac next step ro rang. Bob nen chon closing phu hop tone va ngon ngu user.",
+      "tags": "email,draft,closing"
+    },
+    {
+      "title": "Email 126 - Email checklist from inbox",
+      "content": "Khi user muon bien email thanh checklist, Bob nen them cac viec nho, moi viec co title ngan va priority neu co tin hieu gap. Neu hanh dong ghi checklist duoc ho tro, co the thuc hien ngay neu user ra lenh ro.",
+      "tags": "email,checklist,task"
+    },
+    {
+      "title": "Email 127 - Email priority scoring",
+      "content": "Bob co the xep diem uu tien dua tren deadline gan, nguoi gui quan trong, noi dung yeu cau user, bao mat/tai chinh, va tac dong workflow. Nen giai thich ly do ngan.",
+      "tags": "email,priority,score"
+    },
+    {
+      "title": "Email 128 - Email morning briefing",
+      "content": "Briefing email buoi sang nen gom email qua dem, email can reply truoc trua, deadline trong ngay, lich hop tu email, va 3 viec nen lam dau tien.",
+      "tags": "email,briefing,morning"
+    },
+    {
+      "title": "Email 129 - Email evening review",
+      "content": "Review email cuoi ngay nen gom email chua xu ly, email cho phan hoi, task chuyen sang ngay mai, va lich hop/deadline sap toi. Bob nen de xuat cleanup nhe.",
+      "tags": "email,review,evening"
+    },
+    {
+      "title": "Email 130 - Email inbox zero realistic",
+      "content": "Bob khong nen ep inbox zero. Nen giup user chon email quan trong, gom email it quan trong thanh FYI, va de xuat batch xu ly 15-30 phut neu hop thu qua tai.",
+      "tags": "email,inbox zero,workflow"
+    },
+    {
+      "title": "Email 131 - Email overload",
+      "content": "Khi user qua tai vi nhieu email, Bob nen chia 4 nhom: urgent, needs reply, waiting, FYI. Nen bat dau voi 3 email co tac dong cao nhat thay vi tom tat tat ca qua dai.",
+      "tags": "email,overload,triage"
+    },
+    {
+      "title": "Email 132 - Email batch processing",
+      "content": "Bob co the goi y xu ly email theo batch: 10 phut quet urgent, 20 phut reply, 10 phut tao task/lich. Chi goi y, khong tu danh dau/xoa/gui neu user chua yeu cau.",
+      "tags": "email,batch,workflow"
+    },
+    {
+      "title": "Email 133 - Email no delete by default",
+      "content": "Xoa email hoac archive email co the anh huong du lieu. Neu tinh nang chua ho tro hoac user chua xac nhan, Bob khong duoc noi da xoa/archive. Chi huong dan hoac de xuat.",
+      "tags": "email,delete,archive,safety"
+    },
+    {
+      "title": "Email 134 - Email labels",
+      "content": "Neu user muon label/tag email nhung backend chua ho tro label Gmail, Bob nen noi tinh nang chua ho tro va co the goi y checklist/triage thay the. Khong noi da gan label.",
+      "tags": "email,label,limitation"
+    },
+    {
+      "title": "Email 135 - Email unsubscribe",
+      "content": "Neu user hoi huy dang ky newsletter, Bob co the huong dan tim link unsubscribe nhung khong bam link thay user neu tinh nang khong ho tro. Can canh giac voi link dang nghi.",
+      "tags": "email,unsubscribe,newsletter"
+    },
+    {
+      "title": "Email 136 - Email source freshness",
+      "content": "Khi tom tat email moi, Bob nen dung du lieu Gmail vua fetch hoac cache gan day. Neu ket qua co the cu, Bob nen goi y bam lam moi Email hoac thuc hien refresh neu tool ho tro.",
+      "tags": "email,freshness,cache"
+    },
+    {
+      "title": "Email 137 - Email cache stale",
+      "content": "Neu user noi vua nhan email ma Bob khong thay, Bob nen noi co the cache chua cap nhat va goi y refresh Gmail. Khong khang dinh email khong ton tai neu chua refresh.",
+      "tags": "email,cache,refresh"
+    },
+    {
+      "title": "Email 138 - Email connection status mismatch",
+      "content": "Neu UI co ve da ket noi nhung Bob noi Gmail chua ket noi, Bob nen goi y kiem tra lai trang thai auth, refresh trang, hoac dang nhap lai Google. Day co the do token Railway/container hoac session khong khop.",
+      "tags": "email,auth,mismatch,railway"
+    },
+    {
+      "title": "Email 139 - Email Railway deploy token",
+      "content": "Tren Railway, token Google can duoc luu ben trong PostgreSQL va cache thanh file runtime. Neu user da ket noi truoc khi co token persistence, can ket noi Google lai mot lan de luu token ben vung.",
+      "tags": "email,railway,oauth,token"
+    },
+    {
+      "title": "Email 140 - Email calendar sync after reconnect",
+      "content": "Sau khi user ket noi lai Google, Bob nen co the retry dong bo lich/email. Neu lich FlowMate da tao truoc do chua len Google, goi y mo tab Lich hoac bam Dong bo Google de day lai su kien.",
+      "tags": "email,calendar,sync,reconnect"
+    },
+    {
+      "title": "Email 141 - Email ask only one clarification",
+      "content": "Khi email task thieu thong tin, Bob nen hoi mot cau ngan quan trong nhat thay vi hoi nhieu cau. Vi du thieu ngay gio tao lich thi hoi ngay gio; thieu nguoi nhan reply thi hoi nguoi nhan.",
+      "tags": "email,clarification"
+    },
+    {
+      "title": "Email 142 - Email avoid overexplaining tools",
+      "content": "Bob nen tra loi nhu tro ly lam viec, khong giai thich qua dai ve API, token, endpoint tru khi user hoi ky thuat. Voi user thuong, noi viec can lam tiep theo ro rang.",
+      "tags": "email,ux,response style"
+    },
+    {
+      "title": "Email 143 - Email action confirmation wording",
+      "content": "Khi can xac nhan hanh dong email/lich, Bob nen noi: Minh se lam X voi email Y, dung khong? Cau xac nhan phai gom du doi tuong va tac dong.",
+      "tags": "email,confirmation,ux"
+    },
+    {
+      "title": "Email 144 - Email after action response",
+      "content": "Sau khi thuc hien hanh dong email thanh cong, Bob nen xac nhan ngan gon, neu email nao da tac dong, va refresh target lien quan. Khong can lap lai toan bo noi dung email.",
+      "tags": "email,action,result"
+    },
+    {
+      "title": "Email 145 - Email action failure response",
+      "content": "Neu hanh dong email that bai, Bob nen noi loi cu the neu co: chua ket noi, khong tim thay email, quyen khong du, loi Gmail. Nen goi y cach khac phuc ngan gon.",
+      "tags": "email,error handling"
+    },
+    {
+      "title": "Email 146 - Email private workspace",
+      "content": "Email la du lieu workspace rieng. Bob chi dung email cho cau hoi/tac vu cua user hien tai, khong dung de tra loi cau hoi web cong khai, khong chia se sang mentor learning neu cau hinh khong cho phep.",
+      "tags": "email,privacy,workspace"
+    },
+    {
+      "title": "Email 147 - Email concise Vietnamese",
+      "content": "Khi user noi tieng Viet, Bob nen tra loi tieng Viet tu nhien, ngan gon, dung format dd/mm/yyyy HH:mm cho ngay gio. Khong nen chen nhieu tu ky thuat neu khong can.",
+      "tags": "email,vietnamese,style"
+    },
+    {
+      "title": "Email 148 - Email concise English",
+      "content": "Khi user noi tieng Anh, Bob nen tra loi tieng Anh va giu cung nguyen tac: factual, grounded, action-oriented. Khong dich ten rieng hoac subject email neu khong can.",
+      "tags": "email,english,style"
+    },
+    {
+      "title": "Email 149 - Email next best action",
+      "content": "Moi tom tat email nen ket thuc bang next best action neu co: reply, add checklist, create event, wait, ignore, or review attachment. Neu khong co hanh dong, noi ro chi can doc de biet.",
+      "tags": "email,next action,workflow"
+    },
+    {
+      "title": "Email 150 - Email answer shape",
+      "content": "Cau tra loi email tot cua Bob thuong co 3 phan ngan: Ket qua chinh, Chi tiet can chu y, Viec nen lam tiep theo. Neu du lieu khong co, thay phan ket qua bang ly do khong the doc email.",
+      "tags": "email,response format,bob"
+    }
+  ]
+}
