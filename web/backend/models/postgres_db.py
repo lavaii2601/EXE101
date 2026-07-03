@@ -99,6 +99,20 @@ def _connection_pool():
     return _pool
 
 
+def close_pool():
+    """Close the shared PostgreSQL pool.
+
+    Short-lived scripts such as Railway schema/training deploy must release the
+    pool explicitly; otherwise psycopg_pool worker threads can keep the Python
+    process alive and prevent the next start command from running.
+    """
+    global _pool, _pool_url
+    if _pool is not None:
+        _pool.close()
+    _pool = None
+    _pool_url = None
+
+
 def user_id_from_db_path(db_path):
     if not db_path:
         return "default"

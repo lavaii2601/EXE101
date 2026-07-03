@@ -164,12 +164,26 @@ def _find_existing(doc, source, user_id):
     return None
 
 
+def _existing_key(title, source, user_id):
+    return (title, source, user_id or None)
+
+
 def import_documents(documents, source, user_id, update_existing, dry_run):
     created = 0
     updated = 0
     skipped = 0
+    existing_by_key = {}
+    if not dry_run:
+        for existing in KnowledgeDocument.get_all(limit=50000):
+            key = _existing_key(
+                existing.get("title"),
+                existing.get("source"),
+                existing.get("user_id"),
+            )
+            existing_by_key.setdefault(key, existing)
+
     for doc in documents:
-        existing = _find_existing(doc, source, user_id)
+        existing = existing_by_key.get(_existing_key(doc["title"], source, user_id))
         if existing:
             changed = (
                 existing.get("content") != doc["content"]
@@ -189,13 +203,14 @@ def import_documents(documents, source, user_id, update_existing, dry_run):
 
         created += 1
         if not dry_run:
-            KnowledgeDocument.create(
+            created_doc = KnowledgeDocument.create(
                 doc["title"],
                 doc["content"],
                 tags=doc["tags"],
                 source=source,
                 user_id=user_id,
             )
+            existing_by_key[_existing_key(doc["title"], source, user_id)] = created_doc
     return created, updated, skipped
 
 

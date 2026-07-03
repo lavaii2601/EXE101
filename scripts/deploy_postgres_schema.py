@@ -15,7 +15,7 @@ def apply_sql_file(conn, path):
     sql = path.read_text(encoding="utf-8")
     with conn.cursor() as cursor:
         cursor.execute(sql)
-    print(f"Applied {path.relative_to(PROJECT_ROOT).as_posix()}")
+    print(f"Applied {path.relative_to(PROJECT_ROOT).as_posix()}", flush=True)
 
 
 def import_bob_email_training():
@@ -26,33 +26,40 @@ def import_bob_email_training():
     ]
     existing_sets = [item for item in training_sets if item[0].exists()]
     if not existing_sets:
+        print("No Bob training files found for deploy import.", flush=True)
         return
 
     sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
-    from train_bob import _init_storage, _load_documents, import_documents
+    from train_bob import _load_documents, import_documents
 
-    _init_storage()
-    for path, default_tags, source in existing_sets:
-        documents = _load_documents(
-            [path],
-            default_tags=default_tags,
-            chunk_chars=3500,
-        )
-        if not documents:
-            print(f"No Bob training documents found in {path.name}.")
-            continue
+    try:
+        for path, default_tags, source in existing_sets:
+            print(f"Importing Bob training from {path.name}...", flush=True)
+            documents = _load_documents(
+                [path],
+                default_tags=default_tags,
+                chunk_chars=3500,
+            )
+            if not documents:
+                print(f"No Bob training documents found in {path.name}.", flush=True)
+                continue
 
-        created, updated, skipped = import_documents(
-            documents,
-            source=source,
-            user_id=None,
-            update_existing=True,
-            dry_run=False,
-        )
-        print(
-            f"Bob training import completed for {path.name}: "
-            f"{created} created, {updated} updated, {skipped} skipped."
-        )
+            created, updated, skipped = import_documents(
+                documents,
+                source=source,
+                user_id=None,
+                update_existing=True,
+                dry_run=False,
+            )
+            print(
+                f"Bob training import completed for {path.name}: "
+                f"{created} created, {updated} updated, {skipped} skipped.",
+                flush=True,
+            )
+    finally:
+        from models import postgres_db as pg
+
+        pg.close_pool()
 
 
 def main():
@@ -69,7 +76,7 @@ def main():
             for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
                 apply_sql_file(conn, migration)
         conn.commit()
-    print("PostgreSQL schema deploy completed.")
+    print("PostgreSQL schema deploy completed.", flush=True)
     import_bob_email_training()
 
 
