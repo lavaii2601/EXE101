@@ -205,24 +205,31 @@ _SEED_DOCUMENTS = [
     ),
     (
         "Bob xac nhan truoc khi ghi du lieu nhu the nao",
-        "Bob chia hanh dong ghi du lieu thanh 2 nhom theo do rui ro. Nhom CAN xac nhan truoc (khong "
-        "tu lam ngay): tao/sua/xoa lich hen, ap dung goi y lich nhieu hoat dong, gui email (chi "
-        "soan nhap, phai bam 'Gui luon'). Nhom KHONG can xac nhan vi it rui ro va de hoan tac: them "
-        "viec vao checklist (xoa lai duoc qua nut x), doi che do lam viec, danh dau email da "
-        "doc/chua doc, tim kiem/tom tat email (chi doc, khong sua du lieu). Nguyen tac: hanh dong "
+        "Bob chia hanh dong thanh 2 nhom. Nhom CAN xac nhan truoc (khong tu lam ngay): tao/sua/xoa "
+        "lich hen, ap dung goi y lich nhieu hoat dong, gui email, them checklist, doi che do lam viec "
+        "va danh dau email da doc/chua doc. Nhom chi doc KHONG can xac nhan: xem/tim/tom tat email, "
+        "xem lich va xem lich su. Nguyen tac: hanh dong "
         "tao ra ket qua kho hoan tac hoac anh huong ben ngoai (vd dong bo Google Calendar, gui mail "
         "that) luon can nguoi dung xac nhan; hanh dong de sua/xoa lai trong app thi Bob lam ngay de "
         "tiet kiem thao tac cho nguoi dung.",
         "xac nhan,confirm,an toan,chinh sach,bob",
     ),
     (
-        "Gioi han: mot tin nhan hien chi xu ly mot y dinh",
-        "Bob hien phan loai moi tin nhan thanh DUY NHAT mot y dinh chinh (vi du tao lich, hoac "
-        "them checklist, hoac tom tat email...). Neu mot cau chua nhieu yeu cau khac nhau cung luc "
-        "(vi du 'tao lich hop 3 gio VA nhac toi chuan bi tai lieu truoc 30 phut'), Bob chi bat duoc "
-        "y chinh (thuong la tao lich), khong tu tach thanh nhieu hanh dong rieng. Cach dung tot "
-        "nhat hien tai: gui tung yeu cau trong tin nhan rieng de Bob xu ly chinh xac tung viec.",
-        "gioi han,nhieu y dinh,multi intent,bob,luu y",
+        "Bob xu ly nhieu y dinh trong mot tin nhan",
+        "Bob co the tach toi da 8 buoc khi nguoi dung noi ro thu tu bang 'roi', 'sau do', 'dong thoi', "
+        "dau cham phay hoac xuong dong. Cac buoc chi doc duoc xu ly cung luot. De dam bao an toan va "
+        "phu hop giao dien web/mobile, moi lan Bob chi dua ra mot card xac nhan cho hanh dong ghi; cac "
+        "hanh dong ghi con lai duoc liet ke dang cho va xu ly lan luot, khong tu dong bo qua xac nhan.",
+        "workflow,nhieu y dinh,multi intent,bob,xac nhan",
+    ),
+    (
+        "Bo training 500 truong hop moi loai cua Bob",
+        "Moi intent cong cu cua Bob co dung 500 cau mau duoc gan nhan, gom tieng Viet, tieng Anh, "
+        "khau ngu va bien the ngan gon. Hien co 12 intent nen tong cong 6000 truong hop. Bo du lieu "
+        "nay huan luyen bo phan loai offline de Bob van nhan dien paraphrase khi AI provider khong "
+        "san sang, dong thoi duoc dong goi theo batch vao kho RAG. Day khong phai fine-tune trong so "
+        "model nen; entity nhu ngay gio, nguoi gui va noi dung van luon duoc trich tu cau hien tai.",
+        "training,500 cases,intent,offline classifier,bob",
     ),
 ]
 
@@ -246,7 +253,7 @@ def _seed_if_empty():
     try:
         existing_seed_by_title = {
             doc['title']: doc
-            for doc in KnowledgeDocument.get_all(limit=2000)
+            for doc in KnowledgeDocument.get_all(limit=10000)
             if doc.get('source') == 'seed'
         }
         wanted_titles = set()

@@ -44,7 +44,7 @@ class KnowledgeService:
         self.rebuild_index()
 
     def rebuild_index(self):
-        documents = KnowledgeDocument.get_all(limit=2000)
+        documents = KnowledgeDocument.get_all(limit=10000)
         self._documents_by_id = {doc['id']: doc for doc in documents}
 
         doc_tokens = {}

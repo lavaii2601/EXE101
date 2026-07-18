@@ -5,7 +5,7 @@ import logging
 import threading as _thr
 import unicodedata
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 from config import Config
@@ -290,7 +290,7 @@ def _latest_email_count(message):
         or re.search(rf'\b{email_word}\s*{latest_word}\s*(\d{{1,2}})\b', normalized)
     )
     if match:
-        return max(1, min(int(match.group(1)), 5))
+        return max(1, min(int(match.group(1)), 50))
 
     number_words = {
         'mot': 1, 'một': 1, 'one': 1,
@@ -314,7 +314,7 @@ def _summarize_latest_emails(user_id, count=1, query_override=None):
         raise RuntimeError('Gmail chưa được kết nối cho tài khoản này.')
 
     service = get_cached_gmail_service(token_file)
-    count = max(1, min(int(count or 1), 5))
+    count = max(1, min(int(count or 1), 50))
     query, include_read = query_override or ('in:inbox', True)
     latest = service.get_emails(
         max_results=count,
@@ -2223,6 +2223,108 @@ class ChecklistCreateAgent:
         )
 
 
+class MultiIntentWorkflowAgent:
+    """Run read steps together and queue confirmation-gated writes.
+
+    Current clients render one confirmation card at a time. A workflow may
+    therefore execute all read-only steps immediately, but exposes only the
+    first write proposal; later writes remain visibly queued.
+    """
+
+    @staticmethod
+    def _confirmed_tool(ctx):
+        tool = (ctx.action_override or {}).get('tool')
+        if tool:
+            return tool
+        if ctx.client_confirm:
+            action = (ctx.schedule_override or {}).get('action')
+            if action == 'update':
+                return 'schedule.update'
+            if action == 'delete':
+                return 'schedule.delete'
+            return 'schedule.create'
+        return None
+
+    def handle(self, ctx):
+        steps = list(ctx.intent_result.get('steps') or [])[:8]
+        confirmed_tool = self._confirmed_tool(ctx)
+        write_result = None
+        responses = []
+        sources = set()
+        refresh_targets = set(ctx.refresh_targets)
+        suggested_actions = []
+        email_sources = []
+        queued_writes = []
+        completed_results = []
+
+        for index, step in enumerate(steps, start=1):
+            intent = step.get('intent')
+            if not intent or intent in ('chat.freeform', 'workflow.multi'):
+                continue
+            is_write = intent in tool_catalog.WRITE_TOOL_NAMES
+            if is_write and (
+                (confirmed_tool and intent != confirmed_tool)
+                or write_result is not None
+            ):
+                queued_writes.append(intent)
+                continue
+
+            subctx = replace(
+                ctx,
+                user_message=step.get('message') or ctx.user_message,
+                intent_result=step,
+                refresh_targets=list(step.get('refresh_targets') or []),
+                action_confirm=bool(ctx.action_confirm and confirmed_tool == intent),
+                client_confirm=bool(ctx.client_confirm and confirmed_tool == intent),
+            )
+            result = get_agent(intent).handle(subctx)
+            if result is None:
+                continue
+            completed_results.append(result)
+            responses.append(f"{index}. {result.response}")
+            sources.update(result.workspace_sources or [])
+            refresh_targets.update(result.refresh_targets or [])
+            suggested_actions.extend(result.suggested_actions or [])
+            email_sources.extend(result.email_sources or [])
+            if is_write:
+                write_result = result
+
+        if queued_writes:
+            labels = [
+                tool_catalog.CATALOG[name].user_label
+                for name in queued_writes if name in tool_catalog.CATALOG
+            ]
+            responses.append(
+                "Các bước ghi tiếp theo đang chờ xử lý lần lượt: " + ", ".join(labels) + "."
+            )
+        if not responses:
+            return AgentResult(
+                response="Mình chưa tách được các bước đủ rõ. Hãy nêu từng hành động cụ thể hơn.",
+                refresh_targets=sorted(refresh_targets),
+                action='Workflow chưa đủ dữ liệu',
+            )
+
+        anchor = write_result or (completed_results[0] if completed_results else None)
+        return AgentResult(
+            response="Mình đã tách yêu cầu thành các bước:\n" + "\n".join(responses),
+            workspace_sources=sorted(sources),
+            refresh_targets=sorted(refresh_targets),
+            schedule_created=getattr(anchor, 'schedule_created', None),
+            schedule_suggestion=getattr(anchor, 'schedule_suggestion', None),
+            day_plan_suggestion=getattr(anchor, 'day_plan_suggestion', None),
+            suggested_actions=suggested_actions or None,
+            action='Xử lý workflow nhiều ý định',
+            ai_used=any(result.ai_used for result in completed_results),
+            grounded=all(result.grounded for result in completed_results),
+            provider=getattr(anchor, 'provider', None),
+            demo_mode=any(result.demo_mode for result in completed_results),
+            email_source=getattr(anchor, 'email_source', None),
+            email_sources=email_sources or None,
+            pending_action=getattr(anchor, 'pending_action', None),
+            action_applied=getattr(anchor, 'action_applied', None),
+        )
+
+
 class FreeformChatAgent:
     """AGENT_CAPABILITIES: roughly 'overview.daily_brief' / 'knowledge.lookup'
     plus the catch-all chat.freeform fallback for any other/unknown intent."""
@@ -2392,6 +2494,7 @@ class FreeformChatAgent:
 _FREEFORM_AGENT = FreeformChatAgent()
 
 _AGENT_REGISTRY = {
+    'workflow.multi': MultiIntentWorkflowAgent(),
     'email.latest_summary': EmailLatestSummaryAgent(),
     'schedule.create': ScheduleCreateAgent(),
     'schedule.update': ScheduleUpdateAgent(),

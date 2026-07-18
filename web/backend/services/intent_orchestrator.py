@@ -108,7 +108,7 @@ class IntentOrchestrator:
         elif self._is_history_lookup(text):
             intent = "history.list"
             confidence = 0.86
-            entities["limit"] = self._limit_from_text(text, default=8, maximum=20)
+            entities["limit"] = self._limit_from_text(text, default=8, maximum=100)
             refresh_targets = ["history"]
         elif self._is_schedule_create(text):
             intent = "schedule.create"
@@ -380,7 +380,7 @@ class IntentOrchestrator:
         ever get to answer on their own later.
         """
         result = self.detect(message)
-        if result.get("confidence", 0) >= confidence_threshold or not ai_service:
+        if result.get("confidence", 0) >= confidence_threshold:
             return result
         if not self.has_actionable_hint(message):
             return result
@@ -388,6 +388,19 @@ class IntentOrchestrator:
         cached = self._lookup_cached_intent(message)
         if cached:
             return cached
+
+        # The reviewed 500-case-per-tool corpus is an actual offline
+        # classifier fallback, not merely RAG documentation.  Use it only
+        # when the deterministic rules fell through and its lead is clear;
+        # otherwise keep the AI/self-correction path below.  Entity values
+        # are always extracted from the current message, never copied from a
+        # training example.
+        trained = self._detect_via_training(message)
+        if trained:
+            return trained
+
+        if not ai_service:
+            return result
 
         try:
             ai_result = self._detect_via_ai(
@@ -408,6 +421,150 @@ class IntentOrchestrator:
 
         return ai_result or result
 
+    _WORKFLOW_SPLIT_RE = re.compile(
+        r"\s*(?:;|\n+|\b(?:roi|sau do|dong thoi|tiep theo|then|and then)\b)\s*",
+        re.IGNORECASE,
+    )
+    _WORKFLOW_AND_RE = re.compile(
+        r"\s+va\s+(?=(?:tao|dat|them|xoa|huy|doi|sua|tim|kiem|xem|tom tat|"
+        r"danh dau|chuyen|sap xep|goi y)\b)",
+        re.IGNORECASE,
+    )
+
+    def detect_workflow_with_ai(self, message, ai_service, user_id=None, db_path=None,
+                                chat_session_id=None):
+        """Detect explicit multi-step requests while preserving safe writes.
+
+        Plain ``va/and`` inside a task list is deliberately not a split.  We
+        split only explicit sequencing words, semicolons/newlines, or ``va``
+        followed by another strong action verb.
+        """
+        normalized = self.normalize(message)
+        parts = [part.strip(" ,.") for part in self._WORKFLOW_SPLIT_RE.split(normalized) if part.strip(" ,.")]
+        expanded = []
+        for part in parts:
+            expanded.extend(
+                piece.strip(" ,.") for piece in self._WORKFLOW_AND_RE.split(part) if piece.strip(" ,.")
+            )
+        if len(expanded) < 2:
+            return self.detect_with_ai(
+                message, ai_service, user_id=user_id, db_path=db_path,
+                chat_session_id=chat_session_id,
+            )
+
+        steps = []
+        for part in expanded[:8]:
+            result = self.detect_with_ai(
+                part, ai_service, user_id=user_id, db_path=db_path,
+                chat_session_id=chat_session_id,
+            )
+            if result.get("intent") == "chat.freeform":
+                continue
+            steps.append({**result, "message": part})
+        if len(steps) < 2:
+            return self.detect_with_ai(
+                message, ai_service, user_id=user_id, db_path=db_path,
+                chat_session_id=chat_session_id,
+            )
+
+        refresh_targets = sorted({
+            target for step in steps for target in step.get("refresh_targets", [])
+        })
+        return {
+            "intent": "workflow.multi",
+            "confidence": round(min(step.get("confidence", 0.5) for step in steps), 4),
+            "entities": {},
+            "steps": steps,
+            "requires_confirmation": any(step.get("requires_confirmation") for step in steps),
+            "refresh_targets": refresh_targets,
+            "workflow_assisted": True,
+        }
+
+    def _detect_via_training(self, message, min_confidence=0.65):
+        try:
+            from services.training_intent_classifier import training_intent_classifier
+            match = training_intent_classifier.classify(message)
+        except Exception:
+            logger.warning("Offline training classifier failed", exc_info=True)
+            return None
+        if not match or match.get("confidence", 0) < min_confidence:
+            return None
+        result = self._result_for_known_intent(
+            match.get("intent"), message, confidence=match["confidence"],
+        )
+        if result:
+            result["training_assisted"] = True
+        return result
+
+    def _result_for_known_intent(self, intent, message, confidence=0.7):
+        """Re-extract current-message entities for a known intent label."""
+        text = self.normalize(message)
+        base = {
+            "intent": intent,
+            "confidence": confidence,
+            "entities": {},
+            "requires_confirmation": intent in self.CACHEABLE_INTENTS,
+            "refresh_targets": [],
+        }
+        if intent == "schedule.create":
+            schedule = self.extract_schedule(message)
+            if not schedule.get("start_time"):
+                return None
+            base["entities"] = {"schedule": schedule}
+            base["refresh_targets"] = ["schedule", "calendar", "overview", "history"]
+        elif intent == "schedule.update":
+            new_values = self.extract_schedule(message)
+            if not (new_values.get("start_time") or new_values.get("end_time") or new_values.get("location")):
+                return None
+            base["entities"] = {"new_values": new_values}
+            base["refresh_targets"] = ["schedule", "calendar", "overview", "history"]
+        elif intent == "schedule.delete":
+            base["refresh_targets"] = ["schedule", "calendar", "overview", "history"]
+        elif intent == "schedule.list":
+            base["requires_confirmation"] = False
+            base["entities"] = {"window": self._calendar_window(text)}
+            base["refresh_targets"] = ["schedule", "calendar", "overview", "history"]
+        elif intent == "schedule.suggest_plan":
+            base["requires_confirmation"] = False
+            base["refresh_targets"] = ["schedule", "calendar", "overview", "history"]
+        elif intent == "email.latest_summary":
+            base["requires_confirmation"] = False
+            base["entities"] = {"count": self._latest_email_count(text)}
+            date_window = self._email_date_window(text)
+            if date_window:
+                base["entities"]["date_window"] = date_window
+            base["refresh_targets"] = ["email", "overview", "history"]
+        elif intent == "email.search":
+            base["requires_confirmation"] = False
+            date_window = self._email_date_window(text)
+            if date_window:
+                base["entities"]["date_window"] = date_window
+            base["refresh_targets"] = ["email", "overview", "history"]
+        elif intent in ("email.mark_read", "email.mark_unread"):
+            date_window = self._email_date_window(text)
+            if date_window:
+                base["entities"]["date_window"] = date_window
+            base["refresh_targets"] = ["email", "overview", "history"]
+        elif intent == "history.list":
+            base["requires_confirmation"] = False
+            base["entities"] = {"limit": self._limit_from_text(text, default=8, maximum=100)}
+            base["refresh_targets"] = ["history"]
+        elif intent == "settings.update_mode":
+            mode = self._mode_from_text(text)
+            if not mode:
+                return None
+            base["entities"] = {"mode": mode}
+            base["refresh_targets"] = ["settings", "profile", "history"]
+        elif intent == "checklist.create":
+            items = self._checklist_items_from_text(message)
+            if not items:
+                return None
+            base["entities"] = {"items": items[:50]}
+            base["refresh_targets"] = ["overview", "history"]
+        else:
+            return None
+        return base
+
     def _lookup_cached_intent(self, message):
         """Reuse a previously AI-confirmed phrasing->intent match. Entities
         are always re-extracted fresh via the rule-based extractor for that
@@ -425,47 +582,10 @@ class IntentOrchestrator:
             return None
 
         intent = hit["intent"]
-        base = {
-            "intent": intent,
-            "confidence": 0.7,
-            "entities": {},
-            "requires_confirmation": True,
-            "refresh_targets": ["schedule", "calendar", "overview", "history"],
-            "cache_assisted": True,
-        }
-        if intent == "schedule.create":
-            schedule = self.extract_schedule(message)
-            if not schedule.get("start_time"):
-                return None
-            base["entities"] = {"schedule": schedule}
-        elif intent == "schedule.update":
-            new_values = self.extract_schedule(message)
-            if not (new_values.get("start_time") or new_values.get("end_time")):
-                return None
-            base["entities"] = {"new_values": new_values}
-        elif intent == "schedule.delete":
-            pass
-        elif intent == "schedule.suggest_plan":
-            base["requires_confirmation"] = False
-        elif intent == "settings.update_mode":
-            mode = self._mode_from_text(self.normalize(message))
-            if not mode:
-                return None
-            base["entities"] = {"mode": mode}
-            base["refresh_targets"] = ["settings", "profile", "history"]
-        elif intent in ("email.mark_read", "email.mark_unread"):
-            date_window = self._email_date_window(self.normalize(message))
-            if date_window:
-                base["entities"] = {"date_window": date_window}
-            base["refresh_targets"] = ["email", "overview", "history"]
-        elif intent == "checklist.create":
-            items = self._checklist_items_from_text(message)
-            if not items:
-                return None
-            base["entities"] = {"items": items}
-            base["refresh_targets"] = ["overview", "history"]
-        else:
+        base = self._result_for_known_intent(intent, message, confidence=0.7)
+        if not base:
             return None
+        base["cache_assisted"] = True
         return base
 
     def _detect_via_ai(self, message, ai_service, user_id=None, db_path=None, chat_session_id=None):
@@ -558,9 +678,9 @@ class IntentOrchestrator:
             '"end_time": "YYYY-MM-DDTHH:MM:SS hoac null", "attendees": [], "location": ""},\n'
             '  "window": {"label": "today|yesterday|this_week|next_week|last_week|custom", '
             '"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"},\n'
-            '  "email_count": <1-5>,\n'
+            '  "email_count": <1-50>,\n'
             '  "email_query": {"sender": "", "keyword": "", "unread_only": false},\n'
-            '  "history_limit": <1-20>,\n'
+            '  "history_limit": <1-100>,\n'
             '  "mode": "<student|worker|freelancer|creator|business|mentor|teacher hoac null>",\n'
             '  "checklist_items": [{"title": "<viec 1>", "priority": "high|normal|low"}, "..."]\n'
             "}\n"
@@ -637,7 +757,7 @@ class IntentOrchestrator:
             entities["window"] = window
             refresh_targets = ["schedule", "calendar", "overview", "history"]
         elif intent == "email.latest_summary":
-            entities["count"] = self._coerce_int(data.get("email_count"), default=1, minimum=1, maximum=5)
+            entities["count"] = self._coerce_int(data.get("email_count"), default=1, minimum=1, maximum=50)
             date_window = self._coerce_ai_date_window(data.get("window") or {})
             if date_window:
                 entities["date_window"] = date_window
@@ -674,7 +794,7 @@ class IntentOrchestrator:
                 entities["date_window"] = date_window
             refresh_targets = ["email", "overview", "history"]
         elif intent == "history.list":
-            entities["limit"] = self._coerce_int(data.get("history_limit"), default=8, minimum=1, maximum=20)
+            entities["limit"] = self._coerce_int(data.get("history_limit"), default=8, minimum=1, maximum=100)
             refresh_targets = ["history"]
         elif intent == "settings.update_mode":
             mode = str(data.get("mode") or "").strip().lower()
@@ -700,7 +820,7 @@ class IntentOrchestrator:
                     items.append({"title": title, "priority": priority})
             if not items:
                 return None
-            entities["items"] = items[:12]
+            entities["items"] = items[:50]
             refresh_targets = ["overview", "history"]
         elif intent == "schedule.suggest_plan":
             # No entities to coerce -- the agent rebuilds the suggestion
@@ -1029,7 +1149,7 @@ class IntentOrchestrator:
             or re.search(rf"\b{email_word}\s*{latest_word}\s*(\d{{1,2}})\b", text)
         )
         if match:
-            return max(1, min(int(match.group(1)), 5))
+            return max(1, min(int(match.group(1)), 50))
         words = {
             "mot": 1, "một": 1, "one": 1,
             "hai": 2, "two": 2,
@@ -1186,8 +1306,8 @@ class IntentOrchestrator:
         return None
 
     @staticmethod
-    def _limit_from_text(text, default=8, maximum=20):
-        match = re.search(r"\b(\d{1,2})\b", text)
+    def _limit_from_text(text, default=8, maximum=100):
+        match = re.search(r"\b(\d{1,3})\b", text)
         if not match:
             return default
         return max(1, min(int(match.group(1)), maximum))

@@ -4,6 +4,11 @@ Bob does not fine-tune a base model in this repo. These files are imported into
 the FlowMate knowledge base through `scripts/train_bob.py` and used as RAG
 context during chat.
 
+In addition, `services/bob_training_cases.py` generates exactly 500 labelled
+phrases for every executable tool intent (currently 12 intents / 6,000 cases).
+Unlike the passive RAG documents, this corpus trains Bob's built-in offline
+classifier and is also imported in compact 50-case batches during deployment.
+
 ## Files
 
 - `workflow-study-email-schedule.json`: core workflow, Student mode, email,
@@ -28,6 +33,13 @@ python scripts/train_bob.py .\docs\bob-training --tags "noi bo,quy tac,bob"
 ```
 
 Use `--dry-run` first when checking document counts without writing to the DB.
+
+To validate/import the labelled intent corpus separately:
+
+```powershell
+python scripts/train_bob_intents.py --dry-run
+python scripts/train_bob_intents.py
+```
 
 Railway deploy also imports `email-150-knowledge.json`,
 `bob-200-expanded-contexts.json`, and `bob-student-privacy-research.json`

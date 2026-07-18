@@ -261,7 +261,7 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
     submitChatMessage(pendingAction.message || 'Xác nhận', {
       addUserMessage: false,
       confirmedAction: true,
-      actionOverride: pendingAction.arguments || {},
+      actionOverride: { ...(pendingAction.arguments || {}), tool: pendingAction.tool },
     });
   }, [pendingAction, submitChatMessage]);
 

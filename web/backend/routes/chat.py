@@ -57,7 +57,7 @@ def _agent_profile():
     return {
         'name': 'Bob',
         'product': 'FlowMate',
-        'version': '2026-07-mentor-learning',
+        'version': '2026-07-workflow-intent-500',
         'channels': ['web', 'mobile'],
         'capabilities': AGENT_CAPABILITIES,
         'sync_targets': AGENT_SYNC_TARGETS,
@@ -223,7 +223,7 @@ def send_message():
             chat_session_id=chat_session_id if action_type == 'chat' else None,
         )
 
-    intent_result = intent_orchestrator.detect_with_ai(
+    intent_result = intent_orchestrator.detect_workflow_with_ai(
         user_message, ai_service, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
     )
     refresh_targets = list(intent_result.get('refresh_targets') or [])

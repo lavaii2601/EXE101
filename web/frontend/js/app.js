@@ -3126,7 +3126,10 @@ async function sendMessageConfirmed(message, opts = {}) {
 
                 pendingDiv.querySelector('.confirm-pending-action').addEventListener('click', () => {
                     pendingDiv.querySelectorAll('button').forEach(b => b.disabled = true);
-                    sendMessageConfirmed(message, { confirmedAction: true, actionOverride: pending.arguments });
+                    sendMessageConfirmed(message, {
+                        confirmedAction: true,
+                        actionOverride: { ...(pending.arguments || {}), tool: pending.tool }
+                    });
                     pendingDiv.remove();
                 });
             }

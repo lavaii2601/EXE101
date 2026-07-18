@@ -162,6 +162,14 @@ def build_capabilities_summary():
 
 AGENT_CAPABILITIES = [
     {
+        'id': 'workflow.multi',
+        'label': 'Workflow nhiều bước',
+        'description': 'Tách tối đa 8 ý định rõ ràng trong một tin nhắn, xử lý các bước chỉ đọc cùng lúc và xếp hàng các hành động ghi để xác nhận lần lượt.',
+        'workspace_sources': ['email', 'calendar', 'history', 'profile'],
+        'refresh_targets': ['overview', 'email', 'schedule', 'history'],
+        'confirmation_required': True,
+    },
+    {
         'id': 'overview.daily_brief',
         'label': 'Tổng hợp ngày',
         'description': 'Gom email, lịch, deadline, task và checklist thành bức tranh ưu tiên trong ngày.',

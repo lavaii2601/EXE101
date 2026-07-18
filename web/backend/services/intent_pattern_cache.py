@@ -36,7 +36,7 @@ class IntentPatternCache:
         cache_attr = '_trusted_index' if status == 'trusted' else '_candidate_index'
         index = getattr(self, cache_attr)
         if index is None:
-            index = _TfidfIndex(IntentPattern.get_all(limit=3000, status=status))
+            index = _TfidfIndex(IntentPattern.get_all(limit=10000, status=status))
             setattr(self, cache_attr, index)
         return index
 

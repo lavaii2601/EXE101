@@ -410,7 +410,7 @@ def _split_day_plan_entries(text):
         title = re.sub(r'^\s*(?:-|•|\d+[.)])\s*', '', title).strip()
         if len(title) >= 2:
             entries.append({'raw': original, 'title': title[:180]})
-    return entries[:12]
+    return entries[:50]
 
 
 def _split_day_plan_items(text):
@@ -885,7 +885,7 @@ def apply_day_plan():
 
     created = []
     try:
-        for item in items[:12]:
+        for item in items[:50]:
             if not isinstance(item, dict):
                 continue
             created.append(_create_schedule_from_plan_item(user_id, db_path, item))

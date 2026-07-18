@@ -56,6 +56,28 @@ def import_bob_email_training():
                 f"{created} created, {updated} updated, {skipped} skipped.",
                 flush=True,
             )
+
+        # The labelled corpus is generated deterministically from reviewed
+        # semantic building blocks: 500 examples for every tool catalog
+        # intent, packed into small RAG documents to avoid 6,000 database
+        # rows.  The same corpus powers the offline classifier at runtime.
+        sys.path.insert(0, str(PROJECT_ROOT / "web" / "backend"))
+        from services.bob_training_cases import build_rag_training_documents, iter_labelled_cases
+
+        labelled_cases = list(iter_labelled_cases())
+        intent_documents = build_rag_training_documents(batch_size=50)
+        created, updated, skipped = import_documents(
+            intent_documents,
+            source="bob-intent-500-v1",
+            user_id=None,
+            update_existing=True,
+            dry_run=False,
+        )
+        print(
+            f"Bob intent training completed: {len(labelled_cases)} labelled cases, "
+            f"{created} documents created, {updated} updated, {skipped} skipped.",
+            flush=True,
+        )
     finally:
         from models import postgres_db as pg
 
