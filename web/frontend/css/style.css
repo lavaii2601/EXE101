@@ -7331,3 +7331,612 @@ body.dark-theme .schedule-source-badge.local-unsynced {
     color: #fed7aa;
     background: rgba(245, 158, 11, 0.18);
 }
+
+/* --------------------------------------------------------------------------
+   Responsive workspace system
+   Desktop: navigation + content + contextual actions.
+   Tablet: compact navigation + content.
+   Mobile: app-like single column with persistent bottom navigation.
+   -------------------------------------------------------------------------- */
+
+:root {
+    --workspace-max-content: 1480px;
+    --mobile-nav-height: 72px;
+}
+
+.workspace-app > .main-content {
+    width: 100%;
+    max-width: var(--workspace-max-content);
+    margin-inline: auto;
+}
+
+.section-header,
+.settings-page-header,
+.overview-header {
+    gap: 20px;
+}
+
+.section-header > :first-child,
+.settings-page-header > :first-child,
+.overview-header > :first-child {
+    min-width: 0;
+}
+
+.section-header h2,
+.settings-page-header h2,
+.overview-header h2 {
+    text-wrap: balance;
+}
+
+.email-toolbar,
+#schedule-page .section-header > div,
+.overview-actions,
+.report-controls,
+.week-nav {
+    min-width: 0;
+}
+
+.email-toolbar button,
+#schedule-page .section-header button,
+.overview-actions button,
+.week-nav button {
+    min-height: 42px;
+}
+
+/* Large desktop: give data-heavy pages breathing room without stretching text. */
+@media (min-width: 1440px) {
+    .container.workspace-app,
+    .container.workspace-app.sidebar-collapsed {
+        grid-template-columns: 268px minmax(720px, 1fr) 328px;
+    }
+
+    .container.workspace-app[data-current-page="chat"],
+    .container.workspace-app.sidebar-collapsed[data-current-page="chat"] {
+        grid-template-columns: 268px minmax(720px, 1fr);
+    }
+
+    .workspace-app > .main-content {
+        padding: 22px 24px;
+    }
+
+    .overview-grid {
+        grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+    }
+
+    .settings-grid {
+        grid-template-columns: repeat(2, minmax(360px, 1fr));
+    }
+}
+
+/* Laptop/tablet: remove the contextual rail before the main content gets tight. */
+@media (min-width: 861px) and (max-width: 1279px) {
+    .container.workspace-app,
+    .container.workspace-app.sidebar-collapsed,
+    .container.workspace-app[data-current-page="chat"],
+    .container.workspace-app.sidebar-collapsed[data-current-page="chat"] {
+        grid-template-columns: 224px minmax(0, 1fr);
+    }
+
+    .assistant-panel {
+        display: none;
+    }
+
+    .workspace-app > .sidebar {
+        width: auto;
+        padding-inline: 14px;
+    }
+
+    .workspace-app > .main-content {
+        padding: 16px;
+    }
+
+    .menu-toggle {
+        display: none;
+    }
+
+    .email-toolbar {
+        justify-content: flex-start;
+    }
+
+    .settings-grid,
+    .overview-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Phone and small tablet web: bottom navigation and touch-first content. */
+@media (max-width: 860px) {
+    html,
+    body {
+        min-height: 100%;
+        overscroll-behavior-y: none;
+    }
+
+    body {
+        overflow: hidden;
+    }
+
+    .container.workspace-app,
+    .container.workspace-app.sidebar-collapsed,
+    .container.workspace-app[data-current-page="chat"],
+    .container.workspace-app.sidebar-collapsed[data-current-page="chat"] {
+        display: block;
+        height: 100dvh;
+        padding: 0;
+    }
+
+    .menu-toggle,
+    .overlay,
+    .assistant-panel {
+        display: none !important;
+    }
+
+    .workspace-app > .sidebar,
+    .workspace-app > .sidebar.open {
+        position: fixed;
+        z-index: 1200;
+        inset: auto 0 0;
+        display: block;
+        width: 100%;
+        height: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
+        padding: 0 8px env(safe-area-inset-bottom);
+        overflow: visible;
+        border-top: 1px solid rgba(148, 163, 184, 0.24);
+        background: color-mix(in srgb, var(--panel) 94%, transparent);
+        color: var(--text);
+        box-shadow: 0 -8px 28px rgba(15, 23, 42, 0.12);
+        backdrop-filter: blur(18px);
+        transform: none !important;
+    }
+
+    .workspace-app > .sidebar .sidebar-header,
+    .workspace-app > .sidebar .sidebar-new-chat-btn,
+    .workspace-app > .sidebar .sidebar-chat-history,
+    .workspace-app > .sidebar .sidebar-footer {
+        display: none !important;
+    }
+
+    .workspace-app > .sidebar .sidebar-nav {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 2px;
+        height: var(--mobile-nav-height);
+        margin: 0;
+    }
+
+    .workspace-app > .sidebar .nav-btn,
+    .workspace-app.sidebar-collapsed > .sidebar .nav-btn {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 4px;
+        min-width: 0;
+        min-height: 64px;
+        padding: 7px 2px;
+        border-radius: 12px;
+        color: var(--text-secondary);
+        text-align: center;
+    }
+
+    .workspace-app > .sidebar .nav-btn:hover,
+    .workspace-app > .sidebar .nav-btn.active {
+        background: var(--primary-soft, rgba(37, 99, 235, 0.10));
+        color: var(--primary);
+    }
+
+    .workspace-app > .sidebar .nav-btn .icon {
+        display: grid;
+        place-items: center;
+        width: 25px;
+        height: 25px;
+        margin: 0;
+        font-size: 20px;
+    }
+
+    .workspace-app > .sidebar .nav-btn .nav-label,
+    .workspace-app.sidebar-collapsed > .sidebar .nav-btn .nav-label {
+        display: block;
+        max-width: 100%;
+        overflow: hidden;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1.1;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .workspace-app > .main-content {
+        box-sizing: border-box;
+        width: 100%;
+        max-width: none;
+        height: calc(100dvh - var(--mobile-nav-height) - env(safe-area-inset-bottom));
+        padding: 0;
+        overflow: hidden;
+    }
+
+    .workspace-header {
+        flex: 0 0 auto;
+        min-height: 54px;
+        padding: max(8px, env(safe-area-inset-top)) 14px 8px;
+        border-right: 0;
+        border-left: 0;
+        border-radius: 0;
+        box-shadow: none;
+    }
+
+    .workspace-brand-mobile {
+        min-width: 0;
+    }
+
+    .workspace-brand-mobile strong {
+        font-size: 15px;
+    }
+
+    .page.active {
+        height: auto;
+        padding: 0;
+        overflow-y: auto;
+        scroll-padding-bottom: 24px;
+    }
+
+    .section-header,
+    #schedule-page .section-header,
+    .settings-page-header,
+    .overview-header {
+        flex: 0 0 auto;
+        align-items: stretch;
+        flex-direction: column;
+        gap: 12px;
+        margin: 0;
+        padding: 18px 16px 14px;
+        border: 0;
+        border-bottom: 1px solid var(--border);
+        border-radius: 0;
+        box-shadow: none;
+    }
+
+    .section-header h2,
+    .settings-page-header h2,
+    .overview-header h2 {
+        margin: 0;
+        font-size: clamp(21px, 6vw, 26px);
+        line-height: 1.2;
+    }
+
+    .section-header p,
+    .settings-page-header p,
+    .overview-header p {
+        margin-top: 6px;
+        font-size: 13px;
+        line-height: 1.45;
+    }
+
+    .overview-actions,
+    #schedule-page .section-header > div,
+    .email-toolbar {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        width: 100%;
+        overflow: visible;
+        -webkit-mask-image: none;
+        mask-image: none;
+    }
+
+    .overview-actions input,
+    .overview-actions button,
+    #schedule-page .section-header > div > *,
+    .email-toolbar > button,
+    .email-toolbar > label,
+    .email-toolbar > .gmail-account-badge,
+    .email-toolbar > .gmail-profile-card {
+        box-sizing: border-box;
+        width: 100%;
+        min-width: 0;
+        min-height: 44px;
+    }
+
+    .overview-actions input,
+    .email-toolbar > .gmail-account-badge,
+    .email-toolbar > .gmail-profile-card,
+    #schedule-page .calendar-status {
+        grid-column: 1 / -1;
+    }
+
+    .tabs {
+        position: sticky;
+        z-index: 20;
+        top: 0;
+        display: flex;
+        gap: 8px;
+        padding: 10px 12px;
+        overflow-x: auto;
+        border: 0;
+        border-bottom: 1px solid var(--border);
+        border-radius: 0;
+        background: var(--panel);
+        box-shadow: none;
+        scrollbar-width: none;
+        -webkit-mask-image: none;
+        mask-image: none;
+    }
+
+    .tabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    .tab-btn {
+        flex: 0 0 auto;
+        min-height: 40px;
+        padding: 9px 14px;
+    }
+
+    .tab-content,
+    #schedule-page #upcoming-tab,
+    #overviewContent,
+    .settings-grid,
+    #historyList {
+        margin: 0;
+        padding: 12px;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+    }
+
+    .overview-content,
+    .overview-grid,
+    .overview-stat-grid,
+    .overview-kpi-grid,
+    .settings-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .overview-hero,
+    .overview-panel,
+    .settings-card {
+        border-radius: 14px;
+    }
+
+    .overview-hero {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .overview-score {
+        align-self: stretch;
+        justify-content: space-between;
+        width: auto;
+    }
+
+    .email-search-bar {
+        position: sticky;
+        z-index: 15;
+        top: 0;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        margin: -2px -2px 10px;
+        padding: 8px;
+        border-radius: 14px;
+    }
+
+    .email-search-bar .btn-secondary {
+        grid-column: 1 / -1;
+    }
+
+    .email-item,
+    .schedule-item,
+    .history-item,
+    .calendar-event {
+        padding: 14px;
+        border-radius: 14px;
+    }
+
+    .email-item-actions,
+    .schedule-item-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+
+    .email-item-actions button,
+    .schedule-item-actions button {
+        min-height: 42px;
+    }
+
+    .week-nav {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        overflow: visible;
+        -webkit-mask-image: none;
+        mask-image: none;
+    }
+
+    .week-range-label {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        min-width: 0;
+        text-align: center;
+    }
+
+    .week-table-wrapper {
+        min-height: 420px;
+        margin-inline: -12px;
+        padding-inline: 12px;
+        overflow-x: auto;
+        border-radius: 0;
+        -webkit-mask-image: none;
+        mask-image: none;
+        scroll-snap-type: x proximity;
+    }
+
+    .week-table {
+        min-width: 760px;
+        table-layout: fixed;
+    }
+
+    .week-table th,
+    .week-table td {
+        scroll-snap-align: start;
+    }
+
+    .chat-shell,
+    .chat-container {
+        height: 100%;
+        min-height: 0;
+        border: 0;
+        border-radius: 0;
+    }
+
+    #chat-page {
+        overflow: hidden;
+    }
+
+    .chat-session-bar {
+        min-height: 48px;
+        padding: 8px 12px;
+    }
+
+    .chat-messages {
+        padding: 14px 12px;
+    }
+
+    .message-content,
+    .message.user .message-content {
+        max-width: 90%;
+        padding: 11px 13px;
+    }
+
+    .chat-input-area {
+        align-items: flex-end;
+        gap: 8px;
+        padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+    }
+
+    .chat-input-area textarea {
+        min-height: 44px;
+        max-height: 120px;
+        resize: none;
+    }
+
+    .chat-input-area .btn-primary,
+    #sendBtn {
+        min-width: 64px;
+        min-height: 44px;
+    }
+
+    .settings-row {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .settings-row > button,
+    .settings-mode-change,
+    .settings-card > button {
+        width: 100%;
+        min-height: 44px;
+    }
+
+    .modal {
+        align-items: flex-end;
+        padding: 0;
+    }
+
+    .modal-content,
+    .email-detail-modal-content,
+    .user-mode-modal-content {
+        width: 100%;
+        max-width: none;
+        max-height: min(92dvh, 860px);
+        margin: 0;
+        padding-bottom: env(safe-area-inset-bottom);
+        overflow-y: auto;
+        border-right: 0;
+        border-bottom: 0;
+        border-left: 0;
+        border-radius: 22px 22px 0 0;
+    }
+
+    .modal-content form,
+    .email-detail-modal-content > :not(.close) {
+        max-width: 100%;
+    }
+
+    .modal-actions,
+    .form-actions,
+    .user-mode-modal-actions {
+        position: sticky;
+        bottom: 0;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+        background: var(--panel);
+    }
+
+    .modal-actions button,
+    .form-actions button,
+    .user-mode-modal-actions button {
+        width: 100%;
+        min-width: 0;
+        min-height: 46px;
+    }
+}
+
+@media (max-width: 390px) {
+    .workspace-app > .sidebar {
+        padding-inline: 4px;
+    }
+
+    .workspace-app > .sidebar .nav-btn .nav-label {
+        font-size: 9px;
+    }
+
+    .overview-actions,
+    #schedule-page .section-header > div,
+    .email-toolbar {
+        grid-template-columns: 1fr;
+    }
+
+    .overview-actions > *,
+    #schedule-page .section-header > div > *,
+    .email-toolbar > * {
+        grid-column: 1;
+    }
+
+    .week-nav {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #todayWeekBtn {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (hover: none) and (pointer: coarse) {
+    button,
+    [role="button"],
+    input,
+    select,
+    textarea {
+        touch-action: manipulation;
+    }
+
+    button,
+    [role="button"] {
+        min-height: 42px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}
