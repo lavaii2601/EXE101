@@ -372,6 +372,26 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Shared cache of message phrasings the AI has classified for a
+-- confirmation-gated intent (see models/intent_pattern.py and
+-- services/intent_pattern_cache.py). Not per-user on purpose -- "how people
+-- phrase a request" is a language-pattern fact that benefits every user.
+-- This table was previously missing from the deployed schema, so every
+-- lookup/observe call failed silently (caught and logged, never raised) and
+-- the AI was re-classifying every cacheable-intent message from scratch.
+CREATE TABLE IF NOT EXISTS intent_patterns (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    phrase TEXT NOT NULL,
+    intent TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0.6,
+    status TEXT NOT NULL DEFAULT 'candidate',
+    confirm_count INTEGER NOT NULL DEFAULT 1,
+    hit_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT intent_patterns_status_check CHECK (status IN ('candidate', 'trusted'))
+);
+
 -- Idempotent upgrades for databases that already had these tables before
 -- chat retention columns were added. CREATE TABLE IF NOT EXISTS does not
 -- add missing columns to existing tables.
@@ -471,6 +491,9 @@ CREATE INDEX IF NOT EXISTS idx_sync_jobs_user_type_status ON sync_jobs (user_id,
 CREATE INDEX IF NOT EXISTS idx_knowledge_documents_created ON knowledge_documents (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_knowledge_documents_user ON knowledge_documents (user_id);
 
+CREATE INDEX IF NOT EXISTS idx_intent_patterns_status ON intent_patterns (status);
+CREATE INDEX IF NOT EXISTS idx_intent_patterns_created ON intent_patterns (created_at DESC);
+
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -556,6 +579,11 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 DROP TRIGGER IF EXISTS trg_knowledge_documents_updated_at ON knowledge_documents;
 CREATE TRIGGER trg_knowledge_documents_updated_at
 BEFORE UPDATE ON knowledge_documents
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_intent_patterns_updated_at ON intent_patterns;
+CREATE TRIGGER trg_intent_patterns_updated_at
+BEFORE UPDATE ON intent_patterns
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 COMMIT;
