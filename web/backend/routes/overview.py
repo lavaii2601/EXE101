@@ -5,7 +5,12 @@ from flask import Blueprint, jsonify, request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.overview_service import get_or_start_daily_overview, parse_overview_date, refresh_daily_overview_async
+from services.overview_service import (
+    build_weekly_analytics,
+    get_or_start_daily_overview,
+    parse_overview_date,
+    refresh_daily_overview_async,
+)
 from utils.user_context import get_current_user_id
 
 overview_bp = Blueprint('overview', __name__, url_prefix='/api/overview')
@@ -26,3 +31,11 @@ def daily_overview():
         return jsonify(payload)
 
     return jsonify(get_or_start_daily_overview(user_id, day, max_results=max_results))
+
+
+@overview_bp.route('/analytics', methods=['GET'])
+def weekly_analytics():
+    user_id = get_current_user_id(request)
+    end_day = parse_overview_date(request.args.get('end_date'))
+    days = min(max(request.args.get('days', 7, type=int), 1), 30)
+    return jsonify(build_weekly_analytics(user_id, end_day, days=days))

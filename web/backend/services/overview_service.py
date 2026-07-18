@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import threading
 from datetime import date, datetime, time, timedelta
 
@@ -15,6 +16,9 @@ OVERVIEW_CACHE_TTL_SECONDS = 36 * 60 * 60
 _refresh_lock = threading.Lock()
 _refreshing = set()
 _ai_service = AIService()
+
+# Keep in sync with the deadline heuristic in web/frontend/js/app.js (getOverviewPriority).
+_DEADLINE_PATTERN = re.compile(r'(deadline|h[aạ]n|n[ộo]p|due|submit|b[àa]n giao)', re.IGNORECASE)
 
 
 def parse_overview_date(value=None):
@@ -203,3 +207,90 @@ def check_and_refresh_if_new(user_id, day=None, max_results=50):
     if not has_new_emails(user_id, day, max_results=max_results):
         return False
     return refresh_daily_overview_async(user_id, day, max_results=max_results, force=True)
+
+
+def _is_deadline(schedule):
+    text = f"{schedule.get('title') or ''} {schedule.get('description') or ''}"
+    return bool(_DEADLINE_PATTERN.search(text))
+
+
+def build_weekly_analytics(user_id, end_day=None, days=7):
+    """Aggregate task/email activity for the `days` ending on `end_day`.
+
+    Task stats always come straight from the schedules table (accurate for
+    any day). Email stats are best-effort: they only cover days whose daily
+    overview was already generated/cached, since emails aren't stored
+    long-term -- fetching every day live from Gmail would be too slow/costly
+    for a dashboard read. `has_email_data` on each day tells the caller
+    whether that day's email numbers are real or simply "not visited yet".
+    """
+    user_id = sanitize_user_id(user_id)
+    end_day = parse_overview_date(end_day)
+    days = min(max(int(days or 7), 1), 30)
+    start_day = end_day - timedelta(days=days - 1)
+
+    daily = []
+    tasks_total = 0
+    tasks_completed = 0
+    deadlines_total = 0
+    emails_total = 0
+    meeting_emails_total = 0
+    days_with_email_data = 0
+    busiest_date = None
+    busiest_count = -1
+
+    for offset in range(days):
+        day = start_day + timedelta(days=offset)
+        schedules = get_day_schedules(user_id, day)
+        day_tasks_total = len(schedules)
+        day_tasks_completed = sum(1 for s in schedules if s.get('status') == 'completed')
+        day_deadlines = sum(1 for s in schedules if _is_deadline(s))
+
+        cached = build_cached_overview(user_id, day)
+        has_email_data = cached is not None
+        rows = (cached.get('email_rows') or cached.get('emails') or []) if cached else []
+        day_emails_total = len(rows)
+        day_meeting_emails = sum(1 for r in rows if isinstance(r, dict) and r.get('is_meeting'))
+
+        tasks_total += day_tasks_total
+        tasks_completed += day_tasks_completed
+        deadlines_total += day_deadlines
+        emails_total += day_emails_total
+        meeting_emails_total += day_meeting_emails
+        if has_email_data:
+            days_with_email_data += 1
+
+        day_activity = day_tasks_total + day_emails_total
+        if day_activity > busiest_count:
+            busiest_count = day_activity
+            busiest_date = day.isoformat()
+
+        daily.append({
+            'date': day.isoformat(),
+            'weekday': day.weekday(),  # Monday=0 .. Sunday=6
+            'tasks_total': day_tasks_total,
+            'tasks_completed': day_tasks_completed,
+            'deadlines': day_deadlines,
+            'emails_total': day_emails_total,
+            'meeting_emails': day_meeting_emails,
+            'has_email_data': has_email_data,
+        })
+
+    completion_rate = round((tasks_completed / tasks_total * 100), 1) if tasks_total else 0.0
+
+    return {
+        'success': True,
+        'range': {'start': start_day.isoformat(), 'end': end_day.isoformat(), 'days': days},
+        'daily': daily,
+        'totals': {
+            'tasks_total': tasks_total,
+            'tasks_completed': tasks_completed,
+            'completion_rate': completion_rate,
+            'deadlines_total': deadlines_total,
+            'emails_total': emails_total,
+            'meeting_emails_total': meeting_emails_total,
+            'days_with_email_data': days_with_email_data,
+            'busiest_date': busiest_date if busiest_count > 0 else None,
+            'busiest_count': max(busiest_count, 0),
+        },
+    }

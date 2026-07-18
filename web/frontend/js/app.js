@@ -1692,6 +1692,84 @@ function escapeAttr(value) {
     return escapeHtml(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+function renderOverviewAnalytics(analytics) {
+    const daily = Array.isArray(analytics?.daily) ? analytics.daily : [];
+    if (!daily.length) return '';
+
+    const totals = analytics.totals || {};
+    const weekdayLabels = ui(
+        ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'],
+        ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    );
+    const todayIso = formatDateForApi(new Date());
+    const maxActivity = Math.max(1, ...daily.map((d) => Math.max(d.tasks_total || 0, d.emails_total || 0)));
+
+    const bars = daily.map((d) => {
+        const taskH = Math.round(((d.tasks_total || 0) / maxActivity) * 100);
+        const emailH = Math.round(((d.emails_total || 0) / maxActivity) * 100);
+        const label = weekdayLabels[d.weekday] ?? '';
+        const isToday = d.date === todayIso;
+        const tooltip = ui(
+            `${d.date}: ${d.tasks_total || 0} task, ${d.emails_total || 0} email${d.has_email_data ? '' : ' (chưa có dữ liệu email)'}`,
+            `${d.date}: ${d.tasks_total || 0} tasks, ${d.emails_total || 0} emails${d.has_email_data ? '' : ' (no email data yet)'}`
+        );
+        return `
+            <div class="overview-bar-col${isToday ? ' is-today' : ''}" title="${escapeAttr(tooltip)}">
+                <div class="overview-bar-track">
+                    <div class="overview-bar overview-bar-task" style="height:${taskH}%"></div>
+                    <div class="overview-bar overview-bar-email" style="height:${emailH}%"></div>
+                </div>
+                <span>${label}</span>
+            </div>
+        `;
+    }).join('');
+
+    const busiestEntry = daily.find((d) => d.date === totals.busiest_date);
+    const busiestLabel = busiestEntry ? weekdayLabels[busiestEntry.weekday] : '—';
+    const rangeDays = analytics.range?.days || daily.length;
+    const emailNote = (totals.days_with_email_data ?? 0) < rangeDays
+        ? `<p class="overview-analytics-note">${ui(
+            'Số liệu email chỉ tính những ngày bạn đã từng mở Tổng hợp trước đó.',
+            'Email figures only cover days you previously opened Overview for.'
+        )}</p>`
+        : '';
+
+    return `
+        <section class="overview-panel overview-analytics">
+            <div class="overview-panel-head">
+                <span class="overview-kicker">${ui(`PHÂN TÍCH ${rangeDays} NGÀY`, `${rangeDays}-DAY ANALYTICS`)}</span>
+                <strong>${ui('Xu hướng hoạt động', 'Activity trend')}</strong>
+            </div>
+            <div class="overview-analytics-body">
+                <div class="overview-kpi-grid">
+                    <article>
+                        <strong>${totals.completion_rate ?? 0}%</strong>
+                        <span>${ui('Tỷ lệ hoàn thành task', 'Task completion rate')}</span>
+                    </article>
+                    <article>
+                        <strong>${totals.emails_total ?? 0}</strong>
+                        <span>${ui('Email đã xử lý', 'Emails processed')}</span>
+                    </article>
+                    <article>
+                        <strong>${totals.deadlines_total ?? 0}</strong>
+                        <span>${ui(`Deadline trong ${rangeDays} ngày`, `Deadlines in ${rangeDays} days`)}</span>
+                    </article>
+                    <article>
+                        <strong>${busiestLabel}</strong>
+                        <span>${ui('Ngày bận nhất', 'Busiest day')}</span>
+                    </article>
+                </div>
+                <div class="overview-bar-chart">${bars}</div>
+                <div class="overview-bar-legend">
+                    <span><i class="overview-bar-task"></i>${ui('Task/Lịch', 'Tasks')}</span>
+                    <span><i class="overview-bar-email"></i>Email</span>
+                </div>
+                ${emailNote}
+            </div>
+        </section>
+    `;
+}
+
 function renderOverviewPlanSuggestion(plan) {
     const items = Array.isArray(plan?.items) ? plan.items : [];
     if (!items.length) return '';
@@ -2027,13 +2105,15 @@ async function loadOverviewPage(options = {}) {
             clearRuntimeCache('schedule:');
         }
 
-        const [overviewResult, checklistResult] = await Promise.allSettled([
+        const [overviewResult, checklistResult, analyticsResult] = await Promise.allSettled([
             apiFetch(`${API_BASE}/overview/daily?date=${encodeURIComponent(selectedDate)}&max_results=50${options.force ? '&force=1' : ''}`).then((response) => response.json()),
-            apiFetch(`${API_BASE}/schedule/checklist?date=${encodeURIComponent(selectedDate)}`).then((response) => response.json())
+            apiFetch(`${API_BASE}/schedule/checklist?date=${encodeURIComponent(selectedDate)}`).then((response) => response.json()),
+            apiFetch(`${API_BASE}/overview/analytics?days=7&end_date=${encodeURIComponent(selectedDate)}`).then((response) => response.json())
         ]);
 
         const overviewData = overviewResult.status === 'fulfilled' ? overviewResult.value : {};
         const checklistData = checklistResult.status === 'fulfilled' ? checklistResult.value : {};
+        const analyticsData = analyticsResult.status === 'fulfilled' ? analyticsResult.value : null;
         const schedules = dedupeSchedules(Array.isArray(overviewData.schedules) ? overviewData.schedules : [])
             .filter((item) => isSameOverviewDay(item.start_time, selectedDate))
             .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
@@ -2073,6 +2153,8 @@ async function loadOverviewPage(options = {}) {
             ${renderOverviewQuickAdd()}
 
             ${renderOverviewChecklist(schedules, checklistState)}
+
+            ${renderOverviewAnalytics(analyticsData)}
 
             <div class="overview-grid">
                 <section class="overview-panel">
@@ -4270,7 +4352,11 @@ function goToRelativeWeek(deltaWeeks) {
     );
     setWeekStart(base);
     invalidateScheduleCaches();
-    return loadWeekSchedule();
+    // Navigating to a week the app hasn't shown before must pull that week
+    // live from Google Calendar (sync=1) -- the local SQLite mirror only
+    // has whatever was synced on a previous visit/full sync, so a plain
+    // reload here can render an empty week even when Google has events on it.
+    return loadWeekSchedule({ sync: true });
 }
 
 function bindWeekNavigation() {
@@ -4296,7 +4382,7 @@ function bindWeekNavigation() {
         todayWeekBtn.addEventListener('click', () => {
             setWeekStart(new Date());
             invalidateScheduleCaches();
-            loadWeekSchedule().catch(err => console.warn('Current week load error:', err));
+            loadWeekSchedule({ sync: true }).catch(err => console.warn('Current week load error:', err));
         });
     }
 }

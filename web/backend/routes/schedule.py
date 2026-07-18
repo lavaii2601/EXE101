@@ -373,6 +373,15 @@ def _split_day_plan_entries(text):
 
     if ':' in raw:
         raw = raw.split(':', 1)[1]
+    # Remove an explicit planning command from the beginning so it is not
+    # accidentally kept as part of the first activity title.
+    raw = re.sub(
+        r'^\s*(?:hãy\s+)?(?:xếp\s+lịch|sắp\s+xếp(?:\s+lịch)?|xep\s+lich|sap\s+xep(?:\s+lich)?|'
+        r'plan\s+(?:my\s+)?day(?:\s+(?:with|for))?|organize|arrange)\s*',
+        '',
+        raw,
+        flags=re.IGNORECASE,
+    )
     # Drop a trailing instruction clause ("Hay sap xep giup minh...",
     # "Please organize this for me") that often follows the activity list
     # after a period in a chat-style message -- it isn't an activity, but
@@ -386,7 +395,7 @@ def _split_day_plan_entries(text):
         flags=re.IGNORECASE | re.DOTALL,
     )
     raw = re.sub(r'\.{2,}', ',', raw)
-    raw = re.sub(r'\b(và|and)\b', ',', raw, flags=re.IGNORECASE)
+    raw = re.sub(r'\b(và|va|and)\b', ',', raw, flags=re.IGNORECASE)
     raw = re.sub(
         r'\b(ngày mai|ngay mai|hôm nay|hom nay|today|tomorrow|tôi có|toi co|các hoạt động sau|cac hoat dong sau|hoạt động sau|activities)\b',
         ' ',
@@ -414,12 +423,19 @@ def _looks_like_day_plan(text, items):
         'các hoạt động', 'cac hoat dong', 'hoạt động sau', 'activities',
         'những việc', 'nhung viec', 'các việc', 'cac viec'
     ))
+    has_planning_signal = any(token in normalized for token in (
+        'xếp lịch', 'xep lich', 'sắp xếp', 'sap xep',
+        'gợi ý lịch', 'goi y lich', 'plan my day', 'plan the day',
+        'organize my day', 'arrange my day',
+    ))
     has_separator = ',' in normalized or ';' in normalized or '\n' in normalized
     has_date_signal = any(
         re.search(rf'(?<!\w){re.escape(token)}(?!\w)', normalized)
         for token in (*_DATE_WORDS.keys(), *_WEEKDAY_WORDS.keys())
     )
-    return len(items) >= 2 and (has_list_signal or (has_separator and has_date_signal))
+    return len(items) >= 2 and (
+        has_list_signal or has_planning_signal or (has_separator and has_date_signal)
+    )
 
 
 def _activity_profile(title):
