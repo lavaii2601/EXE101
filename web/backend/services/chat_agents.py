@@ -998,7 +998,11 @@ def _build_workspace_context(message, user_id, db_path):
         sources.add('knowledge')
 
     try:
-        web_research = web_research_service.research(message, workspace_sources=sources)
+        web_research = web_research_service.research(
+            message,
+            workspace_sources=sources,
+            knowledge_gap=not knowledge_context,
+        )
     except Exception:
         logger.warning("Web research failed for user %s", user_id, exc_info=True)
         web_research = None

@@ -70,15 +70,34 @@ class WebResearchService:
     )
     _PRIVATE_WORKSPACE_SOURCES = {'email', 'calendar', 'history', 'profile'}
 
+    # Short greetings/acks that would otherwise look like a "knowledge gap"
+    # (the TF-IDF knowledge base has no document about "chao"/"hi" either)
+    # and wrongly trigger a web search. Anchored + bounded to a couple of
+    # trailing words so a real question that merely starts with "cam on
+    # nhung..." still falls through to the knowledge-gap check below.
+    _SMALLTALK_PATTERNS = tuple(re.compile(p) for p in (
+        r'^(xin\s+)?chao(\s+\w+){0,2}$',
+        r'^hi(\s+\w+){0,2}$',
+        r'^hello(\s+\w+){0,2}$',
+        r'^(cam\s+on|thank\s?s?|thank\s+you)(\s+\w+){0,3}$',
+        r'^(tam\s+biet|bye|goodbye)(\s+\w+){0,2}$',
+        r'^(ok|oke|okay|uh|um|da|vang)$',
+        r'^ban\s+khoe\s+khong\??$',
+    ))
+
     def __init__(self):
         self.session = requests.Session()
 
-    def should_research(self, message, workspace_sources=None):
+    def _looks_like_smalltalk(self, normalized_stripped):
+        return any(pattern.match(normalized_stripped) for pattern in self._SMALLTALK_PATTERNS)
+
+    def should_research(self, message, workspace_sources=None, knowledge_gap=False):
         if not getattr(Config, 'WEB_RESEARCH_ENABLED', True):
             return False
 
         normalized = _normalize_text(message)
-        if len(normalized.strip()) < 4:
+        stripped = normalized.strip()
+        if len(stripped) < 4:
             return False
 
         sources = set(workspace_sources or [])
@@ -92,10 +111,21 @@ class WebResearchService:
         if private_workspace and not explicit_web:
             return False
 
-        return explicit_web or search_command or current_info
+        if explicit_web or search_command or current_info:
+            return True
 
-    def research(self, message, workspace_sources=None):
-        if not self.should_research(message, workspace_sources=workspace_sources):
+        # Bob's own knowledge base (docs/bob-training + auto-learned memory)
+        # came up empty for this question -- that is the actual "information
+        # Bob wasn't trained on" case, so fall back to a public web lookup
+        # instead of guessing/hallucinating, unless this just looks like
+        # small talk that never needed an answer from anywhere.
+        if knowledge_gap and not self._looks_like_smalltalk(stripped):
+            return True
+
+        return False
+
+    def research(self, message, workspace_sources=None, knowledge_gap=False):
+        if not self.should_research(message, workspace_sources=workspace_sources, knowledge_gap=knowledge_gap):
             return {'query': '', 'results': [], 'context': ''}
 
         query = self._build_query(message)
