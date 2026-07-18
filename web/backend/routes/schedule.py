@@ -1506,13 +1506,28 @@ def _start_week_sync(user_id, db_path, monday, week_end, force=False):
 
 @schedule_bp.route('/sync', methods=['POST'])
 def sync_schedules():
-    """Scan Google Calendar into the local schedule summary on demand."""
+    """Scan Google Calendar into the local schedule summary on demand.
+
+    Reading events from Google only needs a valid token -- it does not need
+    the calendar.events *write* scope. Gating the whole sync on write access
+    meant any account whose token was missing that scope (e.g. partial OAuth
+    consent) silently got zero events pulled in, even though the read call
+    would have worked fine. Only require the token to exist here; a missing
+    write scope still lets events flow in, and just downgrades the "push
+    locally-created schedules to Google" step to a soft warning (handled
+    inside _sync_google_events_range / _push_unsynced_local_schedules_to_calendar).
+    """
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
 
-    auth_failure = _calendar_auth_failure_payload(user_id)
-    if auth_failure:
-        return jsonify(auth_failure)
+    token_status = _google_calendar_token_status(user_id)
+    if not token_status.get('has_token'):
+        return jsonify({
+            'success': False,
+            'error': 'not_authenticated',
+            'message': 'User not authenticated with Google Calendar',
+            'calendar_token_status': token_status,
+        })
 
     try:
         now = datetime.now()
@@ -1532,6 +1547,18 @@ def sync_schedules():
             sync_end,
             max_results=max_results
         )
+        if not token_status.get('has_calendar_write_scope') and not sync_result.get('calendar_sync_error'):
+            sync_result['calendar_sync_error'] = {
+                'error': 'calendar_permission_required',
+                'message': (
+                    'Đã đọc được sự kiện từ Google Calendar, nhưng token hiện thiếu quyền ghi '
+                    'nên FlowMate chưa thể đẩy lịch tạo trong app lên Google. Hãy đăng xuất/kết nối '
+                    'lại Gmail & Google Calendar để cấp đủ quyền.'
+                ),
+                'google_status': None,
+                'google_reason': None,
+                'google_error': None,
+            }
         SyncJob.finish(job_id, 'success', sync_result)
         return jsonify({
             'success': True,
