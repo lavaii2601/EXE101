@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, AppState, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -32,6 +32,8 @@ const tabs = [
   { key: 'history',  icon: 'time-outline',        label: ['Lịch sử', 'History'] },
   { key: 'settings', icon: 'settings-outline',    label: ['Cài đặt', 'Settings'] },
 ];
+
+const NEW_MAIL_POLL_INTERVAL_MS = 90000;
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -69,6 +71,9 @@ function AppShell() {
   const [syncEvent, setSyncEvent] = useState({ id: 0, targets: [] });
   const [savingMode, setSavingMode] = useState(false);
   const [modePickerOpen, setModePickerOpen] = useState(false);
+  const [newMailNotice, setNewMailNotice] = useState(null);
+  const lastSeenMailId = useRef(null);
+  const mailNoticeTimer = useRef(null);
 
   const refreshShell = useCallback(async () => {
     const [profileResult, statusResult, agentResult] = await Promise.allSettled([
@@ -101,6 +106,65 @@ function AppShell() {
     loadPersistedSession().finally(refreshShell);
   }, [refreshShell]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+
+    let active = true;
+    let checking = false;
+
+    const dismissLater = () => {
+      if (mailNoticeTimer.current) clearTimeout(mailNoticeTimer.current);
+      mailNoticeTimer.current = setTimeout(() => {
+        if (active) setNewMailNotice(null);
+      }, 8000);
+    };
+
+    const checkForNewMail = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const data = await apiGet('/email/new-mail-check');
+        if (!active || !data?.success || !data.latest_id) return;
+
+        // The first successful check establishes a baseline. Bob only
+        // announces IDs that appear after that, so opening the app does not
+        // produce a misleading popup for an old unread message.
+        if (lastSeenMailId.current === null) {
+          lastSeenMailId.current = data.latest_id;
+          return;
+        }
+        if (data.latest_id === lastSeenMailId.current) return;
+
+        lastSeenMailId.current = data.latest_id;
+        setNewMailNotice({
+          id: data.latest_id,
+          sender: String(data.latest_sender || '').split('<')[0].trim(),
+          subject: String(data.latest_subject || '').trim(),
+        });
+        dismissLater();
+      } catch (error) {
+        // Gmail may not be connected yet. This background agent must remain
+        // silent and retry later instead of interrupting the current tab.
+        if (error?.status !== 401) console.warn('New mail check failed:', error);
+      } finally {
+        checking = false;
+      }
+    };
+
+    checkForNewMail();
+    const interval = setInterval(checkForNewMail, NEW_MAIL_POLL_INTERVAL_MS);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') checkForNewMail();
+    });
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      subscription.remove();
+      if (mailNoticeTimer.current) clearTimeout(mailNoticeTimer.current);
+    };
+  }, [isAuthenticated]);
+
   const handleLogout = useCallback(async () => {
     try { await apiPost('/email/logout'); } catch { /* ignore */ }
     await clearPersistedSession();
@@ -108,6 +172,8 @@ function AppShell() {
     setStatus(null);
     setUserMode(null);
     setModePickerOpen(false);
+    setNewMailNotice(null);
+    lastSeenMailId.current = null;
     setActiveTab('overview');
     // Drives the render below back to LoginScreen instead of leaving the
     // user stuck inside the authenticated tabs (e.g. still on Settings).
@@ -215,6 +281,36 @@ function AppShell() {
           onChangeMode={() => setModePickerOpen(true)}
         />
         <View style={styles.content}>{renderScreen()}</View>
+        {newMailNotice ? (
+          <View style={styles.mailNotice} accessibilityRole="alert">
+            <View style={styles.mailNoticeIcon}>
+              <Ionicons name="mail-unread-outline" size={21} color="#FFFFFF" />
+            </View>
+            <View style={styles.mailNoticeBody}>
+              <Text style={styles.mailNoticeTitle}>{t('Bob phát hiện email mới', 'Bob spotted new mail')}</Text>
+              <Text style={styles.mailNoticeText} numberOfLines={2}>
+                {[newMailNotice.sender, newMailNotice.subject].filter(Boolean).join(' — ')
+                  || t('Bạn vừa nhận được một email mới.', 'You just received a new email.')}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.mailNoticeAction}
+              onPress={() => {
+                setActiveTab('emails');
+                setNewMailNotice(null);
+              }}
+            >
+              <Text style={styles.mailNoticeActionText}>{t('Xem', 'View')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.mailNoticeClose}
+              onPress={() => setNewMailNotice(null)}
+              accessibilityLabel={t('Đóng thông báo', 'Dismiss notification')}
+            >
+              <Ionicons name="close" size={18} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
         <View style={styles.tabBar}>
           {tabs.map((tab) => {
             const active = activeTab === tab.key;
@@ -248,6 +344,40 @@ function makeStyles(colors) {
     app:  { flex: 1, backgroundColor: colors.background },
     loadingScreen: { flex: 1, backgroundColor: colors.background },
     content: { flex: 1 },
+    mailNotice: {
+      position: 'absolute',
+      top: 74,
+      left: 14,
+      right: 14,
+      zIndex: 100,
+      elevation: 12,
+      minHeight: 72,
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 12,
+      paddingRight: 34,
+      borderRadius: 16,
+      backgroundColor: '#6842E3',
+      shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.22,
+      shadowRadius: 12,
+    },
+    mailNoticeIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.16)',
+      marginRight: 10,
+    },
+    mailNoticeBody: { flex: 1 },
+    mailNoticeTitle: { color: '#FFFFFF', fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
+    mailNoticeText: { color: 'rgba(255,255,255,0.88)', fontFamily: 'Poppins_400Regular', fontSize: 11.5 },
+    mailNoticeAction: { paddingHorizontal: 10, paddingVertical: 7, marginLeft: 6 },
+    mailNoticeActionText: { color: '#FFFFFF', fontFamily: 'Poppins_600SemiBold', fontSize: 12 },
+    mailNoticeClose: { position: 'absolute', top: 5, right: 5, padding: 5 },
     tabBar: {
       flexDirection: 'row',
       paddingHorizontal: 5,
