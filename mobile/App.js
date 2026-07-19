@@ -325,6 +325,7 @@ function AppShell() {
                   name={tab.icon}
                   size={20}
                   color={active ? colors.primary : colors.textMuted}
+                  style={[styles.tabIcon, active && styles.tabIconActive]}
                 />
                 <Text style={[styles.tabText, active && styles.tabTextActive]}>
                   {t(...tab.label)}
@@ -380,26 +381,29 @@ function makeStyles(colors) {
     mailNoticeClose: { position: 'absolute', top: 5, right: 5, padding: 5 },
     tabBar: {
       flexDirection: 'row',
-      paddingHorizontal: 5,
-      paddingTop: 6,
-      paddingBottom: 14,
+      paddingHorizontal: 8,
+      paddingTop: 8,
+      paddingBottom: 12,
       backgroundColor: colors.panel,
       borderTopColor: colors.border,
       borderTopWidth: 1,
+      ...colors.shadow,
     },
     tab: {
       flex: 1,
-      minHeight: 48,
+      minHeight: 52,
       alignItems: 'center',
       justifyContent: 'center',
-      paddingVertical: 6,
+      paddingVertical: 4,
     },
+    tabIcon: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 999 },
+    tabIconActive: { backgroundColor: colors.primarySoft, overflow: 'hidden' },
     tabText: {
       color: colors.textMuted,
       fontWeight: '600',
       fontFamily: 'Poppins_600SemiBold',
-      fontSize: 10,
-      marginTop: 3,
+      fontSize: 9.5,
+      marginTop: 2,
     },
     tabTextActive: { color: colors.primary },
   });

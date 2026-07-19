@@ -28,18 +28,17 @@ function makeStyles(colors) {
   return StyleSheet.create({
     root: { flex: 1 },
     header: {
-      paddingHorizontal: 16,
-      paddingVertical: 14,
-      backgroundColor: colors.panel,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
+      paddingHorizontal: 18,
+      paddingTop: 18,
+      paddingBottom: 12,
+      backgroundColor: colors.background,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
       gap: 10,
     },
-    title: { color: colors.text, fontSize: 22, fontWeight: '800', fontFamily: 'Poppins_800ExtraBold' },
+    title: { color: colors.text, fontSize: 26, fontWeight: '800', fontFamily: 'Poppins_800ExtraBold', letterSpacing: -0.5 },
     actions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, flexShrink: 1 },
-    body: { paddingHorizontal: 16, paddingBottom: 18, gap: 12 },
+    body: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 24, gap: 14 },
   });
 }

@@ -1,15 +1,15 @@
 :root {
-    --bg: #f5f7fb;
+    --bg: #f4f6fc;
     --panel: #ffffff;
-    --panel-soft: #f8fafc;
-    --text: #172033;
-    --text-secondary: #5f6f89;
-    --border: #dfe6f1;
-    --primary: #2563eb;
-    --primary-dark: #1d4ed8;
+    --panel-soft: #f7f8fd;
+    --text: #182033;
+    --text-secondary: #667085;
+    --border: #e4e7f0;
+    --primary: #6c63ff;
+    --primary-dark: #574fe6;
     --danger: #dc2626;
     --success: #16a34a;
-    --shadow: 0 14px 30px rgba(23, 32, 51, 0.08);
+    --shadow: 0 16px 40px rgba(48, 42, 110, 0.10);
 }
 
 * {
@@ -7934,6 +7934,118 @@ body.dark-theme .schedule-source-badge.local-unsynced {
 
     #todayWeekBtn {
         grid-column: 1 / -1;
+    }
+}
+
+/* Unified FlowMate UI — shared visual language with the Android app. */
+.brand-mark {
+    border-radius: 13px;
+    background: linear-gradient(145deg, #55befe 0%, #6c63ff 52%, #a855f7 100%);
+    box-shadow: 0 10px 24px rgba(108, 99, 255, 0.24);
+}
+
+.sidebar {
+    background: color-mix(in srgb, var(--panel) 96%, #6c63ff 4%);
+}
+
+.sidebar-new-chat-btn {
+    border-color: rgba(108, 99, 255, 0.20);
+    border-radius: 15px;
+    background: rgba(108, 99, 255, 0.09);
+    color: var(--primary-dark);
+}
+
+.sidebar-new-chat-btn .icon {
+    border-radius: 10px;
+    background: rgba(108, 99, 255, 0.15);
+    color: var(--primary);
+}
+
+.nav-btn {
+    border-radius: 14px;
+}
+
+.nav-btn:hover,
+.nav-btn.active {
+    background: rgba(108, 99, 255, 0.10);
+    color: var(--primary);
+}
+
+.nav-btn.active {
+    box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.workspace-header {
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    backdrop-filter: blur(18px);
+}
+
+.workspace-mode-status > span {
+    border-radius: 10px;
+    background: rgba(108, 99, 255, 0.12);
+    color: var(--primary-dark);
+}
+
+.btn-primary,
+#sendBtn {
+    border-radius: 13px;
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    box-shadow: 0 9px 20px rgba(108, 99, 255, 0.20);
+}
+
+.btn-secondary,
+input,
+textarea,
+select {
+    border-radius: 13px;
+}
+
+.overview-panel,
+.overview-hero,
+.settings-card,
+.email-item,
+.schedule-item,
+.history-item,
+.chat-container,
+.modal-content {
+    border-color: var(--border);
+    border-radius: 20px;
+    box-shadow: var(--shadow);
+}
+
+.message.assistant .message-content {
+    border-radius: 18px 18px 18px 6px;
+    background: var(--panel-soft);
+}
+
+.message.user .message-content {
+    border-radius: 18px 18px 6px 18px;
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+}
+
+body.dark-theme {
+    --bg: #0b1020;
+    --panel: #12182a;
+    --panel-soft: #192137;
+    --text: #f7f8ff;
+    --text-secondary: #9da8c3;
+    --border: rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 860px) {
+    .workspace-app > .sidebar,
+    .workspace-app > .sidebar.open {
+        background: color-mix(in srgb, var(--panel) 92%, transparent);
+        box-shadow: 0 -12px 32px rgba(21, 24, 50, 0.14);
+    }
+
+    .workspace-app > .sidebar .nav-btn.active {
+        box-shadow: none;
+    }
+
+    .workspace-app > .sidebar .nav-btn.active .icon {
+        border-radius: 999px;
+        background: rgba(108, 99, 255, 0.13);
     }
 }
 

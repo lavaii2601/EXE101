@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import EmptyState from '../components/EmptyState';
 import Field from '../components/Field';
-import { apiGet, apiPost } from '../api/client';
+import { apiDelete, apiGet, apiPost } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 import { getUserMode } from '../config/userModes';
 import ModeBrief from '../components/ModeBrief';
@@ -99,6 +99,9 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
   const [planSuggestion, setPlanSuggestion] = useState(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [sessions, setSessions] = useState([]);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
   const listRef = useRef(null);
   const mode = getUserMode(userMode);
 
@@ -150,6 +153,62 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
     setPlanSuggestion(null);
     setInput('');
   };
+
+  const loadSessions = useCallback(async () => {
+    setSessionsLoading(true);
+    try {
+      const data = await apiGet('/chat/sessions?limit=40');
+      setSessions(Array.isArray(data.sessions) ? data.sessions : []);
+    } catch (error) {
+      Alert.alert('Không tải được đoạn chat', error.message);
+    } finally {
+      setSessionsLoading(false);
+    }
+  }, []);
+
+  const showSessions = useCallback(async () => {
+    setSessionsOpen(true);
+    await loadSessions();
+  }, [loadSessions]);
+
+  const openSession = useCallback(async (session) => {
+    if (!session?.id) return;
+    setRefreshing(true);
+    try {
+      const data = await apiGet(`/chat/history?limit=100&session_id=${encodeURIComponent(session.id)}`);
+      setSessionId(session.id);
+      setMessages((data.history || []).reverse().flatMap(mapHistoryItem).filter((item) => item.text));
+      setSuggestion(null);
+      setPendingAction(null);
+      setPlanSuggestion(null);
+      setSessionsOpen(false);
+      requestAnimationFrame(() => listRef.current?.scrollToEnd?.({ animated: false }));
+    } catch (error) {
+      Alert.alert('Không mở được đoạn chat', error.message);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  const deleteSession = useCallback((session) => {
+    Alert.alert('Xóa đoạn chat?', session?.title || 'Đoạn chat này sẽ bị xóa ngay.', [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Xóa',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiDelete(`/chat/sessions/${encodeURIComponent(session.id)}`);
+            setSessions((current) => current.filter((item) => item.id !== session.id));
+            if (session.id === sessionId) startNewChat();
+            onAgentSync?.(['chat', 'history']);
+          } catch (error) {
+            Alert.alert('Không xóa được đoạn chat', error.message);
+          }
+        },
+      },
+    ]);
+  }, [onAgentSync, sessionId]);
 
   const submitChatMessage = useCallback(async (text, options = {}) => {
     const trimmed = String(text || '').trim();
@@ -337,8 +396,8 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
           <Text style={styles.title}>FlowMate Agent</Text>
         </View>
         <View style={styles.headerActions}>
+          <Button title="Lịch sử" variant="secondary" onPress={showSessions} />
           <Button title="Chat mới" variant="secondary" onPress={startNewChat} />
-          <Button title="Xóa" variant="secondary" onPress={clearChat} />
         </View>
       </View>
       <ModeBrief
@@ -503,6 +562,42 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
         />
       </View>
       {loading ? <ActivityIndicator style={styles.loading} color={colors.primary} /> : null}
+      <Modal visible={sessionsOpen} transparent animationType="slide" onRequestClose={() => setSessionsOpen(false)}>
+        <TouchableOpacity style={styles.sessionBackdrop} activeOpacity={1} onPress={() => setSessionsOpen(false)} />
+        <View style={styles.sessionSheet}>
+          <View style={styles.sessionSheetHeader}>
+            <View>
+              <Text style={styles.kicker}>ĐỒNG BỘ WEB + APK</Text>
+              <Text style={styles.sessionSheetTitle}>Đoạn chat gần đây</Text>
+            </View>
+            <TouchableOpacity style={styles.sessionClose} onPress={() => setSessionsOpen(false)}>
+              <Text style={styles.sessionCloseText}>×</Text>
+            </TouchableOpacity>
+          </View>
+          {sessionsLoading ? <ActivityIndicator color={colors.primary} /> : (
+            <FlatList
+              data={sessions}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.sessionList}
+              ListEmptyComponent={<EmptyState title="Chưa có đoạn chat" detail="Các cuộc trò chuyện mới sẽ xuất hiện ở đây và trên web." />}
+              renderItem={({ item }) => (
+                <View style={[styles.sessionItem, item.id === sessionId && styles.sessionItemActive]}>
+                  <TouchableOpacity style={styles.sessionMain} onPress={() => openSession(item)}>
+                    <Text style={styles.sessionTitle} numberOfLines={1}>{item.title || 'Đoạn chat'}</Text>
+                    <Text style={styles.sessionMeta} numberOfLines={1}>
+                      {item.updated_at || item.created_at || `${item.retention_days || 90} ngày lưu`}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.sessionDelete} onPress={() => deleteSession(item)}>
+                    <Text style={styles.sessionDeleteText}>Xóa</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            />
+          )}
+          <Button title="Bắt đầu chat mới" onPress={() => { startNewChat(); setSessionsOpen(false); }} />
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -521,7 +616,7 @@ function makeStyles(colors) {
       justifyContent: 'space-between',
       gap: 10,
     },
-    headerActions: { flexDirection: 'row', gap: 8 },
+    headerActions: { flexDirection: 'row', gap: 8, flexShrink: 1 },
     kicker: { color: colors.primary, fontFamily: 'Poppins_700Bold', fontSize: 10, letterSpacing: 1, textTransform: 'uppercase' },
     title: { marginTop: 3, fontSize: 22, fontFamily: 'Poppins_800ExtraBold', color: colors.text },
     listWrap: { flex: 1, position: 'relative' },
@@ -637,5 +732,27 @@ function makeStyles(colors) {
     },
     send:    { alignSelf: 'flex-end', minWidth: 64 },
     loading: { position: 'absolute', right: 24, top: 18 },
+    sessionBackdrop: { flex: 1, backgroundColor: 'rgba(10,15,30,0.42)' },
+    sessionSheet: {
+      maxHeight: '76%',
+      padding: 18,
+      paddingBottom: 24,
+      borderTopLeftRadius: 26,
+      borderTopRightRadius: 26,
+      backgroundColor: colors.panel,
+      gap: 14,
+    },
+    sessionSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    sessionSheetTitle: { color: colors.text, fontFamily: 'Poppins_800ExtraBold', fontSize: 22 },
+    sessionClose: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.panelSoft, alignItems: 'center', justifyContent: 'center' },
+    sessionCloseText: { color: colors.text, fontSize: 25, lineHeight: 28 },
+    sessionList: { gap: 8, paddingVertical: 2 },
+    sessionItem: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 16, backgroundColor: colors.panelSoft, padding: 12 },
+    sessionItemActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+    sessionMain: { flex: 1, minWidth: 0 },
+    sessionTitle: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
+    sessionMeta: { marginTop: 3, color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 10 },
+    sessionDelete: { paddingHorizontal: 10, paddingVertical: 7 },
+    sessionDeleteText: { color: colors.danger, fontFamily: 'Poppins_600SemiBold', fontSize: 11 },
   });
 }

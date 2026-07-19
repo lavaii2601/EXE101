@@ -22,6 +22,21 @@ npm install
 npm start
 ```
 
+## Tao APK Android
+
+Ban cai thu nghiem dung profile `preview` de EAS tra ve file `.apk` cai truc tiep:
+
+```powershell
+cd mobile
+npx eas-cli build --platform android --profile preview
+```
+
+Ban phat hanh Play Store dung profile `production` va tao Android App Bundle (`.aab`):
+
+```powershell
+npx eas-cli build --platform android --profile production
+```
+
 Mac dinh mobile dung backend Railway:
 
 ```text

@@ -34,9 +34,9 @@ export default function Button({ title, onPress, variant = 'primary', disabled, 
 function makeStyles(colors) {
   return StyleSheet.create({
     button: {
-      minHeight: 44,
+      minHeight: 46,
       paddingHorizontal: 16,
-      borderRadius: 8,
+      borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.primary,

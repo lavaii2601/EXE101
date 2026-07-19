@@ -9,14 +9,14 @@ export const ACCENTS = {
 };
 
 function buildColors(isDark, accentKey) {
-  const { primary, primaryDark } = ACCENTS[accentKey] || ACCENTS.charcoal;
+  const { primary, primaryDark } = ACCENTS[accentKey] || ACCENTS.purple;
   if (isDark) {
     return {
-      background:       '#0e0e12',
-      panel:            '#16161d',
-      panelSoft:        '#1e1e28',
-      text:             '#f0f0f8',
-      textMuted:        '#9191a8',
+      background:       '#0B1020',
+      panel:            '#12182A',
+      panelSoft:        '#192137',
+      text:             '#F7F8FF',
+      textMuted:        '#9DA8C3',
       border:           'rgba(255,255,255,0.08)',
       primary,
       primaryDark,
@@ -25,8 +25,8 @@ function buildColors(isDark, accentKey) {
       danger:           '#ef4444',
       success:          '#34d399',
       warning:          '#fbbf24',
-      secondaryBg:      '#252533',
-      secondaryText:    '#d8d8e8',
+      secondaryBg:      '#202A43',
+      secondaryText:    '#E5E9F7',
       inputPlaceholder: '#5c5c70',
       shadow: {
         shadowColor: '#000000',
@@ -38,12 +38,12 @@ function buildColors(isDark, accentKey) {
     };
   }
   return {
-    background:       '#f5f7fb',
+    background:       '#F4F6FC',
     panel:            '#ffffff',
-    panelSoft:        '#f8fafc',
-    text:             '#172033',
-    textMuted:        '#5f6f89',
-    border:           '#dfe6f1',
+    panelSoft:        '#F7F8FD',
+    text:             '#182033',
+    textMuted:        '#667085',
+    border:           '#E4E7F0',
     primary,
     primaryDark,
     primarySoft:      `${primary}18`,
@@ -51,8 +51,8 @@ function buildColors(isDark, accentKey) {
     danger:           '#dc2626',
     success:          '#16a34a',
     warning:          '#d97706',
-    secondaryBg:      '#e8eef8',
-    secondaryText:    '#22314a',
+    secondaryBg:      '#EEF0FF',
+    secondaryText:    '#4338CA',
     inputPlaceholder: '#9aa8bc',
     shadow: {
       shadowColor: '#172033',
@@ -68,7 +68,7 @@ const ThemeContext = createContext(null);
 
 export function ThemeProvider({ children }) {
   const [isDark, setIsDark] = useState(false);
-  const [accent, setAccent] = useState('blue');
+  const [accent, setAccent] = useState('purple');
 
   const colors = useMemo(() => buildColors(isDark, accent), [isDark, accent]);
 

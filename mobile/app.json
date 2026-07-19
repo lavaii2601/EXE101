@@ -3,13 +3,14 @@
     "name": "FlowMate AI",
     "slug": "flowmate-ai",
     "scheme": "flowmateai",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#55BEFE"
       },
