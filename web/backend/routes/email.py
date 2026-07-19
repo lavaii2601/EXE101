@@ -1128,6 +1128,56 @@ def get_unread_emails():
         return jsonify({'error': str(e), 'error_type': type(e).__name__}), 500
 
 
+NEW_MAIL_CHECK_CACHE_TTL = 45
+
+
+def _new_mail_check_cache_key(user_id):
+    return f"{user_id}:email:new_mail_check"
+
+
+@email_bp.route('/new-mail-check', methods=['GET'])
+def new_mail_check():
+    """Lightweight poll target for the client's background new-mail watcher.
+
+    Returns just the newest unread message id, its sender/subject, and an
+    unread count -- cheap enough to call every ~90s from every open tab.
+    Cached briefly server-side so several tabs/devices for the same user
+    share one Gmail round trip instead of each paying for their own.
+    """
+    user_id = get_current_user_id(request, session=session)
+    db_path = get_user_db_path(user_id)
+    cache_key = _new_mail_check_cache_key(user_id)
+
+    cached = Cache.get(cache_key, db_path=db_path)
+    if isinstance(cached, dict):
+        return jsonify({'success': True, **cached})
+
+    service = _load_gmail_service(user_id)
+    if not service:
+        return jsonify({'error': 'not_authenticated'}), 401
+
+    try:
+        snapshot = service.list_unread_ids(max_results=5)
+        latest_id = snapshot['ids'][0] if snapshot['ids'] else None
+        payload = {
+            'unread_count': snapshot['unread_count'],
+            'latest_id': latest_id,
+            'latest_subject': '',
+            'latest_sender': '',
+        }
+        if latest_id:
+            details = service.get_email_details(latest_id, lazy=True)
+            if details:
+                payload['latest_subject'] = details.get('subject', '')
+                payload['latest_sender'] = details.get('sender', '')
+
+        Cache.set(cache_key, payload, ttl=NEW_MAIL_CHECK_CACHE_TTL, db_path=db_path)
+        return jsonify({'success': True, **payload})
+    except Exception as e:
+        logger.warning(f"Error in new_mail_check: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @email_bp.route('/meeting-suggestions', methods=['GET'])
 def get_meeting_suggestions():
     user_id = get_current_user_id(request, session=session)

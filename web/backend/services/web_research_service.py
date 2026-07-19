@@ -65,8 +65,10 @@ class WebResearchService:
         'recent', 'current', 'today', 'news', 'trending', 'updated',
     )
     _SEARCH_COMMAND_TERMS = (
-        'hay tim hieu', 'tim hieu ve', 'tra cuu', 'tim kiem', 'kiem tra',
-        'check giup', 'look up', 'search for', 'find information', 'research',
+        'hay tim hieu', 'tim hieu ve', 'tim giup', 'tim thong tin',
+        'tra cuu', 'tim kiem', 'kiem tra', 'kiem chung', 'xac minh',
+        'xem giup thong tin', 'check giup', 'look up', 'search for',
+        'find information', 'find out', 'verify', 'fact check', 'research',
     )
     _PRIVATE_WORKSPACE_SOURCES = {'email', 'calendar', 'history', 'profile'}
 

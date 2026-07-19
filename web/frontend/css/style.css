@@ -3460,6 +3460,28 @@ select:focus {
     }
 }
 
+@keyframes toastSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(24px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes toastSlideOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(24px);
+    }
+}
+
 @media (max-width: 860px) {
     .container {
         grid-template-columns: 1fr;

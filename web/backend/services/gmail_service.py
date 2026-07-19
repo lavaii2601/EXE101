@@ -215,6 +215,33 @@ class GmailService:
             logger.warning(f"Error listing message ids by date: {e}")
             return []
 
+    def list_unread_ids(self, max_results=5):
+        """Cheaply list unread message ids plus a total count estimate.
+
+        No metadata/body fetch -- used by the new-mail poller, which runs
+        every ~90s and only needs to know whether the newest unread id
+        changed, not the full inbox.
+        """
+        try:
+            max_results = max(1, min(int(max_results), 25))
+        except Exception:
+            max_results = 5
+        try:
+            results = self.service.users().messages().list(
+                userId='me',
+                q='is:unread',
+                maxResults=max_results,
+                fields='messages(id),resultSizeEstimate'
+            ).execute()
+            message_ids = [msg.get('id') for msg in results.get('messages', []) if msg.get('id')]
+            return {
+                'ids': message_ids,
+                'unread_count': int(results.get('resultSizeEstimate') or len(message_ids)),
+            }
+        except Exception as e:
+            logger.warning(f"Error listing unread ids: {e}")
+            return {'ids': [], 'unread_count': 0}
+
     @staticmethod
     def _parse_date(date_str):
         if not date_str:

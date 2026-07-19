@@ -195,6 +195,10 @@ class IntentOrchestrator:
         "dung noi ro 'goi y lich' -- ho muon AI xep gio cu the cho tung hoat dong, khong chi liet "
         "ke thanh danh sach viec).\n"
         "- 'Ban nghi gi ve lam viec tu xa' => chat.freeform (khong khop muc nao tren).\n"
+        "- 'Nguoi sang lap Facebook la ai?' => chat.freeform (day la cau hoi kien thuc; "
+        "chuoi 'book' nam ben trong ten rieng 'Facebook' KHONG co nghia la dat lich).\n"
+        "- 'Book a meeting tomorrow at 3pm' => schedule.create (o day 'book' la dong tu hanh "
+        "dong va co doi tuong meeting + thoi gian ro rang).\n"
         "- (Vi du bang TIENG ANH, ap dung CACH suy luan giong het cac vi du tieng Viet o tren) "
         "'Schedule a call with the client tomorrow at 3pm' => schedule.create; "
         "start_time = (ngay ke tiep THOI DIEM HIEN TAI) luc 15:00, title='Call with the client'.\n"
@@ -351,9 +355,16 @@ class IntentOrchestrator:
 
     def has_actionable_hint(self, message):
         text = self.normalize(message)
-        if any(hint in text for hint in self.ACTIONABLE_HINTS):
+        # Match complete words/phrases. A substring check makes English action
+        # hints dangerously noisy: for example, ``book`` also occurs inside
+        # ``Facebook``, so "Nguoi sang lap Facebook la ai?" used to enter the
+        # calendar-intent pipeline instead of remaining a knowledge question.
+        if self._contains_word(text, self.ACTIONABLE_HINTS):
             return True
-        if any(alias in text for aliases in self.MODE_ALIASES.values() for alias in aliases):
+        if self._contains_word(
+            text,
+            tuple(alias for aliases in self.MODE_ALIASES.values() for alias in aliases),
+        ):
             return True
         return bool(self.TIME_HINT_PATTERN.search(text))
 

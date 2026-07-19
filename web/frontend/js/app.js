@@ -47,6 +47,9 @@ let currentLanguage = localStorage.getItem('flowmate-language') === 'en' ? 'en' 
 let activeChatSessionId = localStorage.getItem('flowmate-active-chat-session') || createChatSessionId();
 let activeChatSessionTitle = localStorage.getItem('flowmate-active-chat-title') || '';
 let agentProfile = null;
+let newMailPollTimer = null;
+let lastSeenMailId = localStorage.getItem('flowmate-last-mail-id') || null;
+const NEW_MAIL_POLL_INTERVAL_MS = 90000;
 
 function createChatSessionId() {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -765,6 +768,7 @@ async function initApp() {
         }
     }
     await refreshAuthButtons();
+    startNewMailWatcher();
     checkRuntimeConfig();
     loadAgentProfile();
     
@@ -2292,170 +2296,163 @@ function openExternalUrl(url) {
     if (popup) popup.opener = null;
 }
 
-function showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 16px 24px;
-        background: ${type === 'success' ? '#4CAF50' : '#2196F3'};
-        color: white;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        z-index: 10000;
-        animation: slideIn 0.3s ease-out;
-    `;
-    async function sendMessageConfirmed(message, opts = {}) {
-        const confirmed = !!opts.confirmedSchedule;
-        const override = opts.scheduleOverride || null;
+const TOAST_COLORS = {
+    success: '#4CAF50',
+    error: '#e53935',
+    warning: '#f39c12',
+    info: '#2196F3',
+    mail: '#7C4DFF'
+};
 
-        addMessage(message, 'user');
-        userInput.value = '';
-
-        const loadingDiv = document.createElement('div');
-        loadingDiv.className = 'message assistant';
-        loadingDiv.innerHTML = `<div class="message-avatar bob-avatar" aria-hidden="true">${BOB_AVATAR_SVG}</div><div class="message-content"><div class="loading"></div></div>`;
-        chatMessages.appendChild(loadingDiv);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-
-        try {
-            const response = await apiFetch(`${API_BASE}/chat/message`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message,
-                    mode: currentUserMode,
-                    confirmed_schedule: confirmed,
-                    schedule_override: override
-                })
-            });
-
-            if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            const data = await response.json();
-
-            loadingDiv.remove();
-
-            if (!data.success) {
-                addMessage(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || 'Unknown error'), 'assistant');
-                console.error('AI error:', data.error);
-                return;
-            }
-
-            addMessage(data.response, 'assistant');
-
-            if (data.demo_mode) showNotification(ui('⚠️ Chế độ demo - Tất cả nhà cung cấp AI đang tạm nghỉ', '⚠️ Demo mode - All AI providers are cooling down'), 'info');
-
-            // If server already created the schedule, just notify and refresh
-            if (data.schedule_created) {
-                try { await loadSchedules(); } catch (e) { /* ignore */ }
-                try { await loadWeekSchedule(); } catch (e) { /* ignore */ }
-                syncSchedulesAfterLocalCreate(data.schedule_created);
-                showNotification(`${ui('✅ Đã tạo lịch', '✅ Event created')}: ${data.schedule_created.title || ui('Lịch hẹn', 'Appointment')}`, 'success');
-                return;
-            }
-
-        } catch (error) {
-            loadingDiv.remove();
-            console.error('❌ Message send error:', error);
-            addMessage(ui('❌ Lỗi kết nối: ', '❌ Connection error: ') + error.message, 'assistant');
-            console.error(`Lỗi: ${error.message}\nEndpoint: ${API_BASE}/chat/message`);
-        }
+let toastStackEl = null;
+function getToastStack() {
+    if (!toastStackEl || !document.body.contains(toastStackEl)) {
+        toastStackEl = document.createElement('div');
+        toastStackEl.id = 'toastStack';
+        toastStackEl.setAttribute('aria-live', 'polite');
+        toastStackEl.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: min(360px, calc(100vw - 32px));
+            pointer-events: none;
+        `;
+        document.body.appendChild(toastStackEl);
     }
-
-function setupEventListeners() {
-    console.log('📋 Setting up event listeners');
-
-    bindEditScheduleModal();
+    return toastStackEl;
 }
 
-    // Clear history
-    if (clearBtn) {
-        clearBtn.addEventListener('click', clearConversation);
-    }
-    
-    // Gmail buttons
-    const userAvatar = document.getElementById('userAvatar');
-    if (userAvatar) userAvatar.addEventListener('click', gmailLogin);
-    if (gmailLoginBtn) gmailLoginBtn.addEventListener('click', gmailLogin);
-    if (gmailLogoutBtn) gmailLogoutBtn.addEventListener('click', gmailLogout);
-    if (openGmailBtn) openGmailBtn.addEventListener('click', () => openExternalUrl('https://mail.google.com'));
-    
-    // Email filter
-    if (emailFilterSelect) {
-        emailFilterSelect.addEventListener('change', () => {
-            console.log(`🔍 Filter changed: ${emailFilterSelect.value}`);
-            currentEmailPage = 1;
-            loadEmails(1, { cacheOnly: true });
+function showNotification(message, type = 'info', options = {}) {
+    const stack = getToastStack();
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.style.cssText = `
+        pointer-events: auto;
+        background: ${TOAST_COLORS[type] || TOAST_COLORS.info};
+        color: white;
+        padding: 14px 16px;
+        border-radius: 10px;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+        font-size: 14px;
+        line-height: 1.4;
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        animation: toastSlideIn 0.25s ease-out;
+    `;
+
+    const textEl = document.createElement('div');
+    textEl.style.cssText = 'flex: 1; word-break: break-word;';
+    textEl.textContent = message;
+    toast.appendChild(textEl);
+
+    const dismiss = () => {
+        toast.style.animation = 'toastSlideOut 0.2s ease-in forwards';
+        setTimeout(() => toast.remove(), 200);
+    };
+
+    if (options.actionLabel && typeof options.onAction === 'function') {
+        const actionBtn = document.createElement('button');
+        actionBtn.type = 'button';
+        actionBtn.textContent = options.actionLabel;
+        actionBtn.style.cssText = `
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 13px;
+            cursor: pointer;
+            white-space: nowrap;
+        `;
+        actionBtn.addEventListener('click', () => {
+            options.onAction();
+            dismiss();
         });
-    }
-    
-    // Include read checkbox
-    const includeReadCheckbox = document.getElementById('includeReadCheckbox');
-    if (includeReadCheckbox) {
-        includeReadCheckbox.addEventListener('change', () => {
-            console.log(`📬 Include read: ${includeReadCheckbox.checked}`);
-            currentEmailPage = 1;
-            loadEmails(1, { cacheOnly: true });
-        });
-    }
-    
-    // Refresh emails
-    const refreshBtn = document.getElementById('refreshEmailsBtn');
-    if (refreshBtn && refreshBtn.dataset.refreshBound !== 'true') {
-        refreshBtn.dataset.refreshBound = 'true';
-        refreshBtn.addEventListener('click', () => {
-            console.log('🔄 Refreshing emails');
-            refreshEmailsFromGmail()
-                .catch(err => console.error('Cache clear error:', err));
-        });
-    }
-    
-    // Generate report
-    const reportBtn = document.getElementById('generateReportBtn');
-    if (reportBtn) {
-        reportBtn.addEventListener('click', generateDailyReport);
-    }
-    
-    // Calendar form and buttons
-    const calendarEventForm = document.getElementById('calendarEventForm');
-    if (calendarEventForm) calendarEventForm.addEventListener('submit', handleCalendarEventSubmit);
-    
-        const refreshCalendarBtn = document.getElementById('refreshCalendarBtn');
-        if (refreshCalendarBtn && refreshCalendarBtn.dataset.refreshBound !== 'true') {
-            refreshCalendarBtn.dataset.refreshBound = 'true';
-            refreshCalendarBtn.addEventListener('click', () => {
-                console.log('🔄 Refreshing calendar events');
-                scheduleMeetingSuggestionRefresh({ scan: false, delay: 0 });
-                refreshCalendarScheduleData({ notify: true, continueOnError: true })
-                    .catch(err => console.warn('Schedule refresh error:', err));
-            });
-        }
-    
-    const openCalendarBtn = document.getElementById('openCalendarBtn');
-    if (openCalendarBtn) {
-        openCalendarBtn.addEventListener('click', () => openExternalUrl('https://calendar.google.com'));
+        toast.appendChild(actionBtn);
     }
 
-    // Weekly schedule table navigation
-    bindWeekNavigation();
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.setAttribute('aria-label', 'Dismiss');
+    closeBtn.textContent = '×';
+    closeBtn.style.cssText = `
+        background: none;
+        border: none;
+        color: white;
+        opacity: 0.8;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 0 2px;
+    `;
+    closeBtn.addEventListener('click', dismiss);
+    toast.appendChild(closeBtn);
 
-    // Listen for postMessage from OAuth popup to update UI without redirect
-    window.addEventListener('message', (ev) => {
-        try {
-            if (ev.origin === window.location.origin && ev.data && ev.data.type === 'gmail_auth' && ev.data.status === 'success') {
-                console.log('📥 Received gmail_auth success message');
-                refreshAuthButtons();
-                loadUserProfile();
-                if (currentPage === 'emails') {
-                    setTimeout(() => loadEmails(1, { cacheOnly: true }), 300);
-                }
-            }
-        } catch (e) {
-            console.warn('PostMessage handling error', e);
+    stack.appendChild(toast);
+    setTimeout(dismiss, options.autoDismissMs || 4500);
+    return toast;
+}
+
+// Bob's "new mail" popup: a distinct toast variant so it reads as the
+// assistant proactively flagging something, not just a generic status message.
+function showNewMailPopup(mailInfo) {
+    const sender = String(mailInfo.latest_sender || '').split('<')[0].trim();
+    const subject = String(mailInfo.latest_subject || '').trim();
+    const detail = sender || subject
+        ? `${sender || ui('người gửi ẩn danh', 'an unknown sender')}${subject ? ` — "${subject}"` : ''}`
+        : '';
+    const message = detail
+        ? ui(`📬 Bob vừa phát hiện email mới từ ${detail}`, `📬 Bob just spotted new mail from ${detail}`)
+        : ui('📬 Bob vừa phát hiện bạn có email mới', '📬 Bob just spotted new mail for you');
+
+    showNotification(message, 'mail', {
+        autoDismissMs: 8000,
+        actionLabel: ui('Xem email', 'View email'),
+        onAction: () => {
+            const emailsNavBtn = document.querySelector('[data-page="emails"]');
+            if (emailsNavBtn) handlePageChange(emailsNavBtn);
+            refreshEmailsFromGmail().catch(() => { /* ignore */ });
         }
     });
+}
 
+// Background poll so Bob can flag new mail without the user opening the
+// Email tab. Uses plain fetch (not apiFetch) so a 401 here -- expected for
+// anyone who hasn't connected Gmail yet -- never triggers the session-expired
+// auth gate; it should just silently retry on the next tick.
+async function checkForNewMail() {
+    try {
+        const response = await fetch(`${API_BASE}/email/new-mail-check`, { credentials: 'include' });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data || !data.success || !data.latest_id) return;
+
+        const isFirstCheck = lastSeenMailId === null;
+        if (data.latest_id === lastSeenMailId) return;
+
+        lastSeenMailId = data.latest_id;
+        localStorage.setItem('flowmate-last-mail-id', lastSeenMailId);
+
+        if (!isFirstCheck && data.unread_count > 0) {
+            showNewMailPopup(data);
+        }
+    } catch (err) {
+        console.warn('New mail check failed:', err);
+    }
+}
+
+function startNewMailWatcher() {
+    if (newMailPollTimer) return;
+    checkForNewMail();
+    newMailPollTimer = window.setInterval(checkForNewMail, NEW_MAIL_POLL_INTERVAL_MS);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') checkForNewMail();
+    });
 }
 
 async function refreshAuthButtons() {
