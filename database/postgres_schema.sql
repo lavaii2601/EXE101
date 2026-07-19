@@ -31,12 +31,6 @@ END $$;
 
 DO $$
 BEGIN
-    CREATE TYPE email_summary_type AS ENUM ('preview', 'ai_cached', 'ai_generated', 'manual');
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$
-BEGIN
     CREATE TYPE activity_type AS ENUM (
         'chat',
         'email_summary',
@@ -107,84 +101,6 @@ CREATE TABLE IF NOT EXISTS oauth_states (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Gmail message metadata and cached body. This replaces ad-hoc JSON cache entries
--- when you want searchable, queryable email state in Postgres.
-CREATE TABLE IF NOT EXISTS gmail_messages (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    gmail_message_id TEXT NOT NULL,
-    thread_id TEXT,
-
-    sender TEXT,
-    sender_email TEXT,
-    recipients TEXT,
-    cc TEXT,
-    bcc TEXT,
-    subject TEXT,
-    snippet TEXT,
-    body_text TEXT,
-    body_html TEXT,
-
-    gmail_date TIMESTAMPTZ,
-    is_unread BOOLEAN NOT NULL DEFAULT FALSE,
-    labels TEXT[] NOT NULL DEFAULT '{}',
-    tag TEXT,
-    tag_confidence NUMERIC(4,3),
-
-    has_attachments BOOLEAN NOT NULL DEFAULT FALSE,
-    raw_metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
-
-    fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    body_fetched_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT gmail_messages_user_message_unique UNIQUE (user_id, gmail_message_id)
-);
-
-CREATE TABLE IF NOT EXISTS gmail_attachments (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    message_id BIGINT NOT NULL REFERENCES gmail_messages(id) ON DELETE CASCADE,
-    gmail_attachment_id TEXT NOT NULL,
-    filename TEXT NOT NULL,
-    mime_type TEXT,
-    size_bytes BIGINT,
-    content_disposition TEXT,
-    metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT gmail_attachments_unique UNIQUE (message_id, gmail_attachment_id)
-);
-
-CREATE TABLE IF NOT EXISTS email_summaries (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    message_id BIGINT REFERENCES gmail_messages(id) ON DELETE CASCADE,
-    gmail_message_id TEXT NOT NULL,
-    summary TEXT NOT NULL,
-    summary_type email_summary_type NOT NULL DEFAULT 'ai_generated',
-    provider TEXT,
-    model TEXT,
-    source_hash TEXT,
-    metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT email_summaries_user_message_unique UNIQUE (user_id, gmail_message_id)
-);
-
-CREATE TABLE IF NOT EXISTS email_daily_reports (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    report_date DATE NOT NULL,
-    total_emails INTEGER NOT NULL DEFAULT 0,
-    provider TEXT,
-    model TEXT,
-    rows JSONB NOT NULL DEFAULT '[]'::JSONB,
-    source_hash TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT email_daily_reports_user_date_unique UNIQUE (user_id, report_date)
-);
-
 CREATE TABLE IF NOT EXISTS schedules (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
@@ -247,7 +163,6 @@ CREATE TABLE IF NOT EXISTS meeting_suggestions (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     email_id TEXT NOT NULL,
-    message_id BIGINT REFERENCES gmail_messages(id) ON DELETE SET NULL,
 
     sender TEXT,
     subject TEXT,
@@ -283,24 +198,6 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT chat_sessions_retention_days_check CHECK (retention_days BETWEEN 30 AND 93)
-);
-
-CREATE TABLE IF NOT EXISTS chat_messages (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    session_id UUID REFERENCES chat_sessions(id) ON DELETE CASCADE,
-    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    role TEXT NOT NULL,
-    content TEXT NOT NULL,
-    provider TEXT,
-    model TEXT,
-    task TEXT,
-    intent JSONB NOT NULL DEFAULT '{}'::JSONB,
-    workspace_sources TEXT[] NOT NULL DEFAULT '{}',
-    schedule_id BIGINT REFERENCES schedules(id) ON DELETE SET NULL,
-    metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '90 days'),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT chat_messages_role_check CHECK (role IN ('system', 'user', 'assistant', 'tool'))
 );
 
 CREATE TABLE IF NOT EXISTS history (
@@ -344,22 +241,6 @@ CREATE TABLE IF NOT EXISTS cache (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT cache_user_key_unique UNIQUE (user_id, key)
-);
-
-CREATE TABLE IF NOT EXISTS ai_requests (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL,
-    provider TEXT,
-    model TEXT,
-    task TEXT,
-    status TEXT NOT NULL DEFAULT 'success',
-    prompt_tokens INTEGER,
-    completion_tokens INTEGER,
-    total_tokens INTEGER,
-    latency_ms INTEGER,
-    error_message TEXT,
-    metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS sync_jobs (
@@ -434,9 +315,6 @@ BEGIN
 END;
 $$;
 
-ALTER TABLE chat_messages
-    ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '90 days');
-
 ALTER TABLE history
     ADD COLUMN IF NOT EXISTS chat_session_id UUID REFERENCES chat_sessions(id) ON DELETE SET NULL;
 
@@ -452,21 +330,10 @@ UPDATE chat_sessions
 SET expires_at = created_at + (retention_days || ' days')::INTERVAL
 WHERE expires_at IS NULL;
 
-UPDATE chat_messages message
-SET expires_at = session.expires_at
-FROM chat_sessions session
-WHERE message.session_id = session.id
-  AND message.expires_at IS NULL;
-
 CREATE INDEX IF NOT EXISTS idx_users_gmail_email ON users (gmail_email);
 CREATE INDEX IF NOT EXISTS idx_users_mode ON users (user_mode);
 
 CREATE INDEX IF NOT EXISTS idx_oauth_tokens_expires_at ON oauth_tokens (expires_at);
-
-CREATE INDEX IF NOT EXISTS idx_gmail_messages_user_date ON gmail_messages (user_id, gmail_date DESC);
-CREATE INDEX IF NOT EXISTS idx_gmail_messages_user_unread ON gmail_messages (user_id, is_unread, gmail_date DESC);
-CREATE INDEX IF NOT EXISTS idx_gmail_messages_user_tag ON gmail_messages (user_id, tag, gmail_date DESC);
-CREATE INDEX IF NOT EXISTS idx_gmail_messages_subject_search ON gmail_messages USING GIN (to_tsvector('simple', COALESCE(subject, '') || ' ' || COALESCE(snippet, '')));
 
 CREATE INDEX IF NOT EXISTS idx_schedules_user_start ON schedules (user_id, start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_schedules_user_status ON schedules (user_id, status, start_time DESC);
@@ -479,9 +346,6 @@ CREATE INDEX IF NOT EXISTS idx_meeting_suggestions_schedule ON meeting_suggestio
 
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_updated ON chat_sessions (user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_expires ON chat_sessions (user_id, expires_at);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created ON chat_messages (session_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_user_created ON chat_messages (user_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_expires ON chat_messages (expires_at);
 
 CREATE INDEX IF NOT EXISTS idx_history_user_created ON history (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_history_user_action ON history (user_id, action_type, created_at DESC);
@@ -490,9 +354,6 @@ CREATE INDEX IF NOT EXISTS idx_history_chat_session ON history (chat_session_id)
 CREATE INDEX IF NOT EXISTS idx_session_memory_session ON session_memory (chat_session_id, updated_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_cache_user_expires ON cache (user_id, expires_at);
-
-CREATE INDEX IF NOT EXISTS idx_ai_requests_user_created ON ai_requests (user_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_ai_requests_provider_task ON ai_requests (provider, task, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_sync_jobs_user_type_status ON sync_jobs (user_id, job_type, status, created_at DESC);
 
@@ -520,21 +381,6 @@ CREATE TRIGGER trg_oauth_tokens_updated_at
 BEFORE UPDATE ON oauth_tokens
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-DROP TRIGGER IF EXISTS trg_gmail_messages_updated_at ON gmail_messages;
-CREATE TRIGGER trg_gmail_messages_updated_at
-BEFORE UPDATE ON gmail_messages
-FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-DROP TRIGGER IF EXISTS trg_email_summaries_updated_at ON email_summaries;
-CREATE TRIGGER trg_email_summaries_updated_at
-BEFORE UPDATE ON email_summaries
-FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-DROP TRIGGER IF EXISTS trg_email_daily_reports_updated_at ON email_daily_reports;
-CREATE TRIGGER trg_email_daily_reports_updated_at
-BEFORE UPDATE ON email_daily_reports
-FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
 DROP TRIGGER IF EXISTS trg_schedules_updated_at ON schedules;
 CREATE TRIGGER trg_schedules_updated_at
 BEFORE UPDATE ON schedules
@@ -554,25 +400,6 @@ DROP TRIGGER IF EXISTS trg_chat_sessions_updated_at ON chat_sessions;
 CREATE TRIGGER trg_chat_sessions_updated_at
 BEFORE UPDATE ON chat_sessions
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE OR REPLACE FUNCTION cleanup_expired_chat_messages()
-RETURNS BIGINT AS $$
-DECLARE
-    deleted_count BIGINT;
-BEGIN
-    DELETE FROM chat_messages
-    WHERE expires_at <= NOW();
-
-    GET DIAGNOSTICS deleted_count = ROW_COUNT;
-
-    UPDATE chat_sessions
-    SET archived_at = COALESCE(archived_at, NOW())
-    WHERE expires_at <= NOW()
-      AND archived_at IS NULL;
-
-    RETURN deleted_count;
-END;
-$$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_cache_updated_at ON cache;
 CREATE TRIGGER trg_cache_updated_at
