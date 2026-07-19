@@ -23,6 +23,7 @@ from services.tool_catalog import (
 )
 from models.history import History
 from models.schedule import Schedule
+from models.session_memory import SessionMemory
 from models.user import User
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from datetime import datetime
@@ -470,6 +471,7 @@ def delete_chat_session(session_id):
     )
     if not deleted:
         return jsonify({'success': False, 'error': 'chat_session_not_found'}), 404
+    SessionMemory.delete_for_session(session_id, db_path=db_path)
     return jsonify({'success': True})
 
 
@@ -503,6 +505,8 @@ def clear_conversation():
 
     # Delete only chat messages, preserve email and schedule history
     deleted_count = History.clear_all(action_type='chat', db_path=db_path, chat_session_id=chat_session_id)
+    if chat_session_id:
+        SessionMemory.delete_for_session(chat_session_id, db_path=db_path)
 
     return jsonify({
         'success': True,

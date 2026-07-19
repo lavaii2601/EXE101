@@ -75,16 +75,51 @@ class BobWorkflowTests(unittest.TestCase):
         self.assertEqual(75, self.orchestrator._limit_from_text("xem 75 hoat dong", maximum=100))
 
     def test_facebook_knowledge_question_is_not_mistaken_for_book_action(self):
-        self.assertFalse(self.orchestrator.has_actionable_hint("Nguoi sang lap Facebook la ai?"))
-        result = self.orchestrator.detect_workflow_with_ai(
-            "Nguoi sang lap Facebook la ai?",
-            ai_service=None,
+        questions = (
+            "Người sáng lập Facebook là ai?",
+            "Ai là chủ của Facebook?",
+            "Ai là chủ của Amazon?",
+            "Chủ của Booking.com là ai?",
+            "Who owns Eventbrite?",
+            "Ai sáng lập Gmail?",
+        )
+        for question in questions:
+            self.assertTrue(self.orchestrator.is_general_knowledge_question(question), question)
+            self.assertFalse(self.orchestrator.has_actionable_hint(question), question)
+            result = self.orchestrator.detect_workflow_with_ai(question, ai_service=None)
+            self.assertEqual("chat.freeform", result["intent"], question)
+            self.assertTrue(result.get("knowledge_question"), question)
+            self.assertFalse(result.get("requires_confirmation"), question)
+            self.assertNotIn("schedule", result.get("entities") or {}, question)
+
+    def test_ai_cannot_turn_company_owner_question_into_schedule_popup(self):
+        result = self.orchestrator._coerce_ai_result(
+            {
+                "intent": "schedule.create",
+                "confidence": 0.99,
+                "schedule": {"title": "Facebook", "start_time": "2026-07-21T09:00:00"},
+            },
+            "Ai là chủ Facebook?",
         )
         self.assertEqual("chat.freeform", result["intent"])
+        self.assertFalse(result["requires_confirmation"])
+        self.assertNotIn("schedule", result["entities"])
 
     def test_book_still_routes_a_real_calendar_request(self):
         result = self.orchestrator.detect("Book a meeting tomorrow at 3pm")
         self.assertEqual("schedule.create", result["intent"])
+
+    def test_checklist_preserves_clock_colons_activity_names_and_time_order(self):
+        message = (
+            "hôm nay tôi có làm bài tập lúc 11:00 sáng, gym lúc 7:30 sáng, "
+            "nấu ăn lúc 9:00 sáng. hãy thêm vào checklist theo thứ tự giờ"
+        )
+        result = self.orchestrator.detect(message)
+        self.assertEqual("checklist.create", result["intent"])
+        self.assertEqual(
+            ["07:30 - gym", "09:00 - nấu ăn", "11:00 - làm bài tập"],
+            [item["title"] for item in result["entities"]["items"]],
+        )
 
 
 @unittest.skipIf(WebResearchService is None, "web research dependencies are not installed")
@@ -106,6 +141,28 @@ class BobWebResearchIntentTests(unittest.TestCase):
         self.assertTrue(self.service.should_research(
             "Nguoi sang lap Facebook la ai?",
             knowledge_gap=True,
+        ))
+
+    def test_freeform_questions_force_web_search_without_keyword(self):
+        questions = (
+            "Ai là chủ của Amazon?",
+            "Email marketing hoạt động như thế nào?",
+            "Giải thích điện toán lượng tử cho người mới",
+            "So sánh PostgreSQL và MySQL",
+        )
+        for question in questions:
+            self.assertTrue(
+                self.service.should_research(question, force_research=True),
+                question,
+            )
+
+    def test_forced_search_still_excludes_smalltalk_and_private_tasks(self):
+        self.assertFalse(self.service.should_research("Xin chào Bob", force_research=True))
+        self.assertFalse(self.service.should_research("Hôm nay mình thấy vui", force_research=True))
+        self.assertFalse(self.service.should_research(
+            "Tóm tắt email của tôi",
+            workspace_sources={"email"},
+            force_research=True,
         ))
 
 

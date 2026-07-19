@@ -18,6 +18,7 @@ from services.calendar_service import CalendarService
 from services.web_research_service import web_research_service
 from models.cache import Cache
 from models.history import History
+from models.session_memory import SessionMemory
 from models.schedule import Schedule, LOCAL_TZ
 from models.user import User
 from utils.user_context import get_user_token_file
@@ -36,6 +37,14 @@ from routes.schedule import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Marker line the freeform chat model can append to its reply to flag a
+# durable fact worth remembering for the rest of THIS session (see
+# _build_agent_system_prompt's memory instruction and
+# FreeformChatAgent.handle's extraction below). Stripped before the user
+# ever sees it.
+MEMORY_MARKER = "###MEMORY:"
+_MEMORY_LINE_RE = re.compile(r'(?im)^[ \t]*###MEMORY:[ \t]*(.+?)[ \t]*$')
 
 # Singleton ownership: chat.py imports these back instead of constructing its
 # own copies, so ai_service.last_provider_used etc. stay consistent across
@@ -976,7 +985,7 @@ def _learn_from_web_research_async(research_result, user_id, db_path=None):
     ).start()
 
 
-def _build_workspace_context(message, user_id, db_path):
+def _build_workspace_context(message, user_id, db_path, force_web_research=False):
     sources = _intent_sources(message)
     context_parts = []
     if 'email' in sources:
@@ -1002,6 +1011,7 @@ def _build_workspace_context(message, user_id, db_path):
             message,
             workspace_sources=sources,
             knowledge_gap=not knowledge_context,
+            force_research=force_web_research,
         )
     except Exception:
         logger.warning("Web research failed for user %s", user_id, exc_info=True)
@@ -1432,6 +1442,13 @@ def _build_agent_system_prompt(mode_prompt, agent_capabilities):
         "Do not invent senders, dates, deadlines, meetings, completed actions, or external facts. "
         "Classify useful information as meetings, deadlines, tasks, reminders, important information, or low priority. "
         "Keep responses concise, clear, action-focused, and include a next action when helpful. "
+        "SESSION MEMORY: after writing your reply, decide if this exchange revealed a durable fact worth "
+        "remembering for the rest of THIS chat session only -- e.g. the user's name, a deadline, a stated "
+        "preference, a constraint, or a decision they made. If so, append exactly one new line starting with "
+        f"'{MEMORY_MARKER}' followed by one short factual sentence (match the user's language), for example "
+        f"'{MEMORY_MARKER} Bài kiểm tra giữa kỳ của user là thứ Sáu tuần này.'. Add at most one such line, only "
+        "when something is genuinely worth remembering -- most replies should not have one. Never explain this "
+        "line to the user or mention that you're remembering something. "
         "Your trained capabilities are:\n"
         + _capability_prompt_lines(agent_capabilities)
     )
@@ -2350,7 +2367,10 @@ class FreeformChatAgent:
         # nor the AI classifier could match it to any tool in tool_catalog.
         # Say so explicitly instead of silently chatting as if nothing was
         # requested, so the user isn't left thinking an action happened.
-        if ctx.intent_result.get('intent') == 'chat.freeform' and intent_orchestrator.has_actionable_hint(ctx.user_message):
+        if (
+            ctx.intent_result.get('intent') == 'chat.freeform'
+            and intent_orchestrator.has_explicit_workspace_command(ctx.user_message)
+        ):
             response = (
                 "Mình chưa hiểu đây là yêu cầu thực hiện việc gì, hoặc việc này Bob chưa hỗ trợ. "
                 "Hiện Bob có thể giúp:\n"
@@ -2377,7 +2397,8 @@ class FreeformChatAgent:
             workspace_sources, workspace_context = _build_workspace_context(
                 ctx.user_message,
                 ctx.user_id,
-                ctx.db_path
+                ctx.db_path,
+                force_web_research=True,
             )
         except Exception:
             logger.exception("Failed to build workspace context for user %s", ctx.user_id)
@@ -2409,6 +2430,26 @@ class FreeformChatAgent:
                 )
             })
 
+        # Session-scoped memory: facts Bob auto-extracted earlier in THIS chat
+        # session (see MEMORY_MARKER below). Injected unconditionally -- unlike
+        # recent_history above, this must survive even on turns where
+        # workspace_context replaced the raw message window.
+        try:
+            remembered_facts = SessionMemory.list_for_session(ctx.user_id, ctx.chat_session_id, db_path=ctx.db_path)
+        except Exception:
+            remembered_facts = []
+            logger.exception("Failed to load session memory for session %s", ctx.chat_session_id)
+        if remembered_facts:
+            messages.append({
+                "role": "user",
+                "preserve_context": True,
+                "content": (
+                    "GHI NHỚ TỪ CÁC LƯỢT TRƯỚC TRONG PHIÊN CHAT NÀY (không phải dữ liệu workspace, "
+                    "chỉ là bối cảnh Bob đã tự ghi nhớ, có thể đã cũ):\n"
+                    + "\n".join(f"- {fact}" for fact in remembered_facts)
+                )
+            })
+
         messages.append({
             "role": "user",
             "content": ctx.user_message
@@ -2416,6 +2457,20 @@ class FreeformChatAgent:
 
         # Generate response
         response = ai_service.generate_response(messages, task=ctx.task, user_id=ctx.user_id)
+
+        # Pull out any session-memory fact the model flagged (see
+        # MEMORY_MARKER / the system prompt's SESSION MEMORY instruction),
+        # persist it, and strip the marker line before the user sees it.
+        try:
+            memory_matches = _MEMORY_LINE_RE.findall(response or '')
+            if memory_matches:
+                response = _MEMORY_LINE_RE.sub('', response).strip()
+                SessionMemory.remember(
+                    ctx.user_id, ctx.chat_session_id, memory_matches[0],
+                    source='auto', db_path=ctx.db_path,
+                )
+        except Exception:
+            logger.exception("Failed to extract session memory for session %s", ctx.chat_session_id)
 
         # Auto-detect schedule suggestion from AI response
         schedule_info = extract_schedule_from_response(response, ctx.user_message)

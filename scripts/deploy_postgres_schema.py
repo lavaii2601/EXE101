@@ -6,9 +6,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = PROJECT_ROOT / "database" / "postgres_schema.sql"
 MIGRATIONS_DIR = PROJECT_ROOT / "database" / "migrations"
-EMAIL_TRAINING_PATH = PROJECT_ROOT / "docs" / "bob-training" / "email-150-knowledge.json"
-EXPANDED_TRAINING_PATH = PROJECT_ROOT / "docs" / "bob-training" / "bob-200-expanded-contexts.json"
-STUDENT_PRIVACY_RESEARCH_PATH = PROJECT_ROOT / "docs" / "bob-training" / "bob-student-privacy-research.json"
+BOB_MODE_TRAINING_DIR = PROJECT_ROOT / "docs" / "bob-training" / "modes"
 
 
 def apply_sql_file(conn, path):
@@ -20,9 +18,8 @@ def apply_sql_file(conn, path):
 
 def import_bob_email_training():
     training_sets = [
-        (EMAIL_TRAINING_PATH, "email,gmail,bob,training", "bob-email-150"),
-        (EXPANDED_TRAINING_PATH, "expanded,bob,training", "bob-expanded-200"),
-        (STUDENT_PRIVACY_RESEARCH_PATH, "student,privacy,research,bob,training", "bob-student-privacy-research"),
+        (path, f"bob,training,mode,{path.stem}", f"bob-mode-v2-{path.stem}")
+        for path in sorted(BOB_MODE_TRAINING_DIR.glob("*.json"))
     ]
     existing_sets = [item for item in training_sets if item[0].exists()]
     if not existing_sets:

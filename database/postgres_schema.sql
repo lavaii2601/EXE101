@@ -316,6 +316,23 @@ CREATE TABLE IF NOT EXISTS history (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Short factual notes Bob auto-extracts during a chat session (name, deadline,
+-- preference, decision, ...) and re-injects into later turns of that *same*
+-- session. Scoped to chat_session_id on purpose -- distinct from the shared
+-- knowledge_documents table (cross-user product knowledge) and from the raw
+-- history log (last N messages); this is session-private working memory that
+-- outlives the raw message window used for prompt context.
+CREATE TABLE IF NOT EXISTS session_memory (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    chat_session_id UUID NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'auto',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT session_memory_source_check CHECK (source IN ('auto', 'user'))
+);
+
 -- Generic cache for current code paths that still cache composite payloads.
 CREATE TABLE IF NOT EXISTS cache (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -444,7 +461,6 @@ WHERE message.session_id = session.id
 CREATE INDEX IF NOT EXISTS idx_users_gmail_email ON users (gmail_email);
 CREATE INDEX IF NOT EXISTS idx_users_mode ON users (user_mode);
 
-CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_provider ON oauth_tokens (user_id, provider);
 CREATE INDEX IF NOT EXISTS idx_oauth_tokens_expires_at ON oauth_tokens (expires_at);
 
 CREATE INDEX IF NOT EXISTS idx_gmail_messages_user_date ON gmail_messages (user_id, gmail_date DESC);
@@ -452,19 +468,12 @@ CREATE INDEX IF NOT EXISTS idx_gmail_messages_user_unread ON gmail_messages (use
 CREATE INDEX IF NOT EXISTS idx_gmail_messages_user_tag ON gmail_messages (user_id, tag, gmail_date DESC);
 CREATE INDEX IF NOT EXISTS idx_gmail_messages_subject_search ON gmail_messages USING GIN (to_tsvector('simple', COALESCE(subject, '') || ' ' || COALESCE(snippet, '')));
 
-CREATE INDEX IF NOT EXISTS idx_gmail_attachments_message ON gmail_attachments (message_id);
-CREATE INDEX IF NOT EXISTS idx_email_summaries_user_message ON email_summaries (user_id, gmail_message_id);
-CREATE INDEX IF NOT EXISTS idx_email_daily_reports_user_date ON email_daily_reports (user_id, report_date DESC);
-
 CREATE INDEX IF NOT EXISTS idx_schedules_user_start ON schedules (user_id, start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_schedules_user_status ON schedules (user_id, status, start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_schedules_calendar_event ON schedules (user_id, calendar_event_id) WHERE calendar_event_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_calendar_events_user_start ON calendar_events (user_id, start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_calendar_events_external ON calendar_events (user_id, provider, external_event_id);
-CREATE INDEX IF NOT EXISTS idx_calendar_events_user_etag ON calendar_events (user_id, provider, external_event_id, etag);
-CREATE INDEX IF NOT EXISTS idx_calendar_events_google_updated ON calendar_events (user_id, google_updated_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_meeting_suggestions_user_status ON meeting_suggestions (user_id, status, COALESCE(start_time, created_at));
 CREATE INDEX IF NOT EXISTS idx_meeting_suggestions_schedule ON meeting_suggestions (schedule_id);
 
@@ -478,10 +487,9 @@ CREATE INDEX IF NOT EXISTS idx_history_user_created ON history (user_id, created
 CREATE INDEX IF NOT EXISTS idx_history_user_action ON history (user_id, action_type, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_history_chat_session ON history (chat_session_id);
 
-CREATE INDEX IF NOT EXISTS idx_cache_user_key ON cache (user_id, key);
-CREATE INDEX IF NOT EXISTS idx_cache_namespace ON cache (namespace, expires_at);
-CREATE INDEX IF NOT EXISTS idx_cache_expires_at ON cache (expires_at);
-CREATE INDEX IF NOT EXISTS idx_cache_value_gin ON cache USING GIN (value);
+CREATE INDEX IF NOT EXISTS idx_session_memory_session ON session_memory (chat_session_id, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_cache_user_expires ON cache (user_id, expires_at);
 
 CREATE INDEX IF NOT EXISTS idx_ai_requests_user_created ON ai_requests (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_requests_provider_task ON ai_requests (provider, task, created_at DESC);
@@ -489,10 +497,10 @@ CREATE INDEX IF NOT EXISTS idx_ai_requests_provider_task ON ai_requests (provide
 CREATE INDEX IF NOT EXISTS idx_sync_jobs_user_type_status ON sync_jobs (user_id, job_type, status, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_documents_created ON knowledge_documents (created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_knowledge_documents_user ON knowledge_documents (user_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_documents_user_created ON knowledge_documents (user_id, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_intent_patterns_status ON intent_patterns (status);
 CREATE INDEX IF NOT EXISTS idx_intent_patterns_created ON intent_patterns (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_intent_patterns_status_created ON intent_patterns (status, created_at DESC);
 
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$

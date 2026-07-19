@@ -33,7 +33,7 @@ const tabs = [
   { key: 'settings', icon: 'settings-outline',    label: ['Cài đặt', 'Settings'] },
 ];
 
-const NEW_MAIL_POLL_INTERVAL_MS = 90000;
+const NEW_MAIL_POLL_INTERVAL_MS = 5000;
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -140,6 +140,7 @@ function AppShell() {
           id: data.latest_id,
           sender: String(data.latest_sender || '').split('<')[0].trim(),
           subject: String(data.latest_subject || '').trim(),
+          meetingSuggestion: data.meeting_suggestion || null,
         });
         dismissLater();
       } catch (error) {
@@ -227,7 +228,7 @@ function AppShell() {
 
   const renderScreen = () => {
     if (activeTab === 'overview') return <OverviewScreen onAgentSync={handleAgentSync} syncEvent={syncEvent} />;
-    if (activeTab === 'emails')   return <EmailScreen userMode={userMode || 'worker'} onAuthChanged={refreshShell} onAgentSync={handleAgentSync} syncEvent={syncEvent} />;
+    if (activeTab === 'emails')   return <EmailScreen userMode={userMode || 'worker'} onAuthChanged={refreshShell} onAgentSync={handleAgentSync} onNavigate={setActiveTab} syncEvent={syncEvent} />;
     if (activeTab === 'schedule') return <ScheduleScreen onAgentSync={handleAgentSync} syncEvent={syncEvent} />;
     if (activeTab === 'history')  return <HistoryScreen syncEvent={syncEvent} />;
     if (activeTab === 'settings') return (
@@ -287,7 +288,11 @@ function AppShell() {
               <Ionicons name="mail-unread-outline" size={21} color="#FFFFFF" />
             </View>
             <View style={styles.mailNoticeBody}>
-              <Text style={styles.mailNoticeTitle}>{t('Bob phát hiện email mới', 'Bob spotted new mail')}</Text>
+              <Text style={styles.mailNoticeTitle}>
+                {newMailNotice.meetingSuggestion
+                  ? t('Bob phát hiện một lịch hẹn', 'Bob found an appointment')
+                  : t('Bob phát hiện email mới', 'Bob spotted new mail')}
+              </Text>
               <Text style={styles.mailNoticeText} numberOfLines={2}>
                 {[newMailNotice.sender, newMailNotice.subject].filter(Boolean).join(' — ')
                   || t('Bạn vừa nhận được một email mới.', 'You just received a new email.')}
@@ -296,7 +301,10 @@ function AppShell() {
             <TouchableOpacity
               style={styles.mailNoticeAction}
               onPress={() => {
-                setActiveTab('emails');
+                setActiveTab(newMailNotice.meetingSuggestion ? 'schedule' : 'emails');
+                if (newMailNotice.meetingSuggestion) {
+                  handleAgentSync(['email', 'schedule', 'overview']);
+                }
                 setNewMailNotice(null);
               }}
             >

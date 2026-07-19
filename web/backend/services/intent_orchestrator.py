@@ -63,6 +63,22 @@ class IntentOrchestrator:
         "teacher": "Teacher",
     }
 
+    _KNOWLEDGE_QUESTION_RE = re.compile(
+        r"^(?:ai\s+(?:la|so huu|sang lap|tao ra|dieu hanh)|"
+        r"(?:chu|nguoi sang lap|nha sang lap|ceo)\s+(?:cua\s+)?|"
+        r"lich su\s+(?:cua\s+)?|"
+        r"who\s+(?:is|owns|owned|founded|created|runs|leads)|"
+        r"what\s+is\s+the\s+(?:owner|founder|history)\s+of)",
+        re.IGNORECASE,
+    )
+    _EXPLICIT_WORKSPACE_COMMANDS = (
+        "tao lich", "dat lich", "them lich", "xep lich", "nhac toi",
+        "schedule", "book a meeting", "book an appointment", "remind me",
+        "them vao checklist", "dua vao checklist", "create a checklist",
+        "tim email", "kiem email", "search email", "find email",
+        "danh dau email", "mark email", "doi che do", "change mode",
+    )
+
     def detect(self, message):
         text = self.normalize(message)
         entities = {}
@@ -70,6 +86,20 @@ class IntentOrchestrator:
         confidence = 0.35
         requires_confirmation = False
         refresh_targets = []
+
+        # General knowledge questions must be resolved before keyword-based
+        # workspace routing. This blocks names such as Facebook (contains
+        # "book"), Eventbrite (contains "event") or Gmail from becoming a
+        # calendar/email action when the user merely asks who owns/founded it.
+        if self.is_general_knowledge_question(message):
+            return {
+                "intent": intent,
+                "confidence": 0.98,
+                "entities": entities,
+                "requires_confirmation": requires_confirmation,
+                "refresh_targets": refresh_targets,
+                "knowledge_question": True,
+            }
 
         if self._is_latest_email_summary(text):
             intent = "email.latest_summary"
@@ -195,8 +225,19 @@ class IntentOrchestrator:
         "dung noi ro 'goi y lich' -- ho muon AI xep gio cu the cho tung hoat dong, khong chi liet "
         "ke thanh danh sach viec).\n"
         "- 'Ban nghi gi ve lam viec tu xa' => chat.freeform (khong khop muc nao tren).\n"
+        "- 'Hom nay toi co gym luc 7:30 sang, nau an luc 9:00 sang, lam bai tap luc 11:00 "
+        "sang. Them vao checklist theo thu tu gio' => checklist.create; checklist_items="
+        "[{title:'07:30 - Gym',priority:'normal'},{title:'09:00 - Nau an',priority:'normal'},"
+        "{title:'11:00 - Lam bai tap',priority:'normal'}] (dau ':' trong 7:30 la mot phan cua "
+        "GIO, TUYET DOI khong dung no de tach cau; giu du ten hoat dong va sap tang dan theo gio).\n"
         "- 'Nguoi sang lap Facebook la ai?' => chat.freeform (day la cau hoi kien thuc; "
         "chuoi 'book' nam ben trong ten rieng 'Facebook' KHONG co nghia la dat lich).\n"
+        "- 'Ai la chu cua Amazon?' => chat.freeform (hoi kien thuc ve cong ty, KHONG phai "
+        "email, checklist hay lich).\n"
+        "- 'Who owns Booking.com?' => chat.freeform (Booking.com la ten rieng; 'book' ben "
+        "trong ten KHONG phai lenh dat lich).\n"
+        "- 'Ai sang lap Gmail?' => chat.freeform (Gmail la doi tuong cua cau hoi kien thuc, "
+        "KHONG phai yeu cau tim email).\n"
         "- 'Book a meeting tomorrow at 3pm' => schedule.create (o day 'book' la dong tu hanh "
         "dong va co doi tuong meeting + thoi gian ro rang).\n"
         "- (Vi du bang TIENG ANH, ap dung CACH suy luan giong het cac vi du tieng Viet o tren) "
@@ -354,6 +395,8 @@ class IntentOrchestrator:
     )
 
     def has_actionable_hint(self, message):
+        if self.is_general_knowledge_question(message):
+            return False
         text = self.normalize(message)
         # Match complete words/phrases. A substring check makes English action
         # hints dangerously noisy: for example, ``book`` also occurs inside
@@ -367,6 +410,18 @@ class IntentOrchestrator:
         ):
             return True
         return bool(self.TIME_HINT_PATTERN.search(text))
+
+    def is_general_knowledge_question(self, message):
+        text = self.normalize(message).strip(" .?!,;:")
+        if not self._KNOWLEDGE_QUESTION_RE.search(text):
+            return False
+        return not self._contains_word(text, self._EXPLICIT_WORKSPACE_COMMANDS)
+
+    def has_explicit_workspace_command(self, message):
+        """True only for an actual command, not a question that merely
+        mentions words such as email, calendar, book, event or history."""
+        text = self.normalize(message)
+        return self._contains_word(text, self._EXPLICIT_WORKSPACE_COMMANDS)
 
     def detect_with_ai(self, message, ai_service, user_id=None, db_path=None,
                         chat_session_id=None, confidence_threshold=0.6):
@@ -693,7 +748,7 @@ class IntentOrchestrator:
             '  "email_query": {"sender": "", "keyword": "", "unread_only": false},\n'
             '  "history_limit": <1-100>,\n'
             '  "mode": "<student|worker|freelancer|creator|business|mentor|teacher hoac null>",\n'
-            '  "checklist_items": [{"title": "<viec 1>", "priority": "high|normal|low"}, "..."]\n'
+            '  "checklist_items": [{"title": "<viec 1>", "time": "HH:MM hoac null", "priority": "high|normal|low"}, "..."]\n'
             "}\n"
             "Chi dien cac truong lien quan toi intent da chon, cac truong khac de null/bo qua. "
             "Neu intent la checklist.create, BAT BUOC dien checklist_items la danh sach NGAN GON "
@@ -702,6 +757,8 @@ class IntentOrchestrator:
             "minh co', 'dua vao checklist giup minh'). Voi moi viec, dat priority='high' neu nguoi "
             "dung noi viec do gap/khan cap/quan trong/co han gan, priority='low' neu nguoi dung noi "
             "khong gap/ranh thi lam/khong uu tien, con lai dung priority='normal'.\n"
+            "Neu tung viec co gio cu the, BAT BUOC giu gio trong truong time theo HH:MM, KHONG tach "
+            "dau hai cham trong 7:30/09:00 nhu dau phan cach. Sap checklist_items tang dan theo time.\n"
             "Neu intent la schedule.create, BAT BUOC tinh start_time tuyet doi (ngay+gio cu the) "
             "dua vao THOI DIEM HIEN TAI o tren khi cau co nhac thoi gian (vd 'chieu mai', "
             "'thu 5 tuan sau', 'trong 2 tieng nua'). Voi schedule.create, neu cau nhan co danh "
@@ -743,6 +800,20 @@ class IntentOrchestrator:
         intent = str(data.get("intent") or "").strip()
         if intent not in self.AI_INTENTS:
             return None
+
+        # Safety net against an over-eager provider returning schedule.create
+        # for a factual question whose company/product name resembles a tool
+        # keyword. Knowledge questions never produce confirmation cards.
+        if self.is_general_knowledge_question(message):
+            return {
+                "intent": "chat.freeform",
+                "confidence": 0.98,
+                "entities": {},
+                "requires_confirmation": False,
+                "refresh_targets": [],
+                "ai_assisted": True,
+                "knowledge_question": True,
+            }
 
         try:
             confidence = float(data.get("confidence", 0.6))
@@ -821,16 +892,26 @@ class IntentOrchestrator:
                     if isinstance(raw_item, dict):
                         title = str(raw_item.get("title") or "").strip()[:240]
                         priority = str(raw_item.get("priority") or "normal").strip().lower()
+                        time_value = str(raw_item.get("time") or "").strip()
                     else:
                         title = str(raw_item or "").strip()[:240]
                         priority = "normal"
+                        time_value = ""
                     if not title:
                         continue
                     if priority not in ("high", "normal", "low"):
                         priority = "normal"
-                    items.append({"title": title, "priority": priority})
+                    time_match = re.fullmatch(r"([01]?\d|2[0-3]):([0-5]\d)", time_value)
+                    normalized_time = (
+                        f"{int(time_match.group(1)):02d}:{int(time_match.group(2)):02d}"
+                        if time_match else ""
+                    )
+                    if normalized_time and not title.startswith(normalized_time):
+                        title = f"{normalized_time} - {title}"
+                    items.append({"title": title, "priority": priority, "time": normalized_time})
             if not items:
                 return None
+            items.sort(key=lambda item: (item["time"] == "", item["time"] or "99:99"))
             entities["items"] = items[:50]
             refresh_targets = ["overview", "history"]
         elif intent == "schedule.suggest_plan":
@@ -1293,17 +1374,30 @@ class IntentOrchestrator:
         gap: X, Y, Z', where it's stated once for the whole list) -- but
         never let a message-wide 'gap' override an item that explicitly
         said it's low priority, or vice versa."""
-        from routes.schedule import _split_day_plan_entries
+        from routes.schedule import _extract_quick_time, _split_day_plan_entries
         entries = _split_day_plan_entries(message)
         priorities = [self._checklist_item_priority(entry["title"]) for entry in entries]
         if entries and all(priority == "normal" for priority in priorities):
             message_priority = self._checklist_item_priority(message)
             if message_priority != "normal":
                 priorities = [message_priority] * len(entries)
-        return [
-            {"title": entry["title"], "priority": priority}
-            for entry, priority in zip(entries, priorities)
-        ]
+        items = []
+        for index, (entry, priority) in enumerate(zip(entries, priorities)):
+            clock, explicit_time = _extract_quick_time(entry.get("raw") or entry["title"])
+            time_value = clock.strftime("%H:%M") if explicit_time and clock else ""
+            title = entry["title"]
+            if time_value:
+                title = f"{time_value} - {title}"
+            items.append({
+                "title": title,
+                "priority": priority,
+                "time": time_value,
+                "_input_order": index,
+            })
+        items.sort(key=lambda item: (item["time"] == "", item["time"] or "99:99", item["_input_order"]))
+        for item in items:
+            item.pop("_input_order", None)
+        return items
 
     def _is_mode_update(self, text):
         if not any(term in text for term in ("doi che do", "chuyen che do", "set mode", "mode", "che do lam viec")):

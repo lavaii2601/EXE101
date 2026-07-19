@@ -35,7 +35,7 @@ const modes = [
   { label: 'Soạn thư', value: 'compose' },
 ];
 
-export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, userMode = 'worker' }) {
+export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, syncEvent, userMode = 'worker' }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -59,6 +59,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
   const [cacheMiss, setCacheMiss] = useState(false);
   const [scanningGmail, setScanningGmail] = useState(false);
   const [calendarPermissionAttempted, setCalendarPermissionAttempted] = useState(false);
+  const [meetingSuggestions, setMeetingSuggestions] = useState([]);
 
   const loadAuth = useCallback(async () => {
     try {
@@ -126,16 +127,28 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
       return;
     }
     await loadEmails({ fresh: true });
-    apiPost('/email/meeting-suggestions/scan').catch(() => {});
+    apiPost('/email/meeting-suggestions/scan')
+      .then((data) => setMeetingSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []))
+      .catch(() => {});
   }, [loadEmails]);
 
-  useEffect(() => { loadEmails(); }, [loadEmails]);
+  const loadMeetingSuggestions = useCallback(async () => {
+    try {
+      const data = await apiGet('/email/meeting-suggestions');
+      setMeetingSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []);
+    } catch (error) {
+      if (error.status !== 401) console.warn('Meeting suggestions failed:', error);
+    }
+  }, []);
+
+  useEffect(() => { loadEmails(); loadMeetingSuggestions(); }, [loadEmails, loadMeetingSuggestions]);
   useEffect(() => {
     if (!syncEvent?.id) return;
     if (hasSyncTarget(syncEvent, ['email', 'profile', 'settings'])) {
       loadEmails({ fresh: hasSyncTarget(syncEvent, ['email']) });
+      loadMeetingSuggestions();
     }
-  }, [loadEmails, syncEvent]);
+  }, [loadEmails, loadMeetingSuggestions, syncEvent]);
   useEffect(() => {
     const timer = setTimeout(() => setSearchKeyword(searchInput.trim()), 350);
     return () => clearTimeout(timer);
@@ -473,6 +486,25 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, syncEvent, use
             { value: emails.filter((email) => email.provider === 'outlook').length, label: 'Outlook' },
           ]}
         />
+        {meetingSuggestions.length > 0 ? (
+          <TouchableOpacity
+            style={styles.meetingBanner}
+            activeOpacity={0.86}
+            onPress={() => {
+              onAgentSync?.(['email', 'schedule', 'overview']);
+              onNavigate?.('schedule');
+            }}
+          >
+            <Text style={styles.meetingBannerIcon}>📅</Text>
+            <View style={styles.meetingBannerBody}>
+              <Text style={styles.meetingBannerTitle}>Bob phát hiện lịch hẹn trong email</Text>
+              <Text style={styles.meetingBannerText} numberOfLines={2}>
+                {meetingSuggestions.length} gợi ý đang chờ · Chạm để kiểm tra và tạo lịch
+              </Text>
+            </View>
+            <Text style={styles.meetingBannerArrow}>›</Text>
+          </TouchableOpacity>
+        ) : null}
         <SegmentedControl options={modes} value={mode} onChange={setMode} />
         {mode === 'compose' ? renderCompose() : mode === 'report' ? renderReport() : renderInbox()}
       </Screen>
@@ -633,5 +665,21 @@ function makeStyles(colors) {
       fontFamily: 'Poppins_600SemiBold',
       fontSize: 13,
     },
+    meetingBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      padding: 14,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: `${colors.primary}55`,
+      backgroundColor: colors.primarySoft,
+      ...colors.shadow,
+    },
+    meetingBannerIcon: { fontSize: 28 },
+    meetingBannerBody: { flex: 1, minWidth: 0 },
+    meetingBannerTitle: { color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 13 },
+    meetingBannerText: { marginTop: 2, color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 11 },
+    meetingBannerArrow: { color: colors.primary, fontFamily: 'Poppins_700Bold', fontSize: 28 },
   });
 }

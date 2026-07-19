@@ -7937,6 +7937,31 @@ body.dark-theme .schedule-source-badge.local-unsynced {
     }
 }
 
+.email-meeting-banner {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+    padding: 14px 16px;
+    border: 1px solid rgba(108, 99, 255, 0.30);
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(108, 99, 255, 0.14), rgba(85, 190, 254, 0.10));
+    box-shadow: 0 12px 28px rgba(108, 99, 255, 0.12);
+}
+
+.email-meeting-banner[hidden] { display: none; }
+.email-meeting-banner-icon { font-size: 28px; filter: drop-shadow(0 5px 8px rgba(108, 99, 255, 0.25)); }
+.email-meeting-banner strong,
+.email-meeting-banner span { display: block; }
+.email-meeting-banner strong { color: var(--text); font-size: 14px; }
+.email-meeting-banner div > span { margin-top: 2px; color: var(--text-secondary); font-size: 12px; }
+
+@media (max-width: 560px) {
+    .email-meeting-banner { grid-template-columns: auto minmax(0, 1fr); }
+    .email-meeting-banner button { grid-column: 1 / -1; width: 100%; }
+}
+
 /* Unified FlowMate UI — shared visual language with the Android app. */
 .brand-mark {
     border-radius: 13px;

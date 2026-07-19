@@ -86,6 +86,13 @@ class WebResearchService:
         r'^(ok|oke|okay|uh|um|da|vang)$',
         r'^ban\s+khoe\s+khong\??$',
     ))
+    _INFORMATION_REQUEST_TERMS = (
+        'ai ', ' la ai', 'gi la', ' la gi', 'tai sao', 'vi sao', 'the nao',
+        'bao nhieu', 'o dau', 'khi nao', 'giai thich', 'so sanh',
+        'cho toi biet', 'cho minh biet', 'tim hieu',
+        'what ', 'who ', 'why ', 'how ', 'where ', 'when ', 'which ',
+        'explain', 'compare', 'tell me about', 'information about',
+    )
 
     def __init__(self):
         self.session = requests.Session()
@@ -93,7 +100,13 @@ class WebResearchService:
     def _looks_like_smalltalk(self, normalized_stripped):
         return any(pattern.match(normalized_stripped) for pattern in self._SMALLTALK_PATTERNS)
 
-    def should_research(self, message, workspace_sources=None, knowledge_gap=False):
+    def _looks_like_information_request(self, normalized_stripped, original_message=''):
+        return (
+            str(original_message or '').strip().endswith('?')
+            or any(term in normalized_stripped for term in self._INFORMATION_REQUEST_TERMS)
+        )
+
+    def should_research(self, message, workspace_sources=None, knowledge_gap=False, force_research=False):
         if not getattr(Config, 'WEB_RESEARCH_ENABLED', True):
             return False
 
@@ -107,13 +120,25 @@ class WebResearchService:
         current_info = any(term in normalized for term in self._CURRENT_INFO_TERMS)
         search_command = any(term in normalized for term in self._SEARCH_COMMAND_TERMS)
         private_workspace = bool(sources & self._PRIVATE_WORKSPACE_SOURCES)
+        information_request = self._looks_like_information_request(stripped, message)
 
         # Do not send private workspace tasks to the public web unless the
         # user explicitly asks Bob to go online for that turn.
         if private_workspace and not explicit_web:
             return False
 
-        if explicit_web or search_command or current_info:
+        # A freeform question fell outside Bob's workspace tools. Search the
+        # public web by default instead of answering "unsupported" or relying
+        # on possibly unrelated local RAG context. Greetings and acknowledgments
+        # remain local so ordinary conversation does not create web traffic.
+        if (
+            force_research
+            and not self._looks_like_smalltalk(stripped)
+            and information_request
+        ):
+            return True
+
+        if explicit_web or search_command or (current_info and information_request):
             return True
 
         # Bob's own knowledge base (docs/bob-training + auto-learned memory)
@@ -121,13 +146,18 @@ class WebResearchService:
         # Bob wasn't trained on" case, so fall back to a public web lookup
         # instead of guessing/hallucinating, unless this just looks like
         # small talk that never needed an answer from anywhere.
-        if knowledge_gap and not self._looks_like_smalltalk(stripped):
+        if knowledge_gap and information_request and not self._looks_like_smalltalk(stripped):
             return True
 
         return False
 
-    def research(self, message, workspace_sources=None, knowledge_gap=False):
-        if not self.should_research(message, workspace_sources=workspace_sources, knowledge_gap=knowledge_gap):
+    def research(self, message, workspace_sources=None, knowledge_gap=False, force_research=False):
+        if not self.should_research(
+            message,
+            workspace_sources=workspace_sources,
+            knowledge_gap=knowledge_gap,
+            force_research=force_research,
+        ):
             return {'query': '', 'results': [], 'context': ''}
 
         query = self._build_query(message)

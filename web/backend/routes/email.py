@@ -320,6 +320,10 @@ def _parse_email_base_date(email):
 
 
 def _extract_weekday_date(normalized_text, base_date):
+    if re.search(r'\b(?:ngay mai|tomorrow)\b', normalized_text):
+        return base_date + timedelta(days=1)
+    if re.search(r'\b(?:hom nay|today)\b', normalized_text):
+        return base_date
     weekday_patterns = [
         (0, r'\bthu\s*(?:2|hai)\b'),
         (1, r'\bthu\s*(?:3|ba)\b'),
@@ -426,10 +430,17 @@ def _extract_meeting_suggestion(email):
 
     direct_terms = [
         'cuoc hop', 'cuoc hen', 'hop luc', 'lich hen', 'hen gap', 'gap mat',
-        'meeting', 'appointment',
+        'moi hop', 'thu moi hop', 'moi tham gia', 'buoi trao doi', 'buoi phong van',
+        'meeting', 'appointment', 'meeting invitation', 'calendar invite',
+        'can we meet', 'could we meet', 'let us meet', "let's meet", 'interview',
+        'demo call', 'review call', 'consultation', 'sync call',
         'google meet', 'zoom', 'microsoft teams', 'book slot', 'booked',
     ]
-    schedule_terms = ['schedule', 'calendar', 'dat lich', 'xep lich', 'time slot']
+    schedule_terms = [
+        'schedule', 'calendar', 'dat lich', 'xep lich', 'time slot',
+        'khung gio', 'thoi gian phu hop', 'available time', 'availability',
+        'propose a time', 'suggest a time',
+    ]
     deadline_terms = [
         'deadline', 'due date', 'due by', 'due on', 'submit by', 'submission',
         'han chot', 'han nop', 'han cuoi', 'den han', 'ngay nop', 'nop bai',
@@ -639,9 +650,12 @@ def _store_meeting_suggestions(emails, db_path):
 
 def _prune_existing_meeting_suggestions(db_path):
     schedule_index = _load_schedule_match_index(db_path)
-    if not schedule_index:
-        return []
     pending = MeetingSuggestion.get_pending(db_path=db_path)
+    if not schedule_index:
+        # With no existing schedules there is nothing to de-duplicate against.
+        # Returning [] here used to hide every valid email suggestion from a
+        # brand-new user or an empty calendar.
+        return pending
     visible = []
     for suggestion in pending:
         if _meeting_suggestion_exists_in_schedule(suggestion, schedule_index):
@@ -1128,7 +1142,7 @@ def get_unread_emails():
         return jsonify({'error': str(e), 'error_type': type(e).__name__}), 500
 
 
-NEW_MAIL_CHECK_CACHE_TTL = 45
+NEW_MAIL_CHECK_CACHE_TTL = 2
 
 
 def _new_mail_check_cache_key(user_id):
@@ -1170,6 +1184,13 @@ def new_mail_check():
             if details:
                 payload['latest_subject'] = details.get('subject', '')
                 payload['latest_sender'] = details.get('sender', '')
+                detected = _store_meeting_suggestions([details], db_path)
+                matching = next(
+                    (item for item in detected if item.get('email_id') == latest_id),
+                    None,
+                )
+                if matching:
+                    payload['meeting_suggestion'] = matching
 
         Cache.set(cache_key, payload, ttl=NEW_MAIL_CHECK_CACHE_TTL, db_path=db_path)
         return jsonify({'success': True, **payload})

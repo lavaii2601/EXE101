@@ -49,7 +49,10 @@ let activeChatSessionTitle = localStorage.getItem('flowmate-active-chat-title') 
 let agentProfile = null;
 let newMailPollTimer = null;
 let lastSeenMailId = localStorage.getItem('flowmate-last-mail-id') || null;
-const NEW_MAIL_POLL_INTERVAL_MS = 90000;
+// Gmail push should be configured in production for true server-side push.
+// This short watcher is the resilient foreground fallback and feels instant
+// even when Pub/Sub is unavailable or the browser just resumed.
+const NEW_MAIL_POLL_INTERVAL_MS = 5000;
 
 function createChatSessionId() {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -2406,17 +2409,22 @@ function showNewMailPopup(mailInfo) {
     const detail = sender || subject
         ? `${sender || ui('người gửi ẩn danh', 'an unknown sender')}${subject ? ` — "${subject}"` : ''}`
         : '';
-    const message = detail
+    const hasMeetingSuggestion = !!mailInfo.meeting_suggestion;
+    const message = hasMeetingSuggestion
+        ? ui(`📅 Bob phát hiện một lịch hẹn trong email mới${detail ? ` từ ${detail}` : ''}`, `📅 Bob found an appointment in new mail${detail ? ` from ${detail}` : ''}`)
+        : detail
         ? ui(`📬 Bob vừa phát hiện email mới từ ${detail}`, `📬 Bob just spotted new mail from ${detail}`)
         : ui('📬 Bob vừa phát hiện bạn có email mới', '📬 Bob just spotted new mail for you');
 
     showNotification(message, 'mail', {
         autoDismissMs: 8000,
-        actionLabel: ui('Xem email', 'View email'),
+        actionLabel: hasMeetingSuggestion ? ui('Xem gợi ý', 'View suggestion') : ui('Xem email', 'View email'),
         onAction: () => {
-            const emailsNavBtn = document.querySelector('[data-page="emails"]');
-            if (emailsNavBtn) handlePageChange(emailsNavBtn);
-            refreshEmailsFromGmail().catch(() => { /* ignore */ });
+            const target = hasMeetingSuggestion ? 'schedule' : 'emails';
+            const navBtn = document.querySelector(`[data-page="${target}"]`);
+            if (navBtn) handlePageChange(navBtn);
+            if (hasMeetingSuggestion) loadMeetingSuggestions().catch(() => {});
+            else refreshEmailsFromGmail().catch(() => {});
         }
     });
 }
@@ -2440,6 +2448,9 @@ async function checkForNewMail() {
 
         if (!isFirstCheck && data.unread_count > 0) {
             showNewMailPopup(data);
+            if (data.meeting_suggestion) {
+                loadMeetingSuggestions().catch(() => {});
+            }
         }
     } catch (err) {
         console.warn('New mail check failed:', err);
@@ -4996,6 +5007,23 @@ async function loadMeetingSuggestions() {
     }
 
     const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+    const emailBanner = document.getElementById('emailMeetingSuggestionBanner');
+    const emailBannerText = document.getElementById('emailMeetingBannerText');
+    const emailBannerButton = document.getElementById('openEmailMeetingSuggestionsBtn');
+    if (emailBanner) emailBanner.hidden = suggestions.length === 0;
+    if (emailBannerText && suggestions.length) {
+        emailBannerText.textContent = ui(
+            `${suggestions.length} email có thể tạo thành lịch. Bob đang chờ bạn xác nhận.`,
+            `${suggestions.length} email may become calendar events. Bob is waiting for confirmation.`
+        );
+    }
+    if (emailBannerButton) {
+        emailBannerButton.onclick = async () => {
+            const scheduleNav = document.querySelector('[data-page="schedule"]');
+            if (scheduleNav) await handlePageChange(scheduleNav);
+            document.getElementById('emailMeetingSuggestions')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+    }
     section.hidden = suggestions.length === 0;
     count.textContent = String(suggestions.length);
     list.innerHTML = '';

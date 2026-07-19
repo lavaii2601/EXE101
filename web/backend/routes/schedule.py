@@ -371,8 +371,18 @@ def _split_day_plan_entries(text):
     if not raw:
         return []
 
-    if ':' in raw:
-        raw = raw.split(':', 1)[1]
+    # Only strip a colon that introduces a list ("các việc sau: A, B").
+    # Never split on the first arbitrary colon: in "gym lúc 7:30 sáng" that
+    # colon belongs to the clock and stripping it turns the item into
+    # "30 sáng".
+    list_intro = re.match(
+        r'^.{0,100}?\b(?:gồm|gom|như|nhu|sau|các việc|cac viec|những việc|nhung viec|'
+        r'các hoạt động|cac hoat dong|activities|tasks|checklist)\s*:\s*',
+        raw,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if list_intro:
+        raw = raw[list_intro.end():]
     # Remove an explicit planning command from the beginning so it is not
     # accidentally kept as part of the first activity title.
     raw = re.sub(
