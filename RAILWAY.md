@@ -46,6 +46,12 @@ On each deploy, `python scripts/deploy_postgres_schema.py` runs first. It is
 idempotent: existing tables/data are preserved, and only missing schema pieces
 or safe migrations are applied.
 
+Bob's large knowledge corpus is intentionally not re-imported on every web
+startup, because doing so keeps Gunicorn offline and causes temporary 502s.
+For a dedicated training deployment, temporarily set
+`IMPORT_BOB_TRAINING_ON_DEPLOY=true`; remove or disable it again after the
+import completes.
+
 To verify the deployed service can see the variables, open:
 
 ```text
