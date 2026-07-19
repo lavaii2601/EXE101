@@ -1308,7 +1308,13 @@ class IntentOrchestrator:
             "do i have", "what's on my", "whats on my", "what do i have",
         ))
         has_schedule_word = self._contains_word(text, self._SCHEDULE_WORDS + ("schedule",))
-        return has_question and has_schedule_word
+        if has_question and has_schedule_word:
+            return True
+        # A schedule word paired with an explicit date ("lich va su kien
+        # 20/7", "lich hen ngay 20 thang 7") is a lookup -- create/update/
+        # delete already matched earlier in detect()'s cascade and return
+        # before this rule runs, so an action verb can't be present here.
+        return has_schedule_word and self._explicit_date_from_text(text) is not None
 
     def _is_email_mark_read(self, text):
         if not any(term in text for term in ("danh dau", "mark")):
@@ -1420,6 +1426,9 @@ class IntentOrchestrator:
     def _calendar_window(self, text):
         now = datetime.now()
         monday = (now - timedelta(days=now.weekday())).date()
+        explicit = self._explicit_date_from_text(text)
+        if explicit:
+            return {"label": "specific_date", "start": explicit.isoformat(), "end": explicit.isoformat()}
         if "tuan toi" in text or "tuan sau" in text or "next week" in text:
             start = monday + timedelta(days=7)
             end = start + timedelta(days=6)
@@ -1460,20 +1469,48 @@ class IntentOrchestrator:
 
     @staticmethod
     def _explicit_date_from_text(text):
+        # Vietnamese natural date ("ngay 20 thang 7", optionally "nam 2026")
+        # checked first -- it has its own unambiguous keywords, so it can't
+        # collide with the numeric patterns below.
+        match = re.search(r"\bngay\s+(\d{1,2})\s+thang\s+(\d{1,2})(?:\s+nam\s+(\d{4}))?\b", text)
+        if match:
+            day, month = int(match.group(1)), int(match.group(2))
+            year = int(match.group(3)) if match.group(3) else datetime.now().year
+            try:
+                return datetime(year, month, day).date()
+            except ValueError:
+                return None
+
         match = re.search(r"\b(\d{1,4})[/-](\d{1,2})[/-](\d{1,4})\b", text)
-        if not match:
-            return None
-        first, second, third = match.groups()
-        try:
-            if len(first) == 4:
-                year, month, day = int(first), int(second), int(third)
-            else:
-                day, month, year = int(first), int(second), int(third)
-                if year < 100:
-                    year += 2000
-            return datetime(year, month, day).date()
-        except ValueError:
-            return None
+        if match:
+            first, second, third = match.groups()
+            try:
+                if len(first) == 4:
+                    year, month, day = int(first), int(second), int(third)
+                else:
+                    day, month, year = int(first), int(second), int(third)
+                    if year < 100:
+                        year += 2000
+                return datetime(year, month, day).date()
+            except ValueError:
+                return None
+
+        # Bare "D/M" with no year (e.g. "su kien 20/7") -- very common in
+        # casual Vietnamese phrasing. Assumes the current year. Slash only
+        # (not hyphen) on purpose: a hyphenated "N-M" is far more often a
+        # range in this domain's chat text ("2-3 ngay nua", "9-11 gio") than
+        # a date, so allowing "-" here would misfire constantly. Only matches
+        # when NOT already part of a longer D/M/Y run, so it never fires on a
+        # 3-part date that merely failed the stricter check above.
+        match = re.search(r"(?<![\d/])(\d{1,2})/(\d{1,2})(?![\d/])", text)
+        if match:
+            day, month = int(match.group(1)), int(match.group(2))
+            try:
+                return datetime(datetime.now().year, month, day).date()
+            except ValueError:
+                return None
+
+        return None
 
     def _extract_date(self, text, now):
         explicit = self._explicit_date_from_text(text)

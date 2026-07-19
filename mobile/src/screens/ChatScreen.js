@@ -70,11 +70,11 @@ function formatAgentMeta(data) {
     time: 'Thời gian hệ thống',
   };
   const parts = [];
-  if (trace.intent || data?.intent?.intent) {
-    parts.push(trace.intent || data.intent.intent);
-  }
-  if (sources.length) {
-    parts.push(`Nguồn: ${sources.map((source) => sourceLabels[source] || source).join(' + ')}`);
+  // Intent names and trace steps are internal diagnostics. Keep only useful
+  // user-facing provenance and confirmation state.
+  const visibleSources = sources.filter((source) => ['email', 'calendar', 'internet'].includes(source));
+  if (visibleSources.length) {
+    parts.push(`Nguồn: ${visibleSources.map((source) => sourceLabels[source] || source).join(' + ')}`);
   }
   if (trace.requires_confirmation || data?.schedule_suggestion) {
     parts.push('Cần xác nhận');

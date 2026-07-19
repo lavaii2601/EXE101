@@ -427,6 +427,17 @@ def _calendar_window(message):
         hour=0, minute=0, second=0, microsecond=0
     )
 
+    # Reuse IntentOrchestrator's date parser (handles "20/7", "20/07/2026",
+    # and "ngay 20 thang 7") instead of duplicating that regex here -- this
+    # is the fallback path used when no window entity made it through (see
+    # _window_override_from_entities), so it must recognize the same explicit
+    # dates the orchestrator does, not just the today/this-week keywords below.
+    explicit_date = intent_orchestrator._explicit_date_from_text(normalized)
+    if explicit_date:
+        start = datetime.combine(explicit_date, datetime.min.time()).replace(tzinfo=LOCAL_TZ)
+        label = f"NGÀY {start.strftime('%d/%m/%Y')}"
+        return start, start + timedelta(days=1), label
+
     if 'tuan truoc' in normalized or 'last week' in normalized:
         return monday - timedelta(days=7), monday, 'TUẦN TRƯỚC'
     if 'tuan nay' in normalized or 'this week' in normalized:
@@ -647,7 +658,9 @@ def _direct_schedule_list_response(message, user_id, db_path, window_override=No
 
 _CURRENT_TIME_TERMS = (
     'may gio', 'bay gio la may gio', 'hien tai may gio', 'gio hien tai',
-    'hom nay ngay may', 'hom nay la ngay nao', 'ngay hien tai',
+    'hom nay ngay may', 'hom nay la ngay may', 'hom nay ngay bao nhieu',
+    'hom nay la ngay bao nhieu', 'hom nay la ngay nao', 'ngay hien tai',
+    'bay gio la ngay may', 'bay gio la ngay bao nhieu', 'ngay thang hom nay',
     'what time', 'current time', 'time now', 'what date', "today's date",
 )
 
@@ -697,9 +710,21 @@ def _window_override_from_entities(entities):
         end = datetime.fromisoformat(str(window.get('end'))).replace(tzinfo=LOCAL_TZ)
     except (TypeError, ValueError):
         return None
-    if end <= start:
+    if end < start:
         return None
-    label = WINDOW_LABELS_VN.get(window.get('label'), 'KHOẢNG THỜI GIAN ĐÃ CHỌN')
+    if end == start:
+        # IntentOrchestrator._calendar_window represents a single inclusive
+        # day as start == end (e.g. 'today', 'specific_date'); expand to the
+        # half-open range the calendar/schedule queries below expect. Without
+        # this, every single-day window -- including the everyday 'today'
+        # case -- silently failed this function and fell back to re-parsing
+        # the raw message from scratch.
+        end = start + timedelta(days=1)
+    raw_label = window.get('label')
+    if raw_label == 'specific_date':
+        label = f"NGÀY {start.strftime('%d/%m/%Y')}"
+    else:
+        label = WINDOW_LABELS_VN.get(raw_label, 'KHOẢNG THỜI GIAN ĐÃ CHỌN')
     return start, end, label
 
 
@@ -1412,6 +1437,11 @@ def _capability_prompt_lines(agent_capabilities):
 
 
 def _build_agent_system_prompt(mode_prompt, agent_capabilities):
+    now = datetime.now(LOCAL_TZ)
+    weekday = (
+        'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+    )[now.weekday()]
+    runtime_clock = now.strftime('%d/%m/%Y. %H:%M')
     return (
         "You are Bob, the AI agent inside FlowMate -- a workspace agent for email, "
         "calendar, schedules, history, and user settings. If asked your name, say Bob. "
@@ -1421,6 +1451,10 @@ def _build_agent_system_prompt(mode_prompt, agent_capabilities):
         "answer in that same language. If the latest message mixes both languages, "
         "default to Vietnamese. Switch language immediately if the user explicitly "
         "asks you to. "
+        f"RUNTIME CLOCK: it is {runtime_clock} ({weekday}) in Vietnam "
+        "(Asia/Ho_Chi_Minh, UTC+7). Treat this runtime value as authoritative "
+        "for today, tomorrow, relative dates, and the current year; never answer "
+        "those from model memory or old conversation/knowledge context. "
         "For any user-facing date or time you mention, format it as dd/mm/yyyy. HH:mm "
         "in 24-hour time, for example 02/07/2026. 18:30. For date-only values use "
         "dd/mm/yyyy. Do not expose ISO datetime strings in prose unless the user asks "
@@ -1452,105 +1486,6 @@ def _build_agent_system_prompt(mode_prompt, agent_capabilities):
         "Your trained capabilities are:\n"
         + _capability_prompt_lines(agent_capabilities)
     )
-
-
-def extract_schedule_from_response(response, user_message):
-    """
-    Detect if AI response contains scheduling information
-    Returns dict with schedule data or None
-    """
-    # Previously we gated schedule extraction on explicit keywords.
-    # Remove keyword gating so AI can decide from the prompt/response when to create a schedule.
-    combined_text = (user_message + ' ' + response).lower()
-
-    # Try to extract schedule details
-    schedule_info = {
-        'title': '',
-        'description': response,
-        'start_time': None,
-        'attendees': []
-    }
-
-    # Extract title (first meaningful part of response or user message)
-    if 'lịch hẹn:' in response.lower():
-        title_match = re.search(r'lịch hẹn:\s*([^\n]+)', response, re.IGNORECASE)
-        if title_match:
-            schedule_info['title'] = title_match.group(1).strip()[:100]
-
-    if not schedule_info['title']:
-        # Use first few words from user message
-        words = user_message.split()[:5]
-        schedule_info['title'] = ' '.join(words)[:100]
-
-    now = datetime.now()
-    start_time = None
-
-    # Parse explicit date first: dd/mm/yyyy or dd-mm-yyyy
-    date_match = re.search(r'(\d{1,4})[/-](\d{1,2})[/-](\d{1,4})', combined_text)
-    date_value = None
-    if date_match:
-        g1 = date_match.group(1)
-        g2 = date_match.group(2)
-        g3 = date_match.group(3)
-        # Support formats: DD/MM/YYYY or YYYY-MM-DD
-        try:
-            if len(g1) == 4:
-                # YYYY-MM-DD
-                year = int(g1)
-                month = int(g2)
-                day = int(g3)
-            else:
-                # DD/MM/YYYY or D/M/YY
-                day = int(g1)
-                month = int(g2)
-                year = int(g3)
-
-            if year < 100:
-                year += 2000
-
-            date_value = datetime(year, month, day).date()
-        except Exception:
-            date_value = None
-    elif 'ngày mai' in combined_text or 'tomorrow' in combined_text:
-        date_value = (now + timedelta(days=1)).date()
-    elif 'tuần sau' in combined_text or 'next week' in combined_text:
-        date_value = (now + timedelta(weeks=1)).date()
-    elif 'hôm nay' in combined_text or 'today' in combined_text:
-        date_value = now.date()
-
-    # Parse time variants: HH:MM, 10h, 10h30, 10 giờ
-    time_value = None
-    time_match = re.search(r'(?<!\d)(\d{1,2})[:h](\d{2})(?!\d)', combined_text)
-    if time_match:
-        hour = int(time_match.group(1))
-        minute = int(time_match.group(2))
-        if 0 <= hour <= 23 and 0 <= minute <= 59:
-            time_value = datetime.strptime(f"{hour:02d}:{minute:02d}", '%H:%M').time()
-    else:
-        hour_only_match = re.search(r'(?<!\d)(\d{1,2})\s*(giờ|h)(?!\d)', combined_text)
-        if hour_only_match:
-            hour = int(hour_only_match.group(1))
-            if 0 <= hour <= 23:
-                time_value = datetime.strptime(f"{hour:02d}:00", '%H:%M').time()
-
-    # Combine parsed date/time with sensible defaults
-    if date_value and time_value:
-        start_time = datetime.combine(date_value, time_value)
-    elif date_value:
-        start_time = datetime.combine(date_value, datetime.strptime('09:00', '%H:%M').time())
-    elif time_value:
-        start_time = datetime.combine(now.date(), time_value)
-    else:
-        # Default to tomorrow at current time if no clear temporal signal
-        start_time = now + timedelta(days=1)
-
-    schedule_info['start_time'] = start_time.isoformat()
-
-    # Extract email addresses (attendees)
-    emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', combined_text)
-    schedule_info['attendees'] = list(set(emails))  # Remove duplicates
-
-    return schedule_info if schedule_info['title'] else None
 
 
 _REPLY_NEEDED_KEYWORDS = (
@@ -2472,69 +2407,13 @@ class FreeformChatAgent:
         except Exception:
             logger.exception("Failed to extract session memory for session %s", ctx.chat_session_id)
 
-        # Auto-detect schedule suggestion from AI response
-        schedule_info = extract_schedule_from_response(response, ctx.user_message)
+        # A freeform answer must never create a calendar suggestion merely
+        # because its prose contains a date or a clock time. Calendar mutations
+        # are handled exclusively by ScheduleCreateAgent after the orchestrator
+        # has recognized an explicit schedule.create request.
         schedule_created = None
-
-        # Check if client asked to confirm/create the schedule now
-        if schedule_info:
-            if ctx.client_confirm or ctx.schedule_override:
-                # Use override values from client when provided, otherwise use detected info
-                payload = {
-                    'title': ctx.schedule_override.get('title') or schedule_info.get('title'),
-                    'description': ctx.schedule_override.get('description') or schedule_info.get('description'),
-                    'start_time': ctx.schedule_override.get('start_time') or schedule_info.get('start_time'),
-                    'end_time': ctx.schedule_override.get('end_time') or schedule_info.get('end_time'),
-                    'attendees': ctx.schedule_override.get('attendees') or schedule_info.get('attendees'),
-                    'location': ctx.schedule_override.get('location') or schedule_info.get('location'),
-                }
-                try:
-                    schedule_id = ScheduleService.create_schedule(
-                        title=payload['title'],
-                        description=payload['description'],
-                        start_time=payload['start_time'],
-                        end_time=payload.get('end_time'),
-                        attendees=payload.get('attendees') or [],
-                        location=payload.get('location') or None,
-                        db_path=ctx.db_path
-                    )
-
-                    # Save to chat history for reference
-                    History.create(
-                        f"Tạo lịch hẹn: {payload['title']}",
-                        f"Lịch hẹn được tạo từ xác nhận của người dùng",
-                        action_type='schedule_created',
-                        related_id=schedule_id,
-                        db_path=ctx.db_path
-                    )
-
-                    schedule_created = {
-                        'id': schedule_id,
-                        'title': payload['title'],
-                        'description': payload.get('description') or '',
-                        'start_time': payload['start_time'],
-                        'end_time': payload.get('end_time'),
-                        'attendees': payload.get('attendees') or [],
-                        'location': payload.get('location') or '',
-                    }
-
-                    logger.info(f"Created schedule (confirmed): {payload['title']}")
-                except Exception:
-                    logger.exception("Failed to create schedule on confirmation")
-
-                if schedule_created:
-                    calendar_sync_pending = _sync_schedule_to_calendar_async(ctx.user_id, schedule_id, ctx.db_path)
-                    schedule_created['calendar_sync_pending'] = calendar_sync_pending
-            else:
-                # Do not create schedule automatically - return suggestion for client to confirm
-                schedule_created = None
-
         schedule_suggestion = None
-        if schedule_info and not schedule_created:
-            schedule_suggestion = schedule_info
         refresh_targets = set(ctx.refresh_targets)
-        if schedule_info:
-            refresh_targets.update(['schedule', 'calendar', 'overview', 'history'])
 
         return AgentResult(
             response=response,

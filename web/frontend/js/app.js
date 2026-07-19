@@ -2897,23 +2897,14 @@ async function sendMessageConfirmed(message, opts = {}) {
                 time: ui('Thời gian hệ thống', 'System time')
             };
             const workspaceSources = Array.isArray(data.workspace_sources)
-                ? data.workspace_sources.filter(source => sourceLabels[source])
+                ? data.workspace_sources.filter(source => ['email', 'calendar', 'internet'].includes(source))
                 : [];
             const sourceBadge = workspaceSources.length
                 ? `<span class="provider-badge workspace-source-badge">${workspaceSources.map(source => sourceLabels[source]).join(' + ')}</span>`
                 : '';
-            const agentTrace = data.agent_trace || {};
-            const agentIntent = agentTrace.intent || data.intent?.intent || 'chat.freeform';
-            const agentSteps = Array.isArray(agentTrace.steps) ? agentTrace.steps.slice(0, 4) : [];
-            const agentBadge = `
-                <div class="agent-trace">
-                    <span class="agent-pill">${escapeHtml(agentProfile?.name || 'Bob')}</span>
-                    <span>${escapeHtml(agentIntent)}</span>
-                    ${agentSteps.length ? `<span>${escapeHtml(agentSteps.join(' → '))}</span>` : ''}
-                </div>
-            `;
-
-            addMessage(data.response, 'assistant', sourceBadge + agentBadge);
+            // agent_trace is diagnostic data. Do not expose internal intent
+            // names or orchestration steps in the user's conversation.
+            addMessage(data.response, 'assistant', sourceBadge);
             loadChatSessions().catch(() => {});
 
             if (data.demo_mode) {

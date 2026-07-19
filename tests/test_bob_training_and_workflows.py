@@ -1,5 +1,6 @@
 import sys
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 
@@ -13,6 +14,13 @@ from services.bob_training_cases import (  # noqa: E402
     iter_labelled_cases,
 )
 from services.intent_orchestrator import IntentOrchestrator  # noqa: E402
+from services.chat_agents import (  # noqa: E402
+    ChatContext,
+    FreeformChatAgent,
+    LOCAL_TZ,
+    _build_agent_system_prompt,
+    _direct_current_time_response,
+)
 from services.tool_catalog import TOOL_NAMES  # noqa: E402
 from services.training_intent_classifier import TrainingIntentClassifier  # noqa: E402
 try:
@@ -120,6 +128,36 @@ class BobWorkflowTests(unittest.TestCase):
             ["07:30 - gym", "09:00 - nấu ăn", "11:00 - làm bài tập"],
             [item["title"] for item in result["entities"]["items"]],
         )
+
+    def test_natural_current_date_question_uses_runtime_clock(self):
+        before = datetime.now(LOCAL_TZ).strftime("%d/%m/%Y")
+        response = _direct_current_time_response("Hôm nay là ngày mấy?")
+        after = datetime.now(LOCAL_TZ).strftime("%d/%m/%Y")
+        self.assertIsNotNone(response)
+        self.assertTrue(before in response or after in response, response)
+        self.assertIn("UTC+7", response)
+
+        result = FreeformChatAgent().handle(ChatContext(
+            user_message="Hôm nay là ngày mấy?",
+            user_id="test-user",
+            db_path="test.db",
+            chat_session_id="00000000-0000-4000-8000-000000000001",
+            mode="worker",
+            mode_prompt="worker",
+            task="chat",
+            intent_result={"intent": "chat.freeform", "entities": {}},
+        ))
+        self.assertFalse(result.ai_used)
+        self.assertEqual(["time"], result.workspace_sources)
+        self.assertIsNone(result.schedule_suggestion)
+        self.assertIsNone(result.schedule_created)
+
+    def test_freeform_system_prompt_contains_authoritative_runtime_date(self):
+        before = datetime.now(LOCAL_TZ).strftime("%d/%m/%Y")
+        prompt = _build_agent_system_prompt("worker", [])
+        after = datetime.now(LOCAL_TZ).strftime("%d/%m/%Y")
+        self.assertTrue(before in prompt or after in prompt, prompt)
+        self.assertIn("Asia/Ho_Chi_Minh", prompt)
 
 
 @unittest.skipIf(WebResearchService is None, "web research dependencies are not installed")
