@@ -8352,3 +8352,214 @@ body.dark-theme {
         grid-template-columns: minmax(0, 1fr) auto;
     }
 }
+
+/* Responsive guardrails.
+   Keep this final block authoritative: older mobile experiments above use
+   `!important`, so these rules deliberately match that priority. */
+html,
+body,
+.workspace-app,
+.workspace-app > .main-content,
+.page,
+.section-header,
+.tab-content,
+.settings-grid {
+    max-width: 100%;
+}
+
+.workspace-app,
+.workspace-app > *,
+.page,
+.page > *,
+.section-header > *,
+.settings-row > * {
+    min-width: 0;
+}
+
+.settings-switch {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.settings-switch input {
+    position: absolute;
+    width: 1px !important;
+    min-width: 1px !important;
+    height: 1px !important;
+    min-height: 1px !important;
+    margin: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+
+@media (min-width: 861px) {
+    #emails-page .section-header,
+    #schedule-page .section-header {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .email-toolbar,
+    #schedule-page .section-header > div {
+        flex: 1 1 520px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        max-width: 100%;
+    }
+
+    .email-toolbar > *,
+    #schedule-page .section-header > div > * {
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 860px) {
+    .overview-actions,
+    .email-toolbar,
+    #schedule-page .section-header > div {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        width: 100%;
+        max-width: 100%;
+        padding: 0;
+        overflow: visible !important;
+    }
+
+    .overview-actions > *,
+    .email-toolbar > *,
+    #schedule-page .section-header > div > * {
+        grid-column: auto;
+        width: 100% !important;
+        max-width: 100%;
+        min-width: 0 !important;
+        min-height: 44px;
+        white-space: normal;
+    }
+
+    .overview-actions input,
+    .overview-actions button,
+    .gmail-account-badge,
+    .email-toolbar .gmail-profile-card,
+    .email-include-read,
+    #schedule-page .calendar-status {
+        grid-column: 1 / -1;
+    }
+
+    .email-toolbar > .visually-hidden {
+        position: absolute !important;
+        width: 1px !important;
+        min-width: 1px !important;
+        height: 1px !important;
+        min-height: 1px !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        clip-path: inset(50%);
+    }
+
+    .gmail-account-badge {
+        max-width: none;
+    }
+
+    .email-toolbar .gmail-profile-card[style*="display: flex"] {
+        display: flex !important;
+    }
+
+    .email-include-read {
+        justify-content: flex-start;
+        padding: 10px 12px;
+        overflow: hidden;
+    }
+
+    .email-include-read span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .tabs {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        overflow: visible;
+    }
+
+    .tab-btn {
+        width: 100%;
+        min-width: 0;
+        padding: 8px 6px;
+        font-size: 12px;
+        line-height: 1.25;
+        white-space: normal;
+    }
+
+    .email-search-bar {
+        display: grid !important;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        max-width: 100%;
+        overflow: visible !important;
+    }
+
+    .email-search-bar input {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .email-search-bar .btn-secondary {
+        grid-column: 1 / -1;
+        width: 100%;
+    }
+
+    .week-table-wrapper {
+        width: 100%;
+        max-width: 100%;
+        overscroll-behavior-x: contain;
+    }
+
+    .chat-input-area {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .chat-input-area textarea {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .chat-input-area .btn-primary,
+    #sendBtn {
+        width: auto;
+        min-width: 70px;
+    }
+
+    .settings-grid,
+    #historyList,
+    #overviewContent,
+    #emails-page.page.active .tab-content,
+    #schedule-page.page.active .tab-content {
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+    }
+
+    .modal-content,
+    .email-detail-modal-content,
+    .user-mode-modal-content {
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 360px) {
+    :root {
+        --mobile-nav-height: 68px;
+    }
+
+    .workspace-app > .sidebar .nav-btn .nav-label {
+        font-size: 8px;
+    }
+
+    .section-header,
+    #schedule-page .section-header,
+    .settings-page-header,
+    .overview-header {
+        padding-inline: 12px;
+    }
+}

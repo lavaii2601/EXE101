@@ -437,6 +437,33 @@
     }
 
     /* ── i18n content ── */
+    @media (max-width: 860px) {
+      nav { gap: 16px; padding-inline: 24px; }
+      .nav-links { display: none; }
+      .nav-brand, nav > div { min-width: 0; }
+      .hero { padding-inline: 24px; }
+      .hero h1, .hero-subtitle, .section-title { overflow-wrap: anywhere; }
+      .features-grid { grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); }
+    }
+
+    @media (max-width: 480px) {
+      nav { gap: 10px; height: 60px; padding-inline: 16px; }
+      .nav-logo { width: 36px; height: 36px; }
+      .nav-brand { gap: 8px; }
+      .nav-brand-text { display: none; }
+      nav > div { gap: 8px !important; }
+      .nav-cta { padding: 9px 14px; }
+      .lang-btn { padding-inline: 9px; }
+      .hero { padding: 68px 16px 52px; }
+      .hero h1 { font-size: clamp(2rem, 10vw, 2.55rem); }
+      .hero-subtitle { font-size: 1rem; }
+      .hero-actions { width: min(100%, 300px); margin-inline: auto; }
+      .hero-actions > * { justify-content: center; width: 100%; }
+      .features, .how-it-works, .cta-section { padding: 52px 16px; }
+      .feature-card { padding: 26px 22px; }
+      .footer-links { flex-wrap: wrap; gap: 12px 20px; }
+    }
+
     [data-lang="vi"] { display: none; }
     body.lang-vi [data-lang="vi"] { display: revert; }
     body.lang-vi [data-lang="en"] { display: none; }
@@ -470,7 +497,7 @@
       <line x1="45" y1="9" x2="45" y2="17" stroke="white" stroke-width="2" stroke-linecap="round"/>
       <line x1="41" y1="13" x2="49" y2="13" stroke="white" stroke-width="2" stroke-linecap="round"/>
     </svg>
-    Flowmate AI
+    <span class="nav-brand-text">Flowmate AI</span>
   </a>
 
   <ul class="nav-links">
