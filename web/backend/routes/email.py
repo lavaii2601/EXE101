@@ -320,6 +320,8 @@ def _parse_email_base_date(email):
 
 
 def _extract_weekday_date(normalized_text, base_date):
+    if re.search(r'\b(?:ngay kia|ngay mot|day after tomorrow)\b', normalized_text):
+        return base_date + timedelta(days=2)
     if re.search(r'\b(?:ngay mai|tomorrow)\b', normalized_text):
         return base_date + timedelta(days=1)
     if re.search(r'\b(?:hom nay|today)\b', normalized_text):
@@ -333,9 +335,12 @@ def _extract_weekday_date(normalized_text, base_date):
         (5, r'\bthu\s*(?:7|bay)\b'),
         (6, r'\b(?:chu\s*nhat|cn)\b'),
     ]
+    next_week = bool(re.search(r'\b(?:tuan sau|tuan toi|tuan ke tiep|next week)\b', normalized_text))
     for weekday, pattern in weekday_patterns:
         if re.search(pattern, normalized_text):
             days_ahead = (weekday - base_date.weekday()) % 7
+            if next_week:
+                days_ahead += 7
             return base_date + timedelta(days=days_ahead)
     return None
 
@@ -435,17 +440,40 @@ def _extract_meeting_suggestion(email):
         'can we meet', 'could we meet', 'let us meet', "let's meet", 'interview',
         'demo call', 'review call', 'consultation', 'sync call',
         'google meet', 'zoom', 'microsoft teams', 'book slot', 'booked',
+        'hen kham', 'lich kham', 'buoi hen', 'buoi kham', 'cuoc gap',
+        'phong van luc', 'tu van luc', 'trao doi luc', 'gap nhau luc',
+        'xac nhan lich hen', 'xac nhan cuoc hen', 'dat lich hen', 'dat lich kham',
+        'moi ban den', 'moi quy khach', 'moi anh chi', 'buoi lam viec',
+        'phong van', 'kham benh', 'lich thi', 'buoi thi', 'gap truc tiep',
+        'tu van truc tiep', 'ghe tham', 'ghe qua van phong', 'dat lich tu van',
+        'thu moi', 'giay moi', 'moi den', 'chu tri cuoc hop',
     ]
     schedule_terms = [
         'schedule', 'calendar', 'dat lich', 'xep lich', 'time slot',
         'khung gio', 'thoi gian phu hop', 'available time', 'availability',
-        'propose a time', 'suggest a time',
+        'propose a time', 'suggest a time', 'dat cho', 'dat ban', 'sap xep thoi gian',
     ]
     deadline_terms = [
         'deadline', 'due date', 'due by', 'due on', 'submit by', 'submission',
         'han chot', 'han nop', 'han cuoi', 'den han', 'ngay nop', 'nop bai',
         'het han', 'truoc ngay', 'truoc han'
     ]
+    negation_terms = [
+        'huy cuoc hop', 'huy lich hen', 'huy buoi hop', 'huy buoi hen',
+        'da bi huy', 'da huy', 'hoan lich', 'tam hoan', 'khong dien ra',
+        'khong the tham du', 'meeting cancelled', 'meeting canceled',
+        'cancelled', 'canceled', 'postponed', 'call off',
+    ]
+    reschedule_terms = [
+        'doi sang', 'doi lich sang', 'chuyen sang', 'lui sang', 'doi ngay hop',
+        'doi lich hen sang', 'rescheduled to', 'moved to',
+    ]
+    # A formal Vietnamese meeting invite often uses labelled fields
+    # ("Thời gian:", "Địa điểm:", "Thành phần:") instead of a single obvious
+    # keyword, so treat two-or-more such labels as its own signal.
+    invite_label_terms = ['thoi gian:', 'dia diem:', 'thanh phan:', 'noi dung cuoc hop', 'chu tri:']
+    structured_invite_signal = sum(term in normalized for term in invite_label_terms) >= 2
+
     time_signal = bool(re.search(r'(?<!\d)(?:[01]?\d|2[0-3])[:h]\d{2}(?!\d)', normalized))
     natural_time_signal = bool(re.search(r'(?<!\d)(?:[01]?\d|2[0-3])\s*(?:gio|g|h)(?:\s*\d{1,2})?\s*(?:sang|chieu|toi)?(?!\d)', normalized))
     date_signal = bool(re.search(
@@ -454,10 +482,16 @@ def _extract_meeting_suggestion(email):
     )) or bool(_extract_weekday_date(normalized, _parse_email_base_date(email)))
     is_meeting = (
         any(term in normalized for term in direct_terms)
+        or structured_invite_signal
         or (any(term in normalized for term in schedule_terms) and (time_signal or natural_time_signal or date_signal))
         or (any(term in normalized for term in deadline_terms) and (time_signal or natural_time_signal or date_signal))
     )
     if not is_meeting:
+        return None
+
+    has_negation = any(term in normalized for term in negation_terms)
+    has_reschedule = any(term in normalized for term in reschedule_terms)
+    if has_negation and not has_reschedule:
         return None
 
     meeting_date = None
@@ -470,9 +504,10 @@ def _extract_meeting_suggestion(email):
         normalized
     )
     text_date_match = re.search(
-        r'(?<!\d)(\d{1,2})\s+thang\s+(\d{1,2})\s*,?\s*(\d{4})(?!\d)',
+        r'(?<!\d)(\d{1,2})\s+thang\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?(?!\d)',
         normalized
     )
+    base_date = _parse_email_base_date(email)
     try:
         if date_match:
             day, month, year = map(int, date_match.groups())
@@ -483,12 +518,22 @@ def _extract_meeting_suggestion(email):
             year, month, day = map(int, iso_date_match.groups())
             meeting_date = datetime(year, month, day).date()
         elif text_date_match:
-            day, month, year = map(int, text_date_match.groups())
+            day, month = int(text_date_match.group(1)), int(text_date_match.group(2))
+            year_text = text_date_match.group(3)
+            if year_text:
+                year = int(year_text)
+            else:
+                # No year given (e.g. "ngày 25 tháng 7") -- assume the next
+                # upcoming occurrence relative to the email's own date.
+                year = base_date.year
+                candidate = datetime(year, month, day).date()
+                if candidate < base_date - timedelta(days=3):
+                    year += 1
             meeting_date = datetime(year, month, day).date()
     except ValueError:
         meeting_date = None
     if meeting_date is None:
-        meeting_date = _extract_weekday_date(normalized, _parse_email_base_date(email))
+        meeting_date = _extract_weekday_date(normalized, base_date)
 
     start_time = None
     end_time = None
@@ -517,6 +562,16 @@ def _extract_meeting_suggestion(email):
         f"Nguồn email từ {sender}\n{snippet or body}",
         max_chars=700
     )
+
+    location = ''
+    location_match = re.search(
+        r'(?:địa điểm|dia diem|địa chỉ|dia chi|location)\s*[:\-]\s*([^\n,.;]{2,80})',
+        text,
+        re.IGNORECASE
+    )
+    if location_match:
+        location = re.sub(r'\s+', ' ', location_match.group(1)).strip()[:120]
+
     return {
         'sender': sender,
         'subject': subject,
@@ -526,7 +581,7 @@ def _extract_meeting_suggestion(email):
         'description': description,
         'start_time': start_time,
         'end_time': end_time,
-        'location': '',
+        'location': location,
         'attendees': attendees,
     }
 
@@ -1180,7 +1235,7 @@ def new_mail_check():
             'latest_sender': '',
         }
         if latest_id:
-            details = service.get_email_details(latest_id, lazy=True)
+            details = service.get_email_details(latest_id, lazy=False)
             if details:
                 payload['latest_subject'] = details.get('subject', '')
                 payload['latest_sender'] = details.get('sender', '')
@@ -1224,6 +1279,7 @@ def scan_meeting_suggestions():
             max_results=20,
             query='in:inbox',
             include_read=True,
+            lazy=False,
         )
         detected = _store_meeting_suggestions(emails, db_path)
         pending = _prune_existing_meeting_suggestions(db_path)

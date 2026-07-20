@@ -88,8 +88,9 @@ class GmailService:
         except Exception:
             logger.debug("Could not persist refreshed Gmail credentials", exc_info=True)
     
-    def get_emails(self, max_results=10, query='is:unread', include_read=False):
-        """Get emails from inbox with lazy body loading"""
+    def get_emails(self, max_results=10, query='is:unread', include_read=False, lazy=True):
+        """Get emails from inbox. lazy=True skips body for speed; pass lazy=False when
+        callers need the full body (e.g. meeting-suggestion detection)."""
         try:
             try:
                 max_results = max(1, min(int(max_results), 150))
@@ -99,19 +100,19 @@ class GmailService:
             # If include_read, get all emails in inbox (read + unread)
             if include_read and query == 'is:unread':
                 query = 'in:inbox'
-            
+
             logger.info(f"Fetching emails: max_results={max_results}, query={query}")
             results = self.service.users().messages().list(
                 userId='me',
                 q=query,
                 maxResults=max_results
             ).execute()
-            
+
             messages = results.get('messages', [])
             logger.info(f"Found {len(messages)} messages matching query: {query}")
-            
+
             message_ids = [msg.get('id') for msg in messages if msg.get('id')]
-            emails = self._get_email_details_batch(message_ids, lazy=True)
+            emails = self._get_email_details_batch(message_ids, lazy=lazy)
             
             logger.info(f"Successfully fetched {len(emails)} email details")
             return emails
