@@ -35,7 +35,10 @@ def _scheduler_loop():
     while True:
         try:
             now = datetime.now(LOCAL_TZ)
-            if now.hour == 6 and now.minute == 30 and last_run_date != now.date():
+            # Warm today's overview immediately after process startup and once
+            # again when the local date changes. Existing cache entries return
+            # instantly, so unchanged data never triggers another AI call.
+            if last_run_date != now.date():
                 last_run_date = now.date()
                 _refresh_all_users(now.date())
 
@@ -48,10 +51,10 @@ def _scheduler_loop():
 
 
 def _refresh_all_users(day):
-    user_ids = User.list_user_ids(connected_only=False, limit=500)
-    logger.info("Refreshing daily overview for %s users on %s", len(user_ids), day)
+    user_ids = User.list_user_ids(connected_only=True, limit=500)
+    logger.info("Warming daily overview for %s users on %s", len(user_ids), day)
     for user_id in user_ids:
-        refresh_daily_overview_async(user_id, day=day, force=True)
+        refresh_daily_overview_async(user_id, day=day, force=False)
 
 
 def _check_new_mail_for_active_overviews(day):

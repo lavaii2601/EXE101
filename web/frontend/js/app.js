@@ -48,11 +48,14 @@ let activeChatSessionId = localStorage.getItem('flowmate-active-chat-session') |
 let activeChatSessionTitle = localStorage.getItem('flowmate-active-chat-title') || '';
 let agentProfile = null;
 let newMailPollTimer = null;
+let overviewRefreshTimer = null;
 let lastSeenMailId = localStorage.getItem('flowmate-last-mail-id') || null;
 // Gmail push should be configured in production for true server-side push.
 // This short watcher is the resilient foreground fallback and feels instant
 // even when Pub/Sub is unavailable or the browser just resumed.
 const NEW_MAIL_POLL_INTERVAL_MS = 5000;
+const OVERVIEW_REFRESH_POLL_INTERVAL_MS = 2500;
+const OVERVIEW_REFRESH_MAX_POLLS = 48;
 
 function createChatSessionId() {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -499,7 +502,7 @@ async function initApp() {
             refreshOverviewBtn.addEventListener('click', () => loadOverviewPage({ force: true }));
         }
         if (overviewDate) {
-            overviewDate.addEventListener('change', () => loadOverviewPage({ force: true }));
+            overviewDate.addEventListener('change', () => loadOverviewPage({ force: false }));
         }
 
         // New schedule form submit
@@ -2086,6 +2089,26 @@ async function openOverviewEmail(email, selectedDate) {
     });
 }
 
+function clearOverviewRefreshTimer() {
+    if (overviewRefreshTimer) {
+        clearTimeout(overviewRefreshTimer);
+        overviewRefreshTimer = null;
+    }
+}
+
+function scheduleOverviewRefreshPoll(selectedDate, attempt = 0) {
+    clearOverviewRefreshTimer();
+    if (attempt >= OVERVIEW_REFRESH_MAX_POLLS) return;
+
+    overviewRefreshTimer = setTimeout(() => {
+        overviewRefreshTimer = null;
+        const activeDate = document.getElementById('overviewDate')?.value;
+        if (currentPage !== 'overview' || activeDate !== selectedDate) return;
+        loadOverviewPage({ background: true, pollAttempt: attempt + 1 })
+            .catch(error => console.warn('Overview background refresh error:', error));
+    }, OVERVIEW_REFRESH_POLL_INTERVAL_MS);
+}
+
 async function loadOverviewPage(options = {}) {
     const container = document.getElementById('overviewContent');
     const dateInput = document.getElementById('overviewDate');
@@ -2097,15 +2120,19 @@ async function loadOverviewPage(options = {}) {
     }
     const selectedDate = dateInput?.value || formatDateForApi(new Date());
     const reportDate = formatOverviewDateForReport(selectedDate);
+    const isBackground = options.background === true;
 
-    container.innerHTML = `<div class="overview-loading">${ui('Đang để AI tổng hợp dữ liệu trong ngày...', 'AI is summarizing your day...')}</div>`;
+    if (!isBackground) clearOverviewRefreshTimer();
+    if (!isBackground || !container.children.length) {
+        container.innerHTML = `<div class="overview-loading">${ui('Đang tải bản tổng hợp...', 'Loading your overview...')}</div>`;
+    }
     // #overviewContent scrolls independently of the static header/date-picker
     // above it, so replacing its content without resetting scroll leaves a
     // leftover scroll offset from before the refresh -- the new hero card
     // then renders starting mid-way (kicker/heading scrolled out of view)
     // instead of from the top, looking like its content got cut off.
     container.scrollTop = 0;
-    if (refreshBtn) refreshBtn.disabled = true;
+    if (refreshBtn && !isBackground) refreshBtn.disabled = true;
 
     try {
         if (options.force) {
@@ -2133,7 +2160,9 @@ async function loadOverviewPage(options = {}) {
         const meetingEmails = emails.filter((item) => item.is_meeting);
         const insight = buildOverviewInsight({ schedules, emails, selectedDate });
         const refreshNote = overviewData.refreshing
-            ? `<p class="overview-refresh-note">${ui('AI đang cập nhật email trong nền. Lịch/task đã sẵn sàng để xem ngay.', 'AI is updating email in the background. Schedule/task data is ready now.')}</p>`
+            ? `<p class="overview-refresh-note">${overviewData.refresh_state === 'checking'
+                ? ui('Đang kiểm tra thay đổi mới trong nền. Bản tổng hợp hiện tại vẫn dùng được ngay.', 'Checking for changes in the background. The current overview remains available.')
+                : ui('AI đang cập nhật bản tổng hợp trong nền. Dữ liệu hiện có vẫn xem được ngay.', 'AI is updating the overview in the background. Existing data remains available.')}</p>`
             : '';
 
         container.innerHTML = `
@@ -2183,7 +2212,16 @@ async function loadOverviewPage(options = {}) {
         bindOverviewQuickAdd(container, selectedDate);
         bindOverviewChecklist(container, selectedDate, schedules, checklistState);
         bindOverviewEmailClicks(container, emails, selectedDate);
+        if (overviewData.refreshing) {
+            scheduleOverviewRefreshPoll(selectedDate, Number(options.pollAttempt || 0));
+        } else {
+            clearOverviewRefreshTimer();
+        }
     } catch (error) {
+        if (isBackground) {
+            scheduleOverviewRefreshPoll(selectedDate, Number(options.pollAttempt || 0));
+            return;
+        }
         container.innerHTML = `
             <div class="overview-error">
                 <strong>${ui('Không thể tổng hợp dữ liệu', 'Unable to build overview')}</strong>
@@ -2191,7 +2229,7 @@ async function loadOverviewPage(options = {}) {
             </div>
         `;
     } finally {
-        if (refreshBtn) refreshBtn.disabled = false;
+        if (refreshBtn && !isBackground) refreshBtn.disabled = false;
     }
 }
 
@@ -2445,6 +2483,13 @@ async function checkForNewMail() {
 
         lastSeenMailId = data.latest_id;
         localStorage.setItem('flowmate-last-mail-id', lastSeenMailId);
+
+        if (!isFirstCheck && currentPage === 'overview') {
+            // The Overview endpoint returns the cached snapshot immediately,
+            // then compares Gmail IDs and refreshes AI output only if needed.
+            loadOverviewPage({ background: true })
+                .catch(error => console.warn('Overview new-mail refresh failed:', error));
+        }
 
         if (!isFirstCheck && data.unread_count > 0) {
             showNewMailPopup(data);

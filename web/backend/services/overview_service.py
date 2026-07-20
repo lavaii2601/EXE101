@@ -3,6 +3,7 @@ import os
 import re
 import threading
 from datetime import date, datetime, time, timedelta
+from time import monotonic
 
 from models.cache import Cache
 from models.schedule import LOCAL_TZ, Schedule
@@ -12,9 +13,13 @@ from utils.user_context import get_user_db_path, get_user_token_file, sanitize_u
 
 logger = logging.getLogger(__name__)
 
-OVERVIEW_CACHE_TTL_SECONDS = 36 * 60 * 60
+OVERVIEW_CACHE_TTL_SECONDS = 90 * 24 * 60 * 60
+OVERVIEW_REVALIDATE_INTERVAL_SECONDS = 60
 _refresh_lock = threading.Lock()
 _refreshing = set()
+_revalidate_lock = threading.Lock()
+_revalidating = set()
+_last_revalidated = {}
 _ai_service = AIService()
 
 # Keep in sync with the deadline heuristic in web/frontend/js/app.js (getOverviewPriority).
@@ -148,17 +153,63 @@ def refresh_daily_overview_async(user_id, day=None, max_results=50, force=False)
     return True
 
 
+def is_daily_overview_refreshing(user_id, day=None):
+    key = overview_refresh_lock_key(sanitize_user_id(user_id), parse_overview_date(day))
+    with _refresh_lock:
+        return key in _refreshing
+
+
+def revalidate_daily_overview_async(user_id, day=None, max_results=50):
+    """Check the Gmail fingerprint in the background without delaying reads.
+
+    Revalidation is throttled per user/day. It only starts an AI refresh when
+    the set of Gmail message IDs changed, so opening or polling Overview does
+    not repeatedly consume AI resources.
+    """
+    user_id = sanitize_user_id(user_id)
+    day = parse_overview_date(day)
+    if not build_cached_overview(user_id, day):
+        return False
+
+    key = overview_refresh_lock_key(user_id, day)
+    now = monotonic()
+    with _revalidate_lock:
+        if key in _revalidating:
+            return False
+        if now - _last_revalidated.get(key, 0.0) < OVERVIEW_REVALIDATE_INTERVAL_SECONDS:
+            return False
+        _revalidating.add(key)
+        _last_revalidated[key] = now
+
+    def _worker():
+        try:
+            check_and_refresh_if_new(user_id, day=day, max_results=max_results)
+        finally:
+            with _revalidate_lock:
+                _revalidating.discard(key)
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return True
+
+
 def get_or_start_daily_overview(user_id, day=None, max_results=50):
     user_id = sanitize_user_id(user_id)
     day = parse_overview_date(day)
     cached = build_cached_overview(user_id, day)
     if cached:
+        generating = is_daily_overview_refreshing(user_id, day)
+        checking = False if generating else revalidate_daily_overview_async(
+            user_id,
+            day,
+            max_results=max_results,
+        )
         # Keep schedules fresh even when the email summary is cached.
         return {
             **cached,
             'schedules': get_day_schedules(user_id, day),
             'cache_hit': True,
-            'refreshing': False,
+            'refreshing': generating or checking,
+            'refresh_state': 'generating' if generating else ('checking' if checking else 'ready'),
         }
 
     started = refresh_daily_overview_async(user_id, day, max_results=max_results)
@@ -166,12 +217,8 @@ def get_or_start_daily_overview(user_id, day=None, max_results=50):
         **build_overview_payload(user_id, day, rows=[], generated=False),
         'cache_hit': False,
         'refreshing': started,
+        'refresh_state': 'generating' if started else 'ready',
     }
-
-
-def invalidate_daily_overview(user_id):
-    db_path = get_user_db_path(user_id)
-    Cache.clear_pattern(f'overview:daily:{sanitize_user_id(user_id)}:%', db_path=db_path)
 
 
 def has_new_emails(user_id, day, max_results=50):

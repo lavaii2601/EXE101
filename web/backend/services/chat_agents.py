@@ -25,7 +25,6 @@ from utils.user_context import get_user_token_file
 from routes.knowledge import knowledge_service
 from routes.schedule import (
     _clear_schedule_cache,
-    _clear_overview_cache,
     _sync_schedule_to_calendar_async,
     _delete_calendar_event_async,
     _prune_stale_duplicate_after_move_async,
@@ -1739,7 +1738,6 @@ class ScheduleUpdateAgent:
         try:
             Schedule.update(schedule_id, db_path=ctx.db_path, **update_data)
             _clear_schedule_cache(ctx.db_path)
-            _clear_overview_cache(ctx.user_id)
             updated = Schedule.get_by_id(schedule_id, db_path=ctx.db_path)
             _sync_schedule_to_calendar_async(ctx.user_id, schedule_id, ctx.db_path)
             _prune_stale_duplicate_after_move_async(ctx.user_id, ctx.db_path, schedule_id, previous, updated)
@@ -1814,7 +1812,6 @@ class ScheduleDeleteAgent:
             calendar_event_id = schedule.get('calendar_event_id')
             Schedule.delete(schedule_id, db_path=ctx.db_path)
             _clear_schedule_cache(ctx.db_path)
-            _clear_overview_cache(ctx.user_id)
             if calendar_event_id:
                 _delete_calendar_event_async(ctx.user_id, calendar_event_id, ctx.db_path)
             History.create(
@@ -2161,7 +2158,6 @@ class ChecklistCreateAgent:
 
         payload['custom_items'] = _sort_custom_items(payload['custom_items'])
         Cache.set(cache_key, payload, ttl=_CHECKLIST_CACHE_TTL_SECONDS, db_path=ctx.db_path)
-        _clear_overview_cache(ctx.user_id)
         History.create(
             "Them viec vao checklist: " + ", ".join(added),
             "Them qua xac nhan trong chat",
