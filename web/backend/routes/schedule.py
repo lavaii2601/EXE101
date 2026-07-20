@@ -126,7 +126,11 @@ def _load_calendar_service(user_id):
     token_file = get_user_token_file(user_id)
     if os.path.exists(token_file):
         try:
-            return get_cached_service(token_file, lambda: CalendarService(token_file=token_file))
+            return get_cached_service(
+                token_file,
+                lambda: CalendarService(token_file=token_file),
+                service_kind='calendar',
+            )
         except Exception as e:
             logger.warning(f"Error creating CalendarService: {e}")
     return None

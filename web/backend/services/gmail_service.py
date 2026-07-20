@@ -24,7 +24,11 @@ def get_cached_gmail_service(token_file):
     """Return a cached GmailService instance for this token file instead of
     re-authenticating on every call. Shared by every caller that already has
     a validated token_file path (services/chat_agents.py, services/overview_service.py)."""
-    return get_cached_service(token_file, lambda: GmailService(token_file=token_file))
+    return get_cached_service(
+        token_file,
+        lambda: GmailService(token_file=token_file),
+        service_kind='gmail',
+    )
 
 
 class GmailService:
