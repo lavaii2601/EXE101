@@ -117,7 +117,7 @@ class GmailService:
             logger.info(f"Successfully fetched {len(emails)} email details")
             return emails
         except Exception as e:
-            logger.error(f"Error getting emails: {str(e)}")
+            logger.error(f"Error getting emails ({type(e).__name__}): {e}", exc_info=True)
             return []
 
     def _get_email_details_batch(self, message_ids, lazy=True, batch_size=25):
