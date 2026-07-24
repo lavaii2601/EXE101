@@ -21,6 +21,7 @@
       <div class="top-actions">
         <span id="liveStatus" class="status waiting"><i></i> Đang kết nối</span>
         <button id="refreshButton" class="button primary" type="button">Làm mới</button>
+        <button id="adminLogoutButton" class="button ghost hidden" type="button">Khóa dashboard</button>
         <a class="button ghost" href="/app">Mở ứng dụng</a>
       </div>
     </header>
@@ -29,17 +30,28 @@
       <div>
         <p class="eyebrow">QUYỀN QUẢN TRỊ</p>
         <h2>Đăng nhập để xem dữ liệu server</h2>
-        <p>Dùng tài khoản Google quản trị. Có thể nhập khóa quản trị nếu server đã cấu hình <code>ADMIN_DASHBOARD_TOKEN</code>.</p>
+        <p>Chỉ tài khoản Google nằm trong <code>ADMIN_EMAILS</code> mới được đi tiếp đến bước xác thực thứ hai.</p>
       </div>
       <div class="auth-actions">
         <button id="googleLoginButton" class="button primary" type="button">Đăng nhập Google</button>
-        <label>
-          <span>Khóa quản trị</span>
-          <input id="adminKeyInput" type="password" autocomplete="off" placeholder="Nhập khóa rồi nhấn truy cập">
-        </label>
-        <button id="keyLoginButton" class="button ghost" type="button">Truy cập bằng khóa</button>
       </div>
       <p id="authError" class="error-text"></p>
+    </section>
+
+    <section id="totpPanel" class="auth-panel hidden">
+      <div>
+        <p class="eyebrow">XÁC THỰC LỚP HAI</p>
+        <h2>Nhập mã từ Authenticator</h2>
+        <p>Mã gồm 6 chữ số, thay đổi sau mỗi 30 giây. Phiên quản trị sẽ tự khóa lại sau thời gian cấu hình trên server.</p>
+      </div>
+      <div class="auth-actions">
+        <label>
+          <span>Mã xác thực</span>
+          <input id="totpInput" class="totp-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">
+        </label>
+        <button id="totpVerifyButton" class="button primary" type="button">Xác minh</button>
+      </div>
+      <p id="totpError" class="error-text"></p>
     </section>
 
     <div id="dashboard" class="hidden">

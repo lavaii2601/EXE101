@@ -63,6 +63,7 @@ input {
   background: #091520; color: var(--text); padding: 0 13px; outline: none;
 }
 input:focus { border-color: var(--cyan); }
+.totp-input { font-size: 28px; font-weight: 850; letter-spacing: .32em; text-align: center; }
 .error-text { color: var(--red) !important; font-size: 13px; }
 
 .hero-grid { margin-top: 42px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }

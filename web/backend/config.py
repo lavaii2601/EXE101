@@ -89,15 +89,16 @@ class Config:
     SESSION_COOKIE_SECURE = _bool(os.getenv("SESSION_COOKIE_SECURE"), default=False)
     MOBILE_TOKEN_MAX_AGE = int(os.getenv("MOBILE_TOKEN_MAX_AGE", 30 * 24 * 3600))
     MOBILE_USER_HEADER_ENABLED = _bool(os.getenv("MOBILE_USER_HEADER_ENABLED"), default=DEBUG)
-    ADMIN_DASHBOARD_TOKEN = os.getenv("ADMIN_DASHBOARD_TOKEN", "")
     ADMIN_EMAILS = {
         item.strip().lower()
         for item in os.getenv("ADMIN_EMAILS", "").split(",")
         if item.strip()
     }
-    ADMIN_BOOTSTRAP_FIRST_USER = _bool(
-        os.getenv("ADMIN_BOOTSTRAP_FIRST_USER"),
-        default=True,
+    ADMIN_TOTP_SECRET = os.getenv("ADMIN_TOTP_SECRET", "")
+    ADMIN_TOTP_SESSION_SECONDS = int(os.getenv("ADMIN_TOTP_SESSION_SECONDS", 8 * 3600))
+    ADMIN_TOTP_MAX_ATTEMPTS = int(os.getenv("ADMIN_TOTP_MAX_ATTEMPTS", 5))
+    ADMIN_TOTP_ATTEMPT_WINDOW_SECONDS = int(
+        os.getenv("ADMIN_TOTP_ATTEMPT_WINDOW_SECONDS", 300)
     )
     RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", 180))
     AI_RATE_LIMIT_PER_MINUTE = int(os.getenv("AI_RATE_LIMIT_PER_MINUTE", 30))

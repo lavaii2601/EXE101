@@ -1,7 +1,4 @@
-const state = {
-  adminKey: sessionStorage.getItem('flowmate.adminKey') || '',
-  timer: null,
-};
+const state = { timer: null };
 
 const $ = (id) => document.getElementById(id);
 const number = (value) => new Intl.NumberFormat('vi-VN').format(Number(value || 0));
@@ -25,15 +22,20 @@ const escapeHtml = (value) => String(value ?? '')
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&#039;');
 
-async function api(path) {
+async function api(path, options = {}) {
   const response = await fetch(path, {
     credentials: 'include',
-    headers: state.adminKey ? { 'X-Admin-Key': state.adminKey } : {},
+    ...options,
+    headers: {
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers || {}),
+    },
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(data.message || data.error || `HTTP ${response.status}`);
     error.status = response.status;
+    error.data = data;
     throw error;
   }
   return data;
@@ -43,6 +45,18 @@ function setConnection(kind, text) {
   const node = $('liveStatus');
   node.className = `status ${kind}`;
   node.innerHTML = `<i></i> ${escapeHtml(text)}`;
+}
+
+function showGate(name, message = '') {
+  $('dashboard').classList.add('hidden');
+  $('authPanel').classList.toggle('hidden', name !== 'google');
+  $('totpPanel').classList.toggle('hidden', name !== 'totp');
+  $('adminLogoutButton').classList.add('hidden');
+  if (name === 'google') $('authError').textContent = message;
+  if (name === 'totp') {
+    $('totpError').textContent = message;
+    setTimeout(() => $('totpInput').focus(), 0);
+  }
 }
 
 function renderMetricList(summary) {
@@ -148,18 +162,19 @@ async function loadDashboard() {
   try {
     const data = await api('/api/admin/overview');
     $('authPanel').classList.add('hidden');
+    $('totpPanel').classList.add('hidden');
     $('dashboard').classList.remove('hidden');
-    $('authError').textContent = '';
+    $('adminLogoutButton').classList.remove('hidden');
     render(data);
-    setConnection('online', 'Server online');
+    setConnection('online', 'Admin đã xác thực');
   } catch (error) {
-    setConnection('offline', error.status === 401 ? 'Cần đăng nhập' : 'Mất kết nối');
-    if (error.status === 401) {
-      $('dashboard').classList.add('hidden');
-      $('authPanel').classList.remove('hidden');
-      $('authError').textContent = error.message;
+    const code = error.data?.error;
+    if (code === 'admin_totp_required') {
+      showGate('totp');
+      setConnection('waiting', 'Chờ mã TOTP');
     } else {
-      $('alerts').innerHTML = `<div class="alert danger">${escapeHtml(error.message)}</div>`;
+      showGate('google', error.message);
+      setConnection('offline', code === 'admin_not_configured' ? 'Admin đang khóa' : 'Cần đăng nhập');
     }
   } finally {
     $('refreshButton').disabled = false;
@@ -178,15 +193,47 @@ async function loginWithGoogle() {
   }
 }
 
+async function verifyTotp() {
+  const code = $('totpInput').value.replace(/\D/g, '').slice(0, 6);
+  $('totpError').textContent = '';
+  if (code.length !== 6) {
+    $('totpError').textContent = 'Nhập đủ 6 chữ số.';
+    return;
+  }
+  $('totpVerifyButton').disabled = true;
+  try {
+    await api('/api/admin/verify-totp', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+    $('totpInput').value = '';
+    await loadDashboard();
+  } catch (error) {
+    $('totpError').textContent = error.message;
+    $('totpInput').select();
+  } finally {
+    $('totpVerifyButton').disabled = false;
+  }
+}
+
+async function lockDashboard() {
+  try {
+    await api('/api/admin/logout', { method: 'POST', body: '{}' });
+  } finally {
+    showGate('totp');
+    setConnection('waiting', 'Dashboard đã khóa');
+  }
+}
+
 $('refreshButton').addEventListener('click', loadDashboard);
 $('googleLoginButton').addEventListener('click', loginWithGoogle);
-$('keyLoginButton').addEventListener('click', () => {
-  state.adminKey = $('adminKeyInput').value.trim();
-  if (state.adminKey) sessionStorage.setItem('flowmate.adminKey', state.adminKey);
-  loadDashboard();
+$('totpVerifyButton').addEventListener('click', verifyTotp);
+$('adminLogoutButton').addEventListener('click', lockDashboard);
+$('totpInput').addEventListener('input', (event) => {
+  event.target.value = event.target.value.replace(/\D/g, '').slice(0, 6);
 });
-$('adminKeyInput').addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') $('keyLoginButton').click();
+$('totpInput').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') verifyTotp();
 });
 
 loadDashboard();

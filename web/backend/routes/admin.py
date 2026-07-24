@@ -1,10 +1,17 @@
+import base64
+import binascii
 import hmac
 import os
+import re
 import sqlite3
+import struct
+import threading
 import time
+from collections import defaultdict, deque
 from datetime import datetime, timezone
+from hashlib import sha1
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 
 from config import Config
 from models import postgres_db as pg
@@ -16,92 +23,163 @@ from utils.user_context import sanitize_user_id
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 _PROCESS_STARTED_AT = time.time()
+_totp_attempts = defaultdict(deque)
+_totp_attempts_lock = threading.Lock()
 
 
-def _admin_key_matches():
-    configured = (Config.ADMIN_DASHBOARD_TOKEN or '').strip()
-    provided = (request.headers.get('X-Admin-Key') or '').strip()
-    return bool(configured and provided and hmac.compare_digest(configured, provided))
-
-
-def _identity_values(user_id):
-    user = User.get(user_id) or {}
-    return {
-        str(value or '').strip().lower()
-        for value in (
-            user_id,
-            user.get('user_id'),
-            user.get('email'),
-            user.get('gmail_email'),
-        )
-        if str(value or '').strip()
-    }
-
-
-def _bootstrap_admin_values():
-    if not Config.ADMIN_BOOTSTRAP_FIRST_USER:
-        return set()
-
-    if pg.enabled():
-        with pg.connection() as conn:
-            row = conn.execute(
-                """
-                SELECT user_id, email, gmail_email
-                FROM users
-                WHERE gmail_connected = TRUE
-                ORDER BY gmail_connected_at NULLS LAST, created_at
-                LIMIT 1
-                """
-            ).fetchone()
-            if not row:
-                return set()
-            return {
-                str(value or '').strip().lower()
-                for value in (row.get('user_id'), row.get('email'), row.get('gmail_email'))
-                if str(value or '').strip()
-            }
-
-    User.init_db()
-    conn = sqlite3.connect(Config.DATABASE_PATH)
-    conn.row_factory = sqlite3.Row
+def _decode_totp_secret(secret):
+    normalized = re.sub(r'[\s-]+', '', str(secret or '')).upper()
+    if not normalized:
+        raise ValueError('ADMIN_TOTP_SECRET is not configured')
+    padding = '=' * ((8 - len(normalized) % 8) % 8)
     try:
-        row = conn.execute(
-            """
-            SELECT user_id, email, gmail_email
-            FROM users
-            WHERE gmail_connected = 1
-            ORDER BY gmail_connected_at, created_at
-            LIMIT 1
-            """
-        ).fetchone()
-        return {
-            str(value or '').strip().lower()
-            for value in (dict(row).values() if row else [])
-            if str(value or '').strip()
-        }
-    finally:
-        conn.close()
+        decoded = base64.b32decode(normalized + padding, casefold=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError('ADMIN_TOTP_SECRET must be valid Base32') from exc
+    if len(decoded) < 20:
+        raise ValueError('ADMIN_TOTP_SECRET must contain at least 160 bits')
+    return decoded
 
 
-def _authorize_admin():
-    if _admin_key_matches():
-        return {'identity': 'admin-key', 'mode': 'token'}
+def _totp_at(secret, timestamp=None, digits=6, period=30):
+    """Return an RFC 6238 HMAC-SHA1 TOTP code for one timestamp."""
+    timestamp = time.time() if timestamp is None else float(timestamp)
+    counter = int(timestamp // period)
+    digest = hmac.new(
+        _decode_totp_secret(secret),
+        struct.pack('>Q', counter),
+        sha1,
+    ).digest()
+    offset = digest[-1] & 0x0F
+    binary = (
+        ((digest[offset] & 0x7F) << 24)
+        | ((digest[offset + 1] & 0xFF) << 16)
+        | ((digest[offset + 2] & 0xFF) << 8)
+        | (digest[offset + 3] & 0xFF)
+    )
+    return str(binary % (10 ** digits)).zfill(digits)
+
+
+def _verify_totp(code, secret, timestamp=None, window=1):
+    code = str(code or '').strip()
+    if not re.fullmatch(r'\d{6}', code):
+        return False
+    now = time.time() if timestamp is None else float(timestamp)
+    return any(
+        hmac.compare_digest(code, _totp_at(secret, now + offset * 30))
+        for offset in range(-window, window + 1)
+    )
+
+
+def _trusted_google_email(user_id):
+    user = User.get(user_id) or {}
+    session_email = str(session.get('gmail_user_email') or '').strip().lower()
+    stored_email = str(user.get('gmail_email') or '').strip().lower()
+    if session_email:
+        return session_email
+    if user.get('gmail_connected') and stored_email:
+        return stored_email
+    return ''
+
+
+def _configuration_error():
+    if not Config.ADMIN_EMAILS:
+        return 'ADMIN_EMAILS is not configured'
+    try:
+        _decode_totp_secret(Config.ADMIN_TOTP_SECRET)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def _google_admin_identity():
+    config_error = _configuration_error()
+    if config_error:
+        return None, (
+            jsonify({
+                'error': 'admin_not_configured',
+                'message': 'Dashboard admin đang khóa vì server chưa cấu hình allowlist và TOTP.',
+            }),
+            503,
+        )
 
     raw_user_id = authenticated_user_id()
     if not raw_user_id:
-        return None
+        return None, (
+            jsonify({
+                'error': 'admin_google_login_required',
+                'message': 'Đăng nhập Google bằng tài khoản quản trị để tiếp tục.',
+            }),
+            401,
+        )
+
     user_id = sanitize_user_id(raw_user_id)
-    identity_values = _identity_values(user_id)
+    google_email = _trusted_google_email(user_id)
+    if not google_email or google_email not in Config.ADMIN_EMAILS:
+        return None, (
+            jsonify({
+                'error': 'admin_not_allowed',
+                'message': 'Tài khoản Google này không có quyền quản trị.',
+            }),
+            403,
+        )
+    return user_id, None
 
-    if Config.ADMIN_EMAILS:
-        if identity_values & Config.ADMIN_EMAILS:
-            return {'identity': user_id, 'mode': 'email_allowlist'}
-        return None
 
-    bootstrap_values = _bootstrap_admin_values()
-    if identity_values & bootstrap_values:
-        return {'identity': user_id, 'mode': 'first_connected_user'}
-    return None
+def _totp_session_valid(user_id):
+    verified_at = session.get('admin_totp_verified_at')
+    verified_user = session.get('admin_totp_user')
+    try:
+        age = time.time() - float(verified_at)
+    except (TypeError, ValueError):
+        return False
+    return (
+        verified_user == user_id
+        and 0 <= age <= max(60, Config.ADMIN_TOTP_SESSION_SECONDS)
+    )
+
+
+def _require_admin():
+    user_id, error_response = _google_admin_identity()
+    if error_response:
+        return None, error_response
+    if not _totp_session_valid(user_id):
+        return None, (
+            jsonify({
+                'error': 'admin_totp_required',
+                'message': 'Nhập mã 6 số từ ứng dụng Authenticator.',
+                'totp_period_seconds': 30,
+            }),
+            403,
+        )
+    return {'identity': user_id, 'mode': 'google_allowlist_totp'}, None
+
+
+def _attempt_key(user_id):
+    forwarded = (request.headers.get('X-Forwarded-For') or '').split(',')[0].strip()
+    return user_id, forwarded or request.remote_addr or 'unknown'
+
+
+def _consume_totp_attempt(user_id):
+    now = time.monotonic()
+    window = max(60, Config.ADMIN_TOTP_ATTEMPT_WINDOW_SECONDS)
+    max_attempts = max(1, Config.ADMIN_TOTP_MAX_ATTEMPTS)
+    key = _attempt_key(user_id)
+    with _totp_attempts_lock:
+        bucket = _totp_attempts[key]
+        while bucket and bucket[0] <= now - window:
+            bucket.popleft()
+        if len(bucket) >= max_attempts:
+            retry_after = max(1, int(window - (now - bucket[0])))
+            return False, retry_after
+        bucket.append(now)
+    return True, 0
+
+
+def _clear_totp_attempts(user_id):
+    key = _attempt_key(user_id)
+    with _totp_attempts_lock:
+        _totp_attempts.pop(key, None)
 
 
 def _postgres_dashboard():
@@ -248,14 +326,73 @@ def _sqlite_dashboard():
     }
 
 
+@admin_bp.route('/session', methods=['GET'])
+def admin_session_status():
+    user_id, error_response = _google_admin_identity()
+    if error_response:
+        return error_response
+    if not _totp_session_valid(user_id):
+        return jsonify({
+            'success': True,
+            'google_admin_verified': True,
+            'totp_verified': False,
+            'error': 'admin_totp_required',
+        }), 403
+    return jsonify({
+        'success': True,
+        'google_admin_verified': True,
+        'totp_verified': True,
+        'user_id': user_id,
+    })
+
+
+@admin_bp.route('/verify-totp', methods=['POST'])
+def verify_admin_totp():
+    user_id, error_response = _google_admin_identity()
+    if error_response:
+        return error_response
+
+    allowed, retry_after = _consume_totp_attempt(user_id)
+    if not allowed:
+        response = jsonify({
+            'error': 'admin_totp_rate_limited',
+            'message': 'Quá nhiều lần nhập sai. Vui lòng thử lại sau.',
+            'retry_after_seconds': retry_after,
+        })
+        response.headers['Retry-After'] = str(retry_after)
+        return response, 429
+
+    code = (request.get_json(silent=True) or {}).get('code')
+    if not _verify_totp(code, Config.ADMIN_TOTP_SECRET):
+        return jsonify({
+            'error': 'admin_totp_invalid',
+            'message': 'Mã Authenticator không đúng hoặc đã hết hạn.',
+        }), 401
+
+    session['admin_totp_user'] = user_id
+    session['admin_totp_verified_at'] = int(time.time())
+    session.modified = True
+    _clear_totp_attempts(user_id)
+    return jsonify({
+        'success': True,
+        'totp_verified': True,
+        'expires_in_seconds': Config.ADMIN_TOTP_SESSION_SECONDS,
+    })
+
+
+@admin_bp.route('/logout', methods=['POST'])
+def admin_logout():
+    session.pop('admin_totp_user', None)
+    session.pop('admin_totp_verified_at', None)
+    session.modified = True
+    return jsonify({'success': True})
+
+
 @admin_bp.route('/overview', methods=['GET'])
 def admin_overview():
-    admin = _authorize_admin()
-    if not admin:
-        return jsonify({
-            'error': 'admin_auth_required',
-            'message': 'Đăng nhập bằng tài khoản quản trị hoặc nhập khóa quản trị.',
-        }), 401
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
 
     payload = _postgres_dashboard() if pg.enabled() else _sqlite_dashboard()
     return jsonify({

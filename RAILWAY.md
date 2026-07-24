@@ -22,12 +22,11 @@ GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
 GMAIL_CREDENTIALS_JSON=
 
-# Admin dashboard: prefer an explicit Google account allowlist.
+# Admin dashboard: both values are required (Google allowlist + TOTP MFA).
 ADMIN_EMAILS=owner@example.com
-# Optional alternate access key (store only in Railway Variables).
-ADMIN_DASHBOARD_TOKEN=
-# When ADMIN_EMAILS is empty, the oldest Google-connected account is admin.
-ADMIN_BOOTSTRAP_FIRST_USER=true
+ADMIN_TOTP_SECRET=
+# Optional: require a new TOTP after 8 hours.
+ADMIN_TOTP_SESSION_SECONDS=28800
 
 # Optional Outlook / Microsoft Graph provider
 MICROSOFT_CLIENT_ID=
@@ -78,15 +77,25 @@ https://exe101.up.railway.app/admin
 
 It reports aggregate PostgreSQL usage, users, Google OAuth health, Calendar
 events, schedules, activity, sync jobs, cache entries, and table sizes. Access
-is accepted from:
+requires both:
 
-- a signed-in Google account listed in `ADMIN_EMAILS`;
-- `X-Admin-Key` matching `ADMIN_DASHBOARD_TOKEN`;
-- the oldest Google-connected account when the allowlist is empty and
-  `ADMIN_BOOTSTRAP_FIRST_USER=true`.
+- a signed-in Google account explicitly listed in `ADMIN_EMAILS`;
+- a current six-digit TOTP from an authenticator app using
+  `ADMIN_TOTP_SECRET`.
 
-Set `ADMIN_EMAILS` after the first login so production ownership stays
-explicit. Never commit the dashboard token to the repository.
+The dashboard fails closed when either variable is missing or invalid. There
+is no first-user bootstrap and no single-header bypass.
+
+Generate a Base32 TOTP secret locally:
+
+```powershell
+python -c "import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip('='))"
+```
+
+Store that output only in Railway Variables as `ADMIN_TOTP_SECRET`, then add it
+manually to Google Authenticator/Authy/1Password with issuer `FlowMate` and the
+admin email as the account name. Never commit or paste the secret into source
+files.
 
 ## Public privacy policy and terms
 
