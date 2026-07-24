@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Button from './Button';
 import { useTheme } from '../theme/ThemeContext';
@@ -113,8 +113,12 @@ export default function PricingModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity style={styles.sheet} activeOpacity={1} onPress={() => {}}>
+      {/* Pressable (not TouchableOpacity) here -- nesting a ScrollView inside
+          TouchableOpacity's legacy responder can steal real finger-drag
+          gestures on device even though synthetic swipes still worked,
+          leaving the sheet impossible to scroll for actual users. */}
+      <Pressable style={styles.overlay} onPress={onClose}>
+        <Pressable style={styles.sheet} onPress={() => {}}>
           <View style={styles.header}>
             <Text style={styles.title}>{isPremiumTier ? 'Gia hạn Premium' : 'Nâng cấp Premium'}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -215,8 +219,8 @@ export default function PricingModal({
           <Text style={styles.ctaNote}>
             Thanh toán qua VNPay/MoMo đang được tích hợp. Hiện tại yêu cầu {isPremiumTier ? 'gia hạn' : 'nâng cấp'} được xử lý thủ công qua liên hệ.
           </Text>
-        </TouchableOpacity>
-      </TouchableOpacity>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
