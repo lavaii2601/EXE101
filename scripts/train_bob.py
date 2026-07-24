@@ -171,7 +171,96 @@ def _existing_key(title, source, user_id):
     return (title, source, user_id or None)
 
 
+def _import_documents_postgres(documents, source, user_id, update_existing):
+    """Import one source in a single PostgreSQL transaction.
+
+    The generic model methods intentionally open their own connection so they
+    are convenient for request handlers. A deploy import contains thousands
+    of rows, though, and using those methods would add thousands of database
+    round trips before the web server can bind its port.
+    """
+    with pg.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, title, content, tags, source, user_id
+            FROM knowledge_documents
+            WHERE source = %s AND user_id IS NOT DISTINCT FROM %s
+            """,
+            (source, user_id),
+        ).fetchall()
+        existing_by_key = {
+            _existing_key(row["title"], row["source"], row["user_id"]): row
+            for row in rows
+        }
+        inserts = []
+        updates = []
+        created = 0
+        updated = 0
+        skipped = 0
+
+        for doc in documents:
+            key = _existing_key(doc["title"], source, user_id)
+            existing = existing_by_key.get(key)
+            if existing:
+                changed = (
+                    existing.get("content") != doc["content"]
+                    or existing.get("tags") != doc["tags"]
+                )
+                if changed and update_existing:
+                    updates.append((doc["content"], doc["tags"], existing["id"]))
+                    existing["content"] = doc["content"]
+                    existing["tags"] = doc["tags"]
+                    updated += 1
+                else:
+                    skipped += 1
+                continue
+
+            inserts.append(
+                (doc["title"], doc["content"], doc["tags"], source, user_id)
+            )
+            # Mark the key immediately so duplicate titles in one input do not
+            # create duplicate database rows.
+            existing_by_key[key] = {
+                "id": None,
+                "title": doc["title"],
+                "content": doc["content"],
+                "tags": doc["tags"],
+                "source": source,
+                "user_id": user_id,
+            }
+            created += 1
+
+        with conn.cursor() as cursor:
+            if updates:
+                cursor.executemany(
+                    """
+                    UPDATE knowledge_documents
+                    SET content = %s, tags = %s, updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    updates,
+                )
+            if inserts:
+                cursor.executemany(
+                    """
+                    INSERT INTO knowledge_documents
+                        (title, content, tags, source, user_id)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    inserts,
+                )
+    return created, updated, skipped
+
+
 def import_documents(documents, source, user_id, update_existing, dry_run):
+    if pg.enabled() and not dry_run:
+        return _import_documents_postgres(
+            documents,
+            source=source,
+            user_id=user_id,
+            update_existing=update_existing,
+        )
+
     created = 0
     updated = 0
     skipped = 0

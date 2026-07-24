@@ -174,10 +174,10 @@ def main():
                 apply_sql_file(conn, migration)
         conn.commit()
     print("PostgreSQL schema deploy completed.", flush=True)
-    # Training imports can contain more than a thousand documents. Running
-    # that workload before Gunicorn makes the public service return 502 for
-    # minutes on every deploy, even when no training row changed. Keep schema
-    # deployment on the startup path and make the data import an explicit job.
+    # Training imports can contain more than a thousand documents. The
+    # fingerprint avoids repeating that work on unchanged deploys, while the
+    # importer batches changed rows in a small number of transactions so the
+    # web server can bind its port promptly.
     force_training_import = os.getenv("IMPORT_BOB_TRAINING_ON_DEPLOY", "").strip().lower() in {
         "1", "true", "yes", "on",
     }
