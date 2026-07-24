@@ -759,7 +759,7 @@ def admin_grant_subscription(user_id):
     if billing_interval not in ('monthly', 'yearly'):
         return jsonify({'error': 'invalid_billing_interval'}), 400
     try:
-        unit_amount = int(data.get('unit_amount') or (549000 if billing_interval == 'yearly' else 49000))
+        unit_amount = int(data.get('unit_amount') or (520000 if billing_interval == 'yearly' else 49000))
         days = int(data.get('days') or (365 if billing_interval == 'yearly' else 30))
     except (TypeError, ValueError):
         return jsonify({'error': 'invalid_amount_or_days'}), 400

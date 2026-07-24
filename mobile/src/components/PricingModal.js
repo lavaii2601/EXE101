@@ -25,6 +25,16 @@ const PAYMENT_METHODS = [
   { key: 'momo', label: 'MoMo', letter: 'M', color: '#D82D8B' },
 ];
 
+// USD is a reference price only (VNPay/MoMo settle in VND) -- yearly USD is
+// derived at the same ~12% discount the VND yearly price already applies
+// over monthly*12, so the "save with yearly" story matches in both
+// currencies instead of drifting apart under a plain FX conversion.
+const PRICING = {
+  monthly: { vnd: '49.000đ', usd: '1.99' },
+  yearly: { vnd: '520.000đ', usd: '20.99' },
+};
+const YEARLY_SAVE_PERCENT = 12;
+
 // No payment gateway is wired up yet (needs a registered VNPay/MoMo merchant
 // account the app owner sets up separately), so picking a method here only
 // tags the contact email -- the admin panel's "Cấp Premium" action grants it
@@ -64,13 +74,16 @@ export default function PricingModal({
   const [method, setMethod] = useState('vnpay');
   const [submitting, setSubmitting] = useState(false);
 
-  const price = billing === 'monthly' ? '49.000đ' : '549.000đ';
+  const price = PRICING[billing].vnd;
+  const priceUsd = PRICING[billing].usd;
   const period = billing === 'monthly' ? '/tháng' : '/năm';
   const remainingLabel = formatRemainingTime(subscription);
 
   const contactToUpgrade = async () => {
     const action = isPremiumTier ? 'renew' : 'purchase';
-    const planLabel = billing === 'monthly' ? 'Hàng tháng (49.000đ/tháng)' : 'Hàng năm (549.000đ/năm)';
+    const planLabel = billing === 'monthly'
+      ? `Hàng tháng (${PRICING.monthly.vnd}/tháng ~ $${PRICING.monthly.usd})`
+      : `Hàng năm (${PRICING.yearly.vnd}/năm ~ $${PRICING.yearly.usd})`;
     const methodLabel = PAYMENT_METHODS.find((item) => item.key === method)?.label || method;
     setSubmitting(true);
     try {
@@ -136,16 +149,18 @@ export default function PricingModal({
               activeOpacity={0.85}
             >
               <Text style={[styles.billingLabel, billing === 'monthly' && styles.billingLabelActive]}>Hàng tháng</Text>
-              <Text style={[styles.billingPrice, billing === 'monthly' && styles.billingLabelActive]}>49.000đ</Text>
+              <Text style={[styles.billingPrice, billing === 'monthly' && styles.billingLabelActive]}>{PRICING.monthly.vnd}</Text>
+              <Text style={styles.billingPriceUsd}>~ ${PRICING.monthly.usd}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.billingOption, billing === 'yearly' && styles.billingOptionActive]}
               onPress={() => setBilling('yearly')}
               activeOpacity={0.85}
             >
-              <View style={styles.saveBadge}><Text style={styles.saveBadgeText}>Tiết kiệm 7%</Text></View>
+              <View style={styles.saveBadge}><Text style={styles.saveBadgeText}>Tiết kiệm {YEARLY_SAVE_PERCENT}%</Text></View>
               <Text style={[styles.billingLabel, billing === 'yearly' && styles.billingLabelActive]}>Hàng năm</Text>
-              <Text style={[styles.billingPrice, billing === 'yearly' && styles.billingLabelActive]}>549.000đ</Text>
+              <Text style={[styles.billingPrice, billing === 'yearly' && styles.billingLabelActive]}>{PRICING.yearly.vnd}</Text>
+              <Text style={styles.billingPriceUsd}>~ ${PRICING.yearly.usd}</Text>
             </TouchableOpacity>
           </View>
 
@@ -168,6 +183,7 @@ export default function PricingModal({
               highlighted
               priceText={price}
               periodText={period}
+              priceUsdText={`~ $${priceUsd}`}
               isCurrent={isPremiumTier}
               rows={FEATURES.map((item) => ({ label: item.label, value: item.premium }))}
             />
@@ -225,7 +241,7 @@ export default function PricingModal({
   );
 }
 
-function PlanCard({ colors, styles, title, icon, priceText, periodText, isCurrent, rows, highlighted }) {
+function PlanCard({ colors, styles, title, icon, priceText, periodText, priceUsdText, isCurrent, rows, highlighted }) {
   return (
     <View style={[styles.card, highlighted && styles.cardHighlighted]}>
       <View style={styles.cardHeader}>
@@ -242,6 +258,7 @@ function PlanCard({ colors, styles, title, icon, priceText, periodText, isCurren
       <View style={styles.cardPriceRow}>
         <Text style={[styles.cardPrice, highlighted && styles.cardPriceHighlighted]}>{priceText}</Text>
         <Text style={styles.cardPeriod}>{periodText}</Text>
+        {priceUsdText ? <Text style={styles.cardPriceUsd}>{priceUsdText}</Text> : null}
       </View>
       <View style={styles.cardFeatures}>
         {rows.map((row) => (
@@ -300,6 +317,7 @@ function makeStyles(colors) {
     billingLabel: { color: colors.textMuted, fontFamily: 'Poppins_600SemiBold', fontSize: 12 },
     billingLabelActive: { color: colors.primary },
     billingPrice: { marginTop: 3, color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 16 },
+    billingPriceUsd: { marginTop: 2, color: colors.textMuted, fontFamily: 'Poppins_500Medium', fontSize: 10 },
     saveBadge: {
       position: 'absolute',
       top: -10,
@@ -343,6 +361,7 @@ function makeStyles(colors) {
     cardPrice: { color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 22 },
     cardPriceHighlighted: { color: colors.primary },
     cardPeriod: { color: colors.textMuted, fontFamily: 'Poppins_500Medium', fontSize: 11 },
+    cardPriceUsd: { marginLeft: 4, color: colors.textMuted, fontFamily: 'Poppins_500Medium', fontSize: 10.5 },
     cardFeatures: { gap: 9 },
     cardFeatureRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     cardFeatureLabel: { flex: 1.5, color: colors.text, fontFamily: 'Poppins_500Medium', fontSize: 11.5, lineHeight: 15 },
