@@ -50,15 +50,52 @@ def _build_subscription_block(user_id):
     """Free/Premium tier + today's AI-usage snapshot, surfaced on the shared
     profile endpoint so both web and mobile pick it up from the one call
     App.js's refreshShell already makes."""
-    active = subscription_model.get_active(user_id)
     return {
-        'tier': 'premium' if active else 'free',
-        'plan_code': active.get('plan_code') if active else None,
-        'plan_name': active.get('plan_name') if active else None,
-        'billing_interval': active.get('billing_interval') if active else None,
-        'current_period_end': active.get('current_period_end') if active else None,
+        **subscription_model.get_entitlement(user_id),
         'usage': get_usage_snapshot(user_id),
     }
+
+
+@user_bp.route('/subscription/intent', methods=['POST'])
+def subscription_intent():
+    """Validate purchase versus renewal against the server entitlement."""
+    user_id = get_current_user_id(request)
+    if not user_id or user_id == 'default':
+        return jsonify({
+            'error': 'not_authenticated',
+            'auth_scope': 'app',
+        }), 401
+
+    data = request.get_json(silent=True) or {}
+    requested_action = (data.get('action') or '').strip().lower()
+    try:
+        state = subscription_model.validate_action(user_id, requested_action)
+    except ValueError:
+        return jsonify({'error': 'invalid_subscription_action'}), 400
+
+    if not state['eligible']:
+        error = (
+            'premium_already_active'
+            if state['allowed_action'] == 'renew'
+            else 'no_active_premium'
+        )
+        message = (
+            'Premium is already active. This account can only renew.'
+            if state['allowed_action'] == 'renew'
+            else 'This account has no active Premium plan to renew.'
+        )
+        return jsonify({
+            'error': error,
+            'message': message,
+            'allowed_action': state['allowed_action'],
+            'subscription': state,
+        }), 409
+
+    return jsonify({
+        'success': True,
+        'action': state['allowed_action'],
+        'subscription': state,
+    })
 
 
 @user_bp.route('/profile', methods=['GET'])

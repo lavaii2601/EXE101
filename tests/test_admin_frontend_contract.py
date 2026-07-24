@@ -47,6 +47,14 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('không đồng nghĩa tiền đã settlement', self.html)
         self.assertIn('finance.reporting_timezone', self.javascript)
 
+    def test_subscription_controls_cover_renew_revoke_and_remaining_time(self):
+        self.assertIn('data-grant-premium', self.javascript)
+        self.assertIn('data-renew-premium', self.javascript)
+        self.assertIn('data-revoke-premium', self.javascript)
+        self.assertIn('subscription_remaining_seconds', self.javascript)
+        self.assertIn('remainingTime(', self.javascript)
+        self.assertIn('recentSubscriptionsBody', self.html)
+
 
 if __name__ == '__main__':
     unittest.main()

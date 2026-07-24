@@ -12,6 +12,18 @@ const number = (value) => new Intl.NumberFormat('vi-VN').format(Number(value || 
 const dateTime = (value) => value
   ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value))
   : '—';
+const remainingTime = (seconds, periodEnd) => {
+  if (!periodEnd) return 'Không giới hạn';
+  let value = Math.max(0, Number(seconds || 0));
+  const days = Math.floor(value / 86400);
+  value -= days * 86400;
+  const hours = Math.floor(value / 3600);
+  value -= hours * 3600;
+  const minutes = Math.floor(value / 60);
+  if (days) return `${number(days)} ngày${hours ? ` ${hours} giờ` : ''}`;
+  if (hours) return `${hours} giờ${minutes ? ` ${minutes} phút` : ''}`;
+  return `${Math.max(0, minutes)} phút`;
+};
 const bytes = (value) => {
   let size = Number(value || 0);
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -183,33 +195,62 @@ function renderSyncJobs(items) {
 function renderUsers(items) {
   $('usersBody').innerHTML = items.length ? items.map((user) => {
     const isPremium = Boolean(user.subscription_plan_name);
+    const remaining = remainingTime(
+      user.subscription_remaining_seconds,
+      user.subscription_current_period_end
+    );
     return `<tr>
       <td><strong>${escapeHtml(user.name || user.user_id)}</strong><br><span class="muted">${escapeHtml(user.gmail_email || user.email || user.user_id)}</span></td>
       <td><span class="badge ${user.gmail_connected ? 'success' : 'failed'}">${user.gmail_connected ? 'Đã kết nối' : 'Chưa kết nối'}</span></td>
       <td>${escapeHtml(user.user_mode || 'Chưa chọn')}</td>
       <td>${escapeHtml(dateTime(user.updated_at))}</td>
       <td>
-        <span class="badge ${isPremium ? 'success' : ''}">${isPremium ? `Premium đến ${escapeHtml(dateTime(user.subscription_current_period_end))}` : 'Free'}</span>
+        <span class="badge ${isPremium ? 'success' : ''}">${isPremium ? 'Premium' : 'Free'}</span>
+        ${isPremium ? `<br><strong class="premium-remaining">Còn ${escapeHtml(remaining)}</strong>
+          <br><span class="muted">Hết hạn ${escapeHtml(dateTime(user.subscription_current_period_end))}</span>` : ''}
       </td>
-      <td>
+      <td class="subscription-actions">
         ${isPremium
-          ? `<button type="button" class="btn-link" data-revoke-premium="${escapeHtml(user.user_id)}">Thu hồi</button>`
+          ? `<button type="button" class="btn-link" data-renew-premium="${escapeHtml(user.user_id)}">Gia hạn 30 ngày</button>
+             <button type="button" class="btn-link danger" data-revoke-premium="${escapeHtml(user.user_id)}">Thu hồi</button>`
           : `<button type="button" class="btn-link" data-grant-premium="${escapeHtml(user.user_id)}">Cấp Premium</button>`}
       </td>
     </tr>`;
   }).join('') : '<tr><td colspan="6" class="muted">Chưa có người dùng.</td></tr>';
 }
 
-async function grantPremium(userId) {
-  if (!window.confirm(`Cấp Premium (49.000đ/tháng, 30 ngày) cho ${userId}?`)) return;
+async function grantPremium(userId, action = 'purchase') {
+  const renewing = action === 'renew';
+  const verb = renewing ? 'Gia hạn Premium thêm 30 ngày' : 'Cấp Premium 30 ngày';
+  if (!window.confirm(`${verb} cho ${userId}?`)) return;
   try {
-    await api(`/api/admin/users/${encodeURIComponent(userId)}/subscription`, {
+    const result = await api(`/api/admin/users/${encodeURIComponent(userId)}/subscription`, {
       method: 'POST',
-      body: JSON.stringify({ plan_code: 'premium_monthly', plan_name: 'Premium', billing_interval: 'monthly', unit_amount: 49000, days: 30 }),
+      body: JSON.stringify({
+        action,
+        plan_code: 'premium_monthly',
+        plan_name: 'Premium',
+        billing_interval: 'monthly',
+        unit_amount: 49000,
+        days: 30,
+      }),
     });
+    const remaining = remainingTime(
+      result.subscription?.remaining_seconds,
+      result.subscription?.current_period_end
+    );
+    window.alert(`${renewing ? 'Đã gia hạn' : 'Đã cấp'} Premium. Thời gian còn lại: ${remaining}.`);
+    state.financeLoaded = false;
     await loadDashboard();
   } catch (error) {
-    if (!handleAdminGate(error)) window.alert(error.message || 'Không cấp được Premium.');
+    if (!handleAdminGate(error)) {
+      if (error.data?.allowed_action === 'renew') {
+        window.alert('Tài khoản đã có Premium và chỉ có thể gia hạn.');
+        await loadDashboard();
+      } else {
+        window.alert(error.message || 'Không cập nhật được Premium.');
+      }
+    }
   }
 }
 
@@ -217,6 +258,7 @@ async function revokePremium(userId) {
   if (!window.confirm(`Thu hồi Premium của ${userId}?`)) return;
   try {
     await api(`/api/admin/users/${encodeURIComponent(userId)}/subscription/revoke`, { method: 'POST', body: '{}' });
+    state.financeLoaded = false;
     await loadDashboard();
   } catch (error) {
     if (!handleAdminGate(error)) window.alert(error.message || 'Không thu hồi được Premium.');
@@ -225,8 +267,10 @@ async function revokePremium(userId) {
 
 $('usersBody')?.addEventListener('click', (event) => {
   const grantId = event.target.closest('[data-grant-premium]')?.dataset.grantPremium;
+  const renewId = event.target.closest('[data-renew-premium]')?.dataset.renewPremium;
   const revokeId = event.target.closest('[data-revoke-premium]')?.dataset.revokePremium;
-  if (grantId) grantPremium(grantId);
+  if (grantId) grantPremium(grantId, 'purchase');
+  if (renewId) grantPremium(renewId, 'renew');
   if (revokeId) revokePremium(revokeId);
 });
 
@@ -394,17 +438,39 @@ function renderRecentPayments(finance, currency) {
 
 function renderRecentSubscriptions(finance, currency) {
   const items = (finance.recent_subscriptions || []).filter((item) => item.currency === currency);
-  $('recentSubscriptionsBody').innerHTML = items.length ? items.map((subscription) => (
-    `<tr>
+  $('recentSubscriptionsBody').innerHTML = items.length ? items.map((subscription) => {
+    const active = ['active', 'trialing'].includes(subscription.status)
+      && (!subscription.current_period_end || Number(subscription.remaining_seconds || 0) > 0);
+    const remaining = remainingTime(
+      subscription.remaining_seconds,
+      subscription.current_period_end
+    );
+    return `<tr>
       <td><strong>${escapeHtml(subscription.customer)}</strong><br><span class="muted">${escapeHtml(subscription.provider)}</span></td>
       <td>${escapeHtml(subscription.plan_name || subscription.plan_code)}</td>
       <td>${subscription.billing_interval === 'yearly' ? 'Hằng năm' : 'Hằng tháng'}</td>
       <td>${escapeHtml(money(subscription.unit_amount, currency))}</td>
-      <td>${escapeHtml(dateTime(subscription.current_period_end))}${subscription.cancel_at_period_end ? '<br><span class="muted">Sẽ hủy cuối kỳ</span>' : ''}</td>
+      <td>${escapeHtml(dateTime(subscription.current_period_end))}
+        ${active ? `<br><strong class="premium-remaining">Còn ${escapeHtml(remaining)}</strong>` : ''}
+        ${subscription.cancel_at_period_end ? '<br><span class="muted">Sẽ hủy cuối kỳ</span>' : ''}
+      </td>
       <td><span class="badge ${escapeHtml(subscription.status)}">${escapeHtml(statusLabel(subscription.status))}</span></td>
-    </tr>`
-  )).join('') : '<tr><td colspan="6" class="muted">Chưa có subscription cho đơn vị tiền này.</td></tr>';
+      <td class="subscription-actions">
+        ${active
+          ? `<button type="button" class="btn-link" data-renew-premium="${escapeHtml(subscription.user_id)}">Gia hạn 30 ngày</button>
+             <button type="button" class="btn-link danger" data-revoke-premium="${escapeHtml(subscription.user_id)}">Thu hồi</button>`
+          : '<span class="muted">—</span>'}
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="7" class="muted">Chưa có subscription cho đơn vị tiền này.</td></tr>';
 }
+
+$('recentSubscriptionsBody')?.addEventListener('click', (event) => {
+  const renewId = event.target.closest('[data-renew-premium]')?.dataset.renewPremium;
+  const revokeId = event.target.closest('[data-revoke-premium]')?.dataset.revokePremium;
+  if (renewId) grantPremium(renewId, 'renew');
+  if (revokeId) revokePremium(revokeId);
+});
 
 function renderFinance(data) {
   const finance = data.finance || {};

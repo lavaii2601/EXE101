@@ -18,6 +18,7 @@ from models import postgres_db as pg
 from models.knowledge import KnowledgeDocument
 from models.user import User
 from models import subscription as subscription_model
+from models.workspace_sync import WorkspaceSync
 from utils.security import authenticated_user_id
 from utils.user_context import sanitize_user_id
 
@@ -254,11 +255,25 @@ def _postgres_dashboard():
             """
             SELECT u.user_id, u.name, u.email, u.gmail_email, u.gmail_connected,
                    u.user_mode::TEXT AS user_mode, u.created_at, u.updated_at,
+                   sub.plan_code AS subscription_plan_code,
                    sub.plan_name AS subscription_plan_name,
-                   sub.current_period_end AS subscription_current_period_end
+                   sub.billing_interval AS subscription_billing_interval,
+                   sub.current_period_end AS subscription_current_period_end,
+                   sub.remaining_seconds AS subscription_remaining_seconds
             FROM users u
             LEFT JOIN LATERAL (
-                SELECT plan_name, current_period_end
+                SELECT
+                    plan_code,
+                    plan_name,
+                    billing_interval,
+                    current_period_end,
+                    CASE
+                        WHEN current_period_end IS NULL THEN NULL
+                        ELSE GREATEST(
+                            0,
+                            FLOOR(EXTRACT(EPOCH FROM (current_period_end - NOW())))
+                        )::BIGINT
+                    END AS remaining_seconds
                 FROM subscriptions
                 WHERE subscriptions.user_id = u.user_id
                   AND status IN ('trialing', 'active')
@@ -267,7 +282,7 @@ def _postgres_dashboard():
                 LIMIT 1
             ) sub ON TRUE
             ORDER BY u.updated_at DESC
-            LIMIT 20
+            LIMIT 200
             """
         ).fetchall()
         table_sizes = conn.execute(
@@ -587,6 +602,15 @@ def _postgres_finance():
                 subscription.currency,
                 subscription.unit_amount,
                 subscription.current_period_end,
+                CASE
+                    WHEN subscription.current_period_end IS NULL THEN NULL
+                    ELSE GREATEST(
+                        0,
+                        FLOOR(EXTRACT(EPOCH FROM (
+                            subscription.current_period_end - NOW()
+                        )))
+                    )::BIGINT
+                END AS remaining_seconds,
                 subscription.cancel_at_period_end,
                 subscription.created_at,
                 COALESCE(
@@ -726,22 +750,48 @@ def admin_grant_subscription(user_id):
         return jsonify({'error': 'subscriptions_require_postgres'}), 400
 
     data = request.get_json(silent=True) or {}
+    action = (data.get('action') or '').strip().lower() or None
+    if action and action not in subscription_model.PURCHASE_ACTIONS:
+        return jsonify({'error': 'invalid_subscription_action'}), 400
     plan_code = (data.get('plan_code') or 'premium_monthly').strip()
     plan_name = (data.get('plan_name') or 'Premium').strip()
     billing_interval = data.get('billing_interval') or 'monthly'
     if billing_interval not in ('monthly', 'yearly'):
         return jsonify({'error': 'invalid_billing_interval'}), 400
     try:
-        unit_amount = int(data.get('unit_amount') or (490000 if billing_interval == 'yearly' else 49000))
+        unit_amount = int(data.get('unit_amount') or (549000 if billing_interval == 'yearly' else 49000))
         days = int(data.get('days') or (365 if billing_interval == 'yearly' else 30))
     except (TypeError, ValueError):
         return jsonify({'error': 'invalid_amount_or_days'}), 400
 
-    row = subscription_model.grant_manual(
-        user_id, plan_code, plan_name=plan_name, billing_interval=billing_interval,
-        unit_amount=unit_amount, currency=data.get('currency') or 'VND', days=days,
-    )
-    return jsonify({'success': True, 'admin': admin, 'subscription': row})
+    try:
+        row = subscription_model.grant_manual(
+            user_id,
+            plan_code,
+            plan_name=plan_name,
+            billing_interval=billing_interval,
+            unit_amount=unit_amount,
+            currency=data.get('currency') or 'VND',
+            days=days,
+            action=action,
+        )
+    except subscription_model.SubscriptionStateError as exc:
+        return jsonify({
+            'error': exc.code,
+            'allowed_action': exc.allowed_action,
+            'subscription': exc.subscription,
+        }), 409
+
+    try:
+        WorkspaceSync.bump(user_id, ('profile', 'settings', 'overview'))
+    except Exception:
+        pass
+    return jsonify({
+        'success': True,
+        'admin': admin,
+        'action': row.get('entitlement_action'),
+        'subscription': row,
+    })
 
 
 @admin_bp.route('/users/<user_id>/subscription/revoke', methods=['POST'])
@@ -753,4 +803,10 @@ def admin_revoke_subscription(user_id):
         return jsonify({'error': 'subscriptions_require_postgres'}), 400
 
     revoked = subscription_model.revoke(user_id)
-    return jsonify({'success': True, 'admin': admin, 'revoked': revoked})
+    if not revoked:
+        return jsonify({'error': 'no_active_premium'}), 404
+    try:
+        WorkspaceSync.bump(user_id, ('profile', 'settings', 'overview'))
+    except Exception:
+        pass
+    return jsonify({'success': True, 'admin': admin, 'revoked': True})

@@ -32,6 +32,29 @@ const ACCENT_OPTIONS = [
   { key: 'orange',   hex: '#ea580c' },
 ];
 
+function formatSubscriptionRemaining(subscription, t) {
+  if (!subscription?.current_period_end) {
+    return t('không giới hạn', 'unlimited');
+  }
+  let seconds = Number(subscription?.remaining_seconds);
+  if (!Number.isFinite(seconds)) {
+    seconds = Math.max(0, Math.floor(
+      (new Date(subscription.current_period_end).getTime() - Date.now()) / 1000
+    ));
+  }
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days) {
+    return t(
+      `${days} ngày${hours ? ` ${hours} giờ` : ''}`,
+      `${days} day${days === 1 ? '' : 's'}${hours ? ` ${hours}h` : ''}`
+    );
+  }
+  if (hours) return t(`${hours} giờ ${minutes} phút`, `${hours}h ${minutes}m`);
+  return t(`${Math.max(0, minutes)} phút`, `${Math.max(0, minutes)}m`);
+}
+
 export default function SettingsScreen({ profile, status, userMode, onChangeMode, onRefresh, onLogout, onAgentSync, syncEvent }) {
   const { colors, isDark, accent, toggleTheme, setAccent } = useTheme();
   const { language, setLanguage, t } = useLanguage();
@@ -51,6 +74,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const subscriptionPeriodEndLabel = subscription?.current_period_end
     ? new Date(subscription.current_period_end).toLocaleDateString('vi-VN')
     : '';
+  const subscriptionRemainingLabel = formatSubscriptionRemaining(subscription, t);
   const usageEntries = Object.entries(subscription?.usage || {})
     .filter(([action]) => USAGE_LABELS[action])
     .map(([action, entry]) => [t(...USAGE_LABELS[action]), entry]);
@@ -298,13 +322,18 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             <Text style={styles.settingTitle}>{isPremiumTier ? 'Premium' : 'Free'}</Text>
             <Text style={styles.settingSub}>
               {isPremiumTier
-                ? t(`Hết hạn ${subscriptionPeriodEndLabel}`, `Expires ${subscriptionPeriodEndLabel}`)
+                ? t(
+                  `Còn ${subscriptionRemainingLabel} · Hết hạn ${subscriptionPeriodEndLabel}`,
+                  `${subscriptionRemainingLabel} left · Expires ${subscriptionPeriodEndLabel}`
+                )
                 : t('Nâng cấp để mở khóa tính năng nâng cao', 'Upgrade to unlock advanced features')}
             </Text>
           </View>
-          {!isPremiumTier ? (
-            <Button title={t('Nâng cấp', 'Upgrade')} onPress={() => setPricingVisible(true)} />
-          ) : null}
+          <Button
+            title={isPremiumTier ? t('Gia hạn', 'Renew') : t('Nâng cấp', 'Upgrade')}
+            variant={isPremiumTier ? 'secondary' : 'primary'}
+            onPress={() => setPricingVisible(true)}
+          />
         </View>
         {!isPremiumTier && usageEntries.length ? (
           <>
@@ -524,7 +553,13 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         <Button title={t('Đăng xuất', 'Sign out')} variant="danger" onPress={confirmLogout} />
       </View>
 
-      <PricingModal visible={pricingVisible} onClose={() => setPricingVisible(false)} />
+      <PricingModal
+        visible={pricingVisible}
+        isPremiumTier={isPremiumTier}
+        subscription={subscription}
+        onRefresh={onRefresh}
+        onClose={() => setPricingVisible(false)}
+      />
     </ScrollView>
   );
 }
