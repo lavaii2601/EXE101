@@ -17,6 +17,7 @@ from config import Config
 from models import postgres_db as pg
 from models.knowledge import KnowledgeDocument
 from models.user import User
+from models import subscription as subscription_model
 from utils.security import authenticated_user_id
 from utils.user_context import sanitize_user_id
 
@@ -251,10 +252,21 @@ def _postgres_dashboard():
         ).fetchall()
         recent_users = conn.execute(
             """
-            SELECT user_id, name, email, gmail_email, gmail_connected,
-                   user_mode::TEXT AS user_mode, created_at, updated_at
-            FROM users
-            ORDER BY updated_at DESC
+            SELECT u.user_id, u.name, u.email, u.gmail_email, u.gmail_connected,
+                   u.user_mode::TEXT AS user_mode, u.created_at, u.updated_at,
+                   sub.plan_name AS subscription_plan_name,
+                   sub.current_period_end AS subscription_current_period_end
+            FROM users u
+            LEFT JOIN LATERAL (
+                SELECT plan_name, current_period_end
+                FROM subscriptions
+                WHERE subscriptions.user_id = u.user_id
+                  AND status IN ('trialing', 'active')
+                  AND (current_period_end IS NULL OR current_period_end > NOW())
+                ORDER BY current_period_end DESC NULLS LAST
+                LIMIT 1
+            ) sub ON TRUE
+            ORDER BY u.updated_at DESC
             LIMIT 20
             """
         ).fetchall()
@@ -700,3 +712,45 @@ def admin_finance():
         'generated_at': datetime.now(timezone.utc).isoformat(),
         'finance': finance,
     })
+
+
+@admin_bp.route('/users/<user_id>/subscription', methods=['POST'])
+def admin_grant_subscription(user_id):
+    """Manually grant Premium to a user (provider='manual'), for the period
+    before Google Play Billing/RevenueCat is wired up. Same subscriptions
+    row shape a future payment-provider webhook would eventually insert."""
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    if not pg.enabled():
+        return jsonify({'error': 'subscriptions_require_postgres'}), 400
+
+    data = request.get_json(silent=True) or {}
+    plan_code = (data.get('plan_code') or 'premium_monthly').strip()
+    plan_name = (data.get('plan_name') or 'Premium').strip()
+    billing_interval = data.get('billing_interval') or 'monthly'
+    if billing_interval not in ('monthly', 'yearly'):
+        return jsonify({'error': 'invalid_billing_interval'}), 400
+    try:
+        unit_amount = int(data.get('unit_amount') or (490000 if billing_interval == 'yearly' else 49000))
+        days = int(data.get('days') or (365 if billing_interval == 'yearly' else 30))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'invalid_amount_or_days'}), 400
+
+    row = subscription_model.grant_manual(
+        user_id, plan_code, plan_name=plan_name, billing_interval=billing_interval,
+        unit_amount=unit_amount, currency=data.get('currency') or 'VND', days=days,
+    )
+    return jsonify({'success': True, 'admin': admin, 'subscription': row})
+
+
+@admin_bp.route('/users/<user_id>/subscription/revoke', methods=['POST'])
+def admin_revoke_subscription(user_id):
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    if not pg.enabled():
+        return jsonify({'error': 'subscriptions_require_postgres'}), 400
+
+    revoked = subscription_model.revoke(user_id)
+    return jsonify({'success': True, 'admin': admin, 'revoked': revoked})

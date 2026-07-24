@@ -7,6 +7,7 @@ import EmptyState from '../components/EmptyState';
 import Field from '../components/Field';
 import Screen from '../components/Screen';
 import SegmentedControl from '../components/SegmentedControl';
+import PricingModal from '../components/PricingModal';
 import * as FileSystem from 'expo-file-system/legacy';
 import { apiGet, apiPost } from '../api/client';
 import { API_BASE } from '../api/config';
@@ -67,6 +68,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
   const [calendarPermissionAttempted, setCalendarPermissionAttempted] = useState(false);
   const [meetingSuggestions, setMeetingSuggestions] = useState([]);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [pricingVisible, setPricingVisible] = useState(false);
 
   const isDefaultFilters = filter === 'all' && source === 'all';
   const activeFilterLabel = filters.find((item) => item.value === filter)?.label || 'Tất cả';
@@ -260,7 +262,8 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
       )));
       onAgentSync?.(['email', 'overview', 'history'], data);
     } catch (error) {
-      Alert.alert('Không tóm tắt được', error.message);
+      if (isQuotaError(error)) setPricingVisible(true);
+      else Alert.alert('Không tóm tắt được', error.message);
     } finally {
       setSummarizingId('');
     }
@@ -636,6 +639,11 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+      <PricingModal
+        visible={pricingVisible}
+        reason="email_summary"
+        onClose={() => setPricingVisible(false)}
+      />
     </>
   );
 }
@@ -741,6 +749,10 @@ function extractEmailAddress(value) {
 function providerLabel(provider) {
   if (provider === 'outlook' || provider === 'microsoft') return 'Outlook';
   return 'Gmail';
+}
+
+function isQuotaError(error) {
+  return error?.status === 403 && error?.data?.error === 'ai_limit_reached';
 }
 
 function formatFileSize(bytes) {

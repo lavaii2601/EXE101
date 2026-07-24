@@ -11,6 +11,7 @@ export default function ProfileHeader({ profile, status, userMode, onRefresh, on
   const email = profile?.gmail_email || profile?.email || t('Chưa kết nối Gmail', 'Gmail not connected');
   const avatar = profile?.avatar_url || profile?.gmail_picture;
   const gmailReady = status?.gmail_configured;
+  const isPremium = profile?.subscription?.tier === 'premium';
   const mode = getUserMode(userMode);
 
   return (
@@ -31,8 +32,15 @@ export default function ProfileHeader({ profile, status, userMode, onRefresh, on
           {mode.label} · {email}
         </Text>
       </TouchableOpacity>
-      <View style={[styles.status, gmailReady ? styles.ready : styles.notReady]}>
-        <Text style={styles.statusText}>{gmailReady ? t('Sẵn sàng', 'Ready') : t('Cần thiết lập', 'Setup')}</Text>
+      <View style={styles.badgeStack}>
+        {isPremium ? (
+          <View style={styles.premiumBadge}>
+            <Text style={styles.premiumBadgeText}>★ Premium</Text>
+          </View>
+        ) : null}
+        <View style={[styles.status, gmailReady ? styles.ready : styles.notReady]}>
+          <Text style={styles.statusText}>{gmailReady ? t('Sẵn sàng', 'Ready') : t('Cần thiết lập', 'Setup')}</Text>
+        </View>
       </View>
     </View>
   );
@@ -61,6 +69,14 @@ const styles = StyleSheet.create({
   brand: { fontFamily: 'Poppins_700Bold', fontSize: 9, letterSpacing: 1.4, textTransform: 'uppercase' },
   name: { marginTop: 1, fontFamily: 'Poppins_700Bold', fontSize: 15 },
   detail: { marginTop: 2, fontFamily: 'Poppins_500Medium', fontSize: 11 },
+  badgeStack: { alignItems: 'flex-end', gap: 5 },
+  premiumBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    backgroundColor: '#f59e0b',
+  },
+  premiumBadgeText: { color: '#ffffff', fontFamily: 'Poppins_700Bold', fontSize: 10 },
   status: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
   ready: { backgroundColor: '#059669' },
   notReady: { backgroundColor: '#d97706' },

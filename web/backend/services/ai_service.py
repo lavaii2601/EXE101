@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
 from services.openrouter_service import OpenRouterService
 from models.cache import Cache
+from models import subscription as subscription_model
 from utils.user_context import get_user_db_path
 import hashlib
 
@@ -54,6 +55,13 @@ QUOTA_ERROR_KEYWORDS = [
 ]
 
 class AIService:
+    # Premium users get responses routed through these providers first (when
+    # configured and healthy) before falling back to the normal round-robin
+    # chain -- a soft quality preference, not a hard requirement, so full
+    # failover resilience for Free users is unaffected.
+    PREMIUM_PREFERRED_PROVIDERS = ['claude', 'openai', 'openrouter', 'gemini', 'mistral', 'ollama']
+    PREMIUM_MAX_TOKENS_MULTIPLIER = 1.4
+
     def __init__(self):
         self.timeout = Config.AI_REQUEST_TIMEOUT
         self.max_context_messages = Config.AI_MAX_CONTEXT_MESSAGES
@@ -170,6 +178,10 @@ class AIService:
         if max_tokens is None:
             max_tokens = self.task_max_tokens.get(task, self.default_max_tokens)
 
+        is_premium = bool(user_id) and subscription_model.is_premium(user_id)
+        if is_premium:
+            max_tokens = int(max_tokens * self.PREMIUM_MAX_TOKENS_MULTIPLIER)
+
         normalized_messages = self._normalize_messages(messages)
         optimized_messages = self._optimize_messages_for_tokens(
             normalized_messages,
@@ -205,7 +217,7 @@ class AIService:
                 pass
             return demo
 
-        providers = self._build_provider_chain(task=task)
+        providers = self._build_provider_chain(task=task, prefer_quality=is_premium)
         last_error = None
         all_quota_errors = True
 
@@ -331,7 +343,7 @@ class AIService:
 
         return configured
 
-    def _build_provider_chain(self, task='chat'):
+    def _build_provider_chain(self, task='chat', prefer_quality=False):
         """Build provider chain using round-robin + health filtering"""
         # Start with round-robin selection
         ordered = []
@@ -360,7 +372,15 @@ class AIService:
         for provider in task_overrides:
             if provider in healthy_providers and provider not in ordered:
                 ordered.insert(0, provider)  # Prioritize task-specific providers
-        
+
+        # Premium quality preference: bubble the stronger providers to the
+        # front without dropping anything from the fallback chain.
+        if prefer_quality:
+            for provider in reversed(self.PREMIUM_PREFERRED_PROVIDERS):
+                if provider in ordered:
+                    ordered.remove(provider)
+                    ordered.insert(0, provider)
+
         return ordered
 
     def _normalize_messages(self, messages):

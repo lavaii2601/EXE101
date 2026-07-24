@@ -6,6 +6,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.user import User
+from models import subscription as subscription_model
+from models.ai_usage import get_usage_snapshot
 from utils.user_context import get_current_user_id
 
 user_bp = Blueprint('user', __name__, url_prefix='/api/user')
@@ -44,16 +46,32 @@ def _merge_gmail_profile(user):
     return merged
 
 
+def _build_subscription_block(user_id):
+    """Free/Premium tier + today's AI-usage snapshot, surfaced on the shared
+    profile endpoint so both web and mobile pick it up from the one call
+    App.js's refreshShell already makes."""
+    active = subscription_model.get_active(user_id)
+    return {
+        'tier': 'premium' if active else 'free',
+        'plan_code': active.get('plan_code') if active else None,
+        'plan_name': active.get('plan_name') if active else None,
+        'billing_interval': active.get('billing_interval') if active else None,
+        'current_period_end': active.get('current_period_end') if active else None,
+        'usage': get_usage_snapshot(user_id),
+    }
+
+
 @user_bp.route('/profile', methods=['GET'])
 def get_profile():
     """Get current user profile"""
     user_id = get_current_user_id(request)
     user = User.get(user_id)
-    
+
     if not user:
         user = User.get_or_create(user_id)
     user = _merge_gmail_profile(user)
-    
+    user['subscription'] = _build_subscription_block(user_id)
+
     return jsonify({
         'success': True,
         'user': user

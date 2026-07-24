@@ -181,15 +181,54 @@ function renderSyncJobs(items) {
 }
 
 function renderUsers(items) {
-  $('usersBody').innerHTML = items.length ? items.map((user) => (
-    `<tr>
+  $('usersBody').innerHTML = items.length ? items.map((user) => {
+    const isPremium = Boolean(user.subscription_plan_name);
+    return `<tr>
       <td><strong>${escapeHtml(user.name || user.user_id)}</strong><br><span class="muted">${escapeHtml(user.gmail_email || user.email || user.user_id)}</span></td>
       <td><span class="badge ${user.gmail_connected ? 'success' : 'failed'}">${user.gmail_connected ? 'Đã kết nối' : 'Chưa kết nối'}</span></td>
       <td>${escapeHtml(user.user_mode || 'Chưa chọn')}</td>
       <td>${escapeHtml(dateTime(user.updated_at))}</td>
-    </tr>`
-  )).join('') : '<tr><td colspan="4" class="muted">Chưa có người dùng.</td></tr>';
+      <td>
+        <span class="badge ${isPremium ? 'success' : ''}">${isPremium ? `Premium đến ${escapeHtml(dateTime(user.subscription_current_period_end))}` : 'Free'}</span>
+      </td>
+      <td>
+        ${isPremium
+          ? `<button type="button" class="btn-link" data-revoke-premium="${escapeHtml(user.user_id)}">Thu hồi</button>`
+          : `<button type="button" class="btn-link" data-grant-premium="${escapeHtml(user.user_id)}">Cấp Premium</button>`}
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="6" class="muted">Chưa có người dùng.</td></tr>';
 }
+
+async function grantPremium(userId) {
+  if (!window.confirm(`Cấp Premium (49.000đ/tháng, 30 ngày) cho ${userId}?`)) return;
+  try {
+    await api(`/api/admin/users/${encodeURIComponent(userId)}/subscription`, {
+      method: 'POST',
+      body: JSON.stringify({ plan_code: 'premium_monthly', plan_name: 'Premium', billing_interval: 'monthly', unit_amount: 49000, days: 30 }),
+    });
+    await loadDashboard();
+  } catch (error) {
+    if (!handleAdminGate(error)) window.alert(error.message || 'Không cấp được Premium.');
+  }
+}
+
+async function revokePremium(userId) {
+  if (!window.confirm(`Thu hồi Premium của ${userId}?`)) return;
+  try {
+    await api(`/api/admin/users/${encodeURIComponent(userId)}/subscription/revoke`, { method: 'POST', body: '{}' });
+    await loadDashboard();
+  } catch (error) {
+    if (!handleAdminGate(error)) window.alert(error.message || 'Không thu hồi được Premium.');
+  }
+}
+
+$('usersBody')?.addEventListener('click', (event) => {
+  const grantId = event.target.closest('[data-grant-premium]')?.dataset.grantPremium;
+  const revokeId = event.target.closest('[data-revoke-premium]')?.dataset.revokePremium;
+  if (grantId) grantPremium(grantId);
+  if (revokeId) revokePremium(revokeId);
+});
 
 function renderAlerts(summary) {
   const alerts = [];

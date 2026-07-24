@@ -41,6 +41,7 @@ from utils.user_context import (
 )
 from utils.security import issue_mobile_token
 from utils.google_service_cache import invalidate_cached_service
+from utils.quota import enforce_ai_quota
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -1466,6 +1467,10 @@ def summarize_email_detail(email_id):
                 ttl=EMAIL_BODY_CACHE_TTL,
                 db_path=db_path
             )
+
+        quota_rejection = enforce_ai_quota(user_id, 'email_summary')
+        if quota_rejection:
+            return jsonify({'error': 'ai_limit_reached', **quota_rejection}), 403
 
         summary = ai_service.summarize_email_polished(email_data, user_id=user_id)
         payload = {

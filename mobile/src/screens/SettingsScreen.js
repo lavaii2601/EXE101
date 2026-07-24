@@ -18,6 +18,11 @@ import { getUserMode } from '../config/userModes';
 import { apiGet, apiPost } from '../api/client';
 import { PRIVACY_URL, TERMS_URL } from '../api/config';
 import { connectGoogleAccount } from '../api/googleAuth';
+import PricingModal from '../components/PricingModal';
+
+const USAGE_LABELS = {
+  email_summary: ['Tóm tắt email AI', 'AI email summaries'],
+};
 
 const ACCENT_OPTIONS = [
   { key: 'charcoal', hex: '#242423' },
@@ -39,6 +44,16 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const [twoFactor,     setTwoFactor]     = useState(false);
   const [gmailAuth,      setGmailAuth]      = useState(null);
   const [gmailLoading,   setGmailLoading]   = useState(false);
+  const [pricingVisible, setPricingVisible] = useState(false);
+
+  const subscription = profile?.subscription;
+  const isPremiumTier = subscription?.tier === 'premium';
+  const subscriptionPeriodEndLabel = subscription?.current_period_end
+    ? new Date(subscription.current_period_end).toLocaleDateString('vi-VN')
+    : '';
+  const usageEntries = Object.entries(subscription?.usage || {})
+    .filter(([action]) => USAGE_LABELS[action])
+    .map(([action, entry]) => [t(...USAGE_LABELS[action]), entry]);
 
   const name     = profile?.name || profile?.gmail_name || t('Người dùng', 'User');
   const email    = profile?.gmail_email || profile?.email || t('Chưa kết nối Gmail', 'Gmail not connected');
@@ -272,6 +287,41 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         </View>
       </View>
 
+      {/* ── Subscription ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>{t('GÓI DỊCH VỤ', 'PLAN')}</Text>
+        <View style={styles.settingRow}>
+          <View style={[styles.iconWrap, { backgroundColor: isPremiumTier ? '#fef3c7' : colors.primarySoft }]}>
+            <Text style={styles.settingIcon}>{isPremiumTier ? '★' : 'F'}</Text>
+          </View>
+          <View style={styles.settingInfo}>
+            <Text style={styles.settingTitle}>{isPremiumTier ? 'Premium' : 'Free'}</Text>
+            <Text style={styles.settingSub}>
+              {isPremiumTier
+                ? t(`Hết hạn ${subscriptionPeriodEndLabel}`, `Expires ${subscriptionPeriodEndLabel}`)
+                : t('Nâng cấp để mở khóa tính năng nâng cao', 'Upgrade to unlock advanced features')}
+            </Text>
+          </View>
+          {!isPremiumTier ? (
+            <Button title={t('Nâng cấp', 'Upgrade')} onPress={() => setPricingVisible(true)} />
+          ) : null}
+        </View>
+        {!isPremiumTier && usageEntries.length ? (
+          <>
+            <View style={styles.divider} />
+            {usageEntries.map(([label, entry]) => (
+              <View key={label} style={styles.usageRow}>
+                <Text style={styles.usageLabel}>{label}</Text>
+                <View style={styles.usageBarTrack}>
+                  <View style={[styles.usageBarFill, { width: `${Math.min(100, (entry.used / Math.max(1, entry.limit)) * 100)}%` }]} />
+                </View>
+                <Text style={styles.usageValue}>{entry.used}/{entry.limit}</Text>
+              </View>
+            ))}
+          </>
+        ) : null}
+      </View>
+
       {/* ── Notifications ── */}
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>{t('THÔNG BÁO', 'NOTIFICATIONS')}</Text>
@@ -474,6 +524,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         <Button title={t('Đăng xuất', 'Sign out')} variant="danger" onPress={confirmLogout} />
       </View>
 
+      <PricingModal visible={pricingVisible} onClose={() => setPricingVisible(false)} />
     </ScrollView>
   );
 }
@@ -551,6 +602,11 @@ function makeStyles(colors) {
       textTransform: 'uppercase',
     },
     divider: { height: 1, backgroundColor: colors.border },
+    usageRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 12 },
+    usageLabel: { width: 110, color: colors.textMuted, fontFamily: 'Poppins_500Medium', fontSize: 11 },
+    usageBarTrack: { flex: 1, height: 6, borderRadius: 999, overflow: 'hidden', backgroundColor: `${colors.primary}18` },
+    usageBarFill: { height: 6, borderRadius: 999, backgroundColor: colors.primary },
+    usageValue: { width: 40, textAlign: 'right', color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 11 },
 
     /* Setting row */
     settingRow:  { flexDirection: 'row', alignItems: 'center', gap: 12 },

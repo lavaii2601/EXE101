@@ -339,6 +339,19 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
     )
 );
 
+-- Per-user daily counter for AI-costing actions (chat messages, email AI
+-- summaries, draft replies, plan-day suggestions), gating the free tier of
+-- the Freemium/Premium split. Incremented via a single atomic
+-- INSERT ... ON CONFLICT ... DO UPDATE SET count = count + 1 RETURNING count.
+CREATE TABLE IF NOT EXISTS ai_usage_daily (
+    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    usage_date DATE NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, action, usage_date)
+);
+
 -- Shared knowledge base for Bob's RAG lookups (not per-user -- product/feature
 -- knowledge, FAQ, and any open-source reference material fed in later).
 CREATE TABLE IF NOT EXISTS knowledge_documents (
@@ -460,6 +473,9 @@ CREATE INDEX IF NOT EXISTS idx_payment_transactions_refunded_currency
     WHERE refunded_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_payment_transactions_user_created
     ON payment_transactions (user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ai_usage_daily_user_date
+    ON ai_usage_daily (user_id, usage_date);
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_documents_created ON knowledge_documents (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_knowledge_documents_user_created ON knowledge_documents (user_id, created_at DESC);

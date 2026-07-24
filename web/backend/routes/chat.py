@@ -28,6 +28,7 @@ from models.schedule import Schedule
 from models.session_memory import SessionMemory
 from models.user import User
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
+from models import subscription as subscription_model
 from datetime import datetime
 
 # Configure module logger
@@ -245,9 +246,20 @@ def send_message():
             chat_session_id=chat_session_id if action_type == 'chat' else None,
         )
 
-    intent_result = intent_orchestrator.detect_workflow_with_ai(
-        user_message, ai_service, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
-    )
+    # Multi-step workflow chaining (e.g. "đặt lịch rồi tóm tắt email") is a
+    # Premium-only feature: it re-runs AI intent classification once per
+    # detected step, so gating it here both draws the Free/Premium line and
+    # avoids multiplying AI calls for Free users. Free users still get their
+    # full message classified normally via detect_with_ai (the same fallback
+    # detect_workflow_with_ai itself uses when it finds fewer than 2 steps).
+    if subscription_model.is_premium(user_id):
+        intent_result = intent_orchestrator.detect_workflow_with_ai(
+            user_message, ai_service, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
+        )
+    else:
+        intent_result = intent_orchestrator.detect_with_ai(
+            user_message, ai_service, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
+        )
     refresh_targets = list(intent_result.get('refresh_targets') or [])
     resolved_user_message = intent_result.get('resolved_message') or user_message
 
