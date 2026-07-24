@@ -1,4 +1,8 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import * as SecureStore from 'expo-secure-store';
+
+const THEME_KEY = 'flowmate.theme';
+const ACCENT_KEY = 'flowmate.accent';
 
 export const ACCENTS = {
   charcoal: { primary: '#242423', primaryDark: '#1e1e1d' },
@@ -70,6 +74,32 @@ export function ThemeProvider({ children }) {
   const [isDark, setIsDark] = useState(false);
   const [accent, setAccent] = useState('purple');
 
+  useEffect(() => {
+    Promise.all([
+      SecureStore.getItemAsync(THEME_KEY),
+      SecureStore.getItemAsync(ACCENT_KEY),
+    ]).then(([storedTheme, storedAccent]) => {
+      if (storedTheme === 'dark' || storedTheme === 'light') {
+        setIsDark(storedTheme === 'dark');
+      }
+      if (storedAccent && ACCENTS[storedAccent]) setAccent(storedAccent);
+    }).catch(() => {});
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setIsDark((current) => {
+      const next = !current;
+      SecureStore.setItemAsync(THEME_KEY, next ? 'dark' : 'light').catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const selectAccent = useCallback((next) => {
+    const value = ACCENTS[next] ? next : 'purple';
+    setAccent(value);
+    SecureStore.setItemAsync(ACCENT_KEY, value).catch(() => {});
+  }, []);
+
   const colors = useMemo(() => buildColors(isDark, accent), [isDark, accent]);
 
   const value = useMemo(
@@ -77,10 +107,10 @@ export function ThemeProvider({ children }) {
       colors,
       isDark,
       accent,
-      toggleTheme: () => setIsDark((v) => !v),
-      setAccent,
+      toggleTheme,
+      setAccent: selectAccent,
     }),
-    [colors, isDark, accent]
+    [colors, isDark, accent, selectAccent, toggleTheme]
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

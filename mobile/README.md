@@ -109,20 +109,45 @@ npm start
 
 ## Dong bo voi web
 
-Mobile dung cung backend `web/backend` va cac endpoint chinh voi web:
+Mobile v1.0.2 dùng cùng backend `web/backend`, cùng Google identity và cùng
+PostgreSQL workspace với web:
 
 - Chat: `/api/chat/*`
 - Email/Gmail: `/api/email/*`
 - Lich: `/api/schedule/*`
 - Google Calendar: `/api/calendar/*`
+- Cursor đồng bộ: `/api/sync/state?since=<revision>`
 
-Lich tren mobile dang dung che do local-first de mo nhanh:
+Khi app đang foreground, APK kiểm tra revision nhẹ mỗi 10–15 giây và kiểm tra
+ngay khi người dùng quay lại app. Nếu web vừa thay đổi dữ liệu, APK chỉ tải lại
+màn hình liên quan; web cũng làm tương tự với thay đổi từ APK. Revision được
+lưu riêng theo tài khoản nên đổi tài khoản không làm lẫn workspace.
+
+Lịch trên mobile dùng chế độ local-first để mở nhanh:
 
 - `/schedule/unified?live=0`
 - `/schedule/week?sync=0`
 
-Google Calendar van duoc backend sync nen trong nen man hinh khong bi chan boi
-network cham.
+Google Calendar vẫn được backend sync nền nên màn hình không bị chặn bởi mạng
+chậm. Remote revision chỉ đọc lại dữ liệu local đã đồng bộ, không gọi lặp
+Google sync.
+
+Khi web và APK cùng mở một lịch/checklist, request lưu kèm revision hiện tại.
+Backend trả `409` và client tải bản mới nhất nếu thiết bị kia đã lưu trước,
+thay vì âm thầm ghi đè.
+
+Đăng xuất APK chỉ xóa phiên trên thiết bị đó; nút **Đăng xuất Gmail** trên web
+mới ngắt integration dùng chung. Theme, accent và ngôn ngữ được nhớ cục bộ
+trên từng thiết bị.
+
+Sau khi build release, có thể chép artifact thành:
+
+```text
+mobile/FlowMate-AI-1.0.2.apk
+```
+
+Thư mục `mobile/*.apk` được Git ignore; source, versionCode `3` và hướng dẫn
+build được đưa lên GitHub, còn APK local dùng để cài thử trực tiếp.
 
 ## Chính sách bảo mật và điều khoản
 

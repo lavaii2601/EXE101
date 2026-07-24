@@ -179,10 +179,21 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
 
   const updateStatus = async (schedule, status) => {
     try {
-      await apiPatch(`/schedule/${schedule.local_id}/update-status`, { status });
+      await apiPatch(`/schedule/${schedule.local_id}/update-status`, {
+        status,
+        expected_updated_at: schedule.updated_at || null,
+      });
       await loadSchedules();
       onAgentSync?.(['schedule', 'calendar', 'overview', 'history']);
     } catch (error) {
+      if (error.status === 409) {
+        await loadSchedules();
+        Alert.alert(
+          'Lịch vừa thay đổi',
+          'Web hoặc một thiết bị khác đã cập nhật lịch này. Dữ liệu mới nhất đã được tải lại.',
+        );
+        return;
+      }
       Alert.alert('Không cập nhật được lịch', error.message);
     }
   };
@@ -278,6 +289,7 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
         duration_minutes: editForm.duration_minutes ? Number(editForm.duration_minutes) : 60,
         location: editForm.location,
         attendees: splitAttendees(editForm.attendees),
+        expected_updated_at: editingSchedule.updated_at || null,
       });
       setEditingSchedule(null);
       setEditForm(initialForm);
@@ -285,6 +297,16 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
       onAgentSync?.(['schedule', 'calendar', 'overview', 'history']);
       Alert.alert('Đã cập nhật lịch');
     } catch (error) {
+      if (error.status === 409) {
+        setEditingSchedule(null);
+        setEditForm(initialForm);
+        await loadSchedules();
+        Alert.alert(
+          'Lịch vừa thay đổi',
+          'Web hoặc một thiết bị khác đã lưu trước. Dữ liệu mới nhất đã được tải lại để tránh ghi đè.',
+        );
+        return;
+      }
       Alert.alert('Không cập nhật được lịch', error.message);
     } finally {
       setLoading(false);

@@ -20,7 +20,15 @@ import LoginScreen from './src/screens/LoginScreen';
 import ProfileHeader from './src/components/ProfileHeader';
 import RoleSelection from './src/components/RoleSelection';
 import { apiGet, apiPost } from './src/api/client';
-import { clearPersistedSession, loadPersistedSession } from './src/api/session';
+import {
+  clearPersistedSession,
+  getMobileUserId,
+  loadPersistedSession,
+} from './src/api/session';
+import {
+  loadWorkspaceSyncRevision,
+  persistWorkspaceSyncRevision,
+} from './src/state/workspaceSync';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
 
@@ -34,6 +42,47 @@ const tabs = [
 ];
 
 const NEW_MAIL_POLL_INTERVAL_MS = 5000;
+const WORKSPACE_SYNC_POLL_INTERVAL_MS = 12000;
+const WORKSPACE_SYNC_POLL_MIN_MS = 10000;
+const WORKSPACE_SYNC_POLL_MAX_MS = 15000;
+
+function workspaceTargetsForDomains(domains = []) {
+  const targets = new Set();
+  (Array.isArray(domains) ? domains : []).forEach((domain) => {
+    const key = String(domain || '').trim().toLowerCase();
+    if (!key) return;
+    // A remote Calendar revision already represents server-side shared state.
+    // Refresh the local schedule view without launching another /schedule/sync
+    // mutation, which would advance the revision again and create a poll loop.
+    if (key === 'calendar') {
+      targets.add('schedule');
+      targets.add('overview');
+      return;
+    }
+    targets.add(key);
+    if (key === 'email') targets.add('overview');
+    if (key === 'schedule') {
+      targets.add('schedule');
+      targets.add('overview');
+    }
+    if (key === 'chat') targets.add('history');
+    if (key === 'profile' || key === 'settings') {
+      targets.add('profile');
+      targets.add('settings');
+    }
+    if (key === 'providers') targets.add('settings');
+  });
+  return Array.from(targets);
+}
+
+function workspacePollDelay(value) {
+  const requested = Number(value);
+  if (!Number.isFinite(requested)) return WORKSPACE_SYNC_POLL_INTERVAL_MS;
+  return Math.max(
+    WORKSPACE_SYNC_POLL_MIN_MS,
+    Math.min(WORKSPACE_SYNC_POLL_MAX_MS, requested),
+  );
+}
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -100,6 +149,24 @@ function AppShell() {
     }
   }, []);
 
+  const handleAgentSync = useCallback((targets = [], metadata = {}) => {
+    const normalizedTargets = Array.from(new Set((Array.isArray(targets) ? targets : [])
+      .filter(Boolean)));
+    if (!normalizedTargets.length) return;
+    setSyncEvent((current) => ({
+      id: current.id + 1,
+      targets: normalizedTargets,
+      trace: metadata.agent_trace || null,
+      source: metadata.source || 'local',
+      revision: metadata.revision ?? null,
+      domains: metadata.domains || null,
+      at: Date.now(),
+    }));
+    if (normalizedTargets.some((target) => ['settings', 'profile', 'providers'].includes(target))) {
+      refreshShell();
+    }
+  }, [refreshShell]);
+
   useEffect(() => {
     // Restore a previously signed-in session from secure storage BEFORE the
     // first API call, so the access token is already in place -- otherwise
@@ -144,6 +211,7 @@ function AppShell() {
           meetingSuggestion: data.meeting_suggestion || null,
         });
         setUnseenMailCount((count) => count + 1);
+        handleAgentSync(['email', 'overview'], { source: 'new_mail' });
         dismissLater();
       } catch (error) {
         // Gmail may not be connected yet. This background agent must remain
@@ -166,10 +234,120 @@ function AppShell() {
       subscription.remove();
       if (mailNoticeTimer.current) clearTimeout(mailNoticeTimer.current);
     };
-  }, [isAuthenticated]);
+  }, [handleAgentSync, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+
+    const owner = getMobileUserId() || 'anonymous';
+    let active = true;
+    let checking = false;
+    let checkAgain = false;
+    let timer = null;
+    let revision = null;
+    let hasBaseline = false;
+    let revisionLoaded = false;
+    let pollDelay = WORKSPACE_SYNC_POLL_INTERVAL_MS;
+    let foreground = AppState.currentState === 'active' || AppState.currentState == null;
+
+    const clearPollTimer = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+
+    const scheduleNextCheck = () => {
+      clearPollTimer();
+      if (!active || !foreground) return;
+      timer = setTimeout(checkWorkspaceState, pollDelay);
+    };
+
+    const checkWorkspaceState = async () => {
+      if (!active || !foreground) return;
+      if (!revisionLoaded) {
+        checkAgain = true;
+        return;
+      }
+      if (checking) {
+        checkAgain = true;
+        return;
+      }
+
+      checking = true;
+      checkAgain = false;
+      try {
+        const suffix = revision === null ? '' : `?since=${encodeURIComponent(revision)}`;
+        const data = await apiGet(`/sync/state${suffix}`);
+        if (
+          !active
+          || !foreground
+          || owner !== (getMobileUserId() || 'anonymous')
+          || !data?.success
+        ) return;
+
+        const nextRevision = Number(data.revision);
+        if (!Number.isSafeInteger(nextRevision) || nextRevision < 0) return;
+
+        const changedDomains = Array.isArray(data.changed) ? data.changed : [];
+        const shouldNotify = hasBaseline
+          && nextRevision !== revision
+          && changedDomains.length > 0;
+        revision = nextRevision;
+        hasBaseline = true;
+        pollDelay = workspacePollDelay(data.poll_after_ms);
+        persistWorkspaceSyncRevision(nextRevision, owner);
+
+        if (shouldNotify) {
+          handleAgentSync(workspaceTargetsForDomains(changedDomains), {
+            source: 'workspace_revision',
+            revision: nextRevision,
+            domains: changedDomains,
+          });
+        }
+      } catch (error) {
+        if (active && error?.status !== 401) {
+          console.warn('Workspace sync check failed:', error);
+        }
+      } finally {
+        checking = false;
+        if (!active) return;
+        if (checkAgain && foreground) {
+          checkWorkspaceState();
+        } else {
+          scheduleNextCheck();
+        }
+      }
+    };
+
+    (async () => {
+      const savedRevision = await loadWorkspaceSyncRevision(owner);
+      if (!active || owner !== (getMobileUserId() || 'anonymous')) return;
+      revision = savedRevision;
+      hasBaseline = savedRevision !== null;
+      revisionLoaded = true;
+      checkWorkspaceState();
+    })();
+
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (!active) return;
+      foreground = state === 'active';
+      if (state === 'active') {
+        clearPollTimer();
+        checkWorkspaceState();
+      } else {
+        clearPollTimer();
+      }
+    });
+
+    return () => {
+      active = false;
+      clearPollTimer();
+      subscription.remove();
+    };
+  }, [handleAgentSync, isAuthenticated, profile?.gmail_email, profile?.user_id]);
 
   const handleLogout = useCallback(async () => {
-    try { await apiPost('/email/logout'); } catch { /* ignore */ }
+    // Device sign-out only removes this APK session. Disconnecting the shared
+    // Google integration here would also break Gmail/Calendar on the web.
     await clearPersistedSession();
     setProfile(null);
     setStatus(null);
@@ -213,21 +391,6 @@ function AppShell() {
     }
   }, [profile]);
 
-  const handleAgentSync = useCallback((targets = [], metadata = {}) => {
-    const normalizedTargets = Array.from(new Set((Array.isArray(targets) ? targets : [])
-      .filter(Boolean)));
-    if (!normalizedTargets.length) return;
-    setSyncEvent((current) => ({
-      id: current.id + 1,
-      targets: normalizedTargets,
-      trace: metadata.agent_trace || null,
-      at: Date.now(),
-    }));
-    if (normalizedTargets.some((target) => ['settings', 'profile', 'providers'].includes(target))) {
-      refreshShell();
-    }
-  }, [refreshShell]);
-
   const renderScreen = () => {
     if (activeTab === 'overview') return <OverviewScreen onAgentSync={handleAgentSync} syncEvent={syncEvent} onNavigate={setActiveTab} />;
     if (activeTab === 'emails')   return <EmailScreen userMode={userMode || 'worker'} onAuthChanged={refreshShell} onAgentSync={handleAgentSync} onNavigate={setActiveTab} syncEvent={syncEvent} />;
@@ -245,7 +408,14 @@ function AppShell() {
         syncEvent={syncEvent}
       />
     );
-    return <ChatScreen userMode={userMode || 'worker'} agentProfile={agentProfile} onAgentSync={handleAgentSync} />;
+    return (
+      <ChatScreen
+        userMode={userMode || 'worker'}
+        agentProfile={agentProfile}
+        onAgentSync={handleAgentSync}
+        syncEvent={syncEvent}
+      />
+    );
   };
 
   const styles = useMemo(() => makeStyles(colors), [colors]);

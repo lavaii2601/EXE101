@@ -13,15 +13,18 @@ const AUTH_ALERT_COOLDOWN_MS = 60000;
 // login UI to surface this inline anymore). Cooldown avoids re-popping the
 // same alert every few seconds from background polls (e.g. new-mail-check)
 // while the user hasn't gotten around to reconnecting yet.
-function handleUnauthorized() {
-  if (!getMobileAccessToken()) return;
+function handleUnauthorized(data = {}) {
+    if (!getMobileAccessToken()) return;
   const now = Date.now();
   if (authAlertActive || now - lastAuthAlertAt < AUTH_ALERT_COOLDOWN_MS) return;
   authAlertActive = true;
   lastAuthAlertAt = now;
+  const googleOnly = data?.auth_scope === 'google';
   Alert.alert(
-    'Cần đăng nhập lại',
-    'Phiên đăng nhập Google đã hết hạn hoặc quyền truy cập bị thu hồi. Vào tab Cài đặt để đăng nhập lại.',
+    googleOnly ? 'Cần kết nối lại Google' : 'Cần đăng nhập lại',
+    googleOnly
+      ? 'FlowMate vẫn đang đăng nhập, nhưng quyền Gmail/Calendar cần được cấp lại trong tab Cài đặt.'
+      : 'Phiên FlowMate trên thiết bị đã hết hạn. Vui lòng đăng nhập lại để tiếp tục đồng bộ.',
     [{ text: 'Đã hiểu', onPress: () => { authAlertActive = false; } }]
   );
 }
@@ -49,7 +52,7 @@ async function request(path, options = {}) {
   }
 
   if (!response.ok) {
-    if (response.status === 401) handleUnauthorized();
+    if (response.status === 401) handleUnauthorized(data);
     const message = data.error || data.message || `HTTP ${response.status}`;
     const error = new Error(message);
     error.status = response.status;

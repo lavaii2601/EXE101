@@ -17,6 +17,7 @@ ALLOWED_ORIGINS=https://exe101.up.railway.app
 SCHEDULE_FULL_SYNC_DAYS=90
 POSTGRES_POOL_MIN=1
 POSTGRES_POOL_MAX=8
+WORKSPACE_SYNC_POLL_AFTER_MS=10000
 
 GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
@@ -44,9 +45,12 @@ You can use either:
 After changing variables, redeploy the Railway service.
 
 Google OAuth tokens are persisted in PostgreSQL (`oauth_tokens`) and cached in
-the Railway container only at runtime. If users connected Google before the
-database-backed token persistence shipped, ask them to reconnect Google once
-after redeploy so the token can be stored durably.
+the Railway container only at runtime. PostgreSQL is authoritative on every
+credential acquisition: a token refreshed or revoked by one Gunicorn
+worker/replica invalidates the local Gmail/Calendar service cache on another.
+If users connected Google before database-backed token persistence shipped,
+ask them to reconnect Google once after redeploy so the token can be stored
+durably.
 
 On each deploy, `python scripts/deploy_postgres_schema.py` runs first. It is
 idempotent: existing tables/data are preserved, and only missing schema pieces
@@ -57,6 +61,24 @@ the corpus only when the checked-in `docs/bob-training/modes/*.json` files have
 changed, then stores a manifest row in PostgreSQL. Later deploys with the same
 fingerprint skip the import, avoiding repeated startup delays. Set
 `IMPORT_BOB_TRAINING_ON_DEPLOY=true` only when a full refresh must be forced.
+
+## Đồng bộ web và APK
+
+Schema deploy tạo `user_identities` và `workspace_sync_state`. Google `sub`
+được dùng làm identity bất biến, vì vậy web cookie và APK Bearer token cùng
+trỏ vào một workspace dù email có dấu chấm/gạch dễ va chạm khi sanitize.
+
+Mỗi mutation thành công tăng revision theo user và domain. Web và APK poll
+`GET /api/sync/state?since=<revision>` chỉ khi visible/foreground, mặc định
+10 giây và được client giới hạn trong khoảng 10–15 giây. Có thể điều chỉnh hint
+bằng `WORKSPACE_SYNC_POLL_AFTER_MS`; không nên đặt quá thấp vì mỗi client đang
+mở sẽ tạo một request đọc trạng thái theo chu kỳ.
+
+Schedule và checklist dùng optimistic concurrency. HTTP `409` có nghĩa một
+client khác đã lưu trước; client phải tải lại payload hiện tại thay vì retry
+mù quáng. Remote `calendar` revision chỉ nên làm mới dữ liệu local hiện có,
+không gọi lại `POST /api/schedule/sync`, để tránh vòng lặp revision giữa các
+thiết bị.
 
 To verify the deployed service can see the variables, open:
 

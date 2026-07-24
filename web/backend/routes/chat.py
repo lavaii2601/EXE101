@@ -35,6 +35,16 @@ logger = logging.getLogger(__name__)
 
 chat_bp = Blueprint('chat', __name__, url_prefix='/api/chat')
 
+_VALID_USER_MODES = {
+    'student',
+    'freelancer',
+    'creator',
+    'worker',
+    'business',
+    'mentor',
+    'teacher',
+}
+
 
 def _format_user_datetime(value, fallback=None):
     if not value:
@@ -157,7 +167,16 @@ def send_message():
     user_message = data.get('message', '').strip()
     user_id = get_current_user_id(request)
     stored_user = User.get(user_id) or {}
-    mode = (data.get('mode') or stored_user.get('user_mode') or 'worker').strip().lower()
+    # The profile is shared by web and mobile, so it is authoritative. A
+    # client may have a stale locally cached mode while another client has
+    # already changed it; only use the request value for a brand-new profile.
+    stored_mode = str(stored_user.get('user_mode') or '').strip().lower()
+    requested_mode = str(data.get('mode') or '').strip().lower()
+    mode = (
+        stored_mode if stored_mode in _VALID_USER_MODES
+        else requested_mode if requested_mode in _VALID_USER_MODES
+        else 'worker'
+    )
     mode_prompts = {
         'student': (
             "Student Mode: treat the user's academic life as the primary workspace. "
@@ -297,6 +316,7 @@ def send_message():
     response_payload = {
         'success': True,
         'session_id': chat_session_id,
+        'effective_mode': mode,
         'response': result.response,
         'provider': result.provider,
         'demo_mode': result.demo_mode,

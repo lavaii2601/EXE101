@@ -17,6 +17,7 @@ from models.calendar_event import CalendarEvent
 from models.schedule import Schedule, LOCAL_TZ
 from models.history import History
 from models.sync_job import SyncJob
+from models.workspace_sync import WorkspaceSync
 from services.intent_orchestrator import IntentOrchestrator
 from utils.user_context import (
     get_current_user_id,
@@ -607,6 +608,10 @@ def _classify_quick_plan(text, selected_date):
 
 def _normalize_checklist_payload(data):
     data = data or {}
+    try:
+        revision = max(0, int(data.get('revision') or 0))
+    except (TypeError, ValueError):
+        revision = 0
     completed = data.get('completed') if isinstance(data.get('completed'), dict) else {}
     custom_items = data.get('custom_items') if isinstance(data.get('custom_items'), list) else []
     normalized_custom = []
@@ -631,6 +636,7 @@ def _normalize_checklist_payload(data):
             'pinned': bool(item.get('pinned')),
         })
     return {
+        'revision': revision,
         'completed': {str(key)[:180]: bool(value) for key, value in completed.items()},
         'custom_items': _sort_custom_items(normalized_custom),
     }
@@ -646,7 +652,29 @@ def _normalize_attendees(attendees_value):
     return []
 
 
-def _sync_schedule_to_calendar(user_id, schedule_id, schedule_payload, db_path):
+def _publish_background_calendar_link(user_id, db_path):
+    """Notify clients after integration metadata changes outside a request."""
+    try:
+        WorkspaceSync.bump(
+            user_id,
+            ('schedule', 'calendar', 'overview'),
+            db_path=db_path,
+        )
+    except Exception:
+        logger.debug(
+            "Could not publish background calendar-link revision for %s",
+            user_id,
+            exc_info=True,
+        )
+
+
+def _sync_schedule_to_calendar(
+    user_id,
+    schedule_id,
+    schedule_payload,
+    db_path,
+    publish_background_revision=False,
+):
     """Create or update the corresponding Google Calendar event."""
     auth_failure = _calendar_auth_failure_payload(user_id)
     if auth_failure:
@@ -689,10 +717,29 @@ def _sync_schedule_to_calendar(user_id, schedule_id, schedule_payload, db_path):
             location=schedule_payload.get('location', '') or ''
         )
         if new_event_id:
-            Schedule.update(schedule_id, calendar_event_id=new_event_id, db_path=db_path)
-            _clear_schedule_cache(db_path)
-            logger.info(f"Schedule {schedule_id} synced to Google Calendar: {new_event_id}")
-            return new_event_id
+            attached = Schedule.attach_calendar_event_id(
+                schedule_id,
+                new_event_id,
+                db_path=db_path,
+            )
+            if attached:
+                _clear_schedule_cache(db_path)
+                if publish_background_revision:
+                    _publish_background_calendar_link(user_id, db_path)
+                logger.info(f"Schedule {schedule_id} synced to Google Calendar: {new_event_id}")
+                return new_event_id
+
+            # Another worker may have linked this schedule while the Google
+            # request was in flight. Never report the losing event ID as the
+            # one stored locally.
+            current = Schedule.get_by_id(schedule_id, db_path=db_path)
+            current_event_id = (current or {}).get('calendar_event_id')
+            logger.info(
+                "Schedule %s Google link was already resolved to %s",
+                schedule_id,
+                current_event_id or 'no local schedule',
+            )
+            return current_event_id
         logger.warning(
             "Failed to sync schedule %s to Google Calendar: %s",
             schedule_id,
@@ -712,7 +759,13 @@ def _sync_schedule_to_calendar_async(user_id, schedule_id, db_path):
         try:
             schedule = Schedule.get_by_id(schedule_id, db_path=db_path)
             if schedule:
-                _sync_schedule_to_calendar(user_id, schedule_id, schedule, db_path)
+                _sync_schedule_to_calendar(
+                    user_id,
+                    schedule_id,
+                    schedule,
+                    db_path,
+                    publish_background_revision=True,
+                )
         except Exception:
             logger.debug("Background calendar sync failed for schedule %s", schedule_id, exc_info=True)
 
@@ -809,16 +862,24 @@ def save_overview_checklist():
     data = request.get_json() or {}
     date_value = (data.get('date') or request.args.get('date') or datetime.now(LOCAL_TZ).date().isoformat()).strip()
     payload = _normalize_checklist_payload(data)
-    Cache.set(
+    saved, current = Cache.set_versioned(
         _checklist_cache_key(user_id, date_value),
         payload,
+        expected_revision=payload['revision'],
         ttl=_CHECKLIST_CACHE_TTL_SECONDS,
         db_path=db_path,
     )
+    if not saved:
+        return jsonify({
+            'error': 'checklist_conflict',
+            'message': 'Checklist changed on another device. Reload and try again.',
+            'date': date_value,
+            **_normalize_checklist_payload(current),
+        }), 409
     return jsonify({
         'success': True,
         'date': date_value,
-        **payload,
+        **current,
     })
 
 
@@ -1005,8 +1066,7 @@ def quick_add_plan_item():
             return jsonify({'success': False, 'error': str(e)}), 500
 
     checklist_date = date_value
-    cached = Cache.get(_checklist_cache_key(user_id, checklist_date), db_path=db_path)
-    payload = _normalize_checklist_payload(cached)
+    checklist_key = _checklist_cache_key(user_id, checklist_date)
     item = {
         'id': f"manual:{uuid.uuid4().hex[:12]}",
         'title': plan.get('title') or text,
@@ -1020,13 +1080,28 @@ def quick_add_plan_item():
         'priority_score': plan.get('priority_score') or 0,
         'pinned': False,
     }
-    payload['custom_items'] = _sort_custom_items([item, *payload.get('custom_items', [])])
-    Cache.set(
-        _checklist_cache_key(user_id, checklist_date),
-        payload,
-        ttl=_CHECKLIST_CACHE_TTL_SECONDS,
-        db_path=db_path,
-    )
+    payload = None
+    for _ in range(3):
+        current = _normalize_checklist_payload(Cache.get(checklist_key, db_path=db_path))
+        candidate = {
+            **current,
+            'custom_items': _sort_custom_items([item, *current.get('custom_items', [])]),
+        }
+        saved, latest = Cache.set_versioned(
+            checklist_key,
+            candidate,
+            expected_revision=current['revision'],
+            ttl=_CHECKLIST_CACHE_TTL_SECONDS,
+            db_path=db_path,
+        )
+        if saved:
+            payload = latest
+            break
+    if payload is None:
+        return jsonify({
+            'error': 'checklist_conflict',
+            'message': 'Checklist changed repeatedly. Reload and try again.',
+        }), 409
     return jsonify({
         'success': True,
         'kind': 'task',
@@ -1776,16 +1851,33 @@ def get_schedule(schedule_id):
 @schedule_bp.route('/<int:schedule_id>/update-status', methods=['PATCH', 'POST'])
 def update_status(schedule_id):
     """Update schedule status"""
-    data = request.get_json()
-    status = data.get('status', '').strip()
+    data = request.get_json(silent=True) or {}
+    status = str(data.get('status') or '').strip().lower()
     
     if not status:
         return jsonify({'error': 'Missing status'}), 400
+    if status not in {'pending', 'completed', 'cancelled', 'dismissed'}:
+        return jsonify({'error': 'Invalid status'}), 400
     
     try:
         user_id = get_current_user_id(request)
         db_path = get_user_db_path(user_id)
-        Schedule.update_status(schedule_id, status, db_path=db_path)
+        expected_updated_at = data.get('expected_updated_at')
+        changed = Schedule.update_status(
+            schedule_id,
+            status,
+            db_path=db_path,
+            expected_updated_at=expected_updated_at,
+        )
+        if not changed:
+            current = Schedule.get_by_id(schedule_id, db_path=db_path)
+            if not current:
+                return jsonify({'error': 'Schedule not found'}), 404
+            return jsonify({
+                'error': 'schedule_conflict',
+                'message': 'Schedule changed on another device. Reload and try again.',
+                'current_schedule': current,
+            }), 409
         _clear_schedule_cache(db_path)
         History.create(
             f"Cập nhật trạng thái lịch hẹn",
@@ -1833,7 +1925,21 @@ def update_schedule(schedule_id):
         if 'start_time' in update_data and ('end_time' not in update_data or not update_data.get('end_time')):
             update_data['end_time'] = _compute_end_time(update_data.get('start_time'), None, duration_minutes)
 
-        Schedule.update(schedule_id, db_path=db_path, **update_data)
+        changed = Schedule.update(
+            schedule_id,
+            db_path=db_path,
+            expected_updated_at=data.get('expected_updated_at'),
+            **update_data,
+        )
+        if not changed:
+            current = Schedule.get_by_id(schedule_id, db_path=db_path)
+            if not current:
+                return jsonify({'error': 'Schedule not found'}), 404
+            return jsonify({
+                'error': 'schedule_conflict',
+                'message': 'Schedule changed on another device. Reload and try again.',
+                'current_schedule': current,
+            }), 409
         _clear_schedule_cache(db_path)
         updated = Schedule.get_by_id(schedule_id, db_path=db_path)
         

@@ -135,7 +135,12 @@ function formatAgentMeta(data) {
   return parts.join(' · ');
 }
 
-export default function ChatScreen({ userMode = 'worker', agentProfile = null, onAgentSync }) {
+export default function ChatScreen({
+  userMode = 'worker',
+  agentProfile = null,
+  onAgentSync,
+  syncEvent,
+}) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -159,6 +164,8 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
   const [activeDraft, setActiveDraft] = useState(null);
   const listRef = useRef(null);
   const mountedRef = useRef(false);
+  const lastWorkspaceSyncIdRef = useRef(0);
+  const pendingWorkspaceSyncIdRef = useRef(0);
   const mode = getUserMode(userMode);
 
   const adoptSessionId = useCallback((value, expectedOwner = getChatSessionOwner()) => {
@@ -261,17 +268,67 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
     setInput('');
   }, [adoptSessionId]);
 
-  const loadSessions = useCallback(async () => {
+  const loadSessions = useCallback(async (expectedOwner = getChatSessionOwner()) => {
     setSessionsLoading(true);
     try {
       const data = await apiGet('/chat/sessions?limit=40');
+      if (!mountedRef.current || expectedOwner !== getChatSessionOwner()) return;
       setSessions(Array.isArray(data.sessions) ? data.sessions : []);
     } catch (error) {
-      Alert.alert('Không tải được đoạn chat', error.message);
+      if (mountedRef.current && expectedOwner === getChatSessionOwner()) {
+        Alert.alert('Không tải được đoạn chat', error.message);
+      }
     } finally {
-      setSessionsLoading(false);
+      if (mountedRef.current && expectedOwner === getChatSessionOwner()) {
+        setSessionsLoading(false);
+      }
     }
   }, []);
+
+  useEffect(() => {
+    const targets = Array.isArray(syncEvent?.targets) ? syncEvent.targets : [];
+    const isRemoteChatChange = (
+      syncEvent?.id
+      && syncEvent.source === 'workspace_revision'
+      && targets.some((target) => target === 'chat' || target === 'history')
+    );
+    if (
+      isRemoteChatChange
+      && Number(syncEvent.id) > lastWorkspaceSyncIdRef.current
+    ) {
+      pendingWorkspaceSyncIdRef.current = Math.max(
+        pendingWorkspaceSyncIdRef.current,
+        Number(syncEvent.id) || 0,
+      );
+    }
+
+    const pendingSyncId = pendingWorkspaceSyncIdRef.current;
+    if (
+      !pendingSyncId
+      || !sessionId
+      || loading
+      || refreshing
+      || sessionsLoading
+    ) return;
+    if (lastWorkspaceSyncIdRef.current >= pendingSyncId) {
+      pendingWorkspaceSyncIdRef.current = 0;
+      return;
+    }
+
+    pendingWorkspaceSyncIdRef.current = 0;
+    lastWorkspaceSyncIdRef.current = pendingSyncId;
+    const owner = getChatSessionOwner();
+    loadHistoryForSession(sessionId, owner);
+    loadSessions(owner);
+  }, [
+    loadHistoryForSession,
+    loadSessions,
+    loading,
+    refreshing,
+    sessionId,
+    sessionsLoading,
+    syncEvent,
+  ]);
 
   const showSessions = useCallback(async () => {
     setSessionsOpen(true);

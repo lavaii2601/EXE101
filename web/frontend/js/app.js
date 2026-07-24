@@ -50,10 +50,21 @@ let agentProfile = null;
 let newMailPollTimer = null;
 let overviewRefreshTimer = null;
 let lastSeenMailId = localStorage.getItem('flowmate-last-mail-id') || null;
+let workspaceSyncPollTimer = null;
+let workspaceSyncInFlight = false;
+let workspaceSyncRevision = null;
+let workspaceSyncOwnerId = '';
+let workspaceSyncHasBaseline = false;
+let workspaceSyncListenersBound = false;
+let workspaceSyncPollAfterMs = 12000;
+let workspaceSyncGeneration = 0;
+let workspaceSyncAbortController = null;
 // Gmail push should be configured in production for true server-side push.
 // This short watcher is the resilient foreground fallback and feels instant
 // even when Pub/Sub is unavailable or the browser just resumed.
 const NEW_MAIL_POLL_INTERVAL_MS = 5000;
+const WORKSPACE_SYNC_POLL_MIN_MS = 10000;
+const WORKSPACE_SYNC_POLL_MAX_MS = 15000;
 const OVERVIEW_REFRESH_POLL_INTERVAL_MS = 2500;
 const OVERVIEW_REFRESH_MAX_POLLS = 48;
 
@@ -722,21 +733,23 @@ async function initApp() {
         bindWeekNavigation();
 
         // Listen for postMessage from OAuth popup to update UI without redirect
-        window.addEventListener('message', (ev) => {
+        window.addEventListener('message', async (ev) => {
             try {
                 if (ev.origin === window.location.origin && ev.data && ev.data.type === 'gmail_auth' && ev.data.status === 'success') {
                     console.log('📥 Received gmail_auth success message');
-                    refreshAuthButtons();
-                    loadUserProfile().then(() => {
-                        if (userModeRequired) {
-                            pendingPageAfterMode = 'overview';
-                        } else {
-                            showWorkspace();
-                            if (currentPage === 'emails') {
-                                setTimeout(() => loadEmails(1, { cacheOnly: true }), 300);
-                            }
+                    const authenticatedAfterOAuth = await resolveInitialAuthState();
+                    if (!authenticatedAfterOAuth) return;
+                    await refreshAuthButtons();
+                    await loadUserProfile();
+                    await startWorkspaceSyncWatcher();
+                    if (userModeRequired) {
+                        pendingPageAfterMode = 'overview';
+                    } else {
+                        showWorkspace();
+                        if (currentPage === 'emails') {
+                            setTimeout(() => loadEmails(1, { cacheOnly: true }), 300);
                         }
-                    });
+                    }
                 }
             } catch (e) {
                 console.warn('PostMessage handling error', e);
@@ -762,6 +775,10 @@ async function initApp() {
         return;
     }
 
+    // Establish the cross-client cursor before loading the initial page.
+    // This closes the gap where a remote mutation could otherwise land after
+    // the page read but be swallowed by a later first-time baseline.
+    await startWorkspaceSyncWatcher();
     await loadUserProfile();
     if (!userModeRequired) {
         showWorkspace();
@@ -844,6 +861,7 @@ async function resolveInitialAuthState() {
     }
 
     if (!isAuthenticated) {
+        stopWorkspaceSyncWatcher();
         showAuthGate(ui(
             'Đăng nhập để truy cập không gian làm việc thông minh của bạn.',
             'Sign in to access your intelligent workspace.'
@@ -1288,6 +1306,252 @@ async function refreshWorkspaceTargets(targets = []) {
     }
 }
 
+function getWorkspaceSyncOwner() {
+    return String(lastAuthStatus?.user_id || lastAuthStatus?.gmail_email || '').trim().toLowerCase();
+}
+
+function getWorkspaceSyncStorageKey(ownerId) {
+    return `flowmate-sync-revision:${ownerId}`;
+}
+
+function parseWorkspaceSyncRevision(value) {
+    const revision = Number.parseInt(value, 10);
+    return Number.isSafeInteger(revision) && revision >= 0 ? revision : null;
+}
+
+function clampWorkspaceSyncPollDelay(value) {
+    const delay = Number.parseInt(value, 10);
+    if (!Number.isFinite(delay)) return 12000;
+    return Math.min(Math.max(delay, WORKSPACE_SYNC_POLL_MIN_MS), WORKSPACE_SYNC_POLL_MAX_MS);
+}
+
+function configureWorkspaceSyncOwner() {
+    const nextOwnerId = getWorkspaceSyncOwner();
+    if (!nextOwnerId) return false;
+    if (workspaceSyncOwnerId === nextOwnerId) return true;
+
+    workspaceSyncGeneration += 1;
+    workspaceSyncAbortController?.abort();
+    workspaceSyncAbortController = null;
+    workspaceSyncInFlight = false;
+    workspaceSyncOwnerId = nextOwnerId;
+
+    const storedRevision = parseWorkspaceSyncRevision(
+        localStorage.getItem(getWorkspaceSyncStorageKey(nextOwnerId))
+    );
+    workspaceSyncRevision = storedRevision;
+    workspaceSyncHasBaseline = storedRevision !== null;
+    return true;
+}
+
+function pauseWorkspaceSyncWatcher() {
+    if (workspaceSyncPollTimer) {
+        window.clearTimeout(workspaceSyncPollTimer);
+        workspaceSyncPollTimer = null;
+    }
+}
+
+function stopWorkspaceSyncWatcher() {
+    pauseWorkspaceSyncWatcher();
+    workspaceSyncGeneration += 1;
+    workspaceSyncAbortController?.abort();
+    workspaceSyncAbortController = null;
+    workspaceSyncInFlight = false;
+    workspaceSyncRevision = null;
+    workspaceSyncOwnerId = '';
+    workspaceSyncHasBaseline = false;
+    workspaceSyncPollAfterMs = 12000;
+}
+
+function workspaceSyncChangedDomains(data, sinceRevision) {
+    if (Array.isArray(data?.changed)) {
+        return Array.from(new Set(data.changed.map((item) => String(item || '').trim()).filter(Boolean)));
+    }
+
+    // Tolerate older/pre-release field names without weakening the canonical
+    // server contract (`changed`). The domains fallback is also useful during
+    // rolling deploys where a newer frontend can briefly hit an older worker.
+    const aliases = data?.changed_targets || data?.targets || data?.refresh_targets;
+    if (Array.isArray(aliases)) {
+        return Array.from(new Set(aliases.map((item) => String(item || '').trim()).filter(Boolean)));
+    }
+    if (data?.domains && typeof data.domains === 'object') {
+        return Object.entries(data.domains)
+            .filter(([, revision]) => {
+                const parsed = parseWorkspaceSyncRevision(revision);
+                return parsed !== null && parsed > sinceRevision;
+            })
+            .map(([domain]) => domain);
+    }
+    return [];
+}
+
+async function refreshVisibleWorkspaceChanges(changedDomains = []) {
+    const changed = new Set(changedDomains);
+    if (!changed.size || !isAuthenticated) return;
+    const affects = (...domains) => domains.some((domain) => changed.has(domain));
+    const refreshes = [];
+
+    // Profile is visible in the workspace shell on every page. Settings and
+    // provider changes also affect global connection/status controls.
+    if (affects('profile', 'settings')) {
+        refreshes.push(loadUserProfile());
+        refreshes.push(refreshAuthButtons());
+    }
+    if (affects('providers')) {
+        refreshes.push(checkRuntimeConfig());
+        refreshes.push(loadAgentProfile());
+    }
+
+    if (currentPage === 'chat' && affects('chat', 'history')) {
+        refreshes.push(loadChatSessions());
+        refreshes.push(loadChatHistory());
+    } else if (
+        currentPage === 'overview'
+        && affects('overview', 'email', 'schedule', 'calendar')
+    ) {
+        refreshes.push(loadOverviewPage({ background: true }));
+    } else if (currentPage === 'emails' && affects('email')) {
+        refreshes.push(loadEmails(currentEmailPage || 1, { cacheOnly: true }));
+        refreshes.push(loadMeetingSuggestions());
+    } else if (currentPage === 'schedule') {
+        if (affects('schedule', 'calendar')) {
+            // The remote mutation already updated FlowMate's shared local
+            // schedule state. Read that state directly; a full Google sync
+            // here would be expensive and can create a cross-device loop.
+            invalidateScheduleCaches();
+            refreshes.push(loadSchedules());
+            refreshes.push(loadWeekSchedule());
+            refreshes.push(refreshQuickScheduleSummary());
+        }
+        if (affects('email')) {
+            refreshes.push(loadMeetingSuggestions());
+        }
+    } else if (currentPage === 'history' && affects('history')) {
+        refreshes.push(loadActivityHistory());
+    } else if (
+        currentPage === 'settings'
+        && affects('profile', 'settings', 'email', 'providers')
+    ) {
+        refreshes.push(loadSettingsPage());
+    }
+
+    await Promise.allSettled(refreshes);
+}
+
+async function checkWorkspaceSyncState() {
+    if (
+        workspaceSyncInFlight
+        || !isAuthenticated
+        || document.visibilityState !== 'visible'
+        || !configureWorkspaceSyncOwner()
+    ) {
+        return;
+    }
+
+    workspaceSyncInFlight = true;
+    const generation = workspaceSyncGeneration;
+    const ownerId = workspaceSyncOwnerId;
+    const sinceRevision = workspaceSyncRevision ?? 0;
+    const hadBaseline = workspaceSyncHasBaseline;
+    const controller = new AbortController();
+    workspaceSyncAbortController = controller;
+    const abortTimer = window.setTimeout(() => controller.abort(), 8000);
+
+    try {
+        const response = await fetch(
+            `${API_BASE}/sync/state?since=${encodeURIComponent(sinceRevision)}`,
+            {
+                credentials: 'include',
+                headers: { Accept: 'application/json' },
+                signal: controller.signal
+            }
+        );
+
+        if (response.status === 401) {
+            isAuthenticated = false;
+            lastAuthStatus = null;
+            stopWorkspaceSyncWatcher();
+            showAuthGate(ui(
+                'PhiÃªn Ä‘Äƒng nháº­p Ä‘Ã£ háº¿t háº¡n. Vui lÃ²ng Ä‘Äƒng nháº­p láº¡i.',
+                'Your session has expired. Please sign in again.'
+            ));
+            return;
+        }
+
+        const data = await response.json().catch(() => ({}));
+        if (
+            !response.ok
+            || !data.success
+            || generation !== workspaceSyncGeneration
+            || ownerId !== workspaceSyncOwnerId
+        ) {
+            return;
+        }
+
+        const nextRevision = parseWorkspaceSyncRevision(data.revision);
+        if (nextRevision === null) return;
+        const changedDomains = workspaceSyncChangedDomains(data, sinceRevision);
+
+        workspaceSyncRevision = nextRevision;
+        workspaceSyncHasBaseline = true;
+        workspaceSyncPollAfterMs = clampWorkspaceSyncPollDelay(data.poll_after_ms);
+        localStorage.setItem(getWorkspaceSyncStorageKey(ownerId), String(nextRevision));
+
+        // A first-time browser has no meaningful cursor. Establish its
+        // baseline without replaying every historical domain change.
+        if (hadBaseline && changedDomains.length) {
+            await refreshVisibleWorkspaceChanges(changedDomains);
+        }
+    } catch (error) {
+        if (error?.name !== 'AbortError') {
+            console.warn('Workspace sync check failed:', error);
+        }
+    } finally {
+        window.clearTimeout(abortTimer);
+        if (workspaceSyncAbortController === controller) {
+            workspaceSyncAbortController = null;
+        }
+        if (generation === workspaceSyncGeneration) {
+            workspaceSyncInFlight = false;
+        }
+    }
+}
+
+function scheduleWorkspaceSyncPoll() {
+    pauseWorkspaceSyncWatcher();
+    if (!isAuthenticated || document.visibilityState !== 'visible') return;
+    workspaceSyncPollTimer = window.setTimeout(async () => {
+        workspaceSyncPollTimer = null;
+        await checkWorkspaceSyncState();
+        scheduleWorkspaceSyncPoll();
+    }, workspaceSyncPollAfterMs);
+}
+
+function startWorkspaceSyncWatcher({ immediate = true } = {}) {
+    if (!isAuthenticated || !configureWorkspaceSyncOwner()) return;
+    if (!workspaceSyncListenersBound) {
+        workspaceSyncListenersBound = true;
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                startWorkspaceSyncWatcher({ immediate: true });
+            } else {
+                pauseWorkspaceSyncWatcher();
+            }
+        });
+        window.addEventListener('focus', () => {
+            if (document.visibilityState === 'visible') {
+                startWorkspaceSyncWatcher({ immediate: true });
+            }
+        });
+    }
+
+    pauseWorkspaceSyncWatcher();
+    if (document.visibilityState !== 'visible') return;
+    const immediateCheck = immediate ? checkWorkspaceSyncState() : Promise.resolve();
+    return immediateCheck.finally(scheduleWorkspaceSyncPoll);
+}
+
 async function loadAgentProfile() {
     try {
         const response = await apiFetch(`${API_BASE}/chat/agent-profile`);
@@ -1560,6 +1824,7 @@ function renderOverviewList(items, type) {
 
 function normalizeOverviewChecklist(value) {
     return {
+        revision: Math.max(0, Number(value?.revision) || 0),
         completed: value?.completed && typeof value.completed === 'object' ? value.completed : {},
         custom_items: Array.isArray(value?.custom_items) ? value.custom_items : []
     };
@@ -1840,13 +2105,28 @@ function bindOverviewChecklist(container, selectedDate, schedules, checklistStat
     const save = async (nextState) => {
         state = normalizeOverviewChecklist({
             ...nextState,
+            revision: nextState?.revision ?? state.revision,
             custom_items: sortOverviewCustomItems(nextState.custom_items || [])
         });
-        await apiFetch(`${API_BASE}/schedule/checklist`, {
+        const response = await apiFetch(`${API_BASE}/schedule/checklist`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ date: selectedDate, ...state })
         });
+        const data = await response.json();
+        if (response.ok && data.success) {
+            state = normalizeOverviewChecklist(data);
+            return true;
+        }
+        if (response.status === 409) {
+            state = normalizeOverviewChecklist(data);
+            showNotification(ui(
+                'Checklist đã thay đổi trên thiết bị khác. Đã tải lại bản mới nhất.',
+                'The checklist changed on another device. The latest version was reloaded.'
+            ), 'warning');
+            return false;
+        }
+        throw new Error(data.error || ui('Không lưu được checklist', 'Unable to save checklist'));
     };
 
     const findItem = (id) => buildOverviewChecklistItems(schedules, state).find((item) => item.id === id);
@@ -2279,11 +2559,24 @@ async function apiFetch(url, options = {}) {
         });
 
         if (resp.status === 401) {
-            isAuthenticated = false;
-            showAuthGate(ui(
-                'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
-                'Your session has expired. Please sign in again.'
-            ));
+            let authError = {};
+            try {
+                authError = await resp.clone().json();
+            } catch (_) {
+                authError = {};
+            }
+            // A valid FlowMate session may still need its Google integration
+            // reconnected. That must not hide the whole workspace on web while
+            // the APK (or another worker) still has valid app authentication.
+            if (authError.auth_scope !== 'google') {
+                isAuthenticated = false;
+                lastAuthStatus = null;
+                stopWorkspaceSyncWatcher();
+                showAuthGate(ui(
+                    'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+                    'Your session has expired. Please sign in again.'
+                ));
+            }
         }
 
         if (method !== 'GET' && String(url).includes(`${API_BASE}/schedule`)) {
@@ -2490,6 +2783,14 @@ async function checkForNewMail() {
             loadOverviewPage({ background: true })
                 .catch(error => console.warn('Overview new-mail refresh failed:', error));
         }
+        if (!isFirstCheck && currentPage === 'emails') {
+            // The lightweight watcher saw a Gmail ID that cannot be present in
+            // the current list cache. Refresh the visible inbox immediately
+            // instead of showing a new-mail toast above stale rows.
+            loadEmails(currentEmailPage || 1, { fresh: true })
+                .then(() => loadMeetingSuggestions())
+                .catch(error => console.warn('Visible inbox new-mail refresh failed:', error));
+        }
 
         if (!isFirstCheck && data.unread_count > 0) {
             showNewMailPopup(data);
@@ -2574,6 +2875,8 @@ async function gmailLogout() {
         if (data.success) {
             showNotification(ui('✅ Đã đăng xuất Gmail', '✅ Signed out of Gmail'), 'success');
             isAuthenticated = false;
+            lastAuthStatus = null;
+            stopWorkspaceSyncWatcher();
             userModeRequired = false;
             pendingPageAfterMode = '';
             userModeModal?.classList.remove('show', 'is-required');
@@ -4835,11 +5138,12 @@ async function loadSchedules(options = {}) {
                     : String(schedule.attendees || '');
                 const description = plainTextFromHtml(schedule.description || '');
                 const externalLink = schedule.html_link || schedule.web_link || schedule.calendar_event_link || '';
+                const expectedUpdatedAt = JSON.stringify(schedule.updated_at || null);
                 const localActions = isLocal
                     ? `
                         ${schedule.status === 'completed'
-                            ? `<button class="btn-check" onclick="markScheduleIncomplete(${schedule.local_id})">${ui('↩ Chưa xong', '↩ Mark pending')}</button>`
-                            : `<button class="btn-check" onclick="markScheduleComplete(${schedule.local_id})">${ui('✓ Hoàn thành', '✓ Complete')}</button>`}
+                            ? `<button class="btn-check" onclick='markScheduleIncomplete(${schedule.local_id}, ${expectedUpdatedAt})'>${ui('↩ Chưa xong', '↩ Mark pending')}</button>`
+                            : `<button class="btn-check" onclick='markScheduleComplete(${schedule.local_id}, ${expectedUpdatedAt})'>${ui('✓ Hoàn thành', '✓ Complete')}</button>`}
                         ${unsyncedLocal ? `<button class="btn-sync-google" data-sync-google>${ui('Đồng bộ Google', 'Sync Google')}</button>` : ''}
                         <button class="btn-edit" onclick="openEditSchedule(${schedule.local_id})">${ui('Sửa', 'Edit')}</button>
                         <button class="btn-delete" onclick="deleteSchedule(${schedule.local_id})">${ui('Xóa', 'Delete')}</button>
@@ -5119,18 +5423,24 @@ function plainTextFromHtml(value) {
         .trim();
 }
 
-async function markScheduleComplete(scheduleId) {
+async function markScheduleComplete(scheduleId, expectedUpdatedAt = null) {
     if (!confirm(ui('Đánh dấu lịch hẹn đã hoàn thành?', 'Mark this appointment as completed?'))) return;
     
     try {
         const response = await apiFetch(`${API_BASE}/schedule/${scheduleId}/update-status`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'completed' })
+            body: JSON.stringify({ status: 'completed', expected_updated_at: expectedUpdatedAt })
         });
         
         const data = await response.json();
-        if (data.success) {
+        if (response.status === 409) {
+            await refreshLocalScheduleViews();
+            showNotification(ui(
+                'Lịch đã thay đổi trên thiết bị khác. Đã tải lại bản mới nhất.',
+                'This appointment changed on another device. The latest version was reloaded.'
+            ), 'warning');
+        } else if (data.success) {
             showNotification(ui('✓ Đã đánh dấu hoàn thành', '✓ Marked as completed'), 'success');
             await loadSchedules();
             await loadWeekSchedule();
@@ -5143,18 +5453,24 @@ async function markScheduleComplete(scheduleId) {
     }
 }
 
-async function markScheduleIncomplete(scheduleId) {
+async function markScheduleIncomplete(scheduleId, expectedUpdatedAt = null) {
     if (!confirm(ui('Đánh dấu lịch hẹn chưa hoàn thành?', 'Mark this appointment as pending?'))) return;
     
     try {
         const response = await apiFetch(`${API_BASE}/schedule/${scheduleId}/update-status`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'pending' })
+            body: JSON.stringify({ status: 'pending', expected_updated_at: expectedUpdatedAt })
         });
         
         const data = await response.json();
-        if (data.success) {
+        if (response.status === 409) {
+            await refreshLocalScheduleViews();
+            showNotification(ui(
+                'Lịch đã thay đổi trên thiết bị khác. Đã tải lại bản mới nhất.',
+                'This appointment changed on another device. The latest version was reloaded.'
+            ), 'warning');
+        } else if (data.success) {
             showNotification(ui('↩️ Đã cập nhật trạng thái', '↩️ Status updated'), 'success');
             await loadSchedules();
             await loadWeekSchedule();
@@ -5201,6 +5517,7 @@ async function openEditSchedule(scheduleId) {
             ? schedule.attendees.join(', ')
             : (schedule.attendees || '');
         editForm.dataset.scheduleId = String(schedule.id || scheduleId);
+        editForm.dataset.scheduleUpdatedAt = String(schedule.updated_at || '');
         
         openEditScheduleModal();
     } catch (error) {
@@ -5213,6 +5530,7 @@ async function handleEditScheduleSubmit(e) {
     
     const editForm = document.getElementById('editScheduleForm');
     const scheduleId = editForm?.dataset.scheduleId;
+    const expectedUpdatedAt = editForm?.dataset.scheduleUpdatedAt || null;
     const title = document.getElementById('editScheduleTitle').value.trim();
     const description = document.getElementById('editScheduleDesc').value.trim();
     const start_time = document.getElementById('editScheduleTime').value;
@@ -5244,7 +5562,8 @@ async function handleEditScheduleSubmit(e) {
                 start_time,
                 duration_minutes: Number.isFinite(duration_minutes) && duration_minutes > 0 ? duration_minutes : 60,
                 location,
-                attendees
+                attendees,
+                expected_updated_at: expectedUpdatedAt
             })
         });
         
@@ -5253,6 +5572,13 @@ async function handleEditScheduleSubmit(e) {
             showNotification(ui('✓ Đã cập nhật lịch hẹn', '✓ Appointment updated'), 'success');
             closeEditScheduleModal();
             refreshLocalScheduleViews().catch(err => console.warn('Schedule refresh after edit failed:', err));
+        } else if (response.status === 409) {
+            closeEditScheduleModal();
+            await refreshLocalScheduleViews();
+            showNotification(ui(
+                'Lịch đã được cập nhật trên thiết bị khác. Đã tải lại bản mới nhất để tránh ghi đè.',
+                'This appointment changed on another device. The latest version was reloaded to avoid overwriting it.'
+            ), 'warning');
         } else {
             showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể cập nhật lịch hẹn', 'Unable to update appointment')), 'error');
         }

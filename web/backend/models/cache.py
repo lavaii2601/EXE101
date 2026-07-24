@@ -87,6 +87,119 @@ class Cache:
         
         conn.commit()
         conn.close()
+
+    @staticmethod
+    def set_versioned(key, value, expected_revision, ttl=DEFAULT_TTL, db_path=None):
+        """Atomically store a JSON value when its revision still matches.
+
+        This is used for editable state such as the shared checklist. The
+        returned tuple is ``(saved, value)``; on conflict, ``value`` is the
+        current server copy so clients can reload without overwriting edits
+        made by the web or APK.
+        """
+        try:
+            expected_revision = max(0, int(expected_revision or 0))
+        except (TypeError, ValueError):
+            expected_revision = 0
+
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            pg.ensure_user(user_id)
+            expires_at = datetime.utcnow() + timedelta(seconds=ttl)
+            with pg.connection() as conn:
+                # Materialize the row before locking it so two first-time
+                # writers also serialize correctly across Railway workers.
+                conn.execute(
+                    """
+                    INSERT INTO cache (user_id, key, value, expires_at)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (user_id, key) DO NOTHING
+                    """,
+                    (user_id, key, pg.json_value({'revision': 0}), expires_at),
+                )
+                row = conn.execute(
+                    """
+                    SELECT value, expires_at <= NOW() AS expired
+                    FROM cache
+                    WHERE user_id = %s AND key = %s
+                    FOR UPDATE
+                    """,
+                    (user_id, key),
+                ).fetchone()
+                current = (
+                    row.get('value')
+                    if row and not row.get('expired')
+                    else {}
+                )
+                current = current if isinstance(current, dict) else {}
+                try:
+                    current_revision = max(0, int(current.get('revision') or 0))
+                except (TypeError, ValueError):
+                    current_revision = 0
+                if current_revision != expected_revision:
+                    return False, current
+
+                saved = dict(value or {})
+                saved['revision'] = current_revision + 1
+                conn.execute(
+                    """
+                    UPDATE cache
+                    SET value = %s, expires_at = %s
+                    WHERE user_id = %s AND key = %s
+                    """,
+                    (pg.json_value(saved), expires_at, user_id, key),
+                )
+                return True, saved
+
+        db_path = db_path or Config.DATABASE_PATH
+        Cache.init_db(db_path=db_path)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute(
+                """
+                SELECT
+                    value,
+                    datetime(expires_at) <= CURRENT_TIMESTAMP AS expired
+                FROM cache
+                WHERE key = ?
+                """,
+                (key,),
+            ).fetchone()
+            current = {}
+            if row and not row['expired']:
+                try:
+                    current = json.loads(row['value'])
+                except Exception:
+                    current = {}
+            current = current if isinstance(current, dict) else {}
+            try:
+                current_revision = max(0, int(current.get('revision') or 0))
+            except (TypeError, ValueError):
+                current_revision = 0
+            if current_revision != expected_revision:
+                conn.rollback()
+                return False, current
+
+            saved = dict(value or {})
+            saved['revision'] = current_revision + 1
+            expires_at = datetime.utcnow() + timedelta(seconds=ttl)
+            conn.execute(
+                """
+                INSERT INTO cache (key, value, expires_at, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    expires_at = excluded.expires_at,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (key, json.dumps(saved), expires_at.isoformat()),
+            )
+            conn.commit()
+            return True, saved
+        finally:
+            conn.close()
     
     @staticmethod
     def get(key, db_path=None):
@@ -111,7 +224,7 @@ class Cache:
         
         cursor.execute('''
             SELECT value FROM cache 
-            WHERE key = ? AND expires_at > CURRENT_TIMESTAMP
+            WHERE key = ? AND datetime(expires_at) > CURRENT_TIMESTAMP
         ''', (key,))
         
         result = cursor.fetchone()
@@ -153,9 +266,9 @@ class Cache:
         placeholders = ','.join(['?'] * len(keys))
         cursor.execute(
             f'''
-                SELECT key, value FROM cache
-                WHERE key IN ({placeholders})
-                  AND expires_at > CURRENT_TIMESTAMP
+            SELECT key, value FROM cache
+            WHERE key IN ({placeholders})
+              AND datetime(expires_at) > CURRENT_TIMESTAMP
             ''',
             keys
         )
@@ -229,7 +342,9 @@ class Cache:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        cursor.execute('DELETE FROM cache WHERE expires_at < CURRENT_TIMESTAMP')
+        cursor.execute(
+            'DELETE FROM cache WHERE datetime(expires_at) < CURRENT_TIMESTAMP'
+        )
         conn.commit()
         conn.close()
     

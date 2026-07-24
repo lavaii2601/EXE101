@@ -36,6 +36,7 @@ from utils.user_context import (
     get_user_token_file,
     inspect_google_credentials,
     persist_google_credentials,
+    resolve_google_user_id,
     sanitize_user_id,
 )
 from utils.security import issue_mobile_token
@@ -51,7 +52,9 @@ email_bp = Blueprint('email', __name__, url_prefix='/api/email')
 mistral_service = MistralService()
 ai_service = AIService()
 
-# Simple in-memory cache for email lists (10 minute TTL for optimal performance)
+# Local-development email list cache. PostgreSQL deployments can run several
+# workers/replicas, so a process-local list cache would serve stale data after
+# another worker (or the APK) mutates the mailbox.
 _email_cache = {}
 EMAIL_SCAN_DEFAULT = 25
 EMAIL_SCAN_MAX = 150
@@ -119,20 +122,32 @@ def _store_oauth_code_verifier(state, code_verifier):
         _write_oauth_states(data)
 
 
-def _pop_oauth_code_verifier(state):
+def _consume_oauth_state(state):
+    """Atomically consume a server-issued OAuth transaction."""
+    missing = {
+        'found': False,
+        'code_verifier': None,
+        'mobile': False,
+    }
     if not state:
-        return None
+        return missing
     if pg.enabled():
         with pg.connection() as conn:
             row = conn.execute(
                 """
-                SELECT code_verifier FROM oauth_states
+                DELETE FROM oauth_states
                 WHERE state = %s AND created_at >= NOW() - (%s * INTERVAL '1 second')
+                RETURNING code_verifier, mobile
                 """,
                 (state, OAUTH_STATE_TTL_SECONDS),
             ).fetchone()
-            conn.execute("DELETE FROM oauth_states WHERE state = %s", (state,))
-        return row['code_verifier'] if row else None
+        if not row:
+            return missing
+        return {
+            'found': True,
+            'code_verifier': row['code_verifier'],
+            'mobile': bool(row['mobile']),
+        }
 
     now = datetime.utcnow().timestamp()
     with _oauth_state_lock:
@@ -145,10 +160,14 @@ def _pop_oauth_code_verifier(state):
         }
         _write_oauth_states(data)
     if not isinstance(record, dict):
-        return None
+        return missing
     if now - float(record.get('created_at') or 0) > OAUTH_STATE_TTL_SECONDS:
-        return None
-    return record.get('code_verifier')
+        return missing
+    return {
+        'found': True,
+        'code_verifier': record.get('code_verifier'),
+        'mobile': bool(record.get('mobile')),
+    }
 
 
 def _mark_oauth_mobile(state):
@@ -740,6 +759,8 @@ def _safe_pending_meeting_suggestions(db_path):
 
 def _are_emails_cached(cache_key):
     """Check if cache is still valid (10 minute TTL for better performance)"""
+    if pg.enabled():
+        return False
     if cache_key not in _email_cache:
         return False
     cached_time, _, _ = _email_cache[cache_key]
@@ -754,6 +775,8 @@ def _get_cached_emails(cache_key):
 
 def _cache_emails(cache_key, emails, total):
     """Cache emails with timestamp"""
+    if pg.enabled():
+        return
     _email_cache[cache_key] = (datetime.now(), emails, total)
 
 def _clear_all_cache(user_id):
@@ -793,7 +816,8 @@ def _fetch_google_userinfo(creds):
         return {
             'email': data.get('email', ''),
             'name': data.get('name', ''),
-            'picture': data.get('picture', '')
+            'picture': data.get('picture', ''),
+            'subject': data.get('sub') or data.get('id') or '',
         }
     except Exception:
         return {}
@@ -1776,12 +1800,12 @@ def google_auth_native():
         gmail_name = userinfo.get('name', 'Teacher')
         gmail_picture = userinfo.get('picture', '')
 
-        # Sanitized immediately so it's identical to what get_current_user_id()
-        # derives later from the session/bearer token -- otherwise this write
-        # lands under the raw email while every other route reads back under
-        # the sanitized id, and the user's profile/schedule/history never
-        # match up after logging in.
-        user_id = sanitize_user_id(gmail_email or 'default')
+        # Resolve the immutable Google subject to the same canonical workspace
+        # id used by both browser sessions and APK Bearer tokens.
+        user_id = resolve_google_user_id(
+            userinfo.get('subject'),
+            gmail_email,
+        )
 
         # Save token durably for Railway and cache it locally for this worker.
         persist_google_credentials(user_id, creds, account_email=gmail_email)
@@ -1868,8 +1892,12 @@ def oauth2callback():
     """Handle redirect from Google and store credentials."""
     logger.info("OAuth2 callback invoked")
 
-    # Rebuild the Flow using the stored state and client secrets
-    state = session.get('oauth_state') or (request.args.get('state') or '').strip()
+    # Google's callback state identifies the exact flow. A browser can start
+    # another web login while an APK system-browser flow is still open; in
+    # that case the cookie's latest state belongs to a different transaction.
+    request_state = (request.args.get('state') or '').strip()
+    session_state = str(session.get('oauth_state') or '').strip()
+    state = request_state or session_state
     if not state:
         logger.error("OAuth state not found in session")
         return jsonify({'error': 'flow_not_initialized', 'message': 'OAuth state expired or missing'}), 400
@@ -1880,12 +1908,25 @@ def oauth2callback():
         logger.error(f"Failed to build OAuth flow: {e}")
         return jsonify({'error': str(e)}), 503
 
-    # Must be read BEFORE _pop_oauth_code_verifier below, which deletes the
-    # whole oauth_states row (including this flag) once the verifier is read.
-    is_mobile_flow = _is_oauth_mobile(state)
+    # A callback is valid only when its state is backed by the browser session
+    # that started it or by a shared state row issued for a mobile/cross-worker
+    # flow. Consuming the row atomically rejects unknown and replayed states.
+    issued_state = _consume_oauth_state(state)
+    session_matches = bool(session_state and session_state == state)
+    if not session_matches and not issued_state['found']:
+        logger.warning("Rejected unknown or replayed OAuth state")
+        return jsonify({
+            'error': 'invalid_oauth_state',
+            'message': 'OAuth state is invalid, expired, or already used',
+        }), 400
 
-    # restore PKCE code_verifier from session if present
-    code_verifier = session.get('oauth_code_verifier') or _pop_oauth_code_verifier(state)
+    is_mobile_flow = issued_state['mobile']
+    session_code_verifier = (
+        session.get('oauth_code_verifier')
+        if session_matches
+        else None
+    )
+    code_verifier = issued_state['code_verifier'] or session_code_verifier
     try:
         _set_flow_code_verifier(flow, code_verifier)
     except Exception:
@@ -1902,11 +1943,12 @@ def oauth2callback():
         return jsonify({'error': 'token_fetch_failed', 'message': str(e)}), 400
 
     # Clear transient OAuth state only after a successful token exchange.
-    try:
-        session.pop('oauth_state', None)
-        session.pop('oauth_code_verifier', None)
-    except Exception:
-        pass
+    if session_state == state:
+        try:
+            session.pop('oauth_state', None)
+            session.pop('oauth_code_verifier', None)
+        except Exception:
+            pass
 
     try:
         # Identify Gmail account email from profile
@@ -1930,12 +1972,12 @@ def oauth2callback():
         if people_profile.get('picture'):
             gmail_picture = people_profile.get('picture')
 
-        # Sanitized immediately so it's identical to what get_current_user_id()
-        # derives later from the session/bearer token -- otherwise this write
-        # lands under the raw email while every other route reads back under
-        # the sanitized id, and the user's profile/schedule/history never
-        # match up after logging in.
-        user_id = sanitize_user_id(gmail_email or 'default')
+        # Resolve the immutable Google subject to the same canonical workspace
+        # id used by both browser sessions and APK Bearer tokens.
+        user_id = resolve_google_user_id(
+            userinfo.get('subject'),
+            gmail_email,
+        )
         logger.info(f"Setting session for user: {user_id}")
 
         # Save token durably for Railway and cache it locally for this worker.

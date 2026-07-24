@@ -17,6 +17,9 @@ Production: [https://exe101.up.railway.app](https://exe101.up.railway.app)
 - Nhận diện email có nội dung hẹn gặp và đề xuất lịch.
 - Tạo, cập nhật, xóa và đồng bộ lịch với Google Calendar.
 - Overview tổng hợp email, lịch và việc cần chú ý.
+- Web và APK dùng chung workspace PostgreSQL, tự phát hiện thay đổi theo tài
+  khoản trong 10–15 giây và làm mới đúng màn hình đang mở.
+- Chống ghi đè âm thầm khi web và APK cùng sửa một lịch hoặc checklist.
 - AI Audit Log ghi lại các quyết định và hành động đã thực hiện.
 - Knowledge/RAG và bộ dữ liệu huấn luyện theo từng user mode.
 - Ứng dụng Expo/React Native cho Android, iOS và Web.
@@ -137,11 +140,29 @@ Xem thêm hướng dẫn APK/EAS trong [mobile/README.md](mobile/README.md).
 | Google Calendar | `/api/calendar/*` |
 | Overview | `/api/overview/*` |
 | User profile | `/api/user/*` |
+| Đồng bộ web/APK | `GET /api/sync/state?since=<revision>` |
 | Knowledge/RAG | `/api/knowledge/*` |
 | Admin | `/api/admin/*` |
 
 Các API nghiệp vụ yêu cầu session Google hoặc Bearer token hợp lệ. API admin
 luôn kiểm tra lại Google allowlist và TOTP.
+
+### Đồng bộ web và APK
+
+Web và APK không giữ hai bản dữ liệu riêng. Cùng một Google identity được ánh
+xạ tới một `user_id` bất biến và mọi dữ liệu nghiệp vụ được cô lập theo
+`user_id` trong PostgreSQL. Sau một mutation thành công, backend tăng một
+revision toàn cục cùng revision của các domain bị ảnh hưởng (`email`,
+`schedule`, `chat`, `overview`, `profile`, ...).
+
+Hai client chỉ poll endpoint trạng thái nhẹ khi đang foreground/visible. Khi
+revision đổi, client chỉ đọc lại tab liên quan; tín hiệu từ Calendar không tự
+gọi lại Google sync nên không tạo vòng lặp. Lịch và checklist gửi revision lúc
+sửa, backend trả `409` nếu một client khác đã lưu trước.
+
+Theme và ngôn ngữ hiển thị vẫn là tùy chọn cục bộ của từng thiết bị. User mode,
+profile, chat, history, email state, lịch và checklist là dữ liệu workspace
+dùng chung.
 
 ## Admin dashboard
 
@@ -195,6 +216,14 @@ hai bảng này.
 
 Schema gốc nằm tại [database/postgres_schema.sql](database/postgres_schema.sql).
 Các thay đổi production nằm trong [database/migrations](database/migrations).
+
+Các bảng nền tảng cho đồng bộ đa client:
+
+- `user_identities`: ánh xạ Google subject bất biến, tránh va chạm giữa các
+  email có dấu câu khác nhau.
+- `workspace_sync_state`: cursor revision theo user và domain.
+- `oauth_tokens`: nguồn chuẩn credential dùng chung giữa các Railway worker;
+  pickle trên filesystem chỉ là cache cục bộ.
 
 Railway chạy lệnh sau trước khi khởi động Gunicorn:
 
@@ -293,6 +322,7 @@ Kiểm tra JavaScript admin:
 
 ```powershell
 node --check web/frontend/js/admin.js
+node --check web/frontend/js/app.js
 ```
 
 ## Bảo mật
@@ -302,6 +332,8 @@ node --check web/frontend/js/admin.js
 - Admin yêu cầu đồng thời Google allowlist và TOTP.
 - API responses chứa dữ liệu người dùng đặt `Cache-Control: no-store`.
 - OAuth token production được lưu trong PostgreSQL.
+- Worker Railway luôn đối chiếu PostgreSQL trước khi dùng credential cục bộ;
+  token đã đổi/thu hồi sẽ vô hiệu cache Gmail và Calendar.
 - Nếu credential từng được gửi qua chat, log hoặc issue, hãy rotate ngay.
 
 Chính sách công khai:

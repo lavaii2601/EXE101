@@ -236,33 +236,50 @@ class Schedule:
         return dict(schedule) if schedule else None
     
     @staticmethod
-    def update_status(schedule_id, status, db_path=None):
+    def update_status(schedule_id, status, db_path=None, expected_updated_at=None):
         """Update schedule status"""
         if pg.enabled():
             user_id = pg.user_id_from_db_path(db_path)
+            where_clause = "id = %s AND user_id = %s"
+            values = [status, schedule_id, user_id]
+            if expected_updated_at:
+                where_clause += " AND updated_at = %s"
+                values.append(expected_updated_at)
             with pg.connection() as conn:
-                conn.execute(
-                    "UPDATE schedules SET status = %s::schedule_status WHERE id = %s AND user_id = %s",
-                    (status, schedule_id, user_id),
+                cur = conn.execute(
+                    f"""
+                    UPDATE schedules
+                    SET status = %s::schedule_status, updated_at = NOW()
+                    WHERE {where_clause}
+                    """,
+                    values,
                 )
-            return
+                return cur.rowcount > 0
 
         db_path = db_path or Config.DATABASE_PATH
         Schedule.init_db(db_path=db_path)
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE schedules 
-            SET status = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        ''', (status, schedule_id))
+        where_clause = 'id = ?'
+        values = [status, datetime.now().isoformat(), schedule_id]
+        if expected_updated_at:
+            where_clause += ' AND updated_at = ?'
+            values.append(expected_updated_at)
+        cursor.execute(f'''
+            UPDATE schedules
+            SET status = ?, updated_at = ?
+            WHERE {where_clause}
+        ''', values)
+        changed = cursor.rowcount > 0
         conn.commit()
         conn.close()
+        return changed
 
     @staticmethod
     def update(schedule_id, **kwargs):
         """Update schedule information"""
         db_path = kwargs.pop('db_path', None) or Config.DATABASE_PATH
+        expected_updated_at = kwargs.pop('expected_updated_at', None)
         if pg.enabled():
             user_id = pg.user_id_from_db_path(db_path)
             allowed_fields = ['title', 'description', 'start_time', 'end_time', 'attendees', 'email_body', 'status', 'location', 'calendar_event_id']
@@ -281,10 +298,14 @@ class Schedule:
             ]
             set_parts.append('updated_at = NOW()')
             set_clause = ', '.join(set_parts)
+            where_clause = 'id = %s AND user_id = %s'
             values = list(updates.values()) + [schedule_id, user_id]
+            if expected_updated_at:
+                where_clause += ' AND updated_at = %s'
+                values.append(expected_updated_at)
             with pg.connection() as conn:
                 cur = conn.execute(
-                    f"UPDATE schedules SET {set_clause} WHERE id = %s AND user_id = %s",
+                    f"UPDATE schedules SET {set_clause} WHERE {where_clause}",
                     values,
                 )
                 return cur.rowcount > 0
@@ -305,16 +326,66 @@ class Schedule:
         set_clause = ', '.join([f'{k} = ?' for k in updates.keys()])
         values = list(updates.values())
         values.append(schedule_id)
-        
+        where_clause = 'id = ?'
+        if expected_updated_at:
+            where_clause += ' AND updated_at = ?'
+            values.append(expected_updated_at)
+
         cursor.execute(f'''
             UPDATE schedules
             SET {set_clause}
-            WHERE id = ?
+            WHERE {where_clause}
         ''', values)
         
         conn.commit()
         conn.close()
         return cursor.rowcount > 0
+
+    @staticmethod
+    def attach_calendar_event_id(schedule_id, calendar_event_id, db_path=None):
+        """Atomically attach a Google event to an as-yet unlinked schedule.
+
+        This is integration metadata, not user-authored schedule content, so
+        the statement intentionally leaves ``updated_at`` untouched. The
+        PostgreSQL schedules trigger must likewise exclude this metadata-only
+        update. Background callers still publish a workspace revision so
+        clients can discover the newly attached Google ID.
+        """
+        if not calendar_event_id:
+            return False
+
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                cur = conn.execute(
+                    """
+                    UPDATE schedules
+                    SET calendar_event_id = %s
+                    WHERE id = %s
+                      AND user_id = %s
+                      AND (calendar_event_id IS NULL OR calendar_event_id = '')
+                    """,
+                    (calendar_event_id, schedule_id, user_id),
+                )
+                return cur.rowcount > 0
+
+        db_path = db_path or Config.DATABASE_PATH
+        Schedule.init_db(db_path=db_path)
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE schedules
+            SET calendar_event_id = ?
+            WHERE id = ?
+              AND (calendar_event_id IS NULL OR calendar_event_id = '')
+            """,
+            (calendar_event_id, schedule_id),
+        )
+        attached = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return attached
 
     @staticmethod
     def delete(schedule_id, db_path=None):

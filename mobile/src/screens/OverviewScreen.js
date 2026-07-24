@@ -19,7 +19,7 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
   const [loading, setLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [refreshNote, setRefreshNote] = useState('');
-  const [checklistState, setChecklistState] = useState({ completed: {}, custom_items: [] });
+  const [checklistState, setChecklistState] = useState({ revision: 0, completed: {}, custom_items: [] });
   const [quickInput, setQuickInput] = useState('');
   const [quickLoading, setQuickLoading] = useState(false);
   const [quickMessage, setQuickMessage] = useState('');
@@ -56,7 +56,7 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
       if (checklistResult.status === 'fulfilled') {
         setChecklistState(normalizeChecklistState(checklistResult.value));
       } else {
-        setChecklistState({ completed: {}, custom_items: [] });
+        setChecklistState({ revision: 0, completed: {}, custom_items: [] });
       }
 
       setAnalytics(analyticsResult.status === 'fulfilled' ? analyticsResult.value : null);
@@ -90,12 +90,24 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
 
   const saveChecklist = useCallback(async (nextState) => {
     try {
-      const saved = await apiPut('/schedule/checklist', { date, ...nextState });
+      const saved = await apiPut('/schedule/checklist', {
+        date,
+        ...nextState,
+        revision: Number(nextState?.revision ?? checklistState.revision ?? 0),
+      });
       setChecklistState(normalizeChecklistState(saved));
     } catch (error) {
+      if (error.status === 409) {
+        setChecklistState(normalizeChecklistState(error.data));
+        Alert.alert(
+          'Checklist vừa thay đổi',
+          'Web hoặc một thiết bị khác đã lưu trước. Đã tải lại bản mới nhất để tránh ghi đè.',
+        );
+        return;
+      }
       Alert.alert('Không lưu được checklist', error.message);
     }
-  }, [date]);
+  }, [checklistState.revision, date]);
 
   const toggleChecklistItem = useCallback((item) => {
     const nextCompletedValue = !item.completed;
@@ -108,7 +120,7 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
         entry.id === item.id ? { ...entry, completed: nextCompletedValue } : entry
       ))
       : (checklistState.custom_items || []);
-    const nextState = { completed: nextCompleted, custom_items: customItems };
+    const nextState = { revision: checklistState.revision, completed: nextCompleted, custom_items: customItems };
     setChecklistState(nextState);
     saveChecklist(nextState);
   }, [checklistState, saveChecklist]);
@@ -116,14 +128,22 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
   const removeChecklistItem = useCallback((item) => {
     if (item.kind !== 'custom') return;
     const customItems = (checklistState.custom_items || []).filter((entry) => entry.id !== item.id);
-    const nextState = { completed: checklistState.completed || {}, custom_items: customItems };
+    const nextState = {
+      revision: checklistState.revision,
+      completed: checklistState.completed || {},
+      custom_items: customItems,
+    };
     setChecklistState(nextState);
     saveChecklist(nextState);
   }, [checklistState, saveChecklist]);
 
   const sortChecklist = useCallback(() => {
     const sortedCustomItems = sortChecklistEntries(checklistState.custom_items || []);
-    const nextState = { completed: checklistState.completed || {}, custom_items: sortedCustomItems };
+    const nextState = {
+      revision: checklistState.revision,
+      completed: checklistState.completed || {},
+      custom_items: sortedCustomItems,
+    };
     setChecklistState(nextState);
     saveChecklist(nextState);
     setQuickMessage('Đã sắp xếp checklist theo ưu tiên.');
@@ -581,6 +601,7 @@ function hasSyncTarget(syncEvent, targets) {
 
 function normalizeChecklistState(value) {
   return {
+    revision: Math.max(0, Number(value?.revision) || 0),
     completed: value?.completed && typeof value.completed === 'object' ? value.completed : {},
     custom_items: Array.isArray(value?.custom_items) ? value.custom_items : [],
   };

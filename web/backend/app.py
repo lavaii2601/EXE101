@@ -31,6 +31,7 @@ from models.schedule import Schedule
 from models.history import History
 from models.user import User
 from models.knowledge import KnowledgeDocument
+from models.workspace_sync import WorkspaceSync
 from models import postgres_db as pg
 from services.overview_scheduler import start_overview_scheduler
 from routes.chat import chat_bp
@@ -39,6 +40,7 @@ from routes.schedule import schedule_bp
 from routes.user import user_bp
 from routes.calendar import calendar_bp
 from routes.overview import overview_bp
+from routes.sync import install_workspace_sync_hooks, sync_bp
 from routes.knowledge import knowledge_bp, _seed_if_empty as seed_knowledge_base
 from routes._background import bg_bp
 from routes.admin import admin_bp, _require_admin
@@ -89,17 +91,29 @@ def make_session_permanent():
         and not request.path.startswith('/api/admin/')
         and not authenticated_user_id()
     ):
-        return jsonify({'error': 'not_authenticated'}), 401
+        return jsonify({'error': 'not_authenticated', 'auth_scope': 'app'}), 401
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 # Allow CORS with credentials for the frontend origin(s) so session cookies are preserved
 allowed_origins = Config.ALLOWED_ORIGINS
 CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
 Compress(app)
+install_workspace_sync_hooks(app)
 
 
 @app.after_request
 def add_security_headers(response):
+    if response.status_code == 401 and request.path.startswith('/api/'):
+        payload = response.get_json(silent=True)
+        if isinstance(payload, dict) and not payload.get('auth_scope'):
+            if request.path.startswith('/api/admin/'):
+                payload['auth_scope'] = 'admin'
+            else:
+                payload['auth_scope'] = (
+                    'google' if authenticated_user_id() else 'app'
+                )
+            response.set_data(app.json.dumps(payload))
+            response.content_type = 'application/json'
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
@@ -127,6 +141,7 @@ app.register_blueprint(schedule_bp)
 app.register_blueprint(user_bp)
 app.register_blueprint(calendar_bp)
 app.register_blueprint(overview_bp)
+app.register_blueprint(sync_bp)
 app.register_blueprint(knowledge_bp)
 app.register_blueprint(bg_bp)
 app.register_blueprint(admin_bp)
@@ -141,6 +156,7 @@ Schedule.init_db()
 History.init_db()
 User.init_db()
 KnowledgeDocument.init_db()
+WorkspaceSync.init_db()
 seed_knowledge_base()
 start_overview_scheduler()
 

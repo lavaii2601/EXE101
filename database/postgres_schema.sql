@@ -75,6 +75,19 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Immutable external identities prevent two distinct Google accounts whose
+-- email punctuation normalizes to the same legacy file-safe id from sharing
+-- a FlowMate workspace.
+CREATE TABLE IF NOT EXISTS user_identities (
+    provider TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    account_email TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (provider, subject)
+);
+
 CREATE TABLE IF NOT EXISTS oauth_tokens (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
@@ -257,6 +270,17 @@ CREATE TABLE IF NOT EXISTS sync_jobs (
     CONSTRAINT sync_jobs_status_check CHECK (status IN ('pending', 'running', 'success', 'failed', 'skipped'))
 );
 
+-- Lightweight cross-client invalidation cursor. Every successful workspace
+-- mutation advances one global revision for the user and stamps each affected
+-- domain with that same revision.
+CREATE TABLE IF NOT EXISTS workspace_sync_state (
+    user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+    revision BIGINT NOT NULL DEFAULT 0,
+    domains JSONB NOT NULL DEFAULT '{}'::JSONB,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT workspace_sync_state_revision_check CHECK (revision >= 0)
+);
+
 -- Provider-neutral billing ledger. Payment providers (Stripe, MoMo, VNPay,
 -- manual bank transfer, etc.) can upsert their own external identifiers while
 -- the admin dashboard reads one consistent source of truth. Monetary values
@@ -390,6 +414,7 @@ WHERE expires_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_users_gmail_email ON users (gmail_email);
 CREATE INDEX IF NOT EXISTS idx_users_mode ON users (user_mode);
+CREATE INDEX IF NOT EXISTS idx_user_identities_user ON user_identities (user_id);
 
 CREATE INDEX IF NOT EXISTS idx_oauth_tokens_expires_at ON oauth_tokens (expires_at);
 
@@ -414,6 +439,7 @@ CREATE INDEX IF NOT EXISTS idx_session_memory_session ON session_memory (chat_se
 CREATE INDEX IF NOT EXISTS idx_cache_user_expires ON cache (user_id, expires_at);
 
 CREATE INDEX IF NOT EXISTS idx_sync_jobs_user_type_status ON sync_jobs (user_id, job_type, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workspace_sync_state_updated ON workspace_sync_state (updated_at DESC);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_provider_external
     ON subscriptions (provider, provider_subscription_id)
@@ -449,6 +475,48 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION set_schedule_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF ROW(
+        NEW.title,
+        NEW.description,
+        NEW.start_time,
+        NEW.end_time,
+        NEW.duration_minutes,
+        NEW.timezone,
+        NEW.location,
+        NEW.attendees,
+        NEW.attendee_emails,
+        NEW.source,
+        NEW.source_email_id,
+        NEW.email_body,
+        NEW.status,
+        NEW.metadata
+    ) IS DISTINCT FROM ROW(
+        OLD.title,
+        OLD.description,
+        OLD.start_time,
+        OLD.end_time,
+        OLD.duration_minutes,
+        OLD.timezone,
+        OLD.location,
+        OLD.attendees,
+        OLD.attendee_emails,
+        OLD.source,
+        OLD.source_email_id,
+        OLD.email_body,
+        OLD.status,
+        OLD.metadata
+    ) THEN
+        NEW.updated_at = NOW();
+    ELSE
+        NEW.updated_at = OLD.updated_at;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 DROP TRIGGER IF EXISTS trg_users_updated_at ON users;
 CREATE TRIGGER trg_users_updated_at
 BEFORE UPDATE ON users
@@ -459,10 +527,15 @@ CREATE TRIGGER trg_oauth_tokens_updated_at
 BEFORE UPDATE ON oauth_tokens
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_user_identities_updated_at ON user_identities;
+CREATE TRIGGER trg_user_identities_updated_at
+BEFORE UPDATE ON user_identities
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 DROP TRIGGER IF EXISTS trg_schedules_updated_at ON schedules;
 CREATE TRIGGER trg_schedules_updated_at
 BEFORE UPDATE ON schedules
-FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+FOR EACH ROW EXECUTE FUNCTION set_schedule_updated_at();
 
 DROP TRIGGER IF EXISTS trg_calendar_events_updated_at ON calendar_events;
 CREATE TRIGGER trg_calendar_events_updated_at
@@ -487,6 +560,11 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 DROP TRIGGER IF EXISTS trg_sync_jobs_updated_at ON sync_jobs;
 CREATE TRIGGER trg_sync_jobs_updated_at
 BEFORE UPDATE ON sync_jobs
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_workspace_sync_state_updated_at ON workspace_sync_state;
+CREATE TRIGGER trg_workspace_sync_state_updated_at
+BEFORE UPDATE ON workspace_sync_state
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 DROP TRIGGER IF EXISTS trg_subscriptions_updated_at ON subscriptions;
