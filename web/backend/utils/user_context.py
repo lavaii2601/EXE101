@@ -120,12 +120,25 @@ def resolve_google_user_id(subject, account_email):
         exact_ids = list(dict.fromkeys(
             row['user_id'] for row in exact_rows if row.get('user_id')
         ))
-        if len(exact_ids) > 1:
-            raise IdentityConflictError(
-                'Multiple legacy users match this Google email; manual resolution is required'
-            )
-
         canonical_user_id = exact_ids[0] if exact_ids else candidate
+        if len(exact_ids) > 1:
+            # Older builds could create both the raw email user id and the
+            # file-safe/sanitized id for the same Google account. Runtime
+            # requests have always normalized to the sanitized id, so that is
+            # the only safe canonical choice for this exact legacy pair.
+            legacy_user_id = sanitize_user_id(email)
+            recognized_legacy_ids = {email, legacy_user_id}
+            if (
+                email
+                and legacy_user_id in exact_ids
+                and set(exact_ids).issubset(recognized_legacy_ids)
+            ):
+                canonical_user_id = legacy_user_id
+            else:
+                raise IdentityConflictError(
+                    'Multiple legacy users match this Google email; manual resolution is required'
+                )
+
         if not exact_ids and email:
             legacy_user_id = sanitize_user_id(email)
             legacy = conn.execute(

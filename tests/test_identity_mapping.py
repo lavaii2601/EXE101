@@ -148,6 +148,48 @@ class GoogleIdentityMappingTests(unittest.TestCase):
         self.assertEqual(first, renamed)
         self.assertEqual(1, len(connection.inserted_identities))
 
+    def test_raw_and_sanitized_legacy_pair_uses_runtime_canonical_id(self):
+        email = "owner@example.com"
+        sanitized_id = user_context.sanitize_user_id(email)
+        connection = _IdentityConnection(
+            exact_by_email={
+                email: [
+                    email,
+                    sanitized_id,
+                ]
+            }
+        )
+
+        resolved = self._resolve_with(
+            connection,
+            "immutable-google-subject",
+            email,
+        )
+
+        self.assertEqual(sanitized_id, resolved)
+        self.assertEqual(
+            ("immutable-google-subject", sanitized_id, email),
+            connection.inserted_identities[0],
+        )
+
+    def test_unrecognized_duplicate_ids_still_fail_closed(self):
+        email = "owner@example.com"
+        connection = _IdentityConnection(
+            exact_by_email={
+                email: [
+                    user_context.sanitize_user_id(email),
+                    "another-populated-workspace",
+                ]
+            }
+        )
+
+        with self.assertRaises(user_context.IdentityConflictError):
+            self._resolve_with(
+                connection,
+                "immutable-google-subject",
+                email,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
