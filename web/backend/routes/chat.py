@@ -16,10 +16,12 @@ from services.chat_agents import (
     normalize_agent_result_language,
 )
 from services.gmail_service import get_cached_gmail_service
+from services.conversation_context import latest_user_language
 from services.tool_catalog import (
     AGENT_CAPABILITIES,
     AGENT_SYNC_TARGETS,
     AGENT_CONFIRMATION_REQUIRED,
+    WRITE_TOOL_NAMES,
 )
 from models.history import History
 from models.schedule import Schedule
@@ -228,9 +230,11 @@ def send_message():
         user_message, ai_service, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
     )
     refresh_targets = list(intent_result.get('refresh_targets') or [])
+    resolved_user_message = intent_result.get('resolved_message') or user_message
 
     ctx = ChatContext(
-        user_message=user_message,
+        user_message=resolved_user_message,
+        original_user_message=user_message,
         user_id=user_id,
         db_path=db_path,
         chat_session_id=chat_session_id,
@@ -249,7 +253,34 @@ def send_message():
     result = agent.handle(ctx)
     if result is None:
         result = get_agent('chat.freeform').handle(ctx)
-    result = normalize_agent_result_language(result, user_message, user_id=user_id)
+    try:
+        recent_history = History.get_recent(
+            limit=8,
+            db_path=db_path,
+            chat_session_id=chat_session_id,
+        )
+        fallback_language = latest_user_language(recent_history)
+    except Exception:
+        # A post-action language hint must never turn a successful confirmed
+        # write into a 500 response that the user may retry.
+        logger.exception(
+            "Failed to load language history for chat session %s",
+            chat_session_id,
+        )
+        fallback_language = None
+    result = normalize_agent_result_language(
+        result,
+        user_message,
+        user_id=user_id,
+        fallback_language=fallback_language,
+        write_operation=(
+            intent_result.get('intent') in WRITE_TOOL_NAMES
+            or any(
+                step.get('intent') in WRITE_TOOL_NAMES
+                for step in (intent_result.get('steps') or [])
+            )
+        ),
+    )
 
     save_chat_history(user_message, result.response, action_type=result.action_type)
     learn_from_exchange_async(user_message, result.response, user_id)
@@ -471,7 +502,7 @@ def delete_chat_session(session_id):
     )
     if not deleted:
         return jsonify({'success': False, 'error': 'chat_session_not_found'}), 404
-    SessionMemory.delete_for_session(session_id, db_path=db_path)
+    SessionMemory.delete_for_session(user_id, session_id, db_path=db_path)
     return jsonify({'success': True})
 
 
@@ -503,16 +534,25 @@ def clear_conversation():
     if chat_session_id:
         chat_session_id = _ensure_chat_session(user_id, chat_session_id)
 
-    # Delete only chat messages, preserve email and schedule history
-    deleted_count = History.clear_all(action_type='chat', db_path=db_path, chat_session_id=chat_session_id)
-    if chat_session_id:
-        SessionMemory.delete_for_session(chat_session_id, db_path=db_path)
+    # One transaction prevents erased history from leaving injectable session
+    # memory behind if a later delete were to fail.
+    deleted = History.clear_chat_state(
+        user_id,
+        db_path=db_path,
+        chat_session_id=chat_session_id,
+        clear_all_history=False,
+    )
+    deleted_count = deleted['history']
+    deleted_memory_count = deleted['memory']
+    deleted_session_count = deleted['sessions']
 
     return jsonify({
         'success': True,
         'session_id': chat_session_id,
         'message': f'Đã xóa {deleted_count} tin nhắn',
-        'deleted_count': deleted_count
+        'deleted_count': deleted_count,
+        'deleted_memory_count': deleted_memory_count,
+        'deleted_session_count': deleted_session_count,
     })
 
 @chat_bp.route('/clear-all', methods=['POST'])
@@ -521,10 +561,19 @@ def clear_all_history():
     user_id = get_current_user_id(request)
     db_path = get_user_db_path(user_id)
 
-    deleted_count = History.clear_all(db_path=db_path)
+    deleted = History.clear_chat_state(
+        user_id,
+        db_path=db_path,
+        clear_all_history=True,
+    )
+    deleted_count = deleted['history']
+    deleted_memory_count = deleted['memory']
+    deleted_session_count = deleted['sessions']
 
     return jsonify({
         'success': True,
         'message': f'Đã xóa {deleted_count} bản ghi lịch sử',
-        'deleted_count': deleted_count
+        'deleted_count': deleted_count,
+        'deleted_memory_count': deleted_memory_count,
+        'deleted_session_count': deleted_session_count,
     })

@@ -85,11 +85,18 @@ class KnowledgeService:
             vector[term] = tf * idf
         return vector
 
-    def search(self, query, top_k=3, min_score=0.08, user_id=None):
+    def search(self, query, top_k=3, min_score=0.08, user_id=None, mode=None):
         """user_id=None searches the whole library (admin/manual UI use).
         Pass the requesting user's id from chat so per-user auto-learned
         memories from OTHER users are excluded from candidates -- the
-        shared global docs (user_id IS NULL) are always visible to everyone."""
+        shared global docs (user_id IS NULL) are always visible to everyone.
+
+        When ``mode`` is supplied, a document explicitly tagged for another
+        FlowMate mode is excluded. Untagged/shared rules and per-user memories
+        remain visible. This prevents a Worker chat from retrieving a highly
+        similar Student/Teacher template merely because the generated corpus
+        uses parallel wording.
+        """
         self._ensure_index()
         if not self._doc_vectors:
             return []
@@ -101,10 +108,27 @@ class KnowledgeService:
         query_norm = math.sqrt(sum(weight * weight for weight in query_vector.values())) or 1.0
 
         scored = []
+        valid_modes = {
+            "student", "worker", "freelancer", "creator",
+            "business", "mentor", "teacher",
+        }
+        requested_mode = str(mode or "").strip().lower()
+        if requested_mode not in valid_modes:
+            requested_mode = ""
         for doc_id, doc_vector in self._doc_vectors.items():
+            document = self._documents_by_id.get(doc_id, {})
+            doc_owner = document.get('user_id')
             if user_id is not None:
-                doc_owner = self._documents_by_id.get(doc_id, {}).get('user_id')
                 if doc_owner and doc_owner != user_id:
+                    continue
+            if requested_mode and not doc_owner:
+                tags = {
+                    tag.strip().lower()
+                    for tag in str(document.get("tags") or "").split(",")
+                    if tag.strip()
+                }
+                tagged_modes = tags & valid_modes
+                if tagged_modes and requested_mode not in tagged_modes:
                     continue
             shared_terms = query_vector.keys() & doc_vector.keys()
             if not shared_terms:

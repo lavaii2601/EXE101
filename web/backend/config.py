@@ -56,9 +56,13 @@ class Config:
     AI_PRIMARY_PROVIDER = os.getenv("AI_PRIMARY_PROVIDER", "openrouter")
     AI_PROVIDER_ORDER = os.getenv("AI_PROVIDER_ORDER", "openrouter,openai,mistral,claude,gemini")
     AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", 20))
-    AI_MAX_CONTEXT_MESSAGES = int(os.getenv("AI_MAX_CONTEXT_MESSAGES", 6))
-    AI_MAX_INPUT_CHARS = int(os.getenv("AI_MAX_INPUT_CHARS", 2800))
-    AI_MAX_SYSTEM_PROMPT_CHARS = int(os.getenv("AI_MAX_SYSTEM_PROMPT_CHARS", 450))
+    AI_MAX_CONTEXT_MESSAGES = int(os.getenv("AI_MAX_CONTEXT_MESSAGES", 10))
+    # These are character budgets (not output-token budgets).  The previous
+    # 450/2800 defaults cut Bob's safety/language contract and, for intent
+    # classification, even removed the latest user message before it reached
+    # the provider.
+    AI_MAX_INPUT_CHARS = int(os.getenv("AI_MAX_INPUT_CHARS", 12000))
+    AI_MAX_SYSTEM_PROMPT_CHARS = int(os.getenv("AI_MAX_SYSTEM_PROMPT_CHARS", 8000))
     AI_DEFAULT_MAX_TOKENS = int(os.getenv("AI_DEFAULT_MAX_TOKENS", 220))
     AI_SUMMARY_MAX_TOKENS = int(os.getenv("AI_SUMMARY_MAX_TOKENS", 180))
     AI_REPLY_MAX_TOKENS = int(os.getenv("AI_REPLY_MAX_TOKENS", 220))

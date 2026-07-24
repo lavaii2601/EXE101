@@ -84,25 +84,26 @@ class History:
         if pg.enabled():
             pg.ensure_user(user_id)
             with pg.connection() as conn:
-                if session_id:
-                    existing = conn.execute(
-                        """
-                        SELECT id::TEXT
-                        FROM chat_sessions
-                        WHERE id = %s
-                          AND user_id = %s
-                          AND archived_at IS NULL
-                          AND expires_at > NOW()
-                        """,
-                        (session_id, user_id),
-                    ).fetchone()
-                    owned_expired = conn.execute(
-                        "SELECT id::TEXT FROM chat_sessions WHERE id = %s AND user_id = %s",
-                        (session_id, user_id),
-                    ).fetchone()
-                    if owned_expired and not existing:
-                        session_id = str(uuid.uuid4())
-                conn.execute(
+                existing = conn.execute(
+                    """
+                    SELECT
+                        user_id,
+                        (archived_at IS NULL AND expires_at > NOW()) AS available
+                    FROM chat_sessions
+                    WHERE id = %s
+                    """,
+                    (session_id,),
+                ).fetchone()
+                if existing and (
+                    existing['user_id'] != user_id
+                    or not existing['available']
+                ):
+                    # A client may supply an old or guessed session UUID. Never
+                    # return a UUID owned by another tenant, and never revive an
+                    # archived/expired session.
+                    session_id = str(uuid.uuid4())
+
+                row = conn.execute(
                     """
                     INSERT INTO chat_sessions (id, user_id, title, mode, retention_days, expires_at)
                     VALUES (%s, %s, %s, %s::user_mode, %s, NOW() + (%s || ' days')::INTERVAL)
@@ -117,10 +118,35 @@ class History:
                         retention_days = COALESCE(chat_sessions.retention_days, EXCLUDED.retention_days),
                         expires_at = GREATEST(chat_sessions.expires_at, NOW() + (chat_sessions.retention_days || ' days')::INTERVAL)
                     WHERE chat_sessions.user_id = EXCLUDED.user_id
+                    RETURNING id::TEXT
                     """,
                     (session_id, user_id, title, safe_mode, retention_days, retention_days),
-                )
-            return session_id
+                ).fetchone()
+                if not row:
+                    # Covers the very small race where another tenant inserts
+                    # the requested UUID after the ownership check.
+                    session_id = str(uuid.uuid4())
+                    row = conn.execute(
+                        """
+                        INSERT INTO chat_sessions (
+                            id, user_id, title, mode, retention_days, expires_at
+                        )
+                        VALUES (
+                            %s, %s, %s, %s::user_mode, %s,
+                            NOW() + (%s || ' days')::INTERVAL
+                        )
+                        RETURNING id::TEXT
+                        """,
+                        (
+                            session_id,
+                            user_id,
+                            title,
+                            safe_mode,
+                            retention_days,
+                            retention_days,
+                        ),
+                    ).fetchone()
+            return row['id'] if row else session_id
 
         db_path = db_path or Config.DATABASE_PATH
         History.init_db(db_path=db_path)
@@ -352,6 +378,131 @@ class History:
         conn.commit()
         conn.close()
         return deleted
+
+    @staticmethod
+    def delete_all_chat_sessions(user_id, db_path=None):
+        """Delete all saved chat-session metadata for one user.
+
+        PostgreSQL cascades this deletion to session_memory. SQLite stores one
+        tenant per database file; its memory rows are cleared separately by
+        the route so this method remains focused on chat session metadata.
+        """
+        if pg.enabled():
+            with pg.connection() as conn:
+                cur = conn.execute(
+                    "DELETE FROM chat_sessions WHERE user_id = %s",
+                    (user_id,),
+                )
+                return cur.rowcount
+
+        db_path = db_path or Config.DATABASE_PATH
+        History.init_db(db_path=db_path)
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM chat_sessions")
+        deleted = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return deleted
+
+    @staticmethod
+    def clear_chat_state(
+        user_id,
+        db_path=None,
+        chat_session_id=None,
+        clear_all_history=False,
+    ):
+        """Atomically clear history, working memory, and session metadata.
+
+        A session-specific clear retains that empty session for clients that
+        continue chatting in it. A user-wide clear removes all session shells.
+        """
+        user_id = user_id or 'default'
+        if pg.enabled():
+            with pg.connection() as conn:
+                if chat_session_id:
+                    history_cur = conn.execute(
+                        """
+                        DELETE FROM history
+                        WHERE user_id = %s
+                          AND action_type = 'chat'
+                          AND chat_session_id = %s
+                        """,
+                        (user_id, chat_session_id),
+                    )
+                    memory_cur = conn.execute(
+                        """
+                        DELETE FROM session_memory
+                        WHERE user_id = %s AND chat_session_id = %s
+                        """,
+                        (user_id, chat_session_id),
+                    )
+                    session_count = 0
+                else:
+                    history_sql = (
+                        "DELETE FROM history WHERE user_id = %s"
+                        if clear_all_history
+                        else "DELETE FROM history "
+                        "WHERE user_id = %s AND action_type = 'chat'"
+                    )
+                    history_cur = conn.execute(history_sql, (user_id,))
+                    memory_cur = conn.execute(
+                        "DELETE FROM session_memory WHERE user_id = %s",
+                        (user_id,),
+                    )
+                    session_cur = conn.execute(
+                        "DELETE FROM chat_sessions WHERE user_id = %s",
+                        (user_id,),
+                    )
+                    session_count = session_cur.rowcount
+                return {
+                    'history': history_cur.rowcount,
+                    'memory': memory_cur.rowcount,
+                    'sessions': session_count,
+                }
+
+        db_path = db_path or Config.DATABASE_PATH
+        History.init_db(db_path=db_path)
+        # Import lazily to avoid a model import cycle.
+        from models.session_memory import SessionMemory
+        SessionMemory.init_db(db_path=db_path)
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            if chat_session_id:
+                history_cur = conn.execute(
+                    """
+                    DELETE FROM history
+                    WHERE action_type = 'chat' AND chat_session_id = ?
+                    """,
+                    (chat_session_id,),
+                )
+                memory_cur = conn.execute(
+                    "DELETE FROM session_memory WHERE chat_session_id = ?",
+                    (chat_session_id,),
+                )
+                session_count = 0
+            else:
+                history_sql = (
+                    "DELETE FROM history"
+                    if clear_all_history
+                    else "DELETE FROM history WHERE action_type = 'chat'"
+                )
+                history_cur = conn.execute(history_sql)
+                memory_cur = conn.execute("DELETE FROM session_memory")
+                session_cur = conn.execute("DELETE FROM chat_sessions")
+                session_count = session_cur.rowcount
+            conn.commit()
+            return {
+                'history': history_cur.rowcount,
+                'memory': memory_cur.rowcount,
+                'sessions': session_count,
+            }
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     @staticmethod
     def create(user_message, assistant_response, action_type="chat", related_id=None, db_path=None, chat_session_id=None):

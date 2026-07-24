@@ -9,7 +9,10 @@ Production: [https://exe101.up.railway.app](https://exe101.up.railway.app)
 
 ## Tính năng chính
 
-- Chat với Bob bằng tiếng Việt hoặc tiếng Anh.
+- Chat với Bob bằng tiếng Việt, tiếng Anh hoặc code-switch trong cùng một câu;
+  hỗ trợ trả lời song ngữ khi user yêu cầu.
+- Hiểu câu nối tiếp theo đúng phiên như “đổi nó sang 4 giờ”, “the second one”
+  và ưu tiên correction/negation mới nhất.
 - Đọc, tìm kiếm, tóm tắt và soạn trả lời Gmail.
 - Nhận diện email có nội dung hẹn gặp và đề xuất lịch.
 - Tạo, cập nhật, xóa và đồng bộ lịch với Google Calendar.
@@ -71,6 +74,9 @@ SESSION_COOKIE_SECURE=false
 ALLOWED_ORIGINS=http://localhost:5000,http://127.0.0.1:5000
 
 OPENROUTER_API_KEY=
+AI_MAX_CONTEXT_MESSAGES=10
+AI_MAX_INPUT_CHARS=12000
+AI_MAX_SYSTEM_PROMPT_CHARS=8000
 
 GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
@@ -223,6 +229,10 @@ GMAIL_CREDENTIALS_JSON=
 
 ADMIN_EMAILS=
 ADMIN_TOTP_SECRET=
+
+AI_MAX_CONTEXT_MESSAGES=10
+AI_MAX_INPUT_CHARS=12000
+AI_MAX_SYSTEM_PROMPT_CHARS=8000
 ```
 
 `railpack.json` tự chạy migration và Gunicorn. Chi tiết đầy đủ nằm trong
@@ -252,6 +262,10 @@ https://exe101.up.railway.app/api/email/oauth-config-check
 ## Training Bob
 
 Bob sử dụng knowledge/RAG thay vì fine-tune trọng số model trong repository.
+Khả năng Việt–Anh/code-switch và hiểu follow-up được triển khai ở ba lớp:
+language policy luôn có trong system prompt, intent contextualizer dùng lịch sử
+đúng chat session, và corpus semantic pair Việt–Anh. Câu hiện tại vẫn có ưu
+tiên cao nhất; lịch sử chỉ dùng để giải tham chiếu, không được xem như lệnh mới.
 
 Import corpus:
 

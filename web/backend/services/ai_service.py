@@ -171,7 +171,10 @@ class AIService:
             max_tokens = self.task_max_tokens.get(task, self.default_max_tokens)
 
         normalized_messages = self._normalize_messages(messages)
-        optimized_messages = self._optimize_messages_for_tokens(normalized_messages)
+        optimized_messages = self._optimize_messages_for_tokens(
+            normalized_messages,
+            task=task,
+        )
 
         # Try to use DB-backed cache when user_id provided
         cache_db = None
@@ -281,7 +284,10 @@ class AIService:
             max_tokens = self.task_max_tokens.get(task, self.default_max_tokens)
 
         normalized_messages = self._normalize_messages(messages)
-        optimized_messages = self._optimize_messages_for_tokens(normalized_messages)
+        optimized_messages = self._optimize_messages_for_tokens(
+            normalized_messages,
+            task=task,
+        )
 
         try:
             response = self._call_provider(provider, optimized_messages, max_tokens)
@@ -383,6 +389,23 @@ class AIService:
             return text
         return text[:max_chars] + "\n...[truncated]"
 
+    def _truncate_text_ends(self, text, max_chars):
+        """Truncate while retaining both instructions and trailing constraints.
+
+        User corrections and language requirements commonly appear at the end
+        of a long prompt.  Head-only truncation silently changed their intent.
+        """
+        text = str(text or '')
+        if not text or len(text) <= max_chars:
+            return text
+        marker = "\n...[middle truncated]...\n"
+        if max_chars <= len(marker) + 40:
+            return self._truncate_text(text, max_chars)
+        available = max_chars - len(marker)
+        head_chars = int(available * 0.62)
+        tail_chars = available - head_chars
+        return text[:head_chars] + marker + text[-tail_chars:]
+
     def _parse_report_date(self, report_date):
         if not report_date:
             return None
@@ -442,7 +465,7 @@ class AIService:
             )
         }
 
-    def _optimize_messages_for_tokens(self, messages):
+    def _optimize_messages_for_tokens(self, messages, task='chat'):
         if not messages:
             return []
 
@@ -453,43 +476,74 @@ class AIService:
 
         if system_messages:
             system_content = "\n".join([m.get('content', '') for m in system_messages])
+            # The core system contract is a correctness and safety boundary,
+            # not disposable conversation context.  Keep a floor large enough
+            # for Bob's grounding, confirmation, language, and memory rules
+            # even if an old deployment still carries the former 450-char env
+            # value.
+            system_budget = max(8000, int(self.max_system_prompt_chars or 0))
             optimized.append({
                 'role': 'system',
-                'content': self._truncate_text(system_content, self.max_system_prompt_chars)
+                'content': self._truncate_text_ends(system_content, system_budget)
             })
 
-        # If there are too many recent messages, prioritize the most recent and assistant replies
-        recent_non_system = non_system[-self.max_context_messages:] if self.max_context_messages > 0 else non_system
+        # Keep the newest bounded window.  The latest user turn is always in
+        # this slice and is never subjected to the old blanket 400-char cap.
+        context_limit = max(1, int(self.max_context_messages or 1))
+        recent_non_system = non_system[-context_limit:]
+        input_budget = max(4000, int(self.max_input_chars or 0))
+        if task == 'intent_classification':
+            # The classifier carries its JSON schema and a bounded history in
+            # one structured message.  It must see that entire contract.
+            input_budget = max(input_budget, 16000)
 
-        # Further reduce context for very long conversations
-        if len(recent_non_system) > max(6, self.max_context_messages // 2):
-            # keep the last N messages and collapse earlier ones into a brief summary
-            keep = max(6, self.max_context_messages // 2)
-            head = recent_non_system[:-keep]
-            tail = recent_non_system[-keep:]
-            # summarize head into one line to keep tokens low
-            head_summary = ' '.join([self._truncate_text(h.get('content', ''), 120) for h in head])
-            if head_summary:
-                optimized.append({'role': 'system', 'content': self._truncate_text('Conversation summary: ' + head_summary, 300)})
-            recent_non_system = tail
-
-        # Tighter per-message truncation to reduce token usage
-        per_message_limit = max(120, min(400, self.max_input_chars // max(1, len(recent_non_system))))
-
+        contents = []
         for msg in recent_non_system:
-            content = msg.get('content', '')
-            if msg.get('preserve_context'):
-                optimized.append({
-                    'role': msg.get('role', 'user'),
-                    'content': self._truncate_text(content, self.max_input_chars)
-                })
-                continue
-            # Keep assistant responses shorter
-            if msg.get('role') == 'assistant':
-                content = self._truncate_text(content, per_message_limit // 2)
+            content = str(msg.get('content', '') or '')
+            if msg.get('role') == 'assistant' and not msg.get('preserve_context'):
+                content = self._truncate_text_ends(content, 1600)
+            contents.append(content)
+
+        overflow = max(0, sum(len(content) for content in contents) - input_budget)
+        if overflow:
+            latest_user_index = next(
+                (
+                    index
+                    for index in range(len(recent_non_system) - 1, -1, -1)
+                    if recent_non_system[index].get('role') == 'user'
+                ),
+                len(recent_non_system) - 1,
+            )
+            # Reduce oldest context first.  Preserve a useful excerpt of each
+            # turn and leave the newest user prompt untouched for as long as
+            # possible.
+            for index, msg in enumerate(recent_non_system):
+                if overflow <= 0 or index == latest_user_index:
+                    continue
+                floor = 800 if msg.get('preserve_context') else (
+                    180 if msg.get('role') == 'assistant' else 320
+                )
+                reducible = max(0, len(contents[index]) - floor)
+                reduction = min(overflow, reducible)
+                if reduction:
+                    contents[index] = self._truncate_text_ends(
+                        contents[index],
+                        len(contents[index]) - reduction,
+                    )
+                    overflow -= reduction
+
+            if overflow > 0 and recent_non_system:
+                current = contents[latest_user_index]
+                target = max(800, len(current) - overflow)
+                contents[latest_user_index] = self._truncate_text_ends(
+                    current,
+                    target,
+                )
+
+        for msg, content in zip(recent_non_system, contents):
             optimized.append({
                 'role': msg.get('role', 'user'),
-                'content': self._truncate_text(content, per_message_limit)
+                'content': content,
             })
 
         return optimized
@@ -720,10 +774,20 @@ class AIService:
             if role == 'system':
                 system_parts.append(content)
             elif role in ['user', 'assistant']:
-                converted.append({
-                    "role": role,
-                    "content": content
-                })
+                # Context-window slicing can orphan an old assistant turn.
+                # Claude/Gemini expect a user-first, alternating dialogue, so
+                # discard only that unusable prefix and merge adjacent roles
+                # (workspace context + memory + current turn are often three
+                # consecutive user messages).
+                if role == 'assistant' and not converted:
+                    continue
+                if converted and converted[-1]['role'] == role:
+                    converted[-1]['content'] += "\n\n" + content
+                else:
+                    converted.append({
+                        "role": role,
+                        "content": content
+                    })
 
         return "\n\n".join(system_parts), converted
 

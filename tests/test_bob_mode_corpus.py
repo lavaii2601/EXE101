@@ -68,6 +68,43 @@ class BobModeCorpusTests(unittest.TestCase):
             self.assertIn("semantic-pair", tags, document["title"])
             self.assertIn("vi-en", tags, document["title"])
 
+    def test_shared_corpus_contains_real_code_switch_and_followup_lessons(self):
+        documents = {
+            doc["title"]: doc
+            for path, payload in self.payloads
+            if path.stem == "shared"
+            for doc in payload["documents"]
+        }
+        language = documents["Case 099 - Ngon ngu tra loi"]
+        followup = documents["Case 100 - Cau hoi mo ho"]
+        mixed_email = documents["Email 117 - Email language mixed"]
+
+        self.assertIn("in English", language["content"])
+        self.assertIn("both languages", language["content_en"])
+        self.assertIn("Move it to Friday at 3 PM", followup["content_en"])
+        self.assertIn("Don't create a Calendar event", followup["content_en"])
+        self.assertIn("except invoice", mixed_email["content"])
+        self.assertIn("code-switch", mixed_email["tags"])
+
+    def test_generated_english_contexts_do_not_use_invalid_articles(self):
+        documents = [doc for _, payload in self.payloads for doc in payload["documents"]]
+        generated = [
+            doc for doc in documents
+            if "new-500" in str(doc.get("tags") or "").split(",")
+        ]
+        invalid_phrases = (
+            "a ambiguous situation",
+            "a urgent situation",
+            "an bilingual situation",
+            "an missing data situation",
+            "an multi-step situation",
+            "an last-minute change situation",
+            "an long-term follow-up situation",
+        )
+        for document in generated:
+            for phrase in invalid_phrases:
+                self.assertNotIn(phrase, document["content_en"], document["title"])
+
     def test_importer_indexes_english_semantics_in_same_document(self):
         documents = _load_documents(
             [MODE_DIR / "teacher.json"],

@@ -53,7 +53,7 @@ _CORES = {
         "set a reminder to submit the report at 5pm today",
         "book a planning meeting next Monday at 9am",
         "cho minh mot lich tap gym luc 6 gio sang mai",
-        "tao event demo san pham vao 15 gio thu sau",
+        "book lich demo san pham vao 3pm thu sau",
     ),
     "schedule.update": (
         "doi lich hop voi sep sang 5 gio chieu mai",
@@ -65,7 +65,7 @@ _CORES = {
         "move my dentist appointment to next Friday",
         "change the project meeting to 10am",
         "lui lich review bao cao them mot ngay",
-        "cap nhat cuoc hen doi tac thanh 3 gio chieu",
+        "move cuoc hen doi tac to 3pm tomorrow",
     ),
     "schedule.delete": (
         "xoa lich hop voi sep ngay mai",
@@ -77,7 +77,7 @@ _CORES = {
         "delete my dentist appointment",
         "remove the project review from my calendar",
         "khong di hop nua huy lich do",
-        "xoa nhac nho nop bao cao",
+        "remove nhac nho nop bao cao from calendar",
     ),
     "schedule.list": (
         "hom nay toi co lich gi",
@@ -89,7 +89,7 @@ _CORES = {
         "show my meetings next week",
         "do I have any events tomorrow",
         "kiem tra lich trong bay ngay toi",
-        "lich chieu nay co trong khong",
+        "show lich chieu nay cua minh",
     ),
     "schedule.suggest_plan": (
         "sap xep lich cho tap gym doc sach va nau com",
@@ -101,7 +101,7 @@ _CORES = {
         "suggest time slots for these activities",
         "build a daily schedule for my task list",
         "toi co nhieu viec hay xep gio hop ly",
-        "goi y lich tranh trung cac cuoc hop da co",
+        "goi y time slots tranh cac meetings da co",
     ),
     "email.latest_summary": (
         "tom tat email moi nhat",
@@ -113,7 +113,7 @@ _CORES = {
         "give me a summary of today's inbox",
         "what are my three newest messages about",
         "mail moi nhat noi gi vay",
-        "quet inbox va tom tat thu vua den",
+        "scan inbox va tom tat thu vua den",
     ),
     "email.search": (
         "tim email tu chi Lan ve hop dong",
@@ -125,7 +125,7 @@ _CORES = {
         "search my inbox for the invoice",
         "show messages containing quarterly report",
         "kiem lai mail hop tuan truoc",
-        "tim email chua doc cua giao vien",
+        "tim unread emails cua giao vien",
     ),
     "email.mark_read": (
         "danh dau email tu chi Lan la da doc",
@@ -137,7 +137,7 @@ _CORES = {
         "set the latest email to read",
         "clear unread status for project emails",
         "toi xem roi danh dau mail do da doc",
-        "chuyen email cua sep sang da xem",
+        "chuyen emails cua sep sang read",
     ),
     "email.mark_unread": (
         "danh dau email nay la chua doc",
@@ -149,7 +149,7 @@ _CORES = {
         "set the latest email to unread",
         "restore unread status for project emails",
         "toi se doc sau danh dau chua doc",
-        "giu email cua khach o trang thai chua xem",
+        "giu email cua khach as unread",
     ),
     "history.list": (
         "hom nay toi da lam gi",
@@ -161,7 +161,7 @@ _CORES = {
         "what did I do today",
         "list actions Bob completed yesterday",
         "nay gio minh da lam gi roi",
-        "kiem tra lich su chat va lich",
+        "check lich su chat va calendar actions",
     ),
     "settings.update_mode": (
         "doi che do cua toi sang student",
@@ -173,7 +173,7 @@ _CORES = {
         "change my profile to mentor mode",
         "use student mode from now on",
         "minh moi di lam doi sang nhan vien",
-        "cap nhat che do lam viec thanh freelancer",
+        "cap nhat work mode thanh freelancer",
     ),
     "checklist.create": (
         "them tap gym vao checklist",
@@ -185,7 +185,7 @@ _CORES = {
         "create a todo for submitting the report",
         "put these tasks on today's checklist",
         "ghi lai viec cham meo va tuoi cay",
-        "them ba dau viec nay vao todo hom nay",
+        "add ba dau viec nay vao todo hom nay",
     ),
 }
 

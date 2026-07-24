@@ -8,6 +8,11 @@ import { apiDelete, apiGet, apiPost } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 import { getUserMode } from '../config/userModes';
 import { takePendingAgentNotice } from '../state/agentNotices';
+import {
+  getChatSessionOwner,
+  loadActiveChatSessionId,
+  persistActiveChatSessionId,
+} from '../state/chatSession';
 
 function normalizePlanSuggestion(value) {
   return {
@@ -89,7 +94,7 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [messages, setMessages] = useState([]);
-  const [sessionId, setSessionId] = useState(() => createSessionId());
+  const [sessionId, setSessionId] = useState('');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -102,24 +107,72 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const listRef = useRef(null);
+  const mountedRef = useRef(false);
   const mode = getUserMode(userMode);
 
-  const loadHistory = useCallback(async () => {
+  const adoptSessionId = useCallback((value, expectedOwner = getChatSessionOwner()) => {
+    const nextSessionId = String(value || '').trim();
+    if (
+      !nextSessionId
+      || !mountedRef.current
+      || expectedOwner !== getChatSessionOwner()
+    ) return '';
+    setSessionId(nextSessionId);
+    persistActiveChatSessionId(nextSessionId, expectedOwner);
+    return nextSessionId;
+  }, []);
+
+  const loadHistoryForSession = useCallback(async (
+    requestedSessionId,
+    expectedOwner = getChatSessionOwner(),
+  ) => {
+    if (!requestedSessionId) return;
     setRefreshing(true);
     try {
-      const data = await apiGet('/chat/history?limit=20');
+      const data = await apiGet(
+        `/chat/history?limit=20&session_id=${encodeURIComponent(requestedSessionId)}`,
+      );
+      if (data.expired) {
+        if (!adoptSessionId(createSessionId(), expectedOwner)) return;
+        setMessages([]);
+        return;
+      }
+      if (!adoptSessionId(data.session_id || requestedSessionId, expectedOwner)) return;
       const nextMessages = (data.history || []).reverse().flatMap(mapHistoryItem).filter((m) => m.text);
       setMessages(nextMessages);
     } catch (error) {
-      Alert.alert('Lỗi tải lịch sử chat', error.message);
+      if (mountedRef.current && expectedOwner === getChatSessionOwner()) {
+        Alert.alert('Lỗi tải lịch sử chat', error.message);
+      }
     } finally {
-      setRefreshing(false);
+      if (mountedRef.current && expectedOwner === getChatSessionOwner()) {
+        setRefreshing(false);
+      }
     }
-  }, []);
+  }, [adoptSessionId]);
+
+  const loadHistory = useCallback(async () => {
+    await loadHistoryForSession(sessionId);
+  }, [loadHistoryForSession, sessionId]);
 
   useEffect(() => {
+    let active = true;
+    mountedRef.current = true;
     (async () => {
-      await loadHistory();
+      const owner = getChatSessionOwner();
+      const storedSessionId = await loadActiveChatSessionId(owner);
+      if (!active) return;
+
+      const initialSessionId = adoptSessionId(
+        storedSessionId || createSessionId(),
+        owner,
+      );
+      if (!initialSessionId) return;
+      if (storedSessionId) {
+        await loadHistoryForSession(initialSessionId, owner);
+      }
+      if (!active) return;
+
       const notice = takePendingAgentNotice();
       if (notice) {
         setMessages((current) => [
@@ -132,7 +185,11 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
       // otherwise, forcing users to manually scroll down every time.
       requestAnimationFrame(() => listRef.current?.scrollToEnd?.({ animated: false }));
     })();
-  }, [loadHistory]);
+    return () => {
+      active = false;
+      mountedRef.current = false;
+    };
+  }, [adoptSessionId, loadHistoryForSession]);
 
   const handleMessagesScroll = useCallback((event) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -144,14 +201,14 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
     listRef.current?.scrollToEnd?.({ animated: true });
   }, []);
 
-  const startNewChat = () => {
-    setSessionId(createSessionId());
+  const startNewChat = useCallback(() => {
+    adoptSessionId(createSessionId());
     setMessages([]);
     setSuggestion(null);
     setPendingAction(null);
     setPlanSuggestion(null);
     setInput('');
-  };
+  }, [adoptSessionId]);
 
   const loadSessions = useCallback(async () => {
     setSessionsLoading(true);
@@ -172,10 +229,17 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
 
   const openSession = useCallback(async (session) => {
     if (!session?.id) return;
+    const owner = getChatSessionOwner();
     setRefreshing(true);
     try {
       const data = await apiGet(`/chat/history?limit=100&session_id=${encodeURIComponent(session.id)}`);
-      setSessionId(session.id);
+      if (data.expired) {
+        if (owner !== getChatSessionOwner() || !mountedRef.current) return;
+        startNewChat();
+        setSessionsOpen(false);
+        return;
+      }
+      if (!adoptSessionId(data.session_id || session.id, owner)) return;
       setMessages((data.history || []).reverse().flatMap(mapHistoryItem).filter((item) => item.text));
       setSuggestion(null);
       setPendingAction(null);
@@ -183,11 +247,15 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
       setSessionsOpen(false);
       requestAnimationFrame(() => listRef.current?.scrollToEnd?.({ animated: false }));
     } catch (error) {
-      Alert.alert('Không mở được đoạn chat', error.message);
+      if (mountedRef.current && owner === getChatSessionOwner()) {
+        Alert.alert('Không mở được đoạn chat', error.message);
+      }
     } finally {
-      setRefreshing(false);
+      if (mountedRef.current && owner === getChatSessionOwner()) {
+        setRefreshing(false);
+      }
     }
-  }, []);
+  }, [adoptSessionId, startNewChat]);
 
   const deleteSession = useCallback((session) => {
     Alert.alert('Xóa đoạn chat?', session?.title || 'Đoạn chat này sẽ bị xóa ngay.', [
@@ -207,11 +275,11 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
         },
       },
     ]);
-  }, [onAgentSync, sessionId]);
+  }, [onAgentSync, sessionId, startNewChat]);
 
   const submitChatMessage = useCallback(async (text, options = {}) => {
     const trimmed = String(text || '').trim();
-    if (!trimmed || loading) return;
+    if (!trimmed || loading || !sessionId) return;
 
     const {
       addUserMessage = true,
@@ -232,6 +300,7 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
     setPendingAction(null);
     setPlanSuggestion(null);
 
+    const owner = getChatSessionOwner();
     try {
       const data = await apiPost('/chat/message', {
         message: trimmed,
@@ -242,6 +311,7 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
         confirmed_action: confirmedAction,
         action_override: actionOverride,
       });
+      if (!adoptSessionId(data.session_id || sessionId, owner)) return;
       const assistantMessage = {
         id: `a-${Date.now()}`,
         role: 'assistant',
@@ -267,16 +337,20 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
       if (data.schedule_created) Alert.alert('Đã tạo lịch', data.schedule_created.title || 'Lịch hẹn mới');
       if (data.action_applied) Alert.alert('Đã thực hiện', data.response || 'Hành động đã được áp dụng.');
     } catch (error) {
-      setMessages((current) => [
-        ...current,
-        { id: `e-${Date.now()}`, role: 'assistant', text: `Lỗi kết nối: ${error.message}` },
-      ]);
+      if (mountedRef.current && owner === getChatSessionOwner()) {
+        setMessages((current) => [
+          ...current,
+          { id: `e-${Date.now()}`, role: 'assistant', text: `Lỗi kết nối: ${error.message}` },
+        ]);
+      }
     } finally {
-      setLoading(false);
-      setIsAtBottom(true);
-      requestAnimationFrame(() => listRef.current?.scrollToEnd?.({ animated: true }));
+      if (mountedRef.current && owner === getChatSessionOwner()) {
+        setLoading(false);
+        setIsAtBottom(true);
+        requestAnimationFrame(() => listRef.current?.scrollToEnd?.({ animated: true }));
+      }
     }
-  }, [loading, onAgentSync, sessionId, userMode]);
+  }, [adoptSessionId, loading, onAgentSync, sessionId, userMode]);
 
   const sendMessage = async () => {
     const text = input.trim();
@@ -370,13 +444,10 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
   }, [onAgentSync, planSuggestion]);
 
   const clearChat = async () => {
+    if (!sessionId) return;
     try {
-      await apiPost('/chat/clear');
-      setMessages([]);
-      setSuggestion(null);
-      setPendingAction(null);
-      setPlanSuggestion(null);
-      setSessionId(createSessionId());
+      await apiPost('/chat/clear', { session_id: sessionId });
+      startNewChat();
       onAgentSync?.(['chat', 'history']);
     } catch (error) {
       Alert.alert('Không xóa được lịch sử', error.message);
@@ -395,8 +466,8 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
           <Text style={styles.title}>FlowMate Agent</Text>
         </View>
         <View style={styles.headerActions}>
-          <Button title="Lịch sử" variant="secondary" onPress={showSessions} />
-          <Button title="Chat mới" variant="secondary" onPress={startNewChat} />
+          <Button title="Lịch sử" variant="secondary" onPress={showSessions} disabled={!sessionId} />
+          <Button title="Chat mới" variant="secondary" onPress={startNewChat} disabled={!sessionId} />
         </View>
       </View>
       <View style={styles.listWrap}>
@@ -547,7 +618,7 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
           title={loading ? '' : 'Gửi'}
           onPress={sendMessage}
           loading={loading}
-          disabled={!input.trim()}
+          disabled={!input.trim() || !sessionId}
           style={styles.send}
         />
       </View>

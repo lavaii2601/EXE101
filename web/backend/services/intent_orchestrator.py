@@ -5,9 +5,10 @@ import unicodedata
 from datetime import datetime, timedelta
 
 from models.history import History
-from models.schedule import Schedule
+from models.schedule import LOCAL_TZ, Schedule
 from models.user import User
 from services import tool_catalog
+from services.conversation_context import is_context_dependent_followup
 from services.schedule_service import ScheduleService
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,11 @@ class IntentOrchestrator:
     WEEKDAY_NAMES_VN = (
         "Thu Hai", "Thu Ba", "Thu Tu", "Thu Nam", "Thu Sau", "Thu Bay", "Chu Nhat",
     )
+
+    @staticmethod
+    def _local_now():
+        """Naive Vietnam-local time used by existing schedule ISO contracts."""
+        return datetime.now(LOCAL_TZ).replace(tzinfo=None)
 
     MODE_ALIASES = {
         "student": ("student", "sinh vien", "hoc sinh", "di hoc", "college student", "university student"),
@@ -101,7 +107,24 @@ class IntentOrchestrator:
                 "knowledge_question": True,
             }
 
-        if self._is_latest_email_summary(text):
+        # Explicit state-changing email verbs take precedence over modifiers
+        # such as "latest"; "mark the latest 3 emails unread" is not a
+        # request to summarize those emails.
+        if self._is_email_mark_read(text):
+            intent = "email.mark_read"
+            confidence = 0.8
+            date_window = self._email_date_window(text)
+            if date_window:
+                entities["date_window"] = date_window
+            refresh_targets = ["email", "overview", "history"]
+        elif self._is_email_mark_unread(text):
+            intent = "email.mark_unread"
+            confidence = 0.8
+            date_window = self._email_date_window(text)
+            if date_window:
+                entities["date_window"] = date_window
+            refresh_targets = ["email", "overview", "history"]
+        elif self._is_latest_email_summary(text):
             intent = "email.latest_summary"
             confidence = 0.93
             entities["count"] = self._latest_email_count(text)
@@ -162,20 +185,6 @@ class IntentOrchestrator:
             confidence = 0.82
             entities["window"] = self._calendar_window(text)
             refresh_targets = ["schedule", "calendar", "overview", "history"]
-        elif self._is_email_mark_read(text):
-            intent = "email.mark_read"
-            confidence = 0.8
-            date_window = self._email_date_window(text)
-            if date_window:
-                entities["date_window"] = date_window
-            refresh_targets = ["email", "overview", "history"]
-        elif self._is_email_mark_unread(text):
-            intent = "email.mark_unread"
-            confidence = 0.8
-            date_window = self._email_date_window(text)
-            if date_window:
-                entities["date_window"] = date_window
-            refresh_targets = ["email", "overview", "history"]
         elif self._is_email_lookup(text):
             intent = "email.search"
             confidence = 0.74
@@ -413,6 +422,15 @@ class IntentOrchestrator:
 
     def is_general_knowledge_question(self, message):
         text = self.normalize(message).strip(" .?!,;:")
+        text = re.sub(
+            r"^(?:(?:could|can|would)\s+you\s+(?:please\s+)?(?:tell\s+me|explain)|"
+            r"please\s+(?:tell\s+me|explain)|"
+            r"(?:ban\s+co\s+the|lam\s+on|vui\s+long)\s+(?:cho\s+toi\s+biet|"
+            r"cho\s+minh\s+biet|giai\s+thich))\s+",
+            "",
+            text,
+            count=1,
+        )
         if not self._KNOWLEDGE_QUESTION_RE.search(text):
             return False
         return not self._contains_word(text, self._EXPLICIT_WORKSPACE_COMMANDS)
@@ -446,14 +464,27 @@ class IntentOrchestrator:
         ever get to answer on their own later.
         """
         result = self.detect(message)
-        if result.get("confidence", 0) >= confidence_threshold:
+        contextual_followup = is_context_dependent_followup(message)
+        recent_turns = (
+            self._recent_turns_text(db_path, chat_session_id)
+            if contextual_followup else ""
+        )
+        if result.get("confidence", 0) >= confidence_threshold and not (
+            contextual_followup and recent_turns
+        ):
             return result
-        if not self.has_actionable_hint(message):
+        if not self.has_actionable_hint(message) and not (
+            contextual_followup and recent_turns
+        ):
             return result
 
-        cached = self._lookup_cached_intent(message)
-        if cached:
-            return cached
+        # Context-dependent phrases such as "do it" and "đổi nó sang 3 giờ"
+        # are intentionally never cached or classified in isolation: their
+        # meaning changes from one session to another.
+        if not contextual_followup:
+            cached = self._lookup_cached_intent(message)
+            if cached:
+                return cached
 
         # The reviewed 500-case-per-tool corpus is an actual offline
         # classifier fallback, not merely RAG documentation.  Use it only
@@ -461,9 +492,10 @@ class IntentOrchestrator:
         # otherwise keep the AI/self-correction path below.  Entity values
         # are always extracted from the current message, never copied from a
         # training example.
-        trained = self._detect_via_training(message)
-        if trained:
-            return trained
+        if not contextual_followup:
+            trained = self._detect_via_training(message)
+            if trained:
+                return trained
 
         if not ai_service:
             return result
@@ -476,7 +508,14 @@ class IntentOrchestrator:
             logger.warning("AI-assisted intent detection failed", exc_info=True)
             ai_result = None
 
-        if ai_result and ai_result.get("intent") in self.CACHEABLE_INTENTS:
+        if ai_result and contextual_followup and recent_turns:
+            ai_result["context_assisted"] = True
+
+        if (
+            ai_result
+            and not contextual_followup
+            and ai_result.get("intent") in self.CACHEABLE_INTENTS
+        ):
             try:
                 from services.intent_pattern_cache import intent_pattern_cache
                 intent_pattern_cache.observe(
@@ -488,12 +527,16 @@ class IntentOrchestrator:
         return ai_result or result
 
     _WORKFLOW_SPLIT_RE = re.compile(
-        r"\s*(?:;|\n+|\b(?:roi|sau do|dong thoi|tiep theo|then|and then)\b)\s*",
+        r"\s*(?:;|\n+|\b(?:rồi|roi|sau đó|sau do|đồng thời|dong thoi|"
+        r"tiếp theo|tiep theo|then|and then)\b)\s*",
         re.IGNORECASE,
     )
     _WORKFLOW_AND_RE = re.compile(
-        r"\s+va\s+(?=(?:tao|dat|them|xoa|huy|doi|sua|tim|kiem|xem|tom tat|"
-        r"danh dau|chuyen|sap xep|goi y)\b)",
+        r"\s+(?:và|va|and)\s+(?=(?:tạo|tao|đặt|dat|thêm|them|xóa|xoa|hủy|huy|"
+        r"đổi|doi|sửa|sua|tìm|tim|kiểm|kiem|xem|tóm tắt|tom tat|đánh dấu|danh dau|"
+        r"chuyển|chuyen|sắp xếp|sap xep|gợi ý|goi y|create|schedule|book|add|"
+        r"delete|remove|cancel|move|change|update|find|search|show|summarize|"
+        r"mark|plan|suggest)\b)",
         re.IGNORECASE,
     )
 
@@ -505,8 +548,11 @@ class IntentOrchestrator:
         split only explicit sequencing words, semicolons/newlines, or ``va``
         followed by another strong action verb.
         """
-        normalized = self.normalize(message)
-        parts = [part.strip(" ,.") for part in self._WORKFLOW_SPLIT_RE.split(normalized) if part.strip(" ,.")]
+        parts = [
+            part.strip(" ,.")
+            for part in self._WORKFLOW_SPLIT_RE.split(str(message or ""))
+            if part.strip(" ,.")
+        ]
         expanded = []
         for part in parts:
             expanded.extend(
@@ -524,10 +570,11 @@ class IntentOrchestrator:
                 part, ai_service, user_id=user_id, db_path=db_path,
                 chat_session_id=chat_session_id,
             )
-            if result.get("intent") == "chat.freeform":
-                continue
             steps.append({**result, "message": part})
-        if len(steps) < 2:
+        actionable_steps = [
+            step for step in steps if step.get("intent") != "chat.freeform"
+        ]
+        if len(steps) < 2 or not actionable_steps:
             return self.detect_with_ai(
                 message, ai_service, user_id=user_id, db_path=db_path,
                 chat_session_id=chat_session_id,
@@ -655,7 +702,7 @@ class IntentOrchestrator:
         return base
 
     def _detect_via_ai(self, message, ai_service, user_id=None, db_path=None, chat_session_id=None):
-        now = datetime.now()
+        now = self._local_now()
         recent_turns = self._recent_turns_text(db_path, chat_session_id)
         system_message = {
             "role": "system",
@@ -670,6 +717,7 @@ class IntentOrchestrator:
         }
         user_message = {
             "role": "user",
+            "preserve_context": True,
             "content": self._build_ai_classification_prompt(message, now, recent_turns),
         }
         raw = ai_service.generate_response(
@@ -703,7 +751,7 @@ class IntentOrchestrator:
         data2 = self._parse_ai_json(raw2)
         return self._coerce_ai_result(data2, message) if data2 else None
 
-    def _recent_turns_text(self, db_path, chat_session_id, limit=3):
+    def _recent_turns_text(self, db_path, chat_session_id, limit=5):
         if not db_path or not chat_session_id:
             return ""
         try:
@@ -716,8 +764,8 @@ class IntentOrchestrator:
         for record in reversed(records):
             if record.get("action_type") != "chat":
                 continue
-            user_text = self._squash(record.get("user_message"))[:200]
-            assistant_text = self._squash(record.get("assistant_response"))[:200]
+            user_text = self._squash(record.get("user_message"))[:320]
+            assistant_text = self._squash(record.get("assistant_response"))[:320]
             if user_text:
                 lines.append(f"Nguoi dung: {user_text}")
             if assistant_text:
@@ -732,6 +780,16 @@ class IntentOrchestrator:
             if recent_turns else ""
         )
         return (
+            "CAU CAN PHAN LOAI - DAY LA LENH DUY NHAT CUA LUOT HIEN TAI:\n"
+            f"<current_user_turn>{message}</current_user_turn>\n\n"
+            "THU TU UU TIEN NGU CANH:\n"
+            "1. Menh de sua doi/phu dinh va yeu cau ngon ngu trong current_user_turn la cao nhat.\n"
+            "2. Lich su chi dung de giai 'no/it/cai do/the second one'; khong bien cau cu "
+            "thanh lenh moi va khong khoi phuc muc tieu user da huy.\n"
+            "3. Neu co hon mot doi tuong tham chieu hop ly, chon chat.freeform de hoi mot "
+            "cau lam ro; khong tu chon cho thao tac ghi.\n"
+            "4. Hieu code-switch Viet-Anh theo nghia toan cau; giu nguyen ten rieng, subject, "
+            "email, ID, ngay gio va cac rang buoc phu dinh.\n\n"
             f"THOI DIEM HIEN TAI: {now.strftime('%Y-%m-%d %H:%M')} ({weekday}), GMT+7\n\n"
             "Cac loai y dinh hop le (chon dung 1 gia tri cho truong \"intent\"):\n"
             f"{tool_catalog.build_catalog_prompt_block()}\n\n"
@@ -748,6 +806,8 @@ class IntentOrchestrator:
             '  "email_query": {"sender": "", "keyword": "", "unread_only": false},\n'
             '  "history_limit": <1-100>,\n'
             '  "mode": "<student|worker|freelancer|creator|business|mentor|teacher hoac null>",\n'
+            '  "standalone_message": "<viet lai cau hien tai day du bang cach giai tham chieu '
+            'tu lich su; de null neu khong can>",\n'
             '  "checklist_items": [{"title": "<viec 1>", "time": "HH:MM hoac null", "priority": "high|normal|low"}, "..."]\n'
             "}\n"
             "Chi dien cac truong lien quan toi intent da chon, cac truong khac de null/bo qua. "
@@ -929,7 +989,7 @@ class IntentOrchestrator:
                 "ai_assisted": True,
             }
 
-        return {
+        result = {
             "intent": intent,
             "confidence": confidence,
             "entities": entities,
@@ -937,6 +997,17 @@ class IntentOrchestrator:
             "refresh_targets": refresh_targets,
             "ai_assisted": True,
         }
+        standalone_message = self._squash(data.get("standalone_message"))[:2000]
+        if (
+            standalone_message
+            and is_context_dependent_followup(message)
+            and standalone_message.casefold() != str(message or "").strip().casefold()
+        ):
+            # Executors receive this resolved form, while History still stores
+            # the user's exact original turn.  Write intents remain behind
+            # their normal confirmation gates.
+            result["resolved_message"] = standalone_message
+        return result
 
     def _coerce_ai_schedule(self, schedule, message):
         if not isinstance(schedule, dict):
@@ -1172,7 +1243,7 @@ class IntentOrchestrator:
 
     def extract_schedule(self, message):
         text = self.normalize(message)
-        now = datetime.now()
+        now = self._local_now()
         date_value = self._extract_date(text, now)
         time_value = self._extract_time(text)
 
@@ -1227,6 +1298,9 @@ class IntentOrchestrator:
             ))
             or re.search(r"\blast\s+(?:e-?mails?|mails?|message|messages)\b", text) is not None
         )
+        # State-changing mark/read rules run before this predicate, so bare
+        # requests such as "show latest email" can retain the established
+        # latest-summary behavior without stealing "mark latest unread".
         return has_email and has_latest
 
     def _latest_email_count(self, text):
@@ -1273,12 +1347,28 @@ class IntentOrchestrator:
         # "schedule" needs a word boundary -- a plain substring check would
         # also match inside "reschedule", which should go to
         # _is_schedule_update instead (checked right after this).
+        if re.search(
+            r"\b(?:(?:khong|dung)\s+(?:duoc\s+)?"
+            r"(?:tao|dat|them|xep)|(?:do\s+not|don't|never)\s+"
+            r"(?:create|book|schedule|add))\b",
+            text,
+        ):
+            return False
         action = self._contains_word(text, (
-            "tao", "dat", "book", "them", "add", "nhac toi", "remind",
+            "tao", "dat", "book", "them", "add", "create", "nhac toi", "remind",
             "set up", "arrange", "plan", "schedule",
         ))
         schedule = self._contains_word(text, self._SCHEDULE_WORDS)
-        return action and schedule
+        # In English, "schedule" can itself be the imperative verb, so the
+        # object need not repeat "meeting/event": "Schedule maintenance
+        # tomorrow" and "Schedule a review on January 5" are create requests.
+        # Exclude common noun-style lookups such as "my schedule tomorrow".
+        imperative_schedule = re.match(
+            r"^(?:please\s+)?schedule\s+"
+            r"(?!(?:my|the|for|on|today|tomorrow|this|next)\b)",
+            text,
+        ) is not None
+        return action and (schedule or imperative_schedule)
 
     def _is_schedule_update(self, text):
         action = self._contains_word(text, (
@@ -1294,6 +1384,13 @@ class IntentOrchestrator:
         return action and schedule
 
     def _is_schedule_lookup(self, text):
+        if re.search(
+            r"\b(?:(?:khong|dung)\s+(?:duoc\s+)?"
+            r"(?:tao|dat|them|xep)|(?:do\s+not|don't|never)\s+"
+            r"(?:create|book|schedule|add))\b",
+            text,
+        ):
+            return False
         if self._contains_word(text, (
             "lich tuan", "lich hom", "hom nay co lich", "co lich gi", "calendar",
             "meeting tuan", "su kien tuan", "appointments",
@@ -1317,14 +1414,16 @@ class IntentOrchestrator:
         return has_schedule_word and self._explicit_date_from_text(text) is not None
 
     def _is_email_mark_read(self, text):
-        if not any(term in text for term in ("danh dau", "mark")):
+        if not self._contains_word(text, ("danh dau", "mark")):
             return False
-        return any(term in text for term in ("da doc", "read")) and "chua doc" not in text and "unread" not in text
+        has_read = self._contains_word(text, ("da doc", "read"))
+        has_unread = self._contains_word(text, ("chua doc", "unread"))
+        return has_read and not has_unread
 
     def _is_email_mark_unread(self, text):
-        if not any(term in text for term in ("danh dau", "mark")):
+        if not self._contains_word(text, ("danh dau", "mark")):
             return False
-        return any(term in text for term in ("chua doc", "unread"))
+        return self._contains_word(text, ("chua doc", "unread"))
 
     def _is_email_lookup(self, text):
         return any(term in text for term in ("email", "gmail", "hop thu", "thu chua doc", "mail"))
@@ -1424,7 +1523,7 @@ class IntentOrchestrator:
         return max(1, min(int(match.group(1)), maximum))
 
     def _calendar_window(self, text):
-        now = datetime.now()
+        now = self._local_now()
         monday = (now - timedelta(days=now.weekday())).date()
         explicit = self._explicit_date_from_text(text)
         if explicit:
@@ -1446,7 +1545,7 @@ class IntentOrchestrator:
         scoped to exactly that range -- start/end are inclusive calendar dates
         in 'YYYY-MM-DD' form -- instead of just returning the most recent mail
         regardless of when it arrived."""
-        now = datetime.now()
+        now = self._local_now()
         explicit = self._explicit_date_from_text(text)
         if explicit:
             return {"start": explicit.isoformat(), "end": explicit.isoformat()}
@@ -1469,17 +1568,31 @@ class IntentOrchestrator:
 
     @staticmethod
     def _explicit_date_from_text(text):
+        def build_date(day, month, year_text=None):
+            start_year = (
+                int(year_text)
+                if year_text
+                else IntentOrchestrator._local_now().year
+            )
+            candidate_years = (
+                (start_year,)
+                if year_text
+                else range(start_year, start_year + 8)
+            )
+            for candidate_year in candidate_years:
+                try:
+                    return datetime(candidate_year, month, day).date()
+                except ValueError:
+                    continue
+            return None
+
         # Vietnamese natural date ("ngay 20 thang 7", optionally "nam 2026")
         # checked first -- it has its own unambiguous keywords, so it can't
         # collide with the numeric patterns below.
         match = re.search(r"\bngay\s+(\d{1,2})\s+thang\s+(\d{1,2})(?:\s+nam\s+(\d{4}))?\b", text)
         if match:
             day, month = int(match.group(1)), int(match.group(2))
-            year = int(match.group(3)) if match.group(3) else datetime.now().year
-            try:
-                return datetime(year, month, day).date()
-            except ValueError:
-                return None
+            return build_date(day, month, match.group(3))
 
         match = re.search(r"\b(\d{1,4})[/-](\d{1,2})[/-](\d{1,4})\b", text)
         if match:
@@ -1505,21 +1618,101 @@ class IntentOrchestrator:
         match = re.search(r"(?<![\d/])(\d{1,2})/(\d{1,2})(?![\d/])", text)
         if match:
             day, month = int(match.group(1)), int(match.group(2))
-            try:
-                return datetime(datetime.now().year, month, day).date()
-            except ValueError:
-                return None
+            return build_date(day, month)
+
+        # English named dates: "July 30", "July 30, 2026", or
+        # "30 July 2026".  Code-switched scheduling uses these frequently.
+        month_numbers = {
+            "january": 1, "jan": 1, "february": 2, "feb": 2,
+            "march": 3, "mar": 3, "april": 4, "apr": 4,
+            "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+            "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
+            "october": 10, "oct": 10, "november": 11, "nov": 11,
+            "december": 12, "dec": 12,
+        }
+        month_pattern = "|".join(
+            sorted(month_numbers, key=len, reverse=True)
+        )
+        named = re.search(
+            rf"\b({month_pattern})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?"
+            rf"(?:,\s*|\s+)?(\d{{4}})?\b",
+            text,
+        )
+        day_first = re.search(
+            rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({month_pattern})\.?"
+            rf"(?:,\s*|\s+)?(\d{{4}})?\b",
+            text,
+        )
+        if named or day_first:
+            if named:
+                month_name, day_text, year_text = named.groups()
+            else:
+                day_text, month_name, year_text = day_first.groups()
+            return build_date(
+                int(day_text),
+                month_numbers[month_name],
+                year_text,
+            )
 
         return None
 
     def _extract_date(self, text, now):
         explicit = self._explicit_date_from_text(text)
         if explicit:
+            has_explicit_year = bool(
+                re.search(r"\b\d{4}\b", text)
+                or re.search(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b", text)
+            )
+            if explicit < now.date() and not has_explicit_year:
+                try:
+                    return explicit.replace(year=explicit.year + 1)
+                except ValueError:
+                    # 29 February without a year: use the next valid leap year.
+                    for year in range(explicit.year + 1, explicit.year + 5):
+                        try:
+                            return explicit.replace(year=year)
+                        except ValueError:
+                            continue
             return explicit
         if "ngay mai" in text or "tomorrow" in text:
             return (now + timedelta(days=1)).date()
         if "hom nay" in text or "today" in text:
             return now.date()
+        weekday_phrases = (
+            (0, ("thu hai", "thu 2", "monday")),
+            (1, ("thu ba", "thu 3", "tuesday")),
+            (2, ("thu tu", "thu 4", "wednesday")),
+            (3, ("thu nam", "thu 5", "thursday")),
+            (4, ("thu sau", "thu 6", "friday")),
+            (5, ("thu bay", "thu 7", "saturday")),
+            (6, ("chu nhat", "sunday")),
+        )
+        target_weekday = next(
+            (
+                weekday
+                for weekday, phrases in weekday_phrases
+                if self._contains_word(text, phrases)
+            ),
+            None,
+        )
+        if target_weekday is not None:
+            explicitly_next_week = any(term in text for term in (
+                "tuan sau", "tuan toi", "next week",
+            ))
+            if explicitly_next_week:
+                monday_next_week = (
+                    now.date()
+                    - timedelta(days=now.weekday())
+                    + timedelta(days=7)
+                )
+                return monday_next_week + timedelta(days=target_weekday)
+            delta = (target_weekday - now.weekday()) % 7
+            # "next Friday" means the next occurrence of Friday. When today
+            # is already Friday, that is seven days away; otherwise retain the
+            # actual weekday delta instead of replacing it with a flat +7.
+            if delta == 0:
+                delta = 7
+            return (now + timedelta(days=delta)).date()
         if "tuan sau" in text or "tuan toi" in text or "next week" in text:
             return (now + timedelta(days=7)).date()
         return None
@@ -1543,6 +1736,10 @@ class IntentOrchestrator:
 
     @classmethod
     def _extract_time(cls, text):
+        if re.search(r"\b(?:noon|midday)\b", text):
+            return datetime.strptime("12:00", "%H:%M").time()
+        if re.search(r"\bmidnight\b", text):
+            return datetime.strptime("00:00", "%H:%M").time()
         # English 12-hour formats ("3pm", "3:30 pm") first -- these are the
         # most common way English speakers write times, and don't overlap
         # with the Vietnamese "Ngio"/"N:MM" patterns below.

@@ -150,7 +150,15 @@ OPENROUTER_ENABLED=true
 OPENROUTER_API_KEY=
 AI_PRIMARY_PROVIDER=openrouter
 AI_PROVIDER_ORDER=openrouter,openai,mistral,claude,gemini
+AI_MAX_CONTEXT_MESSAGES=10
+AI_MAX_INPUT_CHARS=12000
+AI_MAX_SYSTEM_PROMPT_CHARS=8000
 ```
+
+The three prompt-budget values keep Bob's current user turn, bilingual/context
+policy, grounding rules, and bounded same-session history in the provider
+payload. Do not restore the former `2800` / `450` limits: those values can cut
+the intent prompt before the current request reaches the model.
 
 Optional provider keys:
 

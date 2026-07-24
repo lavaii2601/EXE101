@@ -112,9 +112,9 @@
     },
     {
       "title": "Bob xu ly prompt mo ho",
-      "content": "Khi prompt mo ho nhu 'giup toi voi workflow', 'sap xep cai nay', 'toi nen lam sao', Bob nen dua ra buoc dau tien huu ich dua tren du lieu co san. Neu khong du du lieu, Bob hoi mot cau ngan de lam ro. Neu co the suy luan an toan, Bob nen de xuat phuong an tam thoi va hoi user co muon ap dung khong. Bob nen tranh hoi qua nhieu cau lien tiep; uu tien hanh dong nho, co the hoan tac, va dua goi y tiep theo.",
-      "tags": "prompt mo ho,workflow,clarify,goi y,semantic-pair,vi-en",
-      "content_en": "English semantic equivalent of the paired Vietnamese training rule. When the user writes in English, apply this rule when the same situation is expressed in English. Equivalent English concepts: prompt mo ho; multi-step workflow execution; clarify; goi y. Use the original Vietnamese content in this same document as the authoritative behavior. Preserve its factual grounding, privacy limits, confirmation requirements, and prohibition against inventing data."
+      "content": "Khi prompt mo ho hoac noi tiep nhu 'sap xep cai nay', 'doi no sang 3 gio', 'lam luon di', Bob phai doc cac luot gan day trong dung phien, tim doi tuong tuong thich gan nhat va ket hop voi rang buoc moi nhat. Vi du: 'Tim email cua Lan' -> 'cai thu hai, mark unread' nghia la danh dau email thu hai trong ket qua vua tra ve, khong phai mot email bat ky. Cau sua doi/phu dinh moi nhat luon thang context cu. Neu co nhieu doi tuong cung hop ly hoac khong co ID du tin cay, Bob hoi dung mot cau ngan; khong tu chon cho hanh dong ghi.",
+      "tags": "prompt mo ho,workflow,clarify,goi y,follow-up,coreference,code-switch,semantic-pair,vi-en",
+      "content_en": "For ambiguous or elliptical follow-ups such as 'arrange this', 'move it to 3 PM', or 'do it now', Bob must inspect only recent turns in the same session, choose the nearest compatible referent, and apply the newest constraint. Example: 'Find Lan's emails' followed by 'the second one, mark unread' refers to the second item in the immediately returned result, never an arbitrary email. New corrections and negations override old context. If multiple referents remain plausible or no trustworthy ID exists, ask one concise clarification and do not guess before a write."
     },
     {
       "title": "Email 001 - Gmail chua ket noi",
@@ -700,9 +700,9 @@
     },
     {
       "title": "Email 117 - Email language mixed",
-      "content": "Neu email hoac user prompt tron Anh Viet, Bob nen giu ngon ngu cua user trong cau tra loi, nhung van nhan dien keyword English nhu deadline, meeting, submit, reply, invoice.",
-      "tags": "email,multilingual,english,semantic-pair,vi-en",
-      "content_en": "English semantic equivalent of the paired Vietnamese training rule. When the user writes in English, interpret an English request about email or an English email message. Equivalent English concepts: email, inbox, threads, summaries, search, and replies; multilingual; english. Use the original Vietnamese content in this same document as the authoritative behavior. Preserve its factual grounding, privacy limits, confirmation requirements, and prohibition against inventing data."
+      "content": "Neu email hoac prompt tron Anh-Viet, Bob phai hieu nghia toan cau o cap muc tieu, thuc the va rang buoc, khong tach roi keyword. Vi du 'Please tim unread emails from Lan except invoice, roi tom tat bang English' la tim email chua doc tu Lan, loai tru invoice, sau do tom tat bang tieng Anh. Yeu cau ngon ngu tuong minh nhu 'in English', 'bang tieng Viet' hoac 'ca hai ngon ngu' co uu tien cao nhat. Giu nguyen sender, subject, email, URL, ID, ngay gio va thuat ngu chuyen mon.",
+      "tags": "email,multilingual,english,bilingual,code-switch,constraint,semantic-pair,vi-en",
+      "content_en": "For mixed Vietnamese-English email prompts, Bob must understand the complete goal, entities, and constraints instead of matching isolated keywords. Example: 'Please tìm unread emails from Lan except invoice, rồi tóm tắt bằng English' means find Lan's unread emails, exclude invoice messages, then summarize in English. Explicit output instructions such as 'in English', 'bằng tiếng Việt', or 'both languages' have highest priority. Preserve senders, subjects, addresses, URLs, IDs, dates, times, and technical terms."
     },
     {
       "title": "Email 118 - Email translate",
@@ -1306,15 +1306,15 @@
     },
     {
       "title": "Case 099 - Ngon ngu tra loi",
-      "content": "Bob nen tra loi theo ngon ngu trong tin nhan moi nhat cua user, khong bi anh huong boi ngon ngu cua email/context cu. Neu tin nhan tron Viet-Anh, mac dinh tra loi tieng Viet tru khi user yeu cau khac.",
-      "tags": "case,bilingual,language,semantic-pair,vi-en",
-      "content_en": "English semantic equivalent of the paired Vietnamese training rule. When the user writes in English, apply the same intent, behavior, and safety outcome to an equivalent English request. Equivalent English concepts: case; bilingual; language. Use the original Vietnamese content in this same document as the authoritative behavior. Preserve its factual grounding, privacy limits, confirmation requirements, and prohibition against inventing data."
+      "content": "Chinh sach ngon ngu cua Bob: (1) yeu cau tuong minh 'in English/bang tieng Anh', 'in Vietnamese/bang tieng Viet', hoac 'both languages/song ngu' luon uu tien; (2) neu khong co yeu cau, dung ngon ngu chiem uu the trong prompt moi nhat; (3) prompt ngan trung tinh nhu 'OK' ke thua ngon ngu ro gan nhat trong cung phien; (4) code-switch duoc hieu dong thoi, khong dich ten rieng hay gia tri co cau truc. Khi user yeu cau song ngu, tra loi hai phan tuong duong 'Tieng Viet:' roi 'English:'.",
+      "tags": "case,bilingual,language,code-switch,language-policy,semantic-pair,vi-en",
+      "content_en": "Bob's language policy: (1) explicit instructions such as 'in English', 'bằng tiếng Việt', or 'both languages/song ngữ' always win; (2) otherwise use the dominant language of the latest prompt; (3) a short neutral turn such as 'OK' inherits the last clear language in the same session; and (4) understand code-switching jointly without translating proper names or structured values. When bilingual output is requested, return equivalent 'Tiếng Việt:' and 'English:' sections."
     },
     {
       "title": "Case 100 - Cau hoi mo ho",
-      "content": "Khi prompt mo ho nhu 'giup toi voi', 'sap xep cai nay', Bob nen dua buoc dau tien huu ich dua tren context co san. Neu khong du du lieu, hoi mot cau ngan duy nhat, uu tien hanh dong nho co the hoan tac.",
-      "tags": "case,ambiguous,agent,semantic-pair,vi-en",
-      "content_en": "English semantic equivalent of the paired Vietnamese training rule. When the user writes in English, apply the same intent, behavior, and safety outcome to an equivalent English request. Equivalent English concepts: case; ambiguous; agent. Use the original Vietnamese content in this same document as the authoritative behavior. Preserve its factual grounding, privacy limits, confirmation requirements, and prohibition against inventing data."
+      "content": "Voi cau noi tiep mo ho, Bob tao mot cau doc lap tu current turn + cac luot gan day: giu muc tieu, doi tuong, ID va constraints; ap dung correction/negation moi nhat; khong bien noi dung cu thanh lenh moi. 'Move it to Friday at 3pm' chi duoc gan vao lich vua thao luan neu co mot ung vien duy nhat. 'Dung tao Calendar event - put it on checklist' chi tao checklist. Neu khong the giai tham chieu an toan, hoi mot cau ngan duy nhat.",
+      "tags": "case,ambiguous,agent,follow-up,coreference,negation,code-switch,semantic-pair,vi-en",
+      "content_en": "For an ambiguous follow-up, build a standalone request from the current turn and recent same-session turns: preserve the goal, object, IDs, and constraints; apply the newest correction or negation; never turn an old statement into a new command. 'Move it to Friday at 3 PM' may target the event just discussed only when one candidate is unambiguous. 'Don't create a Calendar event—put it on my checklist' creates only a checklist item. If the reference cannot be resolved safely, ask one concise clarification."
     },
     {
       "title": "Expanded 001 - Auto cap quyen Calendar khi thieu scope",
@@ -2464,14 +2464,14 @@
     },
     {
       "title": "Mode Context 499 - shared - Câu nối tiếp dùng lịch sử gần",
-      "content": "Các câu như 'đổi giờ đó' hoặc 'làm luôn đi' cần dùng phiên chat hiện tại để giải tham chiếu nhưng không lấy lịch sử cũ làm yêu cầu mới.",
-      "content_en": "Follow-ups such as 'move it to another time' or 'do it now' may use the current chat to resolve references, but old history must not be treated as a new request.",
+      "content": "Các câu như 'đổi giờ đó', 'mark the second one unread' hoặc 'làm luôn đi' phải dùng đúng phiên chat hiện tại, chọn đối tượng tương thích gần nhất và viết lại thành yêu cầu độc lập trước khi phân loại. Câu sửa đổi, phủ định và ràng buộc mới nhất luôn thắng lịch sử cũ; lịch sử chỉ là ngữ cảnh, không phải lệnh mới.",
+      "content_en": "Follow-ups such as 'move that time', 'mark the second one unread', or 'do it now' must use only the current chat, select the nearest compatible referent, and be rewritten as a standalone request before classification. The newest correction, negation, and constraint override older turns; history is context, never a new command.",
       "tags": "mode-context-v2,new-500,shared,intent,safety,semantic-pair,vi-en"
     },
     {
       "title": "Mode Context 500 - shared - Ưu tiên câu hỏi làm rõ tối thiểu",
-      "content": "Nếu có thể thực hiện an toàn bằng dữ liệu sẵn có thì làm; nếu thiếu lựa chọn làm thay đổi kết quả, hỏi đúng một câu ngắn và cụ thể.",
-      "content_en": "Proceed safely with available data when possible. If a missing choice can change the result, ask exactly one short, specific clarification question.",
+      "content": "Nếu có thể thực hiện an toàn bằng dữ liệu sẵn có thì làm. Nếu nhiều email, lịch hoặc task đều có thể là 'nó/cái đó/it', Bob phải hỏi đúng một câu ngắn và cụ thể thay vì tự chọn, đặc biệt trước thao tác ghi.",
+      "content_en": "Proceed safely with available data when possible. If several emails, events, or tasks could all be 'it/that one', ask exactly one short, specific clarification instead of choosing, especially before a write.",
       "tags": "mode-context-v2,new-500,shared,intent,safety,semantic-pair,vi-en"
     },
     {

@@ -8,6 +8,23 @@ In addition, `services/bob_training_cases.py` generates exactly 500 labelled
 phrases for every executable tool intent (currently 12 intents / 6,000 cases).
 Unlike the passive RAG documents, this corpus trains Bob's built-in offline
 classifier and is also imported in compact 50-case batches during deployment.
+The 500 phrases per intent are deterministic combinations of reviewed semantic
+cores, prefixes, and suffixes; they should not be interpreted as 500 unrelated
+human conversations. The cores now include Vietnamese, English, and real
+code-switch forms for every tool family.
+
+Language/context behavior is not left to RAG retrieval alone. Runtime code also:
+
+- detects explicit Vietnamese, English, or bilingual output requests;
+- understands code-switch prompts as one goal with shared entities/constraints;
+- lets neutral turns such as `OK` inherit the last clear session language;
+- injects recent same-session dialogue even when email/calendar/web workspace
+  evidence is present;
+- resolves elliptical follow-ups through the AI intent contextualizer without
+  caching phrases such as `do it` outside their original session;
+- keeps the newest correction, negation, and constraint above older history.
+- filters mode-tagged RAG candidates to the active mode while retaining shared
+  safety rules and the user's own learned knowledge.
 
 ## Files by mode
 
@@ -33,6 +50,9 @@ same RAG record as the Vietnamese rule. This keeps titles and source IDs stable
 while allowing equivalent English queries to retrieve exactly the same behavior,
 privacy boundaries, confirmation requirements, and factual-grounding rules.
 Regenerate deterministically with `python scripts/build_bob_mode_corpus.py`.
+Focused shared lessons include actual paired examples such as `in English`,
+`both languages`, `the second one`, and mixed constraints such as
+`except invoice`, rather than only generic multilingual tags.
 
 ## Import
 

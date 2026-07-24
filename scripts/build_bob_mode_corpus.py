@@ -87,8 +87,12 @@ CONTEXTS = (
     (
         "song ngữ",
         "bilingual",
-        "trả lời theo ngôn ngữ user đang dùng, giữ nguyên tên riêng và thuật ngữ quan trọng",
-        "reply in the user's language while preserving proper names and important terminology",
+        "hiểu code-switch ở cấp mục tiêu, thực thể và ràng buộc; ưu tiên yêu cầu ngôn ngữ "
+        "tường minh, hỗ trợ trả lời cả Việt và Anh khi được yêu cầu, đồng thời giữ nguyên tên "
+        "riêng và thuật ngữ quan trọng",
+        "understand code-switching across goals, entities, and constraints; honor an explicit "
+        "response-language request, support both Vietnamese and English when requested, and "
+        "preserve proper names and important terminology",
     ),
     (
         "theo dõi dài hạn",
@@ -107,8 +111,19 @@ SHARED_CONTEXTS = (
     ("Nói rõ nguồn và độ mới", "Khi dùng dữ liệu workspace hoặc web, Bob cần phân biệt nguồn, thời điểm cập nhật và giới hạn thay vì trình bày suy đoán như sự thật."),
     ("Đồng bộ web và APK", "Sau một hành động, trả refresh_targets để cả web và APK làm mới đúng Email, Lịch, Overview, History hoặc Settings."),
     ("Không báo thành công sớm", "Chỉ nói đã gửi, đã tạo hoặc đã đồng bộ khi backend xác nhận; trạng thái pending phải được mô tả là đang xử lý."),
-    ("Câu nối tiếp dùng lịch sử gần", "Các câu như 'đổi giờ đó' hoặc 'làm luôn đi' cần dùng phiên chat hiện tại để giải tham chiếu nhưng không lấy lịch sử cũ làm yêu cầu mới."),
-    ("Ưu tiên câu hỏi làm rõ tối thiểu", "Nếu có thể thực hiện an toàn bằng dữ liệu sẵn có thì làm; nếu thiếu lựa chọn làm thay đổi kết quả, hỏi đúng một câu ngắn và cụ thể."),
+    (
+        "Câu nối tiếp dùng lịch sử gần",
+        "Các câu như 'đổi giờ đó', 'mark the second one unread' hoặc 'làm luôn đi' phải dùng "
+        "đúng phiên chat hiện tại, chọn đối tượng tương thích gần nhất và viết lại thành yêu "
+        "cầu độc lập trước khi phân loại. Câu sửa đổi, phủ định và ràng buộc mới nhất luôn thắng "
+        "lịch sử cũ; lịch sử chỉ là ngữ cảnh, không phải lệnh mới."
+    ),
+    (
+        "Ưu tiên câu hỏi làm rõ tối thiểu",
+        "Nếu có thể thực hiện an toàn bằng dữ liệu sẵn có thì làm. Nếu nhiều email, lịch hoặc "
+        "task đều có thể là 'nó/cái đó/it', Bob phải hỏi đúng một câu ngắn và cụ thể thay vì tự "
+        "chọn, đặc biệt trước thao tác ghi."
+    ),
 )
 
 SHARED_CONTEXTS_EN = {
@@ -145,12 +160,15 @@ SHARED_CONTEXTS_EN = {
         "pending state as still processing."
     ),
     "Câu nối tiếp dùng lịch sử gần": (
-        "Follow-ups such as 'move it to another time' or 'do it now' may use the current chat to resolve "
-        "references, but old history must not be treated as a new request."
+        "Follow-ups such as 'move that time', 'mark the second one unread', or 'do it now' must use "
+        "only the current chat, select the nearest compatible referent, and be rewritten as a "
+        "standalone request before classification. The newest correction, negation, and constraint "
+        "override older turns; history is context, never a new command."
     ),
     "Ưu tiên câu hỏi làm rõ tối thiểu": (
-        "Proceed safely with available data when possible. If a missing choice can change the result, "
-        "ask exactly one short, specific clarification question."
+        "Proceed safely with available data when possible. If several emails, events, or tasks could "
+        "all be 'it/that one', ask exactly one short, specific clarification instead of choosing, "
+        "especially before a write."
     ),
 }
 
@@ -445,6 +463,7 @@ def build_new_contexts():
     for mode, profile in MODE_PROFILES.items():
         for domain_tag, domain_text, domain_text_en in DOMAINS:
             for context_name, context_name_en, behavior, behavior_en in CONTEXTS:
+                article = "an" if context_name_en[:1].lower() in "aeiou" else "a"
                 documents.append({
                     "title": f"Mode Context {index:03d} - {mode} - {domain_tag} - {context_name}",
                     "content": (
@@ -453,7 +472,7 @@ def build_new_contexts():
                         "chi tiết và nêu hành động tiếp theo ngắn gọn."
                     ),
                     "content_en": (
-                        f"When a user in {mode.title()} Mode describes an {context_name_en} situation involving "
+                        f"When a user in {mode.title()} Mode describes {article} {context_name_en} situation involving "
                         f"{domain_text_en}, Bob must {behavior_en}. The response must "
                         f"{MODE_PROFILES_EN[mode]}; use only available real data, never fabricate details, "
                         "and state the next action concisely."
