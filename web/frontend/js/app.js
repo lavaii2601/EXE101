@@ -59,6 +59,9 @@ let workspaceSyncListenersBound = false;
 let workspaceSyncPollAfterMs = 12000;
 let workspaceSyncGeneration = 0;
 let workspaceSyncAbortController = null;
+let currentSubscription = null;
+let selectedSubscriptionBilling = 'monthly';
+let selectedSubscriptionPaymentMethod = 'vnpay';
 // Gmail push should be configured in production for true server-side push.
 // This short watcher is the resilient foreground fallback and feels instant
 // even when Pub/Sub is unavailable or the browser just resumed.
@@ -333,6 +336,7 @@ function setLanguage(language) {
     currentLanguage = language === 'en' ? 'en' : 'vi';
     localStorage.setItem('flowmate-language', currentLanguage);
     applyLanguage();
+    renderSubscriptionUI(currentSubscription);
     setSettingsState(t('settings.savedLanguage'));
 }
 
@@ -575,6 +579,9 @@ async function initApp() {
             if (event.key === 'Escape' && userModeModal?.classList.contains('show')) {
                 closeUserModeModal();
             }
+            if (event.key === 'Escape' && document.getElementById('subscriptionModal')?.classList.contains('show')) {
+                closeSubscriptionModal();
+            }
         });
 
         // Clear history
@@ -666,6 +673,26 @@ async function initApp() {
         if (settingsModeBtn) settingsModeBtn.addEventListener('click', () => openUserModeModal(false));
         const settingsRefreshBtn = document.getElementById('settingsRefreshBtn');
         if (settingsRefreshBtn) settingsRefreshBtn.addEventListener('click', loadSettingsPage);
+        const subscriptionHeaderBtn = document.getElementById('subscriptionHeaderBtn');
+        if (subscriptionHeaderBtn) subscriptionHeaderBtn.addEventListener('click', openSubscriptionModal);
+        const settingsSubscriptionBtn = document.getElementById('settingsSubscriptionBtn');
+        if (settingsSubscriptionBtn) settingsSubscriptionBtn.addEventListener('click', openSubscriptionModal);
+        const subscriptionModal = document.getElementById('subscriptionModal');
+        const subscriptionModalClose = document.getElementById('subscriptionModalClose');
+        if (subscriptionModalClose) subscriptionModalClose.addEventListener('click', closeSubscriptionModal);
+        if (subscriptionModal) {
+            subscriptionModal.addEventListener('click', (event) => {
+                if (event.target === subscriptionModal) closeSubscriptionModal();
+            });
+        }
+        document.querySelectorAll('[data-subscription-billing]').forEach((button) => {
+            button.addEventListener('click', () => selectSubscriptionBilling(button.dataset.subscriptionBilling));
+        });
+        document.querySelectorAll('[data-payment-method]').forEach((button) => {
+            button.addEventListener('click', () => selectSubscriptionPaymentMethod(button.dataset.paymentMethod));
+        });
+        const subscriptionSubmitBtn = document.getElementById('subscriptionSubmitBtn');
+        if (subscriptionSubmitBtn) subscriptionSubmitBtn.addEventListener('click', submitSubscriptionIntent);
         const settingsDarkMode = document.getElementById('settingsDarkMode');
         if (settingsDarkMode) {
             settingsDarkMode.checked = document.body.classList.contains('dark-theme');
@@ -3641,6 +3668,235 @@ function updateUserModeUI(mode) {
     });
 }
 
+function subscriptionRemainingLabel(subscription) {
+    if (!subscription?.current_period_end) {
+        return ui('không giới hạn', 'unlimited');
+    }
+    let seconds = Number(subscription.remaining_seconds);
+    if (!Number.isFinite(seconds)) {
+        seconds = Math.max(0, Math.floor(
+            (new Date(subscription.current_period_end).getTime() - Date.now()) / 1000
+        ));
+    }
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (days) {
+        return ui(
+            `${days} ngày${hours ? ` ${hours} giờ` : ''}`,
+            `${days} day${days === 1 ? '' : 's'}${hours ? ` ${hours}h` : ''}`
+        );
+    }
+    if (hours) return ui(`${hours} giờ ${minutes} phút`, `${hours}h ${minutes}m`);
+    return ui(`${Math.max(0, minutes)} phút`, `${Math.max(0, minutes)}m`);
+}
+
+function renderSubscriptionUI(subscription = null) {
+    currentSubscription = subscription || {
+        tier: 'free',
+        is_premium: false,
+        allowed_action: 'purchase',
+        remaining_seconds: 0
+    };
+    const isPremium = !!(
+        currentSubscription.is_premium
+        || currentSubscription.tier === 'premium'
+    );
+    const remaining = subscriptionRemainingLabel(currentSubscription);
+    const periodEnd = currentSubscription.current_period_end
+        ? new Date(currentSubscription.current_period_end).toLocaleDateString(
+            currentLanguage === 'en' ? 'en-US' : 'vi-VN'
+        )
+        : '';
+
+    const headerButton = document.getElementById('subscriptionHeaderBtn');
+    const headerLabel = document.getElementById('subscriptionHeaderLabel');
+    if (headerButton) headerButton.classList.toggle('is-premium', isPremium);
+    if (headerLabel) {
+        headerLabel.textContent = isPremium
+            ? ui(`Premium · còn ${remaining}`, `Premium · ${remaining} left`)
+            : ui('Nâng cấp Premium', 'Upgrade to Premium');
+    }
+
+    const tier = document.getElementById('settingsSubscriptionTier');
+    const status = document.getElementById('settingsSubscriptionStatus');
+    const badge = document.getElementById('settingsSubscriptionBadge');
+    const details = document.getElementById('settingsSubscriptionDetails');
+    const button = document.getElementById('settingsSubscriptionBtn');
+    if (tier) tier.textContent = isPremium ? 'Premium' : 'Free';
+    if (status) {
+        status.textContent = isPremium
+            ? ui(
+                `Còn ${remaining}${periodEnd ? ` · Hết hạn ${periodEnd}` : ''}`,
+                `${remaining} left${periodEnd ? ` · Expires ${periodEnd}` : ''}`
+            )
+            : ui(
+                'Nâng cấp để mở khóa toàn bộ tính năng nâng cao.',
+                'Upgrade to unlock all advanced features.'
+            );
+    }
+    if (badge) {
+        badge.textContent = isPremium ? 'PREMIUM' : 'FREE';
+        badge.classList.toggle('is-premium', isPremium);
+    }
+    if (details) {
+        details.innerHTML = isPremium
+            ? `<span>${ui('Tóm tắt email AI không giới hạn', 'Unlimited AI email summaries')}</span>
+               <span>${ui('Xử lý nhiều bước và phản hồi AI nâng cao', 'Multi-step processing and advanced AI responses')}</span>`
+            : `<span>${ui('Chat và soạn trả lời AI không giới hạn', 'Unlimited chat and AI reply drafting')}</span>
+               <span>${ui('Tóm tắt email AI: 10 lượt/ngày', 'AI email summaries: 10 per day')}</span>`;
+    }
+    if (button) {
+        button.textContent = isPremium
+            ? ui('Gia hạn Premium', 'Renew Premium')
+            : ui('Nâng cấp Premium', 'Upgrade to Premium');
+    }
+}
+
+function selectSubscriptionBilling(billing) {
+    selectedSubscriptionBilling = billing === 'yearly' ? 'yearly' : 'monthly';
+    document.querySelectorAll('[data-subscription-billing]').forEach((button) => {
+        const active = button.dataset.subscriptionBilling === selectedSubscriptionBilling;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-checked', String(active));
+    });
+    updateSubscriptionSubmitLabel();
+}
+
+function selectSubscriptionPaymentMethod(method) {
+    selectedSubscriptionPaymentMethod = method === 'momo' ? 'momo' : 'vnpay';
+    document.querySelectorAll('[data-payment-method]').forEach((button) => {
+        button.classList.toggle(
+            'active',
+            button.dataset.paymentMethod === selectedSubscriptionPaymentMethod
+        );
+    });
+}
+
+function updateSubscriptionSubmitLabel() {
+    const button = document.getElementById('subscriptionSubmitBtn');
+    if (!button) return;
+    const isPremium = !!(
+        currentSubscription?.is_premium
+        || currentSubscription?.tier === 'premium'
+    );
+    const price = selectedSubscriptionBilling === 'yearly'
+        ? ui('549.000đ/năm', '549,000 VND/year')
+        : ui('49.000đ/tháng', '49,000 VND/month');
+    button.textContent = `${isPremium ? ui('Gia hạn', 'Renew') : ui('Nâng cấp', 'Upgrade')} ${price}`;
+}
+
+function openSubscriptionModal() {
+    const modal = document.getElementById('subscriptionModal');
+    if (!modal) return;
+    const isPremium = !!(
+        currentSubscription?.is_premium
+        || currentSubscription?.tier === 'premium'
+    );
+    const title = document.getElementById('subscriptionModalTitle');
+    const subtitle = document.getElementById('subscriptionModalSubtitle');
+    const notice = document.getElementById('subscriptionCurrentNotice');
+    const remaining = document.getElementById('subscriptionCurrentRemaining');
+    if (title) {
+        title.textContent = isPremium
+            ? ui('Gia hạn Premium', 'Renew Premium')
+            : ui('Nâng cấp Premium', 'Upgrade to Premium');
+    }
+    if (subtitle) {
+        subtitle.textContent = isPremium
+            ? ui(
+                'Tài khoản đã có Premium nên chỉ có thể gia hạn thời gian sử dụng.',
+                'This account already has Premium and can only renew its access.'
+            )
+            : ui(
+                'Chọn chu kỳ phù hợp để mở khóa toàn bộ tính năng nâng cao.',
+                'Choose a billing cycle to unlock all advanced features.'
+            );
+    }
+    if (notice) notice.hidden = !isPremium;
+    if (remaining && isPremium) {
+        remaining.textContent = ui(
+            `Còn ${subscriptionRemainingLabel(currentSubscription)}`,
+            `${subscriptionRemainingLabel(currentSubscription)} left`
+        );
+    }
+    updateSubscriptionSubmitLabel();
+    modal.classList.add('show');
+    document.body.classList.add('modal-open');
+}
+
+function closeSubscriptionModal() {
+    document.getElementById('subscriptionModal')?.classList.remove('show');
+    document.body.classList.remove('modal-open');
+}
+
+async function submitSubscriptionIntent() {
+    const button = document.getElementById('subscriptionSubmitBtn');
+    const isPremium = !!(
+        currentSubscription?.is_premium
+        || currentSubscription?.tier === 'premium'
+    );
+    const action = isPremium ? 'renew' : 'purchase';
+    if (button) {
+        button.disabled = true;
+        button.textContent = ui('Đang kiểm tra tài khoản...', 'Checking account...');
+    }
+
+    try {
+        const response = await apiFetch(`${API_BASE}/user/subscription/intent`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            if (data.subscription) renderSubscriptionUI(data.subscription);
+            if (data.allowed_action === 'renew') {
+                throw new Error(ui(
+                    'Tài khoản đã có Premium và chỉ có thể gia hạn.',
+                    'This account already has Premium and can only renew.'
+                ));
+            }
+            if (data.allowed_action === 'purchase') {
+                throw new Error(ui(
+                    'Premium đã hết hiệu lực. Hãy mua một gói mới.',
+                    'Premium has expired. Please purchase a new plan.'
+                ));
+            }
+            throw new Error(data.message || data.error || ui('Không thể kiểm tra gói', 'Unable to check plan'));
+        }
+
+        currentSubscription = {
+            ...currentSubscription,
+            ...data.subscription
+        };
+        const plan = selectedSubscriptionBilling === 'yearly'
+            ? 'Hàng năm (549.000đ/năm)'
+            : 'Hàng tháng (49.000đ/tháng)';
+        const method = selectedSubscriptionPaymentMethod === 'momo' ? 'MoMo' : 'VNPay';
+        const actionLabel = action === 'renew' ? 'gia hạn' : 'nâng cấp';
+        const subject = encodeURIComponent(
+            action === 'renew' ? 'Gia hạn FlowMate Premium' : 'Nâng cấp FlowMate Premium'
+        );
+        const body = encodeURIComponent(
+            `Tôi muốn ${actionLabel} gói: ${plan}.\nPhương thức thanh toán mong muốn: ${method}.`
+        );
+        window.location.href = `mailto:lecaoduyanh123@gmail.com?subject=${subject}&body=${body}`;
+        closeSubscriptionModal();
+        showNotification(ui(
+            'Đã mở yêu cầu Premium trong ứng dụng email.',
+            'The Premium request was opened in your email app.'
+        ), 'success');
+    } catch (error) {
+        showNotification(error.message || ui('Không thể xử lý yêu cầu Premium', 'Unable to process Premium request'), 'error');
+        renderSubscriptionUI(currentSubscription);
+        openSubscriptionModal();
+    } finally {
+        if (button) button.disabled = false;
+        updateSubscriptionSubmitLabel();
+    }
+}
+
 function setSettingsState(message, isError = false) {
     const state = document.getElementById('settingsSaveState');
     if (!state) return;
@@ -3675,6 +3931,7 @@ async function loadSettingsPage() {
             googleBtn.textContent = connected ? ui('Cấp lại quyền', 'Reconnect') : ui('Kết nối', 'Connect');
             googleBtn.dataset.connected = connected ? 'true' : 'false';
         }
+        renderSubscriptionUI(user.subscription);
         updateUserModeUI(user.user_mode || currentUserMode);
         setSettingsState(ui('Đã đồng bộ', 'Synced'));
     } catch (error) {
@@ -3841,6 +4098,7 @@ async function loadUserProfile() {
         
         if (data.success && data.user) {
             const user = data.user;
+            renderSubscriptionUI(user.subscription);
             const storedMode = user.user_mode && USER_MODES[user.user_mode] ? user.user_mode : '';
             updateUserModeUI(storedMode || 'worker');
             const gmailConnected = !!(

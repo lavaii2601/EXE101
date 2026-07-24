@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css?v=20260720-responsive-ui-02">
+    <link rel="stylesheet" href="/css/style.css?v=20260724-web-premium-01">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -183,9 +183,11 @@
                         <strong id="workspaceModeLabel">Nhân viên văn phòng</strong>
                     </div>
                 </div>
-                <div class="workspace-actions" aria-hidden="true">
-                    <span class="workspace-action workspace-action-dot"></span>
-                    <span class="workspace-action-label">Sẵn sàng</span>
+                <div class="workspace-actions">
+                    <button type="button" id="subscriptionHeaderBtn" class="subscription-header-btn">
+                        <span id="subscriptionHeaderIcon" aria-hidden="true">★</span>
+                        <span id="subscriptionHeaderLabel">Nâng cấp Premium</span>
+                    </button>
                 </div>
             </header>
             <!-- Chat Page -->
@@ -409,6 +411,22 @@
                         <button id="settingsRefreshBtn" class="btn-secondary">Làm mới trạng thái</button>
                     </article>
 
+                    <article class="settings-card subscription-settings-card">
+                        <span class="settings-section-label">GÓI DỊCH VỤ</span>
+                        <div class="subscription-settings-heading">
+                            <div>
+                                <strong id="settingsSubscriptionTier">Free</strong>
+                                <span id="settingsSubscriptionStatus">Nâng cấp để mở khóa toàn bộ tính năng nâng cao.</span>
+                            </div>
+                            <span id="settingsSubscriptionBadge" class="subscription-tier-badge">FREE</span>
+                        </div>
+                        <div id="settingsSubscriptionDetails" class="subscription-settings-details">
+                            <span>Chat và soạn trả lời AI không giới hạn</span>
+                            <span>Tóm tắt email AI: 10 lượt/ngày</span>
+                        </div>
+                        <button type="button" id="settingsSubscriptionBtn" class="btn-primary">Nâng cấp Premium</button>
+                    </article>
+
                     <article class="settings-card">
                         <span class="settings-section-label" data-i18n="settings.languageSection">NGÔN NGỮ</span>
                         <div class="settings-row">
@@ -515,6 +533,53 @@
     </div>
     
     <!-- Modals -->
+    <div id="subscriptionModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="subscriptionModalTitle">
+        <div class="modal-content subscription-modal-content">
+            <button type="button" id="subscriptionModalClose" class="subscription-modal-close" aria-label="Đóng">&times;</button>
+            <span class="subscription-modal-kicker">FLOWMATE PREMIUM</span>
+            <h2 id="subscriptionModalTitle">Nâng cấp Premium</h2>
+            <p id="subscriptionModalSubtitle">Chọn chu kỳ phù hợp để mở khóa toàn bộ tính năng nâng cao.</p>
+
+            <div id="subscriptionCurrentNotice" class="subscription-current-notice" hidden>
+                <strong>Premium đang hoạt động</strong>
+                <span id="subscriptionCurrentRemaining"></span>
+            </div>
+
+            <div class="subscription-plan-grid" role="radiogroup" aria-label="Chu kỳ Premium">
+                <button type="button" class="subscription-plan-option active" data-subscription-billing="monthly" role="radio" aria-checked="true">
+                    <span>Hàng tháng</span>
+                    <strong>49.000đ</strong>
+                    <small>/ tháng</small>
+                </button>
+                <button type="button" class="subscription-plan-option" data-subscription-billing="yearly" role="radio" aria-checked="false">
+                    <span>Hàng năm <em>Tiết kiệm 7%</em></span>
+                    <strong>549.000đ</strong>
+                    <small>/ năm</small>
+                </button>
+            </div>
+
+            <div class="subscription-benefits">
+                <span>✓ Tóm tắt email AI không giới hạn</span>
+                <span>✓ Xử lý nhiều bước trong một yêu cầu</span>
+                <span>✓ Phản hồi AI nâng cao</span>
+                <span>✓ Lịch sử hoạt động không giới hạn</span>
+            </div>
+
+            <div class="subscription-payment-methods" aria-label="Phương thức thanh toán">
+                <span>Phương thức thanh toán</span>
+                <div>
+                    <button type="button" class="subscription-payment-option active" data-payment-method="vnpay">VNPay <small>Sắp có</small></button>
+                    <button type="button" class="subscription-payment-option" data-payment-method="momo">MoMo <small>Sắp có</small></button>
+                </div>
+            </div>
+
+            <button type="button" id="subscriptionSubmitBtn" class="btn-primary subscription-submit-btn">Nâng cấp 49.000đ/tháng</button>
+            <p class="subscription-contact-note">
+                Cổng thanh toán đang được tích hợp. Hiện tại yêu cầu sẽ được gửi đến FlowMate để xử lý thủ công.
+            </p>
+        </div>
+    </div>
+
     <div id="userModeModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="userModeModalTitle">
         <div class="modal-content user-mode-modal-content">
             <button type="button" class="close user-mode-close" aria-label="Đóng">&times;</button>
@@ -680,6 +745,6 @@
         </div>
     </div>
     
-    <script src="/js/app.js?v=20260724-cross-client-sync-01"></script>
+    <script src="/js/app.js?v=20260724-web-premium-01"></script>
 </body>
 </html>

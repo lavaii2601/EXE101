@@ -8563,3 +8563,293 @@ body,
         padding-inline: 12px;
     }
 }
+
+/* Premium account controls shared by the workspace header and Settings. */
+.workspace-actions {
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.subscription-header-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 38px;
+    padding: 8px 13px;
+    border: 1px solid #c4b5fd;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #f5f3ff, #eff6ff);
+    color: #5b21b6;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.subscription-header-btn.is-premium {
+    border-color: #86efac;
+    background: linear-gradient(135deg, #ecfdf5, #f0fdfa);
+    color: #047857;
+}
+
+.subscription-settings-card {
+    background:
+        radial-gradient(circle at 100% 0, rgba(124, 58, 237, 0.12), transparent 45%),
+        var(--panel);
+}
+
+.subscription-settings-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 16px 0 12px;
+}
+
+.subscription-settings-heading strong,
+.subscription-settings-heading span,
+.subscription-settings-details span {
+    display: block;
+}
+
+.subscription-settings-heading strong {
+    color: var(--text);
+    font-size: 22px;
+}
+
+.subscription-settings-heading div > span {
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.subscription-tier-badge {
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+}
+
+.subscription-tier-badge.is-premium {
+    background: #dcfce7;
+    color: #047857;
+}
+
+.subscription-settings-details {
+    display: grid;
+    gap: 7px;
+    margin: 0 0 16px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.subscription-settings-details span::before {
+    margin-right: 7px;
+    color: #7c3aed;
+    content: "✓";
+    font-weight: 900;
+}
+
+.subscription-modal-content {
+    position: relative;
+    width: min(660px, 100%);
+    padding: 28px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+}
+
+.subscription-modal-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 9px;
+    background: #eef2f7;
+    color: #475569;
+    font-size: 25px;
+    cursor: pointer;
+}
+
+.subscription-modal-kicker {
+    color: #7c3aed;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+}
+
+.subscription-modal-content h2 {
+    margin: 7px 42px 5px 0;
+    color: var(--text);
+}
+
+.subscription-modal-content > p {
+    margin: 0 0 18px;
+    color: var(--text-secondary);
+}
+
+.subscription-current-notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border: 1px solid #86efac;
+    border-radius: 12px;
+    background: #f0fdf4;
+    color: #047857;
+}
+
+.subscription-current-notice[hidden] {
+    display: none;
+}
+
+.subscription-plan-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.subscription-plan-option {
+    min-height: 118px;
+    padding: 16px;
+    border: 2px solid var(--border);
+    border-radius: 14px;
+    background: var(--panel);
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.subscription-plan-option.active {
+    border-color: #7c3aed;
+    background: #f5f3ff;
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+}
+
+.subscription-plan-option span,
+.subscription-plan-option strong,
+.subscription-plan-option small {
+    display: block;
+}
+
+.subscription-plan-option span {
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.subscription-plan-option strong {
+    margin-top: 12px;
+    color: #6d28d9;
+    font-size: 24px;
+}
+
+.subscription-plan-option em {
+    margin-left: 5px;
+    padding: 3px 6px;
+    border-radius: 999px;
+    background: #dcfce7;
+    color: #047857;
+    font-size: 9px;
+    font-style: normal;
+}
+
+.subscription-benefits {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px 14px;
+    margin-bottom: 18px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.subscription-payment-methods > span {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.subscription-payment-methods > div {
+    display: flex;
+    gap: 10px;
+}
+
+.subscription-payment-option {
+    flex: 1;
+    min-height: 44px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    color: var(--text);
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.subscription-payment-option.active {
+    border-color: #7c3aed;
+    background: #f5f3ff;
+    color: #6d28d9;
+}
+
+.subscription-payment-option small {
+    margin-left: 5px;
+    color: var(--text-secondary);
+    font-size: 9px;
+}
+
+.subscription-submit-btn {
+    width: 100%;
+    margin-top: 18px;
+}
+
+.subscription-contact-note {
+    margin: 10px 0 0 !important;
+    text-align: center;
+    font-size: 11px;
+}
+
+body.dark-theme .subscription-header-btn,
+body.dark-theme .subscription-header-btn.is-premium,
+body.dark-theme .subscription-plan-option.active,
+body.dark-theme .subscription-payment-option.active {
+    background: #1e293b;
+}
+
+body.dark-theme .subscription-current-notice {
+    border-color: #166534;
+    background: #052e25;
+    color: #86efac;
+}
+
+body.dark-theme .subscription-modal-close {
+    background: #263449;
+    color: #cbd5e1;
+}
+
+@media (max-width: 620px) {
+    .subscription-header-btn {
+        max-width: 150px;
+        padding-inline: 10px;
+        font-size: 11px;
+    }
+
+    .subscription-plan-grid,
+    .subscription-benefits {
+        grid-template-columns: 1fr;
+    }
+
+    .subscription-modal-content {
+        padding: 22px 18px;
+    }
+}
