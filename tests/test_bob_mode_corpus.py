@@ -1,10 +1,19 @@
 import json
+import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODE_DIR = REPO_ROOT / "docs" / "bob-training" / "modes"
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(REPO_ROOT / "web" / "backend"))
+
+from train_bob import _load_documents  # noqa: E402
+from services.knowledge_service import KnowledgeService  # noqa: E402
+
+
 EXPECTED_MODES = {
     "shared", "student", "worker", "freelancer", "creator", "business", "mentor", "teacher",
 }
@@ -49,6 +58,68 @@ class BobModeCorpusTests(unittest.TestCase):
         for path, payload in self.payloads:
             additions = [doc for doc in payload["documents"] if "new-500" in doc.get("tags", "")]
             self.assertGreater(len(additions), 0, path.name)
+
+    def test_every_document_has_one_to_one_english_semantics(self):
+        documents = [doc for _, payload in self.payloads for doc in payload["documents"]]
+        self.assertEqual(1119, len(documents))
+        for document in documents:
+            self.assertTrue(str(document.get("content_en") or "").strip(), document["title"])
+            tags = set(str(document.get("tags") or "").split(","))
+            self.assertIn("semantic-pair", tags, document["title"])
+            self.assertIn("vi-en", tags, document["title"])
+
+    def test_importer_indexes_english_semantics_in_same_document(self):
+        documents = _load_documents(
+            [MODE_DIR / "teacher.json"],
+            default_tags="bob,training,mode,teacher",
+            chunk_chars=0,
+        )
+        teacher_payload = next(payload for path, payload in self.payloads if path.stem == "teacher")
+        self.assertEqual(len(teacher_payload["documents"]), len(documents))
+        for document in documents:
+            self.assertIn("English semantic equivalent:", document["content"])
+
+    def test_english_queries_retrieve_matching_vietnamese_rules(self):
+        imported = _load_documents(
+            [MODE_DIR],
+            default_tags="bob,training,semantic-pair,vi-en",
+            chunk_chars=0,
+        )
+        db_documents = [
+            {
+                "id": index,
+                "title": document["title"],
+                "content": document["content"],
+                "tags": document["tags"],
+                "source": "test",
+                "user_id": None,
+            }
+            for index, document in enumerate(imported, start=1)
+        ]
+        cases = (
+            ("an ambiguous schedule request in Teacher Mode", {"teacher", "schedule"}),
+            ("an urgent client invoice email in Freelancer Mode", {"freelancer", "email"}),
+            ("do not put private email data into a public web search", {"privacy", "web"}),
+            ("sort gym at 7:30 AM before class at 9:00 AM in my checklist", {"checklist", "time"}),
+            ("who founded Facebook?", {"knowledge-negative-correction"}),
+        )
+
+        with patch(
+            "services.knowledge_service.KnowledgeDocument.get_all",
+            return_value=db_documents,
+        ):
+            service = KnowledgeService()
+            for query, expected_tags in cases:
+                results = service.search(query, top_k=5, min_score=0.03)
+                result_tags = {
+                    tag
+                    for result in results
+                    for tag in str(result.get("tags") or "").split(",")
+                }
+                self.assertTrue(
+                    expected_tags <= result_tags,
+                    f"{query!r} retrieved {result_tags}",
+                )
 
 
 if __name__ == "__main__":

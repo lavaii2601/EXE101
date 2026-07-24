@@ -20,9 +20,11 @@
       "bundler": "metro"
     },
     "plugins": [
+      "./plugins/withGradle813",
       "expo-secure-store",
       "@react-native-community/datetimepicker",
-      "expo-font"
+      "expo-font",
+      "expo-web-browser"
     ]
   }
 }

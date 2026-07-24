@@ -46,11 +46,11 @@ On each deploy, `python scripts/deploy_postgres_schema.py` runs first. It is
 idempotent: existing tables/data are preserved, and only missing schema pieces
 or safe migrations are applied.
 
-Bob's large knowledge corpus is intentionally not re-imported on every web
-startup, because doing so keeps Gunicorn offline and causes temporary 502s.
-For a dedicated training deployment, temporarily set
-`IMPORT_BOB_TRAINING_ON_DEPLOY=true`; remove or disable it again after the
-import completes.
+Bob's knowledge corpus is synchronized by content fingerprint. A deploy imports
+the corpus only when the checked-in `docs/bob-training/modes/*.json` files have
+changed, then stores a manifest row in PostgreSQL. Later deploys with the same
+fingerprint skip the import, avoiding repeated startup delays. Set
+`IMPORT_BOB_TRAINING_ON_DEPLOY=true` only when a full refresh must be forced.
 
 To verify the deployed service can see the variables, open:
 

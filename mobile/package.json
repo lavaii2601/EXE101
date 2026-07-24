@@ -13,14 +13,14 @@
     "@expo-google-fonts/poppins": "^0.4.1",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-community/datetimepicker": "9.1.0",
-    "expo": "~56.0.12",
-    "expo-dev-client": "~56.0.20",
+    "expo": "~56.0.17",
+    "expo-dev-client": "~56.0.24",
     "expo-font": "~56.0.7",
     "expo-linear-gradient": "^56.0.4",
-    "expo-linking": "~56.0.14",
+    "expo-linking": "~56.0.16",
     "expo-secure-store": "~56.0.4",
     "expo-status-bar": "~56.0.4",
-    "expo-web-browser": "~56.0.5",
+    "expo-web-browser": "~56.0.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.85.3",
@@ -28,5 +28,12 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.7"
+  },
+  "expo": {
+    "doctor": {
+      "appConfigFieldsNotSyncedCheck": {
+        "enabled": false
+      }
+    }
   }
 }

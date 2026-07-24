@@ -59,8 +59,11 @@ def _docs_from_json(path, default_tags):
             raise ValueError(f"{path} item #{index} must be an object")
         title = _clean(item.get("title") or item.get("name"))
         content = _clean(item.get("content") or item.get("body") or item.get("text"))
+        content_en = _clean(item.get("content_en") or item.get("semantic_en"))
         tags = _clean(item.get("tags") or default_tags)
         if title and content:
+            if content_en and content_en not in content:
+                content = f"{content}\n\nEnglish semantic equivalent:\n{content_en}"
             docs.append({"title": title, "content": content, "tags": tags})
     return docs
 

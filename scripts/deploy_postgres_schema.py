@@ -1,3 +1,4 @@
+import hashlib
 import os
 import sys
 from pathlib import Path
@@ -7,6 +8,76 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = PROJECT_ROOT / "database" / "postgres_schema.sql"
 MIGRATIONS_DIR = PROJECT_ROOT / "database" / "migrations"
 BOB_MODE_TRAINING_DIR = PROJECT_ROOT / "docs" / "bob-training" / "modes"
+BOB_TRAINING_MANIFEST_TITLE = "Bob bilingual training corpus manifest"
+BOB_TRAINING_MANIFEST_SOURCE = "bob-training-manifest"
+
+
+def bob_training_fingerprint():
+    digest = hashlib.sha256()
+    paths = sorted(BOB_MODE_TRAINING_DIR.glob("*.json"))
+    if not paths:
+        return ""
+    for path in paths:
+        digest.update(path.name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def bob_training_sync_required():
+    fingerprint = bob_training_fingerprint()
+    if not fingerprint:
+        return False
+
+    sys.path.insert(0, str(PROJECT_ROOT / "web" / "backend"))
+    from models import postgres_db as pg
+
+    with pg.connection() as conn:
+        row = conn.execute(
+            """
+            SELECT content
+            FROM knowledge_documents
+            WHERE title = %s AND source = %s AND user_id IS NULL
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (BOB_TRAINING_MANIFEST_TITLE, BOB_TRAINING_MANIFEST_SOURCE),
+        ).fetchone()
+    current = row.get("content") if isinstance(row, dict) else (row[0] if row else "")
+    return current != fingerprint
+
+
+def update_bob_training_manifest(fingerprint):
+    from models import postgres_db as pg
+
+    with pg.connection() as conn:
+        updated = conn.execute(
+            """
+            UPDATE knowledge_documents
+            SET content = %s, tags = %s, updated_at = NOW()
+            WHERE title = %s AND source = %s AND user_id IS NULL
+            """,
+            (
+                fingerprint,
+                "bob,training,manifest,bilingual,vi-en",
+                BOB_TRAINING_MANIFEST_TITLE,
+                BOB_TRAINING_MANIFEST_SOURCE,
+            ),
+        )
+        if updated.rowcount == 0:
+            conn.execute(
+                """
+                INSERT INTO knowledge_documents (title, content, tags, source, user_id)
+                VALUES (%s, %s, %s, %s, NULL)
+                """,
+                (
+                    BOB_TRAINING_MANIFEST_TITLE,
+                    fingerprint,
+                    "bob,training,manifest,bilingual,vi-en",
+                    BOB_TRAINING_MANIFEST_SOURCE,
+                ),
+            )
 
 
 def apply_sql_file(conn, path):
@@ -75,6 +146,13 @@ def import_bob_email_training():
             f"{created} documents created, {updated} updated, {skipped} skipped.",
             flush=True,
         )
+        fingerprint = bob_training_fingerprint()
+        if fingerprint:
+            update_bob_training_manifest(fingerprint)
+            print(
+                f"Bob bilingual training manifest updated: {fingerprint[:12]}.",
+                flush=True,
+            )
     finally:
         from models import postgres_db as pg
 
@@ -100,14 +178,21 @@ def main():
     # that workload before Gunicorn makes the public service return 502 for
     # minutes on every deploy, even when no training row changed. Keep schema
     # deployment on the startup path and make the data import an explicit job.
-    if os.getenv("IMPORT_BOB_TRAINING_ON_DEPLOY", "").strip().lower() in {
+    force_training_import = os.getenv("IMPORT_BOB_TRAINING_ON_DEPLOY", "").strip().lower() in {
         "1", "true", "yes", "on",
-    }:
+    }
+    training_changed = bob_training_sync_required()
+    if force_training_import or training_changed:
+        reason = "forced by environment" if force_training_import else "corpus fingerprint changed"
+        print(f"Bob training import starting: {reason}.", flush=True)
         import_bob_email_training()
     else:
+        from models import postgres_db as pg
+
+        pg.close_pool()
         print(
-            "Bob training import skipped; set IMPORT_BOB_TRAINING_ON_DEPLOY=true "
-            "for a dedicated training deployment.",
+            "Bob training import skipped; production fingerprint already matches. "
+            "Set IMPORT_BOB_TRAINING_ON_DEPLOY=true to force a refresh.",
             flush=True,
         )
 

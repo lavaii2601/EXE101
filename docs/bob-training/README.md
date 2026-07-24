@@ -27,6 +27,11 @@ lessons that preserve clock expressions and sort timed tasks correctly, and 30
 negative-intent lessons that keep company/founder questions out of workspace tools.
 It also includes 10 web-fallback lessons for answering out-of-scope information
 questions with sourced public-web research while protecting private workspace data.
+Every document has a one-to-one `content_en` semantic pair tagged
+`semantic-pair,vi-en`. During import, the English equivalent is appended to the
+same RAG record as the Vietnamese rule. This keeps titles and source IDs stable
+while allowing equivalent English queries to retrieve exactly the same behavior,
+privacy boundaries, confirmation requirements, and factual-grounding rules.
 Regenerate deterministically with `python scripts/build_bob_mode_corpus.py`.
 
 ## Import

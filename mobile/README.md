@@ -10,9 +10,9 @@ Thu muc nay chua ung dung Expo/React Native cua FlowMate.
 - `src/screens/`: cac man hinh Chat, Email, Calendar, Activity, Settings.
 - `src/theme/`: mau sac va theme context.
 
-Android native rieng cua project nam trong thu muc `../app`. Thu muc
-`mobile/android` neu duoc Expo tao ra khi prebuild la generated output va khong
-duoc commit.
+Toan bo source mobile nam trong thu muc nay. Project Android native nam tai
+`mobile/android`; khong con project Android rieng o thu muc `../app`. Project
+native duoc commit de Android Studio va CI co the build Android truc tiep.
 
 ## Chay Expo
 
@@ -21,6 +21,54 @@ cd mobile
 npm install
 npm start
 ```
+
+Nhan `a` trong Expo CLI de mo app tren Android Emulator.
+
+## Chay bang Android Studio
+
+Mo truc tiep thu muc `mobile/android` bang Android Studio. Khi thay doi native
+dependency hoac `app.json`, cap nhat project native:
+
+```powershell
+cd mobile
+npx expo prebuild --platform android
+```
+
+Trong Android Studio chon **File > Open** va mo `mobile/android`. Android Studio
+se nhan module `app` sau khi Gradle Sync hoan tat.
+
+Build APK debug tu command line:
+
+```powershell
+cd mobile/android
+$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
+.\gradlew.bat assembleDebug
+```
+
+APK duoc tao tai:
+
+```text
+mobile/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Build APK release chay doc lap, khong can Metro:
+
+```powershell
+cd mobile/android
+$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
+$env:NODE_ENV='production'
+.\gradlew.bat assembleRelease
+```
+
+APK release duoc tao tai:
+
+```text
+mobile/android/app/build/outputs/apk/release/app-release.apk
+```
+
+Ban release local hien dung debug keystore, chi phu hop cai thu nghiem/noi bo.
+De phat hanh Play Store, dung EAS profile `production` ben duoi hoac cau hinh
+production keystore rieng; khong phat hanh bang debug keystore.
 
 ## Tao APK Android
 
