@@ -66,6 +66,11 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
   const [scanningGmail, setScanningGmail] = useState(false);
   const [calendarPermissionAttempted, setCalendarPermissionAttempted] = useState(false);
   const [meetingSuggestions, setMeetingSuggestions] = useState([]);
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+
+  const isDefaultFilters = filter === 'all' && source === 'all';
+  const activeFilterLabel = filters.find((item) => item.value === filter)?.label || 'Tất cả';
+  const activeSourceLabel = sourceFilters.find((item) => item.value === source)?.label || 'Tất cả';
 
   const loadAuth = useCallback(async () => {
     try {
@@ -395,9 +400,13 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
           />
         ) : null}
       </Card>
-      <SegmentedControl options={filters} value={filter} onChange={setFilter} />
-      <Text style={styles.filterLabel}>Nguồn email</Text>
-      <SegmentedControl options={sourceFilters} value={source} onChange={setSource} />
+      <TouchableOpacity style={styles.filterTrigger} onPress={() => setFilterModalVisible(true)} activeOpacity={0.85}>
+        <Ionicons name="options-outline" size={18} color={colors.primary} />
+        <Text style={styles.filterTriggerText}>
+          {isDefaultFilters ? 'Bộ lọc' : `${activeFilterLabel} · ${activeSourceLabel}`}
+        </Text>
+        {isDefaultFilters ? null : <View style={styles.filterDot} />}
+      </TouchableOpacity>
       <Card>
         <View style={styles.switchRow}>
           <Text style={styles.cardTitle}>Giữ email đã đọc trong hộp thư</Text>
@@ -601,6 +610,32 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
           ) : null}
         </Screen>
       </Modal>
+      <Modal
+        visible={filterModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setFilterModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.filterModalOverlay}
+          activeOpacity={1}
+          onPress={() => setFilterModalVisible(false)}
+        >
+          <TouchableOpacity style={styles.filterModalSheet} activeOpacity={1} onPress={() => {}}>
+            <View style={styles.filterModalHeader}>
+              <Text style={styles.filterModalTitle}>Bộ lọc email</Text>
+              <TouchableOpacity onPress={() => setFilterModalVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={22} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.filterSectionLabel}>Danh mục</Text>
+            <SegmentedControl options={filters} value={filter} onChange={setFilter} />
+            <Text style={styles.filterSectionLabel}>Nguồn email</Text>
+            <SegmentedControl options={sourceFilters} value={source} onChange={setSource} />
+            <Button title="Xong" onPress={() => setFilterModalVisible(false)} style={styles.filterModalDone} />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </>
   );
 }
@@ -733,7 +768,50 @@ function makeStyles(colors) {
     cacheMissCard: { gap: 8 },
     cardTitle:{ color: colors.text, fontFamily: 'Poppins_700Bold' },
     muted:    { marginTop: 4, color: colors.textMuted, fontFamily: 'Poppins_400Regular' },
-    filterLabel: { color: colors.primary, fontSize: 10, fontFamily: 'Poppins_700Bold', letterSpacing: 1, textTransform: 'uppercase' },
+    filterTrigger: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      alignSelf: 'flex-start',
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 12,
+      backgroundColor: colors.panel,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    filterTriggerText: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
+    filterDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.primary },
+    filterModalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.4)',
+      justifyContent: 'flex-end',
+    },
+    filterModalSheet: {
+      backgroundColor: colors.panel,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      padding: 20,
+      paddingBottom: 32,
+      gap: 4,
+    },
+    filterModalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 6,
+    },
+    filterModalTitle: { color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 17 },
+    filterSectionLabel: {
+      marginTop: 12,
+      marginBottom: 6,
+      color: colors.primary,
+      fontFamily: 'Poppins_700Bold',
+      fontSize: 10,
+      letterSpacing: 1,
+      textTransform: 'uppercase',
+    },
+    filterModalDone: { marginTop: 18 },
     switchRow:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     swipeWrap: { position: 'relative', overflow: 'hidden', borderRadius: 20 },
     swipeContent: { width: '100%', backgroundColor: colors.background },

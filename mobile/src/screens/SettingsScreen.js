@@ -37,8 +37,6 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const [reminderNotif, setReminderNotif] = useState(true);
   const [biometric,     setBiometric]     = useState(false);
   const [twoFactor,     setTwoFactor]     = useState(false);
-  const [outlook,       setOutlook]       = useState({ configured: false, connected: false });
-  const [outlookLoading, setOutlookLoading] = useState(false);
   const [gmailAuth,      setGmailAuth]      = useState(null);
   const [gmailLoading,   setGmailLoading]   = useState(false);
 
@@ -49,19 +47,6 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const initials = name.charAt(0).toUpperCase();
   const mode = getUserMode(userMode);
 
-  const loadOutlookStatus = useCallback(async () => {
-    try {
-      const data = await apiGet('/outlook/auth-status');
-      setOutlook({
-        configured: Boolean(data.configured),
-        connected: Boolean(data.connected || data.authenticated),
-        email: data.email || data.account_email || '',
-      });
-    } catch {
-      setOutlook({ configured: false, connected: false });
-    }
-  }, []);
-
   const loadGmailAuth = useCallback(async () => {
     try {
       const data = await apiGet('/email/auth-status');
@@ -71,15 +56,14 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
     }
   }, []);
 
-  useEffect(() => { loadOutlookStatus(); loadGmailAuth(); }, [loadOutlookStatus, loadGmailAuth]);
+  useEffect(() => { loadGmailAuth(); }, [loadGmailAuth]);
   useEffect(() => {
     if (!syncEvent?.id) return;
     if (hasSyncTarget(syncEvent, ['settings', 'profile', 'providers', 'email'])) {
-      loadOutlookStatus();
       loadGmailAuth();
       onRefresh?.();
     }
-  }, [loadOutlookStatus, loadGmailAuth, onRefresh, syncEvent]);
+  }, [loadGmailAuth, onRefresh, syncEvent]);
 
   const reconnectGmail = async () => {
     setGmailLoading(true);
@@ -146,53 +130,6 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         },
       ]
     );
-  };
-
-  const connectOutlook = async () => {
-    setOutlookLoading(true);
-    try {
-      const data = await apiGet('/outlook/auth-url');
-      if (!data.auth_url) throw new Error(t('Server chưa trả về đường dẫn đăng nhập Outlook.', 'The server did not return an Outlook sign-in link.'));
-      await WebBrowser.openBrowserAsync(data.auth_url);
-      await loadOutlookStatus();
-      onRefresh?.();
-      onAgentSync?.(['settings', 'profile', 'email', 'schedule', 'overview']);
-    } catch (error) {
-      Alert.alert(
-        outlook.configured ? t('Không mở được Outlook OAuth', 'Could not open Outlook OAuth') : t('Outlook chưa được cấu hình', 'Outlook is not configured'),
-        outlook.configured
-          ? error.message
-          : t(
-              'Thêm MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET và MICROSOFT_REDIRECT_URI trên Railway trước.',
-              'Add MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, and MICROSOFT_REDIRECT_URI on Railway first.'
-            )
-      );
-    } finally {
-      setOutlookLoading(false);
-    }
-  };
-
-  const disconnectOutlook = () => {
-    Alert.alert(t('Ngắt Outlook', 'Disconnect Outlook'), t('Bạn có chắc muốn ngắt kết nối Outlook khỏi FlowMate?', 'Are you sure you want to disconnect Outlook from FlowMate?'), [
-      { text: t('Hủy', 'Cancel'), style: 'cancel' },
-      {
-        text: t('Ngắt kết nối', 'Disconnect'),
-        style: 'destructive',
-        onPress: async () => {
-          setOutlookLoading(true);
-          try {
-            await apiPost('/outlook/logout');
-            await loadOutlookStatus();
-            onRefresh?.();
-            onAgentSync?.(['settings', 'profile', 'email', 'schedule', 'overview']);
-          } catch (error) {
-            Alert.alert(t('Không ngắt được Outlook', 'Could not disconnect Outlook'), error.message);
-          } finally {
-            setOutlookLoading(false);
-          }
-        },
-      },
-    ]);
   };
 
   return (
@@ -326,19 +263,12 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>Outlook Mail & Calendar</Text>
             <Text style={styles.settingSub} numberOfLines={2}>
-              {outlook.connected
-                ? t(`Đã kết nối ${outlook.email || 'Outlook'}`, `Connected to ${outlook.email || 'Outlook'}`)
-                : outlook.configured
-                  ? t('Tùy chọn thêm để tổng hợp mail và lịch Outlook', 'Optional add-on to bring in Outlook mail and calendar')
-                  : t('Chưa cấu hình trên Railway', 'Not configured on Railway')}
+              {t('Đang phát triển, chưa thể kết nối', 'In development, not connectable yet')}
             </Text>
           </View>
-          <Button
-            title={outlook.connected ? t('Ngắt', 'Disconnect') : t('Kết nối', 'Connect')}
-            variant={outlook.connected ? 'secondary' : 'primary'}
-            onPress={outlook.connected ? disconnectOutlook : connectOutlook}
-            loading={outlookLoading}
-          />
+          <View style={[styles.statusPill, styles.statusWarn]}>
+            <Text style={styles.statusText}>{t('Sắp ra mắt', 'Coming soon')}</Text>
+          </View>
         </View>
       </View>
 

@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Linking, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import EmptyState from '../components/EmptyState';
 import Field from '../components/Field';
-import { apiDelete, apiGet, apiPost } from '../api/client';
+import SegmentedControl from '../components/SegmentedControl';
+import { apiDelete, apiGet, apiPatch, apiPost } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 import { getUserMode } from '../config/userModes';
 import { takePendingAgentNotice } from '../state/agentNotices';
@@ -39,6 +40,51 @@ function toPlanPayload(item) {
     duration_minutes: item.duration_minutes ? Number(item.duration_minutes) : undefined,
     reason: item.reason || '',
   };
+}
+
+const RETENTION_OPTIONS = [
+  { label: '30 ngày', value: 30 },
+  { label: '90 ngày', value: 90 },
+  { label: '180 ngày', value: 180 },
+];
+
+const DRAFT_REPLY_CHOICE = 'Xác nhận đã nhận được email và sẽ phản hồi/xử lý sớm, văn phong lịch sự';
+
+// Minimal inline-markdown renderer matching web's scope (renderMarkdown in
+// app.js): **bold**, *italic*, and [text](url) links -- nested <Text> in RN
+// inherits the parent's text style, so children only need the delta style.
+function renderFormattedText(text, colors) {
+  const value = String(text || '');
+  const pattern = /\*\*(.+?)\*\*|\*(.+?)\*|\[([^\]]+)\]\(([^)]+)\)/g;
+  const nodes = [];
+  let lastIndex = 0;
+  let key = 0;
+  let match;
+  while ((match = pattern.exec(value)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(value.slice(lastIndex, match.index));
+    }
+    if (match[1] !== undefined) {
+      nodes.push(<Text key={key++} style={{ fontFamily: 'Poppins_700Bold' }}>{match[1]}</Text>);
+    } else if (match[2] !== undefined) {
+      nodes.push(<Text key={key++} style={{ fontStyle: 'italic' }}>{match[2]}</Text>);
+    } else {
+      const label = match[3];
+      const url = match[4];
+      nodes.push(
+        <Text
+          key={key++}
+          style={{ color: colors.primary, textDecorationLine: 'underline' }}
+          onPress={() => Linking.openURL(url).catch(() => {})}
+        >
+          {label}
+        </Text>
+      );
+    }
+    lastIndex = pattern.lastIndex;
+  }
+  if (lastIndex < value.length) nodes.push(value.slice(lastIndex));
+  return nodes;
 }
 
 function mapHistoryItem(item) {
@@ -106,6 +152,11 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
   const [sessions, setSessions] = useState([]);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState('');
+  const [editingTitle, setEditingTitle] = useState('');
+  const [editingRetention, setEditingRetention] = useState(90);
+  const [savingSessionEdit, setSavingSessionEdit] = useState(false);
+  const [activeDraft, setActiveDraft] = useState(null);
   const listRef = useRef(null);
   const mountedRef = useRef(false);
   const mode = getUserMode(userMode);
@@ -277,6 +328,70 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
     ]);
   }, [onAgentSync, sessionId, startNewChat]);
 
+  const startEditSession = useCallback((session) => {
+    setEditingSessionId(session.id);
+    setEditingTitle(session.title || '');
+    setEditingRetention(session.retention_days || 90);
+  }, []);
+
+  const cancelEditSession = useCallback(() => {
+    setEditingSessionId('');
+    setEditingTitle('');
+  }, []);
+
+  const saveEditSession = useCallback(async () => {
+    if (!editingSessionId) return;
+    setSavingSessionEdit(true);
+    try {
+      await apiPatch(`/chat/sessions/${encodeURIComponent(editingSessionId)}`, {
+        title: editingTitle.trim(),
+        retention_days: editingRetention,
+      });
+      setSessions((current) => current.map((item) => (
+        item.id === editingSessionId ? { ...item, title: editingTitle.trim(), retention_days: editingRetention } : item
+      )));
+      setEditingSessionId('');
+    } catch (error) {
+      Alert.alert('Không lưu được đoạn chat', error.message);
+    } finally {
+      setSavingSessionEdit(false);
+    }
+  }, [editingSessionId, editingRetention, editingTitle]);
+
+  const startDraftReply = useCallback(async (action) => {
+    if (!action?.email_id) return;
+    setActiveDraft({ emailId: action.email_id, label: action.label || 'Trả lời email', text: '', loading: true, sending: false });
+    try {
+      const data = await apiPost('/chat/generate-reply', {
+        context: action.context || '',
+        choice: DRAFT_REPLY_CHOICE,
+      });
+      setActiveDraft((current) => (current && current.emailId === action.email_id
+        ? { ...current, text: data.reply || '', loading: false }
+        : current));
+    } catch (error) {
+      Alert.alert('Không tạo được bản nháp', error.message);
+      setActiveDraft(null);
+    }
+  }, []);
+
+  const sendActiveDraft = useCallback(async () => {
+    if (!activeDraft?.emailId || !activeDraft.text.trim()) return;
+    setActiveDraft((current) => (current ? { ...current, sending: true } : current));
+    try {
+      await apiPost('/chat/send-drafted-reply', {
+        email_id: activeDraft.emailId,
+        reply_text: activeDraft.text.trim(),
+      });
+      Alert.alert('Đã gửi', 'Email trả lời đã được gửi.');
+      setActiveDraft(null);
+      onAgentSync?.(['email', 'history']);
+    } catch (error) {
+      Alert.alert('Không gửi được email', error.message);
+      setActiveDraft((current) => (current ? { ...current, sending: false } : current));
+    }
+  }, [activeDraft, onAgentSync]);
+
   const submitChatMessage = useCallback(async (text, options = {}) => {
     const trimmed = String(text || '').trim();
     if (!trimmed || loading || !sessionId) return;
@@ -318,6 +433,8 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
         text: data.response || 'Không có phản hồi.',
         badge: 'AI Agent',
         meta: formatAgentMeta(data),
+        suggestedActions: Array.isArray(data.suggested_actions) ? data.suggested_actions : null,
+        demoMode: Boolean(data.demo_mode),
       };
       setMessages((current) => [...current, assistantMessage]);
       onAgentSync?.(data.refresh_targets || [], data);
@@ -491,9 +608,26 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
               {item.badge ? <Text style={styles.agentBadge}>{item.badge}</Text> : null}
               <View style={[styles.bubble, item.role === 'user' && styles.bubbleUser]}>
                 <Text style={[styles.messageText, item.role === 'user' && styles.messageTextUser]}>
-                  {item.text}
+                  {item.role === 'assistant' ? renderFormattedText(item.text, colors) : item.text}
                 </Text>
                 {item.meta ? <Text style={styles.agentMeta}>{item.meta}</Text> : null}
+                {item.demoMode ? (
+                  <Text style={styles.demoNote}>⚠ Chế độ demo — chưa có AI provider khả dụng, phản hồi có thể hạn chế.</Text>
+                ) : null}
+                {item.suggestedActions?.length ? (
+                  <View style={styles.suggestedActions}>
+                    {item.suggestedActions.map((action, index) => (
+                      <TouchableOpacity
+                        key={`${action.email_id || index}`}
+                        style={styles.suggestedActionChip}
+                        onPress={() => startDraftReply(action)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.suggestedActionText} numberOfLines={1}>{action.label || 'Soạn trả lời'}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
               </View>
             </View>
           )}
@@ -522,12 +656,30 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
                 ? 'Gợi ý sửa lịch'
                 : 'Gợi ý tạo lịch'}
           </Text>
-          <Text style={styles.suggestionText}>{suggestion.title || 'Lịch hẹn'}</Text>
-          <Text style={styles.suggestionMeta}>
-            {suggestion.new_start_time
-              ? `${suggestion.start_time || ''} → ${suggestion.new_start_time}`
-              : suggestion.start_time || 'Chưa có thời gian'}
-          </Text>
+          {suggestion.action === 'delete' ? (
+            <>
+              <Text style={styles.suggestionText}>{suggestion.title || 'Lịch hẹn'}</Text>
+              <Text style={styles.suggestionMeta}>{suggestion.start_time || 'Chưa có thời gian'}</Text>
+            </>
+          ) : (
+            <>
+              <Field
+                label="Tiêu đề"
+                value={suggestion.title || ''}
+                onChangeText={(value) => setSuggestion((current) => (current ? { ...current, title: value } : current))}
+                placeholder="Lịch hẹn"
+              />
+              <Field
+                label={suggestion.action === 'update' ? 'Thời gian mới' : 'Thời gian bắt đầu'}
+                value={toEditableDateTime(suggestion.action === 'update' ? suggestion.new_start_time : suggestion.start_time)}
+                onChangeText={(value) => setSuggestion((current) => {
+                  if (!current) return current;
+                  return current.action === 'update' ? { ...current, new_start_time: value } : { ...current, start_time: value };
+                })}
+                placeholder="2026-06-30T09:00"
+              />
+            </>
+          )}
           <View style={styles.suggestionActions}>
             <Button
               title={suggestion.action === 'delete' ? 'Xóa lịch' : suggestion.action === 'update' ? 'Cập nhật' : 'Tạo lịch'}
@@ -605,6 +757,33 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
         </Card>
       ) : null}
 
+      {activeDraft ? (
+        <Card style={styles.suggestion}>
+          <Text style={styles.suggestionTitle} numberOfLines={1}>{activeDraft.label}</Text>
+          {activeDraft.loading ? (
+            <ActivityIndicator color={colors.primary} style={styles.draftLoading} />
+          ) : (
+            <Field
+              label="Nội dung trả lời"
+              value={activeDraft.text}
+              onChangeText={(value) => setActiveDraft((current) => (current ? { ...current, text: value } : current))}
+              placeholder="Nội dung email trả lời..."
+              multiline
+              inputStyle={styles.draftInput}
+            />
+          )}
+          <View style={styles.suggestionActions}>
+            <Button
+              title="Gửi luôn"
+              onPress={sendActiveDraft}
+              loading={activeDraft.sending}
+              disabled={activeDraft.loading || !activeDraft.text.trim()}
+            />
+            <Button title="Hủy" variant="secondary" onPress={() => setActiveDraft(null)} disabled={activeDraft.sending} />
+          </View>
+        </Card>
+      ) : null}
+
       <View style={styles.composer}>
         <TextInput
           style={styles.input}
@@ -642,17 +821,41 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
               contentContainerStyle={styles.sessionList}
               ListEmptyComponent={<EmptyState title="Chưa có đoạn chat" detail="Các cuộc trò chuyện mới sẽ xuất hiện ở đây và trên web." />}
               renderItem={({ item }) => (
-                <View style={[styles.sessionItem, item.id === sessionId && styles.sessionItemActive]}>
-                  <TouchableOpacity style={styles.sessionMain} onPress={() => openSession(item)}>
-                    <Text style={styles.sessionTitle} numberOfLines={1}>{item.title || 'Đoạn chat'}</Text>
-                    <Text style={styles.sessionMeta} numberOfLines={1}>
-                      {item.updated_at || item.created_at || `${item.retention_days || 90} ngày lưu`}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.sessionDelete} onPress={() => deleteSession(item)}>
-                    <Text style={styles.sessionDeleteText}>Xóa</Text>
-                  </TouchableOpacity>
-                </View>
+                editingSessionId === item.id ? (
+                  <View style={styles.sessionEditBox}>
+                    <Field
+                      label="Tên đoạn chat"
+                      value={editingTitle}
+                      onChangeText={setEditingTitle}
+                      placeholder="Đoạn chat"
+                    />
+                    <Text style={styles.sessionMeta}>Lưu trữ</Text>
+                    <SegmentedControl
+                      options={RETENTION_OPTIONS}
+                      value={editingRetention}
+                      onChange={setEditingRetention}
+                    />
+                    <View style={styles.suggestionActions}>
+                      <Button title="Lưu" onPress={saveEditSession} loading={savingSessionEdit} />
+                      <Button title="Hủy" variant="secondary" onPress={cancelEditSession} disabled={savingSessionEdit} />
+                    </View>
+                  </View>
+                ) : (
+                  <View style={[styles.sessionItem, item.id === sessionId && styles.sessionItemActive]}>
+                    <TouchableOpacity style={styles.sessionMain} onPress={() => openSession(item)}>
+                      <Text style={styles.sessionTitle} numberOfLines={1}>{item.title || 'Đoạn chat'}</Text>
+                      <Text style={styles.sessionMeta} numberOfLines={1}>
+                        {item.updated_at || item.created_at || `${item.retention_days || 90} ngày lưu`}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sessionEdit} onPress={() => startEditSession(item)}>
+                      <Text style={styles.sessionEditText}>Sửa</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sessionDelete} onPress={() => deleteSession(item)}>
+                      <Text style={styles.sessionDeleteText}>Xóa</Text>
+                    </TouchableOpacity>
+                  </View>
+                )
               )}
             />
           )}
@@ -699,6 +902,20 @@ function makeStyles(colors) {
     messageRowUser: { alignItems: 'flex-end' },
     agentBadge: { color: colors.primary, fontFamily: 'Poppins_700Bold', fontSize: 10, letterSpacing: 0.5, marginBottom: 4, textTransform: 'uppercase' },
     agentMeta: { marginTop: 8, color: colors.textMuted, fontFamily: 'Poppins_600SemiBold', fontSize: 10 },
+    demoNote: { marginTop: 6, color: '#b45309', fontFamily: 'Poppins_500Medium', fontSize: 10, lineHeight: 14 },
+    suggestedActions: { marginTop: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    suggestedActionChip: {
+      maxWidth: 220,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      borderRadius: 999,
+      backgroundColor: colors.primarySoft,
+      borderWidth: 1,
+      borderColor: `${colors.primary}55`,
+    },
+    suggestedActionText: { color: colors.primary, fontFamily: 'Poppins_600SemiBold', fontSize: 11 },
+    draftLoading: { marginVertical: 10 },
+    draftInput: { minHeight: 100 },
     bubble: {
       maxWidth: '86%',
       paddingHorizontal: 14,
@@ -813,7 +1030,17 @@ function makeStyles(colors) {
     sessionMain: { flex: 1, minWidth: 0 },
     sessionTitle: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
     sessionMeta: { marginTop: 3, color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 10 },
+    sessionEdit: { paddingHorizontal: 10, paddingVertical: 7 },
+    sessionEditText: { color: colors.primary, fontFamily: 'Poppins_600SemiBold', fontSize: 11 },
     sessionDelete: { paddingHorizontal: 10, paddingVertical: 7 },
     sessionDeleteText: { color: colors.danger, fontFamily: 'Poppins_600SemiBold', fontSize: 11 },
+    sessionEditBox: {
+      padding: 12,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.primary,
+      backgroundColor: colors.primarySoft,
+      gap: 6,
+    },
   });
 }

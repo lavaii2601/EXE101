@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, Modal, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import DateTimeField from '../components/DateTimeField';
@@ -357,13 +357,21 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
           {events.length === 0 ? (
             <Text style={styles.timetableEmpty}>Không có lịch hẹn</Text>
           ) : events.map((ev, idx) => (
-            <View key={`${ev.id || idx}-${ev.start_time}`} style={styles.timetableEvent}>
+            <TouchableOpacity
+              key={`${ev.id || idx}-${ev.start_time}`}
+              style={styles.timetableEvent}
+              activeOpacity={ev.local_id || ev.html_link || ev.web_link ? 0.7 : 1}
+              onPress={() => {
+                if (ev.local_id) openEditSchedule(ev);
+                else if (ev.html_link || ev.web_link) Linking.openURL(ev.html_link || ev.web_link);
+              }}
+            >
               <Text style={styles.timetableEventTime}>{formatScheduleTimeShort(ev.start_time, ev.end_time)}</Text>
               <View style={styles.timetableEventBody}>
                 <Text style={styles.timetableEventTitle} numberOfLines={2}>{ev.title || 'Sự kiện'}</Text>
                 <Text style={[styles.source, sourceStyle(ev, styles)]}>{sourceLabel(ev)}</Text>
               </View>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
       );
@@ -440,12 +448,16 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
           <Card key={schedule.id} style={styles.scheduleCard}>
             <View style={styles.cardHeader}>
               <Text style={styles.title}>{schedule.title}</Text>
-              <Text style={[
-                styles.source,
-                sourceStyle(schedule, styles),
-              ]}>
-                {sourceLabel(schedule)}
-              </Text>
+              <View style={styles.badgeStack}>
+                <Text style={[styles.source, sourceStyle(schedule, styles)]}>
+                  {sourceLabel(schedule)}
+                </Text>
+                {schedule.status && schedule.status !== 'pending' ? (
+                  <Text style={[styles.source, statusStyle(schedule.status, styles)]}>
+                    {statusLabel(schedule.status)}
+                  </Text>
+                ) : null}
+              </View>
             </View>
             <Text style={styles.time}>
               {formatDate(schedule.start_time)}
@@ -457,7 +469,11 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
             <View style={styles.actions}>
               {schedule.local_id ? (
                 <>
-                  <Button title="Hoàn tất" variant="secondary" onPress={() => updateStatus(schedule, 'completed')} />
+                  {schedule.status === 'completed' ? (
+                    <Button title="Bỏ hoàn thành" variant="secondary" onPress={() => updateStatus(schedule, 'pending')} />
+                  ) : (
+                    <Button title="Hoàn tất" variant="secondary" onPress={() => updateStatus(schedule, 'completed')} />
+                  )}
                   <Button title="Sửa" variant="secondary" onPress={() => openEditSchedule(schedule)} />
                   <Button title="Hủy" variant="secondary" onPress={() => updateStatus(schedule, 'cancelled')} />
                   <Button title="Xóa" variant="danger" onPress={() => deleteSchedule(schedule)} />
@@ -674,6 +690,19 @@ function sourceStyle(schedule, styles) {
   return styles.sourceDefault;
 }
 
+function statusLabel(status) {
+  if (status === 'completed') return 'Đã hoàn thành';
+  if (status === 'cancelled') return 'Đã hủy';
+  if (status === 'dismissed') return 'Đã bỏ qua';
+  return status;
+}
+
+function statusStyle(status, styles) {
+  if (status === 'completed') return styles.statusCompleted;
+  if (status === 'cancelled' || status === 'dismissed') return styles.statusCancelled;
+  return styles.sourceDefault;
+}
+
 function formatScheduleTimeShort(startValue, endValue) {
   const start = new Date(startValue);
   if (Number.isNaN(start.getTime())) return '';
@@ -791,10 +820,13 @@ function makeStyles(colors) {
     timetableEventTitle: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 13, lineHeight: 18 },
     title: { color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 16, lineHeight: 22 },
     cardHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
+    badgeStack: { alignItems: 'flex-end', gap: 5 },
     source: { overflow: 'hidden', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4, fontFamily: 'Poppins_700Bold', fontSize: 11 },
     sourceSynced: { color: colors.success, backgroundColor: `${colors.success}18` },
     sourceDefault: { color: colors.primary, backgroundColor: `${colors.primary}18` },
     sourceOutlook: { color: '#0369a1', backgroundColor: 'rgba(14,165,233,0.16)' },
+    statusCompleted: { color: colors.success, backgroundColor: `${colors.success}18` },
+    statusCancelled: { color: colors.danger, backgroundColor: `${colors.danger}18` },
     time:  { marginTop: 6, color: colors.primary, fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
     description: { marginTop: 8,  color: colors.textMuted, fontFamily: 'Poppins_400Regular', lineHeight: 20 },
     meta:        { marginTop: 6,  color: colors.textMuted, fontFamily: 'Poppins_500Medium' },
