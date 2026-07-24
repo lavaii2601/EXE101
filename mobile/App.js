@@ -72,6 +72,7 @@ function AppShell() {
   const [savingMode, setSavingMode] = useState(false);
   const [modePickerOpen, setModePickerOpen] = useState(false);
   const [newMailNotice, setNewMailNotice] = useState(null);
+  const [unseenMailCount, setUnseenMailCount] = useState(0);
   const lastSeenMailId = useRef(null);
   const mailNoticeTimer = useRef(null);
 
@@ -142,6 +143,7 @@ function AppShell() {
           subject: String(data.latest_subject || '').trim(),
           meetingSuggestion: data.meeting_suggestion || null,
         });
+        setUnseenMailCount((count) => count + 1);
         dismissLater();
       } catch (error) {
         // Gmail may not be connected yet. This background agent must remain
@@ -227,7 +229,7 @@ function AppShell() {
   }, [refreshShell]);
 
   const renderScreen = () => {
-    if (activeTab === 'overview') return <OverviewScreen onAgentSync={handleAgentSync} syncEvent={syncEvent} />;
+    if (activeTab === 'overview') return <OverviewScreen onAgentSync={handleAgentSync} syncEvent={syncEvent} onNavigate={setActiveTab} />;
     if (activeTab === 'emails')   return <EmailScreen userMode={userMode || 'worker'} onAuthChanged={refreshShell} onAgentSync={handleAgentSync} onNavigate={setActiveTab} syncEvent={syncEvent} />;
     if (activeTab === 'schedule') return <ScheduleScreen onAgentSync={handleAgentSync} syncEvent={syncEvent} />;
     if (activeTab === 'history')  return <HistoryScreen syncEvent={syncEvent} />;
@@ -301,9 +303,12 @@ function AppShell() {
             <TouchableOpacity
               style={styles.mailNoticeAction}
               onPress={() => {
-                setActiveTab(newMailNotice.meetingSuggestion ? 'schedule' : 'emails');
                 if (newMailNotice.meetingSuggestion) {
+                  setActiveTab('schedule');
                   handleAgentSync(['email', 'schedule', 'overview']);
+                } else {
+                  setUnseenMailCount(0);
+                  setActiveTab('emails');
                 }
                 setNewMailNotice(null);
               }}
@@ -322,19 +327,30 @@ function AppShell() {
         <View style={styles.tabBar}>
           {tabs.map((tab) => {
             const active = activeTab === tab.key;
+            const showMailBadge = tab.key === 'emails' && unseenMailCount > 0;
             return (
               <TouchableOpacity
                 key={tab.key}
                 style={styles.tab}
-                onPress={() => setActiveTab(tab.key)}
+                onPress={() => {
+                  if (tab.key === 'emails') setUnseenMailCount(0);
+                  setActiveTab(tab.key);
+                }}
                 activeOpacity={0.85}
               >
-                <Ionicons
-                  name={tab.icon}
-                  size={20}
-                  color={active ? colors.primary : colors.textMuted}
-                  style={[styles.tabIcon, active && styles.tabIconActive]}
-                />
+                <View style={styles.tabIconWrap}>
+                  <Ionicons
+                    name={tab.icon}
+                    size={20}
+                    color={active ? colors.primary : colors.textMuted}
+                    style={[styles.tabIcon, active && styles.tabIconActive]}
+                  />
+                  {showMailBadge ? (
+                    <View style={styles.tabBadge}>
+                      <Text style={styles.tabBadgeText}>{unseenMailCount > 9 ? '9+' : unseenMailCount}</Text>
+                    </View>
+                  ) : null}
+                </View>
                 <Text style={[styles.tabText, active && styles.tabTextActive]}>
                   {t(...tab.label)}
                 </Text>
@@ -404,8 +420,24 @@ function makeStyles(colors) {
       justifyContent: 'center',
       paddingVertical: 4,
     },
+    tabIconWrap: { position: 'relative' },
     tabIcon: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 999 },
     tabIconActive: { backgroundColor: colors.primarySoft, overflow: 'hidden' },
+    tabBadge: {
+      position: 'absolute',
+      top: -2,
+      right: 4,
+      minWidth: 15,
+      height: 15,
+      borderRadius: 8,
+      paddingHorizontal: 3,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#ef4444',
+      borderWidth: 1.5,
+      borderColor: colors.panel,
+    },
+    tabBadgeText: { color: '#FFFFFF', fontFamily: 'Poppins_700Bold', fontSize: 8.5, lineHeight: 10 },
     tabText: {
       color: colors.textMuted,
       fontWeight: '600',

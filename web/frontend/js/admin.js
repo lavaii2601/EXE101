@@ -51,6 +51,7 @@ function showGate(name, message = '') {
   $('dashboard').classList.add('hidden');
   $('authPanel').classList.toggle('hidden', name !== 'google');
   $('totpPanel').classList.toggle('hidden', name !== 'totp');
+  $('accessDeniedPanel').classList.toggle('hidden', name !== 'denied');
   $('adminLogoutButton').classList.add('hidden');
   if (name === 'google') $('authError').textContent = message;
   if (name === 'totp') {
@@ -172,6 +173,9 @@ async function loadDashboard() {
     if (code === 'admin_totp_required') {
       showGate('totp');
       setConnection('waiting', 'Chờ mã TOTP');
+    } else if (code === 'admin_not_allowed') {
+      showGate('denied');
+      setConnection('offline', 'Tài khoản không có quyền admin');
     } else {
       showGate('google', error.message);
       setConnection('offline', code === 'admin_not_configured' ? 'Admin đang khóa' : 'Cần đăng nhập');
@@ -184,7 +188,7 @@ async function loadDashboard() {
 async function loginWithGoogle() {
   $('authError').textContent = '';
   try {
-    const response = await fetch('/api/email/auth_url?next=/admin', { credentials: 'include' });
+    const response = await fetch('/api/email/auth_url?next=/admin/login', { credentials: 'include' });
     const data = await response.json();
     if (!response.ok || !data.auth_url) throw new Error(data.error || 'Không tạo được liên kết Google OAuth.');
     window.location.assign(data.auth_url);

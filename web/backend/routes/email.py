@@ -863,6 +863,12 @@ def _clear_oauth_state(user_id):
     session.pop('gmail_user_name', None)
     session.pop('gmail_user_picture', None)
     session.pop('user_id', None)
+    # A Gmail logout/account switch must also invalidate any elevated admin
+    # TOTP session.  Otherwise the same browser could retain the admin gate
+    # until its timeout after the Google identity was disconnected.
+    session.pop('admin_totp_user', None)
+    session.pop('admin_totp_verified_at', None)
+    session.modified = True
 
 
 def _get_redirect_uri():
@@ -1831,7 +1837,7 @@ def google_auth_native():
 def gmail_auth():
     """Initiate OAuth2 login flow."""
     return_to = (request.args.get('next') or '').strip()
-    if return_to == '/admin':
+    if return_to in {'/admin', '/admin/login'}:
         session['oauth_return_to'] = return_to
     try:
         flow = _build_oauth_flow()
@@ -2029,7 +2035,7 @@ def oauth2callback():
 def gmail_auth_url():
     """Return the OAuth authorization URL (JSON) so frontend can redirect."""
     return_to = (request.args.get('next') or '').strip()
-    if return_to == '/admin':
+    if return_to in {'/admin', '/admin/login'}:
         session['oauth_return_to'] = return_to
     try:
         flow = _build_oauth_flow()

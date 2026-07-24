@@ -1,4 +1,4 @@
-from flask import Flask, send_from_directory, jsonify, session as flask_session, request
+from flask import Flask, send_from_directory, jsonify, redirect, session as flask_session, request
 from flask_cors import CORS
 from flask_compress import Compress
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -41,7 +41,7 @@ from routes.calendar import calendar_bp
 from routes.overview import overview_bp
 from routes.knowledge import knowledge_bp, _seed_if_empty as seed_knowledge_base
 from routes._background import bg_bp
-from routes.admin import admin_bp
+from routes.admin import admin_bp, _require_admin
 from utils.security import authenticated_user_id, enforce_rate_limit, valid_request_origin
 
 # Keep application diagnostics without logging OAuth request/response tokens.
@@ -174,12 +174,43 @@ def serve_terms_of_service():
     return response
 
 
-@app.route('/admin')
-def serve_admin_dashboard():
-    """Serve the protected server operations dashboard."""
+def _serve_admin_shell():
+    """Serve the dashboard shell with strict no-cache headers.
+
+    The HTML shell contains no server data; all sensitive dashboard payloads
+    are fetched from ``/api/admin/overview`` after the Google allowlist and
+    TOTP checks have completed.  Keeping the shell in one helper ensures that
+    both the login hand-off and the authenticated route get identical cache
+    behavior.
+    """
     response = send_from_directory('../frontend', 'admin.html')
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response
+
+
+@app.route('/admin/login')
+def serve_admin_login():
+    """Serve the public admin sign-in hand-off page.
+
+    This page is intentionally only a login shell.  It never contains server
+    metrics and the API endpoints remain protected by the admin allowlist and
+    TOTP gate.  A separate route lets unauthenticated users start OAuth
+    without exposing the canonical ``/admin`` URL as an open dashboard.
+    """
+    return _serve_admin_shell()
+
+
+@app.route('/admin')
+def serve_admin_dashboard():
+    """Serve the server operations dashboard only after admin verification."""
+    _, error_response = _require_admin()
+    if error_response:
+        # Keep the login shell available for the OAuth/TOTP flow while making
+        # the canonical dashboard URL itself admin-only.  The data API still
+        # performs its own check on every request, so a redirect can never
+        # expose dashboard data to a non-admin user.
+        return redirect('/admin/login')
+    return _serve_admin_shell()
 
 @app.route('/<path:path>')
 def serve_static(path):

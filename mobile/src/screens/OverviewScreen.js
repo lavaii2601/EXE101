@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Button from '../components/Button';
 import Card from '../components/Card';
@@ -9,7 +9,7 @@ import Screen from '../components/Screen';
 import { apiGet, apiPost, apiPut } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 
-export default function OverviewScreen({ onAgentSync, syncEvent }) {
+export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -24,6 +24,8 @@ export default function OverviewScreen({ onAgentSync, syncEvent }) {
   const [quickLoading, setQuickLoading] = useState(false);
   const [quickMessage, setQuickMessage] = useState('');
   const [planSuggestion, setPlanSuggestion] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
+  const [selectedEmail, setSelectedEmail] = useState(null);
 
   const loadOverview = useCallback(async (options = {}) => {
     const force = options?.force === true;
@@ -31,9 +33,10 @@ export default function OverviewScreen({ onAgentSync, syncEvent }) {
     setEmailError('');
     setRefreshNote('');
     try {
-      const [overviewResult, checklistResult] = await Promise.allSettled([
+      const [overviewResult, checklistResult, analyticsResult] = await Promise.allSettled([
         apiGet(`/overview/daily?date=${encodeURIComponent(date)}&max_results=50${force ? '&force=1' : ''}`),
         apiGet(`/schedule/checklist?date=${encodeURIComponent(date)}`),
+        apiGet(`/overview/analytics?days=7&end_date=${encodeURIComponent(date)}`),
       ]);
 
       if (overviewResult.status === 'fulfilled') {
@@ -55,6 +58,8 @@ export default function OverviewScreen({ onAgentSync, syncEvent }) {
       } else {
         setChecklistState({ completed: {}, custom_items: [] });
       }
+
+      setAnalytics(analyticsResult.status === 'fulfilled' ? analyticsResult.value : null);
     } catch (error) {
       Alert.alert('Không tổng hợp được dữ liệu', error.message);
     } finally {
@@ -284,6 +289,67 @@ export default function OverviewScreen({ onAgentSync, syncEvent }) {
     );
   };
 
+  const renderAnalytics = () => {
+    const daily = Array.isArray(analytics?.daily) ? analytics.daily : [];
+    if (!daily.length) return null;
+    const totals = analytics.totals || {};
+    const weekdayLabels = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+    const maxActivity = Math.max(1, ...daily.map((d) => Math.max(d.tasks_total || 0, d.emails_total || 0)));
+    const todayIso = formatDateForApi(new Date());
+    const busiestEntry = daily.find((d) => d.date === totals.busiest_date);
+    const busiestLabel = busiestEntry ? weekdayLabels[busiestEntry.weekday] ?? '—' : '—';
+    const rangeDays = analytics.range?.days || daily.length;
+
+    return (
+      <Card>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.kicker}>{`PHÂN TÍCH ${rangeDays} NGÀY`}</Text>
+          <Text style={styles.sectionTitle}>Xu hướng hoạt động</Text>
+        </View>
+        <View style={styles.kpiGrid}>
+          <View style={styles.kpiCell}>
+            <Text style={styles.kpiValue}>{totals.completion_rate ?? 0}%</Text>
+            <Text style={styles.kpiLabel}>Hoàn thành task</Text>
+          </View>
+          <View style={styles.kpiCell}>
+            <Text style={styles.kpiValue}>{totals.emails_total ?? 0}</Text>
+            <Text style={styles.kpiLabel}>Email đã xử lý</Text>
+          </View>
+          <View style={styles.kpiCell}>
+            <Text style={styles.kpiValue}>{totals.deadlines_total ?? 0}</Text>
+            <Text style={styles.kpiLabel}>{`Deadline (${rangeDays}n)`}</Text>
+          </View>
+          <View style={styles.kpiCell}>
+            <Text style={styles.kpiValue}>{busiestLabel}</Text>
+            <Text style={styles.kpiLabel}>Ngày bận nhất</Text>
+          </View>
+        </View>
+        <View style={styles.barChart}>
+          {daily.map((d) => {
+            const taskH = Math.round(((d.tasks_total || 0) / maxActivity) * 100);
+            const emailH = Math.round(((d.emails_total || 0) / maxActivity) * 100);
+            const isToday = d.date === todayIso;
+            return (
+              <View key={d.date} style={styles.barCol}>
+                <View style={styles.barTrack}>
+                  <View style={[styles.barTask, { height: `${taskH}%` }]} />
+                  <View style={[styles.barEmail, { height: `${emailH}%` }]} />
+                </View>
+                <Text style={[styles.barLabel, isToday && styles.barLabelToday]}>
+                  {weekdayLabels[d.weekday] ?? ''}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+        <View style={styles.barLegend}>
+          <View style={styles.legendRow}><View style={[styles.legendDot, styles.legendTask]} /><Text style={styles.legendText}>Task/Lịch</Text></View>
+          <View style={styles.legendRow}><View style={[styles.legendDot, styles.legendEmail]} /><Text style={styles.legendText}>Email</Text></View>
+        </View>
+      </Card>
+    );
+  };
+
   return (
     <Screen
       title="Tổng hợp"
@@ -297,8 +363,16 @@ export default function OverviewScreen({ onAgentSync, syncEvent }) {
         end={{ x: 1, y: 1 }}
         style={styles.heroCard}
       >
-        <Text style={styles.kicker}>FLOWMATE AI</Text>
-        <Text style={styles.heroTitle}>{formatReportDate(date)}</Text>
+        <View style={styles.heroTopRow}>
+          <View style={styles.heroTopText}>
+            <Text style={styles.kicker}>FLOWMATE AI</Text>
+            <Text style={styles.heroTitle}>{formatReportDate(date)}</Text>
+          </View>
+          <View style={styles.heroScore}>
+            <Text style={styles.heroScoreValue}>{openTasks.length + emails.length}</Text>
+            <Text style={styles.heroScoreLabel}>việc cần xem</Text>
+          </View>
+        </View>
         <Text style={styles.heroText}>{insight}</Text>
         {refreshNote ? <Text style={styles.refreshNote}>{refreshNote}</Text> : null}
         <Text style={styles.sourceText}>{sourceText}</Text>
@@ -361,6 +435,12 @@ export default function OverviewScreen({ onAgentSync, syncEvent }) {
             <Text style={styles.kicker}>CHECKLIST</Text>
             <Text style={styles.sectionTitle}>Việc và lịch được AI sắp xếp</Text>
             <Text style={styles.checklistMeta}>{completedCount}/{checklistItems.length} đã xong</Text>
+            <View style={styles.checklistProgressTrack}>
+              <View style={[
+                styles.checklistProgressFill,
+                { width: `${checklistItems.length ? Math.round((completedCount / checklistItems.length) * 100) : 0}%` },
+              ]} />
+            </View>
           </View>
           <TouchableOpacity style={styles.sortButton} onPress={sortChecklist} activeOpacity={0.78}>
             <Text style={styles.sortButtonText}>Sắp xếp AI</Text>
@@ -438,7 +518,12 @@ export default function OverviewScreen({ onAgentSync, syncEvent }) {
         {emails.length === 0 && !emailError ? (
           <EmptyState title="Chưa có email nổi bật" detail="Không tìm thấy email cần tóm tắt trong ngày này." />
         ) : emails.slice(0, 6).map((item, index) => (
-          <View key={`${item.subject}-${index}`} style={styles.item}>
+          <TouchableOpacity
+            key={`${item.subject}-${index}`}
+            style={styles.item}
+            activeOpacity={0.78}
+            onPress={() => setSelectedEmail(item)}
+          >
             <View style={styles.itemIndex}><Text style={styles.itemIndexText}>{index + 1}</Text></View>
             <View style={styles.itemBody}>
               <Text style={styles.itemTitle}>{item.subject || 'Email không tiêu đề'}</Text>
@@ -449,9 +534,32 @@ export default function OverviewScreen({ onAgentSync, syncEvent }) {
               <Text style={[styles.chip, providerStyle(item.provider, styles)]}>{providerLabel(item.provider)}</Text>
               {item.is_meeting ? <Text style={[styles.chip, styles.meetingChip]}>Họp</Text> : null}
             </View>
-          </View>
+          </TouchableOpacity>
         ))}
       </Card>
+
+      {renderAnalytics()}
+
+      <Modal visible={!!selectedEmail} animationType="slide" onRequestClose={() => setSelectedEmail(null)}>
+        <Screen title="Chi tiết email" actions={<Button title="Đóng" variant="secondary" onPress={() => setSelectedEmail(null)} />}>
+          {selectedEmail ? (
+            <Card>
+              <Text style={styles.itemTitle}>{selectedEmail.subject || 'Email không tiêu đề'}</Text>
+              <Text style={styles.itemMeta}>{selectedEmail.sender || 'Người gửi'}</Text>
+              <Text style={styles.itemPreview}>{selectedEmail.summary || 'Chưa có tóm tắt AI cho email này.'}</Text>
+              {selectedEmail.is_meeting ? <Text style={[styles.chip, styles.meetingChip, styles.detailChip]}>Có thể là lịch họp</Text> : null}
+              <Button
+                title="Mở trong hộp thư"
+                style={styles.detailButton}
+                onPress={() => {
+                  setSelectedEmail(null);
+                  onNavigate?.('emails');
+                }}
+              />
+            </Card>
+          ) : null}
+        </Screen>
+      </Modal>
     </Screen>
   );
 }
@@ -704,6 +812,19 @@ function makeStyles(colors) {
       textTransform: 'uppercase',
     },
     heroTitle: { color: colors.text, fontFamily: fontSemiBold, fontSize: 18 },
+    heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
+    heroTopText: { flex: 1, minWidth: 0 },
+    heroScore: {
+      minWidth: 64,
+      alignItems: 'center',
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+      ...colors.shadow,
+    },
+    heroScoreValue: { color: '#FFFFFF', fontFamily: fontBold, fontSize: 18 },
+    heroScoreLabel: { marginTop: 1, color: '#FFFFFF', fontFamily: fontMedium, fontSize: 9, textAlign: 'center' },
     heroText: { color: colors.textMuted, fontFamily: fontRegular, fontSize: 13, lineHeight: 19 },
     refreshNote: { marginTop: 4, color: colors.primary, fontFamily: fontMedium, fontSize: 12, lineHeight: 18 },
     sourceText: { marginTop: 4, color: colors.textMuted, fontFamily: fontMedium, fontSize: 11 },
@@ -796,6 +917,18 @@ function makeStyles(colors) {
     sectionHeader: { marginBottom: 4 },
     sectionTitle: { marginTop: 2, color: colors.text, fontFamily: fontSemiBold, fontSize: 14 },
     checklistMeta: { marginTop: 4, color: colors.textMuted, fontFamily: fontMedium, fontSize: 11 },
+    checklistProgressTrack: {
+      marginTop: 6,
+      height: 6,
+      borderRadius: 999,
+      overflow: 'hidden',
+      backgroundColor: `${colors.primary}18`,
+    },
+    checklistProgressFill: {
+      height: 6,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+    },
     checklistHeaderRow: {
       flexDirection: 'row',
       alignItems: 'flex-start',
@@ -921,5 +1054,48 @@ function makeStyles(colors) {
       fontFamily: fontSemiBold,
       fontSize: 12,
     },
+    detailButton: { marginTop: 14 },
+    detailChip: { marginTop: 10, alignSelf: 'flex-start' },
+    kpiGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 4,
+    },
+    kpiCell: {
+      flexGrow: 1,
+      flexBasis: '46%',
+      padding: 10,
+      borderRadius: 10,
+      backgroundColor: colors.panelSoft,
+    },
+    kpiValue: { color: colors.text, fontFamily: fontBold, fontSize: 16 },
+    kpiLabel: { marginTop: 2, color: colors.textMuted, fontFamily: fontMedium, fontSize: 10 },
+    barChart: {
+      marginTop: 14,
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'space-between',
+      height: 90,
+    },
+    barCol: { flex: 1, alignItems: 'center', gap: 6 },
+    barTrack: {
+      width: 14,
+      height: 66,
+      borderRadius: 7,
+      overflow: 'hidden',
+      backgroundColor: `${colors.primary}12`,
+      justifyContent: 'flex-end',
+    },
+    barTask: { width: '100%', backgroundColor: colors.primary },
+    barEmail: { width: '100%', backgroundColor: '#0d9488' },
+    barLabel: { color: colors.textMuted, fontFamily: fontMedium, fontSize: 10 },
+    barLabelToday: { color: colors.primary, fontFamily: fontBold },
+    barLegend: { flexDirection: 'row', gap: 14, marginTop: 10 },
+    legendRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    legendDot: { width: 8, height: 8, borderRadius: 4 },
+    legendTask: { backgroundColor: colors.primary },
+    legendEmail: { backgroundColor: '#0d9488' },
+    legendText: { color: colors.textMuted, fontFamily: fontMedium, fontSize: 10 },
   });
 }

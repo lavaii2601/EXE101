@@ -54,6 +54,17 @@
       <p id="totpError" class="error-text"></p>
     </section>
 
+    <section id="accessDeniedPanel" class="auth-panel hidden" aria-live="polite">
+      <div>
+        <p class="eyebrow">TRUY CẬP BỊ TỪ CHỐI</p>
+        <h2>Tài khoản này không có quyền quản trị</h2>
+        <p>Dashboard chỉ dành cho tài khoản Google có trong <code>ADMIN_EMAILS</code>. Nếu bạn cho rằng đây là nhầm lẫn, hãy liên hệ chủ server.</p>
+      </div>
+      <div class="auth-actions">
+        <a class="button ghost" href="/app">Quay lại ứng dụng</a>
+      </div>
+    </section>
+
     <div id="dashboard" class="hidden">
       <section id="alerts" class="alerts"></section>
 
@@ -160,6 +171,6 @@
     </div>
   </main>
 
-  <script src="/js/admin.js?v=20260724" defer></script>
+  <script src="/js/admin.js?v=20260725" defer></script>
 </body>
 </html>

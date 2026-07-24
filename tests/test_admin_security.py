@@ -133,6 +133,28 @@ class AdminRouteSecurityTests(unittest.TestCase):
         self.assertEqual(session_response.status_code, 200)
         self.assertTrue(session_response.get_json()['totp_verified'])
 
+    def test_admin_dashboard_redirects_to_login_shell_without_admin_session(self):
+        client = self.app.test_client()
+        response = client.get('/admin')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], '/admin/login')
+
+    def test_admin_login_shell_is_data_free_and_public(self):
+        client = self.app.test_client()
+        response = client.get('/admin/login')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Server Control', response.data)
+
+    def test_admin_dashboard_served_after_admin_verification(self):
+        client = self.app.test_client()
+        with patch('app._require_admin', return_value=({'identity': 'admin'}, None)):
+            response = client.get('/admin')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Server Control', response.data)
+
 
 if __name__ == '__main__':
     unittest.main()

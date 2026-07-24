@@ -69,6 +69,9 @@ or `has_credentials_json: true`.
 
 ## Admin dashboard
 
+The admin dashboard is web-only and is intentionally not part of the Android
+APK bundle.
+
 The server operations dashboard is available at:
 
 ```text
@@ -82,6 +85,10 @@ requires both:
 - a signed-in Google account explicitly listed in `ADMIN_EMAILS`;
 - a current six-digit TOTP from an authenticator app using
   `ADMIN_TOTP_SECRET`.
+
+`/admin` redirects unverified visitors to the sign-in shell at `/admin/login`;
+the shell contains no metrics, and every dashboard API request repeats the
+allowlist + TOTP check. Gmail logout also clears the elevated admin session.
 
 The dashboard fails closed when either variable is missing or invalid. There
 is no first-user bootstrap and no single-header bypass.

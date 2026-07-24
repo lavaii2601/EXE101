@@ -2,6 +2,7 @@
   "expo": {
     "name": "FlowMate AI",
     "slug": "flowmate-ai",
+    "owner": "lavaii",
     "scheme": "flowmateai",
     "version": "1.0.1",
     "orientation": "portrait",
@@ -25,6 +26,11 @@
       "@react-native-community/datetimepicker",
       "expo-font",
       "expo-web-browser"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7673ae94-e78b-4942-82d1-dac13ea65e40"
+      }
+    }
   }
 }
