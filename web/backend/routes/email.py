@@ -6,6 +6,8 @@ import json
 import base64
 import re
 import requests
+import socket
+import ssl
 import unicodedata
 from email.utils import parsedate_to_datetime
 from threading import Lock
@@ -64,6 +66,18 @@ EMAIL_BODY_CACHE_TTL = 86400
 EMAIL_SUMMARY_CACHE_TTL = 86400
 OAUTH_STATE_TTL_SECONDS = 1800
 _oauth_state_lock = Lock()
+
+# GmailService already retries transient errors internally (num_retries= on
+# every .execute()); this only covers the rarer case where retries are
+# exhausted. Without it, a raw exception like "[SSL] record layer failure"
+# was reaching the mobile Alert verbatim instead of an actionable message.
+_TRANSIENT_NETWORK_ERRORS = (ssl.SSLError, socket.timeout, ConnectionError, TimeoutError)
+
+
+def _friendly_network_error(e):
+    if isinstance(e, _TRANSIENT_NETWORK_ERRORS):
+        return 'Không thể kết nối tới Gmail lúc này, vui lòng thử lại sau ít phút.'
+    return None
 
 
 def _oauth_state_file():
@@ -1235,6 +1249,13 @@ def get_unread_emails():
                 'needs_reauth': True,
                 'google_status': google_status,
             }), 401
+        friendly = _friendly_network_error(e)
+        if friendly:
+            # `error` is what the mobile/web clients display verbatim (see
+            # api/client.js: `data.error || data.message`) -- it must be the
+            # human-readable text itself, not a machine code, unless the
+            # caller has a special-case branch for that code (it doesn't here).
+            return jsonify({'error': friendly, 'error_type': 'gmail_network_error'}), 503
         return jsonify({'error': str(e), 'error_type': type(e).__name__}), 500
 
 

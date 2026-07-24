@@ -2,11 +2,13 @@ import os
 import sys
 import logging
 import pickle
+import httplib2
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from google.auth.transport.requests import Request
+from google_auth_httplib2 import AuthorizedHttp
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from config import Config
@@ -15,6 +17,12 @@ from utils.user_context import persist_google_credentials, user_id_from_token_fi
 
 # Configure module logger
 logger = logging.getLogger(__name__)
+
+# Same rationale as services/gmail_service.py: a bounded timeout avoids a
+# stalled connection surfacing as a raw SSL record-layer error, and
+# num_retries lets googleapiclient retry transient network/5xx errors itself.
+CALENDAR_HTTP_TIMEOUT_SECONDS = 20
+CALENDAR_EXECUTE_RETRIES = 2
 
 CALENDAR_TIMEZONE = 'Asia/Ho_Chi_Minh'
 # Anchor naive datetimes to Vietnam time explicitly. The server's OS timezone
@@ -72,7 +80,8 @@ class CalendarService:
                     logger.warning(f"No valid credentials found in {self.token_file}")
                     return False
             
-            self.service = build('calendar', 'v3', credentials=creds)
+            authorized_http = AuthorizedHttp(creds, http=httplib2.Http(timeout=CALENDAR_HTTP_TIMEOUT_SECONDS))
+            self.service = build('calendar', 'v3', http=authorized_http)
             logger.info("Google Calendar service initialized successfully")
             return True
         except Exception as e:
@@ -109,7 +118,7 @@ class CalendarService:
                 maxResults=max_results,
                 singleEvents=True,
                 orderBy='startTime'
-            ).execute()
+            ).execute(num_retries=CALENDAR_EXECUTE_RETRIES)
             
             events = results.get('items', [])
             logger.info(f"Found {len(events)} calendar events")
@@ -204,7 +213,7 @@ class CalendarService:
                 calendarId='primary',
                 body=event,
                 sendNotifications=True
-            ).execute()
+            ).execute(num_retries=CALENDAR_EXECUTE_RETRIES)
             
             logger.info(f"Event created with ID: {created_event.get('id')}")
             return created_event.get('id')
@@ -225,7 +234,7 @@ class CalendarService:
             event = self.service.events().get(
                 calendarId='primary',
                 eventId=event_id
-            ).execute()
+            ).execute(num_retries=CALENDAR_EXECUTE_RETRIES)
             
             # Update fields
             if title:
@@ -271,7 +280,7 @@ class CalendarService:
                 eventId=event_id,
                 body=event,
                 sendNotifications=True
-            ).execute()
+            ).execute(num_retries=CALENDAR_EXECUTE_RETRIES)
             
             logger.info(f"Event {event_id} updated successfully")
             return True
@@ -293,7 +302,7 @@ class CalendarService:
                 calendarId='primary',
                 eventId=event_id,
                 sendNotifications=True
-            ).execute()
+            ).execute(num_retries=CALENDAR_EXECUTE_RETRIES)
             
             logger.info(f"Event {event_id} deleted successfully")
             return True
@@ -316,7 +325,7 @@ class CalendarService:
             self.service.events().get(
                 calendarId='primary',
                 eventId=event_id
-            ).execute()
+            ).execute(num_retries=CALENDAR_EXECUTE_RETRIES)
             return True
         except Exception as e:
             status = getattr(getattr(e, 'resp', None), 'status', None)

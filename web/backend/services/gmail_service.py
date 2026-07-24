@@ -5,16 +5,26 @@ import pickle
 import base64
 import html
 import re
+import httplib2
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from google.auth.transport.requests import Request
+from google_auth_httplib2 import AuthorizedHttp
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from config import Config
 from utils.google_service_cache import get_cached_service
 from utils.user_context import persist_google_credentials, user_id_from_token_file
+
+# Retried automatically by googleapiclient's execute(num_retries=...) on
+# transient network/SSL/5xx errors (see GMAIL_EXECUTE_RETRIES below). A
+# connect/read timeout is also required -- without one, a stalled connection
+# can hang indefinitely and later surface as a raw SSL record-layer error
+# instead of a clean, retryable timeout.
+GMAIL_HTTP_TIMEOUT_SECONDS = 20
+GMAIL_EXECUTE_RETRIES = 2
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -98,7 +108,8 @@ class GmailService:
                     pickle.dump(creds, token)
                 self._persist_refreshed_credentials(creds)
             
-            self.service = build('gmail', 'v1', credentials=creds)
+            authorized_http = AuthorizedHttp(creds, http=httplib2.Http(timeout=GMAIL_HTTP_TIMEOUT_SECONDS))
+            self.service = build('gmail', 'v1', http=authorized_http)
             return True
         except Exception as e:
             self._remember_error(e)
@@ -138,7 +149,7 @@ class GmailService:
                 userId='me',
                 q=query,
                 maxResults=max_results
-            ).execute()
+            ).execute(num_retries=GMAIL_EXECUTE_RETRIES)
 
             messages = results.get('messages', [])
             logger.info(f"Found {len(messages)} messages matching query: {query}")
@@ -202,7 +213,7 @@ class GmailService:
                         callback=_callback
                     )
 
-                batch.execute()
+                batch.execute(num_retries=GMAIL_EXECUTE_RETRIES)
 
             if raise_errors and batch_errors and not collected:
                 raise batch_errors[0]
@@ -261,7 +272,7 @@ class GmailService:
 
             results = self.service.users().messages().list(
                 userId='me', q=query, maxResults=max_results
-            ).execute()
+            ).execute(num_retries=GMAIL_EXECUTE_RETRIES)
             return [msg.get('id') for msg in results.get('messages', []) if msg.get('id')]
         except Exception as e:
             logger.warning(f"Error listing message ids by date: {e}")
@@ -284,7 +295,7 @@ class GmailService:
                 q='is:unread',
                 maxResults=max_results,
                 fields='messages(id),resultSizeEstimate'
-            ).execute()
+            ).execute(num_retries=GMAIL_EXECUTE_RETRIES)
             message_ids = [msg.get('id') for msg in results.get('messages', []) if msg.get('id')]
             return {
                 'ids': message_ids,
@@ -326,7 +337,7 @@ class GmailService:
             }
             if lazy:
                 request_kwargs['metadataHeaders'] = ['Subject', 'From', 'Date']
-            message = self.service.users().messages().get(**request_kwargs).execute()
+            message = self.service.users().messages().get(**request_kwargs).execute(num_retries=GMAIL_EXECUTE_RETRIES)
             return self._parse_message(message, message_id, lazy=lazy)
         except Exception as e:
             print(f"Error getting email details: {str(e)}")
@@ -443,7 +454,7 @@ class GmailService:
                 userId='me',
                 id=message_id,
                 format='full'
-            ).execute()
+            ).execute(num_retries=GMAIL_EXECUTE_RETRIES)
             attachment = next(
                 (
                     item for item in self._get_attachments(message.get('payload', {}) or {})
@@ -458,7 +469,7 @@ class GmailService:
                 userId='me',
                 messageId=message_id,
                 id=attachment_id
-            ).execute()
+            ).execute(num_retries=GMAIL_EXECUTE_RETRIES)
             encoded = result.get('data') or ''
             padding = '=' * (-len(encoded) % 4)
             attachment['data'] = base64.urlsafe_b64decode(encoded + padding)
@@ -487,7 +498,7 @@ class GmailService:
             self.service.users().messages().send(
                 userId='me',
                 body=message
-            ).execute()
+            ).execute(num_retries=GMAIL_EXECUTE_RETRIES)
             return True
         except Exception as e:
             print(f"Error sending email: {str(e)}")
@@ -500,7 +511,7 @@ class GmailService:
                 userId='me',
                 id=message_id,
                 body={'removeLabelIds': ['UNREAD']}
-            ).execute()
+            ).execute(num_retries=GMAIL_EXECUTE_RETRIES)
             logger.info(f"Marked message {message_id} as read")
             return True
         except Exception as e:
@@ -514,7 +525,7 @@ class GmailService:
                 userId='me',
                 id=message_id,
                 body={'addLabelIds': ['UNREAD']}
-            ).execute()
+            ).execute(num_retries=GMAIL_EXECUTE_RETRIES)
             logger.info(f"Marked message {message_id} as unread")
             return True
         except Exception as e:
@@ -528,7 +539,7 @@ class GmailService:
                 userId='me',
                 id=message_id,
                 body={'removeLabelIds': ['INBOX']}
-            ).execute()
+            ).execute(num_retries=GMAIL_EXECUTE_RETRIES)
             logger.info(f"Archived message {message_id}")
             return True
         except Exception as e:
@@ -538,7 +549,7 @@ class GmailService:
     def trash_email(self, message_id):
         """Move an email to Gmail trash (reversible, matches Gmail's own delete)."""
         try:
-            self.service.users().messages().trash(userId='me', id=message_id).execute()
+            self.service.users().messages().trash(userId='me', id=message_id).execute(num_retries=GMAIL_EXECUTE_RETRIES)
             logger.info(f"Trashed message {message_id}")
             return True
         except Exception as e:
