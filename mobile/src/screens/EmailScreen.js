@@ -387,14 +387,18 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
   const renderInbox = () => (
     <>
       <Card>
-        <Field
-          label="Gmail đã kết nối trên backend"
-          value={userIdInput}
-          onChangeText={setUserIdInput}
-          placeholder="ten@gmail.com"
-          keyboardType="email-address"
-        />
-        <Button title="Dùng tài khoản này" variant="secondary" onPress={applyMobileUser} style={styles.applyButton} />
+        {__DEV__ ? (
+          <>
+            <Field
+              label="Gmail đã kết nối trên backend (chỉ dev)"
+              value={userIdInput}
+              onChangeText={setUserIdInput}
+              placeholder="ten@gmail.com"
+              keyboardType="email-address"
+            />
+            <Button title="Dùng tài khoản này" variant="secondary" onPress={applyMobileUser} style={styles.applyButton} />
+          </>
+        ) : null}
         <View style={styles.authRow}>
           <View style={styles.authText}>
             <Text style={styles.cardTitle}>{auth?.authenticated ? 'Gmail đã kết nối' : 'Chưa kết nối Gmail'}</Text>
@@ -573,7 +577,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
           stats={[
             { value: emails.length, label: 'Email hiển thị' },
             { value: emails.filter((email) => email.is_unread).length, label: 'Chưa đọc' },
-            { value: emails.filter((email) => email.provider === 'outlook').length, label: 'Outlook' },
+            { value: emails.filter((email) => email.tag === 'meeting').length, label: 'Cuộc họp' },
           ]}
         />
         {meetingSuggestions.length > 0 ? (
@@ -709,7 +713,7 @@ function SwipeableEmailRow({ children, styles, isUnread, onArchive, onTrash, onT
           <Text style={styles.swipeActionText}>{isUnread ? 'Đã đọc' : 'Chưa đọc'}</Text>
         </TouchableOpacity>
       </View>
-      <Animated.View style={{ transform: [{ translateX }] }} {...panResponder.panHandlers}>
+      <Animated.View style={[styles.swipeContent, { transform: [{ translateX }] }]} {...panResponder.panHandlers}>
         {children}
       </Animated.View>
     </View>
@@ -777,6 +781,7 @@ function makeStyles(colors) {
     filterLabel: { color: colors.primary, fontSize: 10, fontFamily: 'Poppins_700Bold', letterSpacing: 1, textTransform: 'uppercase' },
     switchRow:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     swipeWrap: { position: 'relative', overflow: 'hidden', borderRadius: 20 },
+    swipeContent: { width: '100%', backgroundColor: colors.background },
     swipeActionsRight: {
       position: 'absolute',
       top: 0,

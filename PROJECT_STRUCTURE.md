@@ -7,6 +7,7 @@ FlowMate co 2 phan chinh dung chung backend Flask.
 - `web/backend/`: Flask API, models, services, routes.
 - `web/frontend/`: web UI tinh, duoc Flask serve truc tiep.
 - `mobile/`: Expo/React Native app (Android/iOS/Web) - ban mobile duy nhat cua du an.
+- `mobile/android/`: project Android native (duoc commit) de Android Studio va CI build truc tiep, khong can `expo prebuild` lai tu dau.
 - `docs/bob-training/`: tai lieu training/RAG de nap vao knowledge base cua Bob.
 - `database/`: PostgreSQL schema va migration.
 - `scripts/`: script deploy schema va import training cho Bob.
@@ -18,7 +19,7 @@ Cac thu muc/file sau khong commit:
 - `.venv/`: Python virtual environment.
 - `web/data/`: SQLite DB, Gmail token, cache runtime.
 - `web/backend-local.pid`: PID cua backend local.
-- `mobile/node_modules/`, `mobile/.expo/`, `mobile/dist/`, `mobile/android/`.
+- `mobile/node_modules/`, `mobile/.expo/`, `mobile/dist/`.
 - `mobile/*.apk`: APK build artifact local.
 - `__pycache__/`, `*.pyc`, `*.log`, `*.pid`.
 
