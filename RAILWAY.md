@@ -22,6 +22,13 @@ GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
 GMAIL_CREDENTIALS_JSON=
 
+# Admin dashboard: prefer an explicit Google account allowlist.
+ADMIN_EMAILS=owner@example.com
+# Optional alternate access key (store only in Railway Variables).
+ADMIN_DASHBOARD_TOKEN=
+# When ADMIN_EMAILS is empty, the oldest Google-connected account is admin.
+ADMIN_BOOTSTRAP_FIRST_USER=true
+
 # Optional Outlook / Microsoft Graph provider
 MICROSOFT_CLIENT_ID=
 MICROSOFT_CLIENT_SECRET=
@@ -60,6 +67,26 @@ https://exe101.up.railway.app/api/email/oauth-config-check
 
 The response should show `has_client_id: true` and `has_client_secret: true`,
 or `has_credentials_json: true`.
+
+## Admin dashboard
+
+The server operations dashboard is available at:
+
+```text
+https://exe101.up.railway.app/admin
+```
+
+It reports aggregate PostgreSQL usage, users, Google OAuth health, Calendar
+events, schedules, activity, sync jobs, cache entries, and table sizes. Access
+is accepted from:
+
+- a signed-in Google account listed in `ADMIN_EMAILS`;
+- `X-Admin-Key` matching `ADMIN_DASHBOARD_TOKEN`;
+- the oldest Google-connected account when the allowlist is empty and
+  `ADMIN_BOOTSTRAP_FIRST_USER=true`.
+
+Set `ADMIN_EMAILS` after the first login so production ownership stays
+explicit. Never commit the dashboard token to the repository.
 
 ## Public privacy policy and terms
 

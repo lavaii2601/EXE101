@@ -8,6 +8,7 @@ import Field from '../components/Field';
 import Screen from '../components/Screen';
 import SegmentedControl from '../components/SegmentedControl';
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '../api/client';
+import { connectGoogleAccount } from '../api/googleAuth';
 import { useTheme } from '../theme/ThemeContext';
 import { filterNewMeetingSuggestions, setPendingAgentNotice } from '../state/agentNotices';
 
@@ -32,6 +33,7 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
   const [meetingSuggestions, setMeetingSuggestions] = useState([]);
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [connectedCalendars, setConnectedCalendars] = useState([]);
+  const [calendarSyncError, setCalendarSyncError] = useState(null);
   const [form, setForm] = useState(initialForm);
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [editForm, setEditForm] = useState(initialForm);
@@ -43,8 +45,14 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
     try {
       if (options.syncGoogle) {
         try {
-          await apiPost('/schedule/sync');
+          const syncData = await apiPost('/schedule/sync');
+          setCalendarSyncError(syncData.calendar_sync_error || null);
         } catch (error) {
+          setCalendarSyncError({
+            error: error.data?.error || 'calendar_sync_failed',
+            message: error.data?.message || error.message,
+            needs_reauth: error.status === 401 || Boolean(error.data?.needs_reauth),
+          });
           if (error.status !== 401 && !options.silentSync) {
             throw error;
           }
@@ -75,7 +83,7 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
         next: Array.isArray(nextWeek.days) ? nextWeek.days : [],
       });
     } catch (error) {
-      Alert.alert('Lỗi tải lịch', error.message);
+      if (!options.silentSync) Alert.alert('Lỗi tải lịch', error.message);
     } finally {
       setLoading(false);
     }
@@ -98,6 +106,16 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
   useEffect(() => {
     loadSchedules();
   }, [loadSchedules]);
+  useEffect(() => {
+    // Mirrors the web app's refreshCalendarScheduleData: fire a Google
+    // Calendar pull in the background right after the fast local-only load,
+    // so first paint isn't blocked but Google-only events still show up
+    // without the user having to tap "Cập nhật" first. Runs once per screen
+    // mount (not per week-shift) to avoid re-triggering a 90-day sync on
+    // every "Tuần trước/sau" tap.
+    loadSchedules({ syncGoogle: true, silentSync: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => { loadMeetingSuggestions(); }, [loadMeetingSuggestions]);
   useEffect(() => {
     if (!syncEvent?.id) return;
@@ -114,6 +132,21 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
 
   const setField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const setEditField = (key, value) => setEditForm((current) => ({ ...current, [key]: value }));
+
+  const connectCalendar = async () => {
+    setLoading(true);
+    try {
+      const result = await connectGoogleAccount();
+      if (!result.connected) return;
+      setCalendarSyncError(null);
+      await loadSchedules({ syncGoogle: true });
+      onAgentSync?.(['profile', 'settings', 'email', 'schedule', 'calendar', 'overview']);
+    } catch (error) {
+      Alert.alert('Không kết nối được Google Calendar', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const createSchedule = async () => {
     if (!form.title || !form.start_time) {
@@ -488,12 +521,35 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
             <Button
               title={calendarConnected ? `Đã kết nối ${connectedCalendars.join(' + ')}` : 'Kết nối lịch'}
               variant="secondary"
-              onPress={() => Linking.openURL('https://calendar.google.com')}
+              onPress={calendarConnected && !calendarSyncError?.needs_reauth
+                ? () => loadSchedules({ syncGoogle: true })
+                : connectCalendar}
             />
           </>
         }
       >
         <SegmentedControl options={modes} value={mode} onChange={setMode} />
+        {calendarSyncError ? (
+          <Card style={styles.syncErrorCard}>
+            <Text style={styles.syncErrorTitle}>
+              {calendarSyncError.needs_reauth || calendarSyncError.error === 'calendar_permission_required'
+                ? 'Cần kết nối lại Google Calendar'
+                : 'Đồng bộ Calendar chưa hoàn tất'}
+            </Text>
+            <Text style={styles.syncErrorText}>
+              {calendarSyncError.message || 'Không thể lấy sự kiện mới nhất từ Google Calendar.'}
+            </Text>
+            <Button
+              title={calendarSyncError.needs_reauth || calendarSyncError.error === 'calendar_permission_required'
+                ? 'Kết nối lại Google'
+                : 'Thử đồng bộ lại'}
+              onPress={calendarSyncError.needs_reauth || calendarSyncError.error === 'calendar_permission_required'
+                ? connectCalendar
+                : () => loadSchedules({ syncGoogle: true })}
+              loading={loading}
+            />
+          </Card>
+        ) : null}
         {mode === 'create' ? renderCreate() : renderList()}
       </Screen>
       <Modal visible={!!editingSchedule} animationType="slide" onRequestClose={() => setEditingSchedule(null)}>
@@ -746,6 +802,9 @@ function makeStyles(colors) {
     editActions: { marginTop: 14, flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
     summaryCard: { gap: 12 },
     suggestionCard: { gap: 12 },
+    syncErrorCard: { gap: 10, borderColor: '#f59e0b', borderWidth: 1 },
+    syncErrorTitle: { color: '#b45309', fontFamily: 'Poppins_700Bold', fontSize: 15 },
+    syncErrorText: { color: colors.textMuted, fontFamily: 'Poppins_400Regular', lineHeight: 20 },
     summaryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
     summaryKicker: { color: colors.primary, fontFamily: 'Poppins_700Bold', fontSize: 10, letterSpacing: 1, textTransform: 'uppercase' },
     summaryTitle: { marginTop: 3, color: colors.text, fontSize: 16, fontFamily: 'Poppins_700Bold' },

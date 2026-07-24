@@ -4,6 +4,7 @@ import pickle
 import re
 import sys
 from flask import session as flask_session
+from google.auth.transport.requests import Request as GoogleAuthRequest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -107,7 +108,7 @@ def persist_google_credentials(user_id, creds, account_email=''):
                 )
                 VALUES (%s, 'google', %s, %s, %s, %s, NULL)
                 ON CONFLICT (user_id, provider) DO UPDATE
-                SET account_email = EXCLUDED.account_email,
+                SET account_email = COALESCE(EXCLUDED.account_email, oauth_tokens.account_email),
                     token_json = EXCLUDED.token_json,
                     scopes = EXCLUDED.scopes,
                     expires_at = EXCLUDED.expires_at,
@@ -121,6 +122,58 @@ def persist_google_credentials(user_id, creds, account_email=''):
         pass
 
     return token_file
+
+
+def inspect_google_credentials(user_id, refresh=False):
+    """Return a truthful status for the persisted Google credential.
+
+    Token-file presence alone is not authentication: a revoked credential or
+    an expired access token without a refresh token must be surfaced to the
+    client so it can ask the user to reconnect instead of showing empty data.
+    """
+    user_id = sanitize_user_id(user_id)
+    token_file = get_user_token_file(user_id)
+    status = {
+        'has_token': os.path.exists(token_file),
+        'valid': False,
+        'expired': False,
+        'refreshable': False,
+        'refreshed': False,
+        'scopes': [],
+        'error': None,
+        'token_file': token_file,
+    }
+    if not status['has_token']:
+        status['error'] = 'not_authenticated'
+        return status
+
+    try:
+        with open(token_file, 'rb') as token:
+            creds = pickle.load(token)
+        status['expired'] = bool(getattr(creds, 'expired', False))
+        status['refreshable'] = bool(getattr(creds, 'refresh_token', None))
+        status['scopes'] = list(
+            getattr(creds, 'scopes', None)
+            or getattr(creds, 'granted_scopes', None)
+            or []
+        )
+        if refresh and status['expired'] and status['refreshable']:
+            creds.refresh(GoogleAuthRequest())
+            persist_google_credentials(user_id, creds)
+            status['refreshed'] = True
+            status['expired'] = bool(getattr(creds, 'expired', False))
+            status['scopes'] = list(
+                getattr(creds, 'scopes', None)
+                or getattr(creds, 'granted_scopes', None)
+                or status['scopes']
+            )
+        status['valid'] = bool(getattr(creds, 'valid', False))
+        if not status['valid']:
+            status['error'] = 'google_reauthentication_required'
+    except Exception as exc:
+        status['error'] = 'google_reauthentication_required'
+        status['error_detail'] = str(exc)
+    return status
 
 
 def delete_google_credentials(user_id):

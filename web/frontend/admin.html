@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>FlowMate Server Control</title>
+  <link rel="stylesheet" href="/css/admin.css?v=20260724">
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">FLOWMATE OPERATIONS</p>
+        <h1>Server Control</h1>
+        <p class="subtitle">Dữ liệu vận hành, Google sync và sức khỏe PostgreSQL trong một màn hình.</p>
+      </div>
+      <div class="top-actions">
+        <span id="liveStatus" class="status waiting"><i></i> Đang kết nối</span>
+        <button id="refreshButton" class="button primary" type="button">Làm mới</button>
+        <a class="button ghost" href="/app">Mở ứng dụng</a>
+      </div>
+    </header>
+
+    <section id="authPanel" class="auth-panel hidden">
+      <div>
+        <p class="eyebrow">QUYỀN QUẢN TRỊ</p>
+        <h2>Đăng nhập để xem dữ liệu server</h2>
+        <p>Dùng tài khoản Google quản trị. Có thể nhập khóa quản trị nếu server đã cấu hình <code>ADMIN_DASHBOARD_TOKEN</code>.</p>
+      </div>
+      <div class="auth-actions">
+        <button id="googleLoginButton" class="button primary" type="button">Đăng nhập Google</button>
+        <label>
+          <span>Khóa quản trị</span>
+          <input id="adminKeyInput" type="password" autocomplete="off" placeholder="Nhập khóa rồi nhấn truy cập">
+        </label>
+        <button id="keyLoginButton" class="button ghost" type="button">Truy cập bằng khóa</button>
+      </div>
+      <p id="authError" class="error-text"></p>
+    </section>
+
+    <div id="dashboard" class="hidden">
+      <section id="alerts" class="alerts"></section>
+
+      <section class="hero-grid">
+        <article class="hero-card">
+          <p class="metric-label">Người dùng</p>
+          <strong id="usersTotal">—</strong>
+          <span id="usersConnected">— đã kết nối Google</span>
+        </article>
+        <article class="hero-card accent-cyan">
+          <p class="metric-label">Sự kiện Calendar</p>
+          <strong id="calendarTotal">—</strong>
+          <span id="calendarFresh">— lấy trong 24 giờ</span>
+        </article>
+        <article class="hero-card accent-violet">
+          <p class="metric-label">Lịch sắp tới</p>
+          <strong id="schedulesUpcoming">—</strong>
+          <span id="schedulesSynced">— đã đồng bộ Google</span>
+        </article>
+        <article class="hero-card accent-amber">
+          <p class="metric-label">Hoạt động 24 giờ</p>
+          <strong id="actions24h">—</strong>
+          <span id="syncFailures">— lỗi sync</span>
+        </article>
+      </section>
+
+      <section class="grid two">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">14 NGÀY</p>
+              <h2>Nhịp hoạt động</h2>
+            </div>
+            <span id="historyTotal" class="pill">— hoạt động</span>
+          </div>
+          <div id="activityChart" class="chart" aria-label="Biểu đồ hoạt động 14 ngày"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">GOOGLE OAUTH</p>
+              <h2>Tình trạng kết nối</h2>
+            </div>
+          </div>
+          <div id="oauthMetrics" class="metric-list"></div>
+        </article>
+      </section>
+
+      <section class="grid two">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">PHÂN BỔ</p>
+              <h2>Chế độ người dùng</h2>
+            </div>
+          </div>
+          <div id="modeBars" class="bars"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">POSTGRESQL</p>
+              <h2>Dung lượng dữ liệu</h2>
+            </div>
+            <span id="databaseSize" class="pill">—</span>
+          </div>
+          <div id="tableSizes" class="bars compact"></div>
+        </article>
+      </section>
+
+      <section class="panel table-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">SYNC JOBS</p>
+            <h2>Lần đồng bộ gần nhất</h2>
+          </div>
+          <span id="generatedAt" class="muted">—</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Thời gian</th><th>Người dùng</th><th>Loại</th><th>Trạng thái</th><th>Chi tiết</th></tr></thead>
+            <tbody id="syncJobsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel table-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">ACCOUNTS</p>
+            <h2>Người dùng cập nhật gần đây</h2>
+          </div>
+          <span id="runtimeInfo" class="muted">—</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Tài khoản</th><th>Google</th><th>Chế độ</th><th>Cập nhật</th></tr></thead>
+            <tbody id="usersBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/js/admin.js?v=20260724" defer></script>
+</body>
+</html>

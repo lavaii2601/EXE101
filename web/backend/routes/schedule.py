@@ -1,7 +1,6 @@
 import os
 import sys
 import logging
-import pickle
 import re
 import threading
 import time
@@ -19,7 +18,12 @@ from models.schedule import Schedule, LOCAL_TZ
 from models.history import History
 from models.sync_job import SyncJob
 from services.intent_orchestrator import IntentOrchestrator
-from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
+from utils.user_context import (
+    get_current_user_id,
+    get_user_db_path,
+    get_user_token_file,
+    inspect_google_credentials,
+)
 from utils.google_service_cache import get_cached_service
 
 # Configure module logger
@@ -137,39 +141,31 @@ def _google_calendar_token_status(user_id):
             'scopes': [],
             'error': 'not_authenticated',
         }
-    token_file = get_user_token_file(user_id)
-    if not os.path.exists(token_file):
+    credential_status = inspect_google_credentials(user_id, refresh=True)
+    if not credential_status.get('has_token'):
         return {
             'has_token': False,
+            'valid': False,
             'has_calendar_write_scope': False,
             'scopes': [],
             'error': 'not_authenticated',
         }
-    try:
-        with open(token_file, 'rb') as token_handle:
-            creds = pickle.load(token_handle)
-        scopes = list(getattr(creds, 'scopes', None) or getattr(creds, 'granted_scopes', None) or [])
-        return {
-            'has_token': True,
-            'has_calendar_write_scope': _GOOGLE_CALENDAR_WRITE_SCOPE in scopes,
-            'scopes': scopes,
-            'error': None,
-        }
-    except Exception as exc:
-        logger.warning("Could not inspect Google token scopes for %s: %s", user_id, exc)
-        return {
-            'has_token': True,
-            'has_calendar_write_scope': False,
-            'scopes': [],
-            'error': 'token_unreadable',
-        }
+    scopes = credential_status.get('scopes') or []
+    return {
+        'has_token': True,
+        'valid': bool(credential_status.get('valid')),
+        'has_calendar_write_scope': _GOOGLE_CALENDAR_WRITE_SCOPE in scopes,
+        'scopes': scopes,
+        'error': credential_status.get('error'),
+        'refreshed': bool(credential_status.get('refreshed')),
+    }
 
 
 def _has_calendar_token(user_id):
     """Fast connectivity check without constructing a Google API client."""
     if not user_id or user_id == 'default':
         return False
-    return os.path.exists(get_user_token_file(user_id))
+    return bool(inspect_google_credentials(user_id, refresh=False).get('valid'))
 
 
 def _calendar_sync_error_payload(calendar_service=None, fallback='calendar_sync_failed'):
@@ -197,6 +193,13 @@ def _calendar_auth_failure_payload(user_id):
             'success': False,
             'error': 'not_authenticated',
             'message': 'User not authenticated with Google Calendar',
+            'calendar_token_status': status,
+        }
+    if not status.get('valid'):
+        return {
+            'success': False,
+            'error': 'google_reauthentication_required',
+            'message': 'Phiên Google đã hết hạn hoặc bị thu hồi. Vui lòng kết nối lại.',
             'calendar_token_status': status,
         }
     if not status.get('has_calendar_write_scope'):
@@ -1343,11 +1346,23 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
             'deleted_count': 0,
             'unchanged_count': 0,
             'changed_count': 0,
+            'calendar_sync_error': {
+                'error': 'google_reauthentication_required',
+                'message': 'Không thể khởi tạo Google Calendar. Vui lòng kết nối lại tài khoản Google.',
+                'google_status': None,
+                'google_reason': None,
+                'google_error': None,
+            },
         }
 
     time_min = start_time.replace(tzinfo=LOCAL_TZ).isoformat()
     time_max = end_time.replace(tzinfo=LOCAL_TZ).isoformat()
-    gcal_events = calendar_service.get_events(max_results=max_results, time_min=time_min, time_max=time_max)
+    gcal_events = calendar_service.get_events(
+        max_results=max_results,
+        time_min=time_min,
+        time_max=time_max,
+        raise_errors=True,
+    )
     live_google_ids = {event.get('id') for event in gcal_events if event.get('id')}
     local_schedules = Schedule.get_all(limit=1000, db_path=db_path)
     schedules_by_google_id = {
@@ -1524,13 +1539,14 @@ def sync_schedules():
     db_path = get_user_db_path(user_id)
 
     token_status = _google_calendar_token_status(user_id)
-    if not token_status.get('has_token'):
+    if not token_status.get('has_token') or not token_status.get('valid'):
         return jsonify({
             'success': False,
-            'error': 'not_authenticated',
-            'message': 'User not authenticated with Google Calendar',
+            'error': token_status.get('error') or 'not_authenticated',
+            'message': 'Phiên Google chưa sẵn sàng. Vui lòng kết nối lại Gmail và Calendar.',
             'calendar_token_status': token_status,
-        })
+            'needs_reauth': bool(token_status.get('has_token')),
+        }), 401
 
     try:
         now = datetime.now()
@@ -1576,6 +1592,14 @@ def sync_schedules():
             SyncJob.finish(locals().get('job_id'), 'failed', error_message=str(e))
         except Exception:
             logger.debug("Could not mark sync job as failed", exc_info=True)
+        google_status = getattr(getattr(e, 'resp', None), 'status', None)
+        if google_status in (401, 403):
+            return jsonify({
+                'error': 'google_reauthentication_required',
+                'message': 'Phiên Google đã hết hạn hoặc thiếu quyền Calendar. Vui lòng kết nối lại.',
+                'needs_reauth': True,
+                'google_status': google_status,
+            }), 401
         return jsonify({'error': str(e)}), 500
 
 

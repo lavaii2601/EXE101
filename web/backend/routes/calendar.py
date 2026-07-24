@@ -81,7 +81,12 @@ def get_calendar_events():
         time_min = request.args.get('time_min', None, type=str)
         time_max = request.args.get('time_max', None, type=str)
         
-        events = service.get_events(max_results=max_results, time_min=time_min, time_max=time_max)
+        events = service.get_events(
+            max_results=max_results,
+            time_min=time_min,
+            time_max=time_max,
+            raise_errors=True,
+        )
         
         return jsonify({
             'success': True,
@@ -90,6 +95,14 @@ def get_calendar_events():
         })
     except Exception as e:
         logger.error(f"Error in get_calendar_events: {str(e)}", exc_info=True)
+        google_status = getattr(getattr(e, 'resp', None), 'status', None)
+        if google_status in (401, 403):
+            return jsonify({
+                'error': 'google_reauthentication_required',
+                'message': 'Phiên Google đã hết hạn hoặc thiếu quyền Calendar. Vui lòng kết nối lại.',
+                'needs_reauth': True,
+                'google_status': google_status,
+            }), 401
         return jsonify({'error': str(e)}), 500
 
 

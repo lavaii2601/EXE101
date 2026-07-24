@@ -1,13 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Linking as RNLinking, Modal, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Animated, Linking as RNLinking, Modal, PanResponder, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import EmptyState from '../components/EmptyState';
 import Field from '../components/Field';
 import Screen from '../components/Screen';
 import SegmentedControl from '../components/SegmentedControl';
+import * as FileSystem from 'expo-file-system/legacy';
 import { apiGet, apiPost } from '../api/client';
-import { setMobileUserId } from '../api/session';
+import { API_BASE } from '../api/config';
+import { getMobileAccessToken, setMobileUserId } from '../api/session';
 import { connectGoogleAccount } from '../api/googleAuth';
 import { useTheme } from '../theme/ThemeContext';
 import ModeBrief from '../components/ModeBrief';
@@ -57,6 +60,11 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
   const [searchInput, setSearchInput] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [cacheMiss, setCacheMiss] = useState(false);
+  const [authExpired, setAuthExpired] = useState(false);
+  const [attachments, setAttachments] = useState([]);
+  const [downloadingAttachmentId, setDownloadingAttachmentId] = useState('');
+  const [pageInfo, setPageInfo] = useState({ current_page: 1, total_pages: 1 });
+  const [loadingMore, setLoadingMore] = useState(false);
   const [scanningGmail, setScanningGmail] = useState(false);
   const [calendarPermissionAttempted, setCalendarPermissionAttempted] = useState(false);
   const [meetingSuggestions, setMeetingSuggestions] = useState([]);
@@ -73,49 +81,65 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
   }, []);
 
   const loadEmails = useCallback(async (options = {}) => {
-    setLoading(true);
+    // Outlook has no backend implementation at all yet (no /outlook routes
+    // anywhere in web/backend) -- don't hit the network, just say so.
+    if (source === 'outlook') {
+      setEmails([]);
+      setCacheMiss(false);
+      setAuthExpired(false);
+      setPageInfo({ current_page: 1, total_pages: 1 });
+      return;
+    }
+
+    const targetPage = options.page || 1;
+    if (options.append) setLoadingMore(true); else setLoading(true);
     try {
       const params = new URLSearchParams({
         max_results: '20',
-        page: '1',
+        page: String(targetPage),
         filter,
         include_read: String(includeRead),
         search: searchKeyword,
       });
       params.set(options.fresh ? 'fresh' : 'cache_only', 'true');
 
-      let data;
       const authPromise = loadAuth();
-      try {
-        const unifiedParams = new URLSearchParams(params);
-        unifiedParams.set('source', source);
-        data = await apiGet(`/email/unified?${unifiedParams.toString()}`);
-      } catch (error) {
-        if (source === 'outlook') {
-          setEmails([]);
-          setCacheMiss(false);
-          await authPromise;
-          return;
-        }
-        data = await apiGet(`/email/get-unread?${params.toString()}`);
-      }
+      const data = await apiGet(`/email/get-unread?${params.toString()}`);
       await authPromise;
+      setAuthExpired(false);
       setCacheMiss(Boolean(data.cache_miss));
       const nextEmails = (data.emails || data.items || []).map(normalizeEmailProvider);
-      if ((data.needs_refresh || data.cache_miss) && nextEmails.length === 0 && !options.fresh && !options.autoRefreshAttempted && source !== 'outlook') {
+      if ((data.needs_refresh || data.cache_miss) && nextEmails.length === 0 && !options.fresh && !options.autoRefreshAttempted) {
         setCacheMiss(true);
         await loadEmails({ fresh: true, autoRefreshAttempted: true });
         apiPost('/email/meeting-suggestions/scan').catch(() => {});
         return;
       }
-      setEmails(nextEmails);
+      setEmails((current) => (options.append ? [...current, ...nextEmails] : nextEmails));
+      if (data.pagination) setPageInfo(data.pagination);
     } catch (error) {
-      if (error.status === 401) setEmails([]);
-      else Alert.alert('Lỗi tải email', error.message);
+      if (error.status === 401) {
+        // The mobile bearer token expired (or Gmail was never connected).
+        // Showing a plain empty inbox here is misleading when auth-status
+        // still claims "connected" (it only checks whether a token file
+        // exists, not whether the current session can use it) -- surface a
+        // clear re-auth prompt instead of silently rendering "no email".
+        setEmails([]);
+        setAuthExpired(true);
+      } else {
+        Alert.alert('Lỗi tải email', error.message);
+      }
     } finally {
-      setLoading(false);
+      if (options.append) setLoadingMore(false); else setLoading(false);
     }
   }, [filter, includeRead, loadAuth, searchKeyword, source]);
+
+  const loadMoreEmails = useCallback(() => {
+    if (loading || loadingMore) return;
+    const nextPage = (pageInfo.current_page || 1) + 1;
+    if (nextPage > (pageInfo.total_pages || 1)) return;
+    loadEmails({ append: true, page: nextPage });
+  }, [loadEmails, loading, loadingMore, pageInfo]);
 
   const refreshEmailsFromGmail = useCallback(async () => {
     setLoading(true);
@@ -194,13 +218,34 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
     setSelectedEmail(email);
     setEmailBody('');
     setSummary(email.summary || '');
+    setAttachments([]);
     try {
-      const data = email.provider && email.provider !== 'gmail'
-        ? await apiGet(`/email/unified/${email.provider}/${encodeURIComponent(email.external_id || email.id)}`)
-        : await apiGet(`/email/get-email-body/${email.id}`);
+      const data = await apiGet(`/email/get-email-body/${email.id}`);
       setEmailBody(data.body || '');
+      setAttachments(Array.isArray(data.email?.attachments) ? data.email.attachments : []);
     } catch (error) {
       setEmailBody(error.message);
+    }
+  };
+
+  const downloadAttachment = async (attachment) => {
+    if (!selectedEmail) return;
+    setDownloadingAttachmentId(attachment.id);
+    try {
+      const token = getMobileAccessToken();
+      const url = `${API_BASE}/email/attachment/${encodeURIComponent(selectedEmail.id)}/${encodeURIComponent(attachment.id)}`;
+      const safeFilename = String(attachment.filename || 'attachment')
+        .replace(/[^\p{L}\p{N}._() -]+/gu, '_')
+        .replace(/^\.+/, '') || 'attachment';
+      const fileUri = `${FileSystem.documentDirectory}${safeFilename}`;
+      await FileSystem.downloadAsync(url, fileUri, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      Alert.alert('Đã tải file đính kèm', `Đã lưu "${attachment.filename}" vào bộ nhớ ứng dụng.`);
+    } catch (error) {
+      Alert.alert('Không tải được file đính kèm', error.message);
+    } finally {
+      setDownloadingAttachmentId('');
     }
   };
 
@@ -264,6 +309,26 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
       onAgentSync?.(['email', 'overview', 'history']);
     } catch (error) {
       Alert.alert('Không cập nhật được email', error.message);
+    }
+  };
+
+  const archiveEmail = async (email) => {
+    try {
+      await apiPost(`/email/archive/${email.id}`);
+      setEmails((current) => current.filter((item) => item.id !== email.id));
+      onAgentSync?.(['email', 'overview', 'history']);
+    } catch (error) {
+      Alert.alert('Không lưu trữ được email', error.message);
+    }
+  };
+
+  const trashEmail = async (email) => {
+    try {
+      await apiPost(`/email/trash/${email.id}`);
+      setEmails((current) => current.filter((item) => item.id !== email.id));
+      onAgentSync?.(['email', 'overview', 'history']);
+    } catch (error) {
+      Alert.alert('Không xóa được email', error.message);
     }
   };
 
@@ -375,7 +440,17 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
         </View>
       ) : null}
       {emails.length === 0 ? (
-        cacheMiss ? (
+        source === 'outlook' ? (
+          <EmptyState title="Outlook chưa được hỗ trợ" detail="FlowMate hiện chỉ đọc được Gmail. Chọn nguồn Gmail hoặc Tất cả." />
+        ) : authExpired ? (
+          <Card style={styles.cacheMissCard}>
+            <Text style={styles.cardTitle}>Phiên đăng nhập Gmail đã hết hạn</Text>
+            <Text style={styles.muted}>
+              Đăng nhập lại để FlowMate tiếp tục đọc email của bạn — tài khoản Gmail vẫn đang được kết nối, chỉ là phiên trên điện thoại cần làm mới.
+            </Text>
+            <Button title="Đăng nhập lại" onPress={login} style={styles.applyButton} />
+          </Card>
+        ) : cacheMiss ? (
           <Card style={styles.cacheMissCard}>
             <Text style={styles.cardTitle}>Chưa có email trong bộ nhớ đệm</Text>
             <Text style={styles.muted}>
@@ -391,49 +466,64 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
         )
       ) : (
         emails.map((email) => (
-          <Card
+          <SwipeableEmailRow
             key={email.id}
-            style={[styles.emailCard, email.is_unread ? styles.emailUnread : styles.emailRead]}
+            styles={styles}
+            isUnread={!!email.is_unread}
+            onArchive={() => archiveEmail(email)}
+            onTrash={() => trashEmail(email)}
+            onToggleRead={() => toggleReadStatus(email)}
           >
-            <TouchableOpacity onPress={() => openEmail(email)} activeOpacity={0.86}>
-              <View style={styles.rowBetween}>
-                <Text style={styles.subject} numberOfLines={2}>{email.subject || '(Không tiêu đề)'}</Text>
-                <View style={styles.badges}>
-                  <Text style={[styles.providerBadge, email.provider === 'outlook' ? styles.outlookBadge : styles.gmailBadge]}>
-                    {email.provider_label || providerLabel(email.provider)}
-                  </Text>
-                  <Text style={[styles.readBadge, email.is_unread ? styles.unreadBadge : styles.readBadgeDone]}>
-                    {email.is_unread ? 'CHƯA ĐỌC' : 'ĐÃ ĐỌC'}
-                  </Text>
-                  <Text style={styles.tag}>{email.tag || 'email'}</Text>
+            <Card style={[styles.emailCard, email.is_unread ? styles.emailUnread : styles.emailRead]}>
+              <TouchableOpacity onPress={() => openEmail(email)} activeOpacity={0.86}>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.subject} numberOfLines={2}>{email.subject || '(Không tiêu đề)'}</Text>
+                  <View style={styles.badges}>
+                    <Text style={[styles.providerBadge, email.provider === 'outlook' ? styles.outlookBadge : styles.gmailBadge]}>
+                      {email.provider_label || providerLabel(email.provider)}
+                    </Text>
+                    <Text style={[styles.readBadge, email.is_unread ? styles.unreadBadge : styles.readBadgeDone]}>
+                      {email.is_unread ? 'CHƯA ĐỌC' : 'ĐÃ ĐỌC'}
+                    </Text>
+                    <Text style={styles.tag}>{email.tag || 'email'}</Text>
+                  </View>
                 </View>
+                <Text style={styles.sender} numberOfLines={1}>{email.sender || email.from || 'Người gửi'}</Text>
+                {email.summary ? (
+                  <View style={styles.aiSummary}>
+                    <Text style={styles.aiSummaryLabel}>AI TÓM TẮT</Text>
+                    <Text style={styles.preview} numberOfLines={4}>{email.summary}</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.preview} numberOfLines={3}>{email.snippet || ''}</Text>
+                )}
+              </TouchableOpacity>
+              <View style={styles.inlineActions}>
+                <Button title="Xem" variant="secondary" onPress={() => openEmail(email)} />
+                <Button
+                  title={email.summary ? 'Xem tóm tắt AI' : 'Tóm tắt AI'}
+                  onPress={() => email.summary ? openEmail(email) : summarizeEmail(email)}
+                  loading={summarizingId === email.id}
+                />
+                <Button
+                  title={email.is_unread ? 'Đánh dấu đã đọc' : 'Đánh dấu chưa đọc'}
+                  variant="secondary"
+                  onPress={() => toggleReadStatus(email)}
+                />
               </View>
-              <Text style={styles.sender} numberOfLines={1}>{email.sender || email.from || 'Người gửi'}</Text>
-              {email.summary ? (
-                <View style={styles.aiSummary}>
-                  <Text style={styles.aiSummaryLabel}>AI TÓM TẮT</Text>
-                  <Text style={styles.preview} numberOfLines={4}>{email.summary}</Text>
-                </View>
-              ) : (
-                <Text style={styles.preview} numberOfLines={3}>{email.snippet || ''}</Text>
-              )}
-            </TouchableOpacity>
-            <View style={styles.inlineActions}>
-              <Button title="Xem" variant="secondary" onPress={() => openEmail(email)} />
-              <Button
-                title={email.summary ? 'Xem tóm tắt AI' : 'Tóm tắt AI'}
-                onPress={() => email.summary ? openEmail(email) : summarizeEmail(email)}
-                loading={summarizingId === email.id}
-              />
-              <Button
-                title={email.is_unread ? 'Đánh dấu đã đọc' : 'Đánh dấu chưa đọc'}
-                variant="secondary"
-                onPress={() => toggleReadStatus(email)}
-              />
-            </View>
-          </Card>
+            </Card>
+          </SwipeableEmailRow>
         ))
       )}
+      {emails.length > 0 && pageInfo.current_page < pageInfo.total_pages ? (
+        <Button
+          title="Tải thêm email"
+          variant="secondary"
+          onPress={loadMoreEmails}
+          loading={loadingMore}
+          style={styles.loadMoreButton}
+        />
+      ) : null}
     </>
   );
 
@@ -516,6 +606,25 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
               <Text style={styles.sender}>{selectedEmail.sender || selectedEmail.from || ''}</Text>
               <Text style={styles.body}>{emailBody || selectedEmail.snippet || 'Đang tải...'}</Text>
               {summary ? <Text style={styles.summary}>{summary}</Text> : null}
+              {attachments.length > 0 ? (
+                <View style={styles.attachmentList}>
+                  <Text style={styles.attachmentHeader}>{`ĐÍNH KÈM (${attachments.length})`}</Text>
+                  {attachments.map((attachment) => (
+                    <View key={attachment.id} style={styles.attachmentRow}>
+                      <View style={styles.attachmentInfo}>
+                        <Text style={styles.attachmentName} numberOfLines={1}>{attachment.filename}</Text>
+                        <Text style={styles.attachmentMeta}>{formatFileSize(attachment.size)}</Text>
+                      </View>
+                      <Button
+                        title="Tải"
+                        variant="secondary"
+                        onPress={() => downloadAttachment(attachment)}
+                        loading={downloadingAttachmentId === attachment.id}
+                      />
+                    </View>
+                  ))}
+                </View>
+              ) : null}
               <Button
                 title={summary ? 'Tóm tắt lại bằng AI' : 'Tóm tắt bằng AI'}
                 onPress={() => summarizeEmail(selectedEmail)}
@@ -534,6 +643,76 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
         </Screen>
       </Modal>
     </>
+  );
+}
+
+const SWIPE_RIGHT_ACTIONS_WIDTH = 152; // Archive + Trash, revealed on swipe-left
+const SWIPE_LEFT_ACTION_WIDTH = 108;   // Toggle read/unread, revealed on swipe-right
+const SWIPE_OPEN_THRESHOLD = 40;
+
+function SwipeableEmailRow({ children, styles, isUnread, onArchive, onTrash, onToggleRead }) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const openX = useRef(0);
+
+  const closeRow = useCallback(() => {
+    openX.current = 0;
+    Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+  }, [translateX]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponderCapture: (_, gesture) => (
+        Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5
+      ),
+      onPanResponderMove: (_, gesture) => {
+        const next = Math.max(
+          -SWIPE_RIGHT_ACTIONS_WIDTH,
+          Math.min(SWIPE_LEFT_ACTION_WIDTH, openX.current + gesture.dx)
+        );
+        translateX.setValue(next);
+      },
+      onPanResponderRelease: (_, gesture) => {
+        const next = openX.current + gesture.dx;
+        let target = 0;
+        if (next <= -SWIPE_OPEN_THRESHOLD) target = -SWIPE_RIGHT_ACTIONS_WIDTH;
+        else if (next >= SWIPE_OPEN_THRESHOLD) target = SWIPE_LEFT_ACTION_WIDTH;
+        openX.current = target;
+        Animated.spring(translateX, { toValue: target, useNativeDriver: true, bounciness: 0 }).start();
+      },
+    })
+  ).current;
+
+  return (
+    <View style={styles.swipeWrap}>
+      <View style={styles.swipeActionsRight} pointerEvents="box-none">
+        <TouchableOpacity
+          style={[styles.swipeActionBtn, styles.swipeArchiveBtn]}
+          onPress={() => { closeRow(); onArchive(); }}
+        >
+          <Ionicons name="archive-outline" size={18} color="#FFFFFF" />
+          <Text style={styles.swipeActionText}>Lưu trữ</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.swipeActionBtn, styles.swipeTrashBtn]}
+          onPress={() => { closeRow(); onTrash(); }}
+        >
+          <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+          <Text style={styles.swipeActionText}>Xóa</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.swipeActionsLeft} pointerEvents="box-none">
+        <TouchableOpacity
+          style={[styles.swipeActionBtn, styles.swipeReadBtn]}
+          onPress={() => { closeRow(); onToggleRead(); }}
+        >
+          <Ionicons name={isUnread ? 'mail-open-outline' : 'mail-unread-outline'} size={18} color="#FFFFFF" />
+          <Text style={styles.swipeActionText}>{isUnread ? 'Đã đọc' : 'Chưa đọc'}</Text>
+        </TouchableOpacity>
+      </View>
+      <Animated.View style={{ transform: [{ translateX }] }} {...panResponder.panHandlers}>
+        {children}
+      </Animated.View>
+    </View>
   );
 }
 
@@ -570,6 +749,13 @@ function providerLabel(provider) {
   return 'Gmail';
 }
 
+function formatFileSize(bytes) {
+  const size = Number(bytes) || 0;
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function normalizeEmailProvider(email) {
   const provider = email.provider === 'microsoft' ? 'outlook' : (email.provider || 'gmail');
   return {
@@ -590,6 +776,33 @@ function makeStyles(colors) {
     muted:    { marginTop: 4, color: colors.textMuted, fontFamily: 'Poppins_400Regular' },
     filterLabel: { color: colors.primary, fontSize: 10, fontFamily: 'Poppins_700Bold', letterSpacing: 1, textTransform: 'uppercase' },
     switchRow:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    swipeWrap: { position: 'relative', overflow: 'hidden', borderRadius: 20 },
+    swipeActionsRight: {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      right: 0,
+      width: 152,
+      flexDirection: 'row',
+    },
+    swipeActionsLeft: {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      left: 0,
+      width: 108,
+      flexDirection: 'row',
+    },
+    swipeActionBtn: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 3,
+    },
+    swipeArchiveBtn: { backgroundColor: '#2563eb' },
+    swipeTrashBtn: { backgroundColor: '#dc2626' },
+    swipeReadBtn: { backgroundColor: colors.primary },
+    swipeActionText: { color: '#FFFFFF', fontFamily: 'Poppins_600SemiBold', fontSize: 10 },
     emailCard: { borderLeftWidth: 4 },
     emailUnread: {
       borderLeftColor: colors.primary,
@@ -652,7 +865,27 @@ function makeStyles(colors) {
       fontFamily: 'Poppins_400Regular',
     },
     detailButton: { marginTop: 14 },
+    attachmentList: {
+      marginTop: 14,
+      paddingTop: 12,
+      borderTopColor: colors.border,
+      borderTopWidth: 1,
+      gap: 8,
+    },
+    attachmentHeader: { color: colors.primary, fontSize: 10, fontFamily: 'Poppins_700Bold', letterSpacing: 1 },
+    attachmentRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      padding: 10,
+      borderRadius: 10,
+      backgroundColor: colors.panelSoft,
+    },
+    attachmentInfo: { flex: 1, minWidth: 0 },
+    attachmentName: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 12 },
+    attachmentMeta: { marginTop: 2, color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 11 },
     applyButton:  { marginBottom: 12 },
+    loadMoreButton: { marginTop: 4 },
     scanningBanner: {
       padding: 14,
       borderRadius: 10,

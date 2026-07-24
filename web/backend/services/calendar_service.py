@@ -87,7 +87,7 @@ class CalendarService:
         except Exception:
             logger.debug("Could not persist refreshed Calendar credentials", exc_info=True)
     
-    def get_events(self, max_results=10, time_min=None, time_max=None):
+    def get_events(self, max_results=10, time_min=None, time_max=None, raise_errors=False):
         """Get upcoming calendar events"""
         try:
             if not self.service:
@@ -133,7 +133,10 @@ class CalendarService:
             
             return formatted_events
         except Exception as e:
+            self._remember_error(e)
             logger.error(f"Error getting calendar events: {str(e)}")
+            if raise_errors:
+                raise
             return []
     
     def create_event(self, title, description='', start_time=None, end_time=None, attendees=None, location=''):

@@ -34,6 +34,7 @@ from utils.user_context import (
     get_current_user_id,
     get_user_db_path,
     get_user_token_file,
+    inspect_google_credentials,
     persist_google_credentials,
     sanitize_user_id,
 )
@@ -845,7 +846,7 @@ def _load_gmail_service(user_id):
         try:
             return get_cached_gmail_service(token_file)
         except Exception as e:
-            print(f"Error creating GmailService: {e}")
+            logger.warning(f"Error creating GmailService for {user_id}: {e}")
     return None
 
 
@@ -1114,7 +1115,8 @@ def get_unread_emails():
                 raw_emails = service.get_emails(
                     max_results=scan_limit,
                     query='is:unread',
-                    include_read=include_read
+                    include_read=include_read,
+                    raise_errors=True,
                 )
                 logger.info(f"Fetched {len(raw_emails)} raw email metadata records from Gmail")
 
@@ -1194,6 +1196,14 @@ def get_unread_emails():
         })
     except Exception as e:
         logger.error(f"Error in get_unread_emails: {str(e)}", exc_info=True)
+        google_status = getattr(getattr(e, 'resp', None), 'status', None)
+        if google_status in (401, 403):
+            return jsonify({
+                'error': 'google_reauthentication_required',
+                'message': 'Phiên Google đã hết hạn hoặc thiếu quyền Gmail. Vui lòng kết nối lại.',
+                'needs_reauth': True,
+                'google_status': google_status,
+            }), 401
         return jsonify({'error': str(e), 'error_type': type(e).__name__}), 500
 
 
@@ -1280,6 +1290,7 @@ def scan_meeting_suggestions():
             query='in:inbox',
             include_read=True,
             lazy=False,
+            raise_errors=True,
         )
         detected = _store_meeting_suggestions(emails, db_path)
         pending = _prune_existing_meeting_suggestions(db_path)
@@ -1508,6 +1519,52 @@ def mark_email_as_unread(email_id):
         return jsonify({'error': str(e)}), 500
 
 
+@email_bp.route('/archive/<email_id>', methods=['POST'])
+def archive_email(email_id):
+    """Archive an email (remove from inbox, keep in All Mail)"""
+    user_id = get_current_user_id(request, session=session)
+    service = _load_gmail_service(user_id)
+    if not service:
+        return jsonify({'error': 'not_authenticated'}), 401
+
+    try:
+        success = service.archive_email(email_id)
+        if success:
+            _clear_email_list_cache(user_id)
+            History.create(
+                "Lưu trữ email", "", action_type='chat',
+                db_path=get_user_db_path(user_id),
+            )
+            return jsonify({'success': True, 'message': 'Đã lưu trữ email'})
+        return jsonify({'error': 'Failed to archive email'}), 500
+    except Exception as e:
+        logger.error(f"Error archiving email: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@email_bp.route('/trash/<email_id>', methods=['POST'])
+def trash_email(email_id):
+    """Move an email to trash (reversible)"""
+    user_id = get_current_user_id(request, session=session)
+    service = _load_gmail_service(user_id)
+    if not service:
+        return jsonify({'error': 'not_authenticated'}), 401
+
+    try:
+        success = service.trash_email(email_id)
+        if success:
+            _clear_email_list_cache(user_id)
+            History.create(
+                "Xóa email (thùng rác)", "", action_type='chat',
+                db_path=get_user_db_path(user_id),
+            )
+            return jsonify({'success': True, 'message': 'Đã chuyển email vào thùng rác'})
+        return jsonify({'error': 'Failed to trash email'}), 500
+    except Exception as e:
+        logger.error(f"Error trashing email: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
 @email_bp.route('/send-reply', methods=['POST'])
 def send_email_reply():
     """Send email reply; requires authentication."""
@@ -1541,32 +1598,33 @@ def send_email_reply():
 def gmail_auth_status():
     """Return whether Gmail is currently authenticated."""
     user_id = get_current_user_id(request, session=session)
-    token_file = get_user_token_file(user_id)
-    authenticated = user_id != 'default' and os.path.exists(token_file)
+    credential_status = inspect_google_credentials(user_id, refresh=True)
+    token_file = credential_status['token_file']
+    authenticated = user_id != 'default' and credential_status['valid']
     connected_at = None
-    google_scopes = []
-    calendar_write_connected = False
+    google_scopes = credential_status['scopes']
+    calendar_write_connected = (
+        'https://www.googleapis.com/auth/calendar.events' in google_scopes
+    )
     if os.path.exists(token_file):
         try:
             connected_at = os.path.getmtime(token_file)
         except Exception:
             connected_at = None
-        try:
-            with open(token_file, 'rb') as token_handle:
-                creds = pickle.load(token_handle)
-            google_scopes = list(getattr(creds, 'scopes', None) or getattr(creds, 'granted_scopes', None) or [])
-            calendar_write_connected = 'https://www.googleapis.com/auth/calendar.events' in google_scopes
-        except Exception:
-            google_scopes = []
+
+    user = User.get(user_id) or {}
 
     return jsonify({
         'success': True,
         'user_id': user_id,
-        'gmail_email': session.get('gmail_user_email'),
-        'gmail_name': session.get('gmail_user_name'),
-        'gmail_picture': session.get('gmail_user_picture'),
+        'gmail_email': session.get('gmail_user_email') or user.get('gmail_email') or user.get('email'),
+        'gmail_name': session.get('gmail_user_name') or user.get('gmail_name') or user.get('name'),
+        'gmail_picture': session.get('gmail_user_picture') or user.get('gmail_picture') or user.get('avatar_url'),
         'connected_at': connected_at,
         'authenticated': authenticated,
+        'needs_reauth': credential_status['has_token'] and not credential_status['valid'],
+        'credential_error': credential_status['error'],
+        'token_refreshed': credential_status['refreshed'],
         'google_scopes': google_scopes,
         'calendar_write_connected': calendar_write_connected
     })
@@ -1772,6 +1830,9 @@ def google_auth_native():
 @email_bp.route('/auth', methods=['GET'])
 def gmail_auth():
     """Initiate OAuth2 login flow."""
+    return_to = (request.args.get('next') or '').strip()
+    if return_to == '/admin':
+        session['oauth_return_to'] = return_to
     try:
         flow = _build_oauth_flow()
     except Exception as e:
@@ -1933,6 +1994,7 @@ def oauth2callback():
             return redirect(f"{Config.MOBILE_OAUTH_REDIRECT_URL}?{token_query}")
 
         # Return HTML page that notifies the opener or redirects back to SPA
+        return_to = session.pop('oauth_return_to', '/app?gmail_auth=success')
         html = """<!doctype html>
 <html>
   <head>
@@ -1946,16 +2008,16 @@ def oauth2callback():
           window.opener.postMessage({type: 'gmail_auth', status: 'success'}, window.location.origin);
           window.close();
         } else {
-          window.location.replace('/app?gmail_auth=success');
+          window.location.replace(__RETURN_TO__);
         }
       } catch (e) {
-        window.location.replace('/app?gmail_auth=success');
+        window.location.replace(__RETURN_TO__);
       }
     </script>
     <p>Đang chuyển hướng...</p>
   </body>
 </html>
-"""
+""".replace('__RETURN_TO__', json.dumps(return_to))
         from flask import Response
         return Response(html, mimetype='text/html')
     except Exception as e:
@@ -1966,6 +2028,9 @@ def oauth2callback():
 @email_bp.route('/auth_url', methods=['GET'])
 def gmail_auth_url():
     """Return the OAuth authorization URL (JSON) so frontend can redirect."""
+    return_to = (request.args.get('next') or '').strip()
+    if return_to == '/admin':
+        session['oauth_return_to'] = return_to
     try:
         flow = _build_oauth_flow()
     except Exception as e:

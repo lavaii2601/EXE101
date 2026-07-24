@@ -41,6 +41,7 @@ from routes.calendar import calendar_bp
 from routes.overview import overview_bp
 from routes.knowledge import knowledge_bp, _seed_if_empty as seed_knowledge_base
 from routes._background import bg_bp
+from routes.admin import admin_bp
 from utils.security import authenticated_user_id, enforce_rate_limit, valid_request_origin
 
 # Keep application diagnostics without logging OAuth request/response tokens.
@@ -85,6 +86,7 @@ def make_session_permanent():
     if (
         request.path.startswith('/api/')
         and request.path not in public_api_paths
+        and not request.path.startswith('/api/admin/')
         and not authenticated_user_id()
     ):
         return jsonify({'error': 'not_authenticated'}), 401
@@ -127,6 +129,7 @@ app.register_blueprint(calendar_bp)
 app.register_blueprint(overview_bp)
 app.register_blueprint(knowledge_bp)
 app.register_blueprint(bg_bp)
+app.register_blueprint(admin_bp)
 
 # Ensure data directory exists
 os.makedirs(os.path.dirname(Config.DATABASE_PATH), exist_ok=True)
@@ -168,6 +171,14 @@ def serve_terms_of_service():
     """Public terms of service for Railway, Google OAuth, and Android APK."""
     response = send_from_directory('../frontend', 'terms.html')
     response.headers['Cache-Control'] = 'public, max-age=3600'
+    return response
+
+
+@app.route('/admin')
+def serve_admin_dashboard():
+    """Serve the protected server operations dashboard."""
+    response = send_from_directory('../frontend', 'admin.html')
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response
 
 @app.route('/<path:path>')

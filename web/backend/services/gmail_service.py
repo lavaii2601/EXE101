@@ -10,8 +10,8 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from config import Config
 from utils.google_service_cache import get_cached_service
 from utils.user_context import persist_google_credentials, user_id_from_token_file
@@ -47,7 +47,26 @@ class GmailService:
     def __init__(self, token_file=None):
         self.service = None
         self.token_file = token_file or Config.GMAIL_TOKEN_FILE
+        self.last_error = None
+        self.last_error_status = None
+        self.last_error_reason = None
         self._authenticate()
+
+    def _remember_error(self, error):
+        self.last_error = str(error)
+        self.last_error_status = getattr(getattr(error, 'resp', None), 'status', None)
+        self.last_error_reason = None
+        if isinstance(error, HttpError):
+            try:
+                import json
+                payload = json.loads(error.content.decode('utf-8'))
+                details = payload.get('error') or {}
+                errors = details.get('errors') or []
+                if errors:
+                    self.last_error_reason = errors[0].get('reason')
+                self.last_error = details.get('message') or self.last_error
+            except Exception:
+                pass
     
     def _authenticate(self):
         """Authenticate with Gmail API (used only if token file missing).
@@ -63,15 +82,16 @@ class GmailService:
                 with open(self.token_file, 'rb') as token:
                     creds = pickle.load(token)
             
-            # If no valid credentials, get new ones
+            # OAuth is completed by routes/email.py. Never start an
+            # interactive local-server flow from a production API request:
+            # that would hang the request and eventually look like an empty
+            # inbox to the mobile client.
             if not creds or not creds.valid:
                 if creds and creds.expired and creds.refresh_token:
                     creds.refresh(Request())
                 else:
-                    # fallback; not normally used in production
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                        Config.GMAIL_CREDENTIALS_FILE, self.SCOPES)
-                    creds = flow.run_local_server(port=0)
+                    logger.warning("Stored Gmail credentials are missing or cannot be refreshed")
+                    return False
                 
                 # Save the credentials for the next run
                 with open(self.token_file, 'wb') as token:
@@ -81,7 +101,8 @@ class GmailService:
             self.service = build('gmail', 'v1', credentials=creds)
             return True
         except Exception as e:
-            print(f"Gmail authentication error: {str(e)}")
+            self._remember_error(e)
+            logger.warning("Gmail authentication error: %s", e)
             return False
 
     def _persist_refreshed_credentials(self, creds):
@@ -92,7 +113,14 @@ class GmailService:
         except Exception:
             logger.debug("Could not persist refreshed Gmail credentials", exc_info=True)
     
-    def get_emails(self, max_results=10, query='is:unread', include_read=False, lazy=True):
+    def get_emails(
+        self,
+        max_results=10,
+        query='is:unread',
+        include_read=False,
+        lazy=True,
+        raise_errors=False,
+    ):
         """Get emails from inbox. lazy=True skips body for speed; pass lazy=False when
         callers need the full body (e.g. meeting-suggestion detection)."""
         try:
@@ -116,20 +144,34 @@ class GmailService:
             logger.info(f"Found {len(messages)} messages matching query: {query}")
 
             message_ids = [msg.get('id') for msg in messages if msg.get('id')]
-            emails = self._get_email_details_batch(message_ids, lazy=lazy)
+            emails = self._get_email_details_batch(
+                message_ids,
+                lazy=lazy,
+                raise_errors=raise_errors,
+            )
             
             logger.info(f"Successfully fetched {len(emails)} email details")
             return emails
         except Exception as e:
+            self._remember_error(e)
             logger.error(f"Error getting emails ({type(e).__name__}): {e}", exc_info=True)
+            if raise_errors:
+                raise
             return []
 
-    def _get_email_details_batch(self, message_ids, lazy=True, batch_size=25):
+    def _get_email_details_batch(
+        self,
+        message_ids,
+        lazy=True,
+        batch_size=25,
+        raise_errors=False,
+    ):
         """Fetch many email metadata records with Gmail batch requests."""
         if not message_ids:
             return []
 
         collected = {}
+        batch_errors = []
         format_type = 'metadata' if lazy else 'full'
 
         try:
@@ -139,6 +181,7 @@ class GmailService:
 
                 def _callback(request_id, response, exception):
                     if exception:
+                        batch_errors.append(exception)
                         logger.warning(f"Batch email fetch failed for {request_id}: {exception}")
                         return
                     parsed = self._parse_message(response, request_id, lazy=lazy)
@@ -161,8 +204,12 @@ class GmailService:
 
                 batch.execute()
 
+            if raise_errors and batch_errors and not collected:
+                raise batch_errors[0]
             return [collected[mid] for mid in message_ids if mid in collected]
         except Exception as e:
+            if raise_errors:
+                raise
             logger.warning(f"Batch email fetch failed, falling back to serial fetch: {e}")
             emails = []
             for message_id in message_ids:
@@ -472,6 +519,30 @@ class GmailService:
             return True
         except Exception as e:
             logger.error(f"Error marking message as unread: {str(e)}")
+            return False
+
+    def archive_email(self, message_id):
+        """Remove an email from the inbox without deleting it (Gmail archive)."""
+        try:
+            self.service.users().messages().modify(
+                userId='me',
+                id=message_id,
+                body={'removeLabelIds': ['INBOX']}
+            ).execute()
+            logger.info(f"Archived message {message_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error archiving message: {str(e)}")
+            return False
+
+    def trash_email(self, message_id):
+        """Move an email to Gmail trash (reversible, matches Gmail's own delete)."""
+        try:
+            self.service.users().messages().trash(userId='me', id=message_id).execute()
+            logger.info(f"Trashed message {message_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error trashing message: {str(e)}")
             return False
     
     @staticmethod
