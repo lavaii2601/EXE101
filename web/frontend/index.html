@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css?v=20260724-web-premium-01">
+    <link rel="stylesheet" href="/css/style.css?v=20260724-web-premium-02">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -538,45 +538,97 @@
             <button type="button" id="subscriptionModalClose" class="subscription-modal-close" aria-label="Đóng">&times;</button>
             <span class="subscription-modal-kicker">FLOWMATE PREMIUM</span>
             <h2 id="subscriptionModalTitle">Nâng cấp Premium</h2>
-            <p id="subscriptionModalSubtitle">Chọn chu kỳ phù hợp để mở khóa toàn bộ tính năng nâng cao.</p>
+            <p id="subscriptionModalSubtitle">So sánh các gói và chọn lựa phù hợp với bạn.</p>
 
             <div id="subscriptionCurrentNotice" class="subscription-current-notice" hidden>
                 <strong>Premium đang hoạt động</strong>
                 <span id="subscriptionCurrentRemaining"></span>
             </div>
 
-            <div class="subscription-plan-grid" role="radiogroup" aria-label="Chu kỳ Premium">
-                <button type="button" class="subscription-plan-option active" data-subscription-billing="monthly" role="radio" aria-checked="true">
-                    <span>Hàng tháng</span>
-                    <strong>49.000đ</strong>
-                    <small>/ tháng</small>
-                </button>
-                <button type="button" class="subscription-plan-option" data-subscription-billing="yearly" role="radio" aria-checked="false">
-                    <span>Hàng năm <em>Tiết kiệm 7%</em></span>
-                    <strong>549.000đ</strong>
-                    <small>/ năm</small>
-                </button>
+            <div class="subscription-stepper" aria-label="Tiến trình nâng cấp">
+                <span id="subscriptionStepPlan" class="active"><b>1</b> Chọn gói</span>
+                <i></i>
+                <span id="subscriptionStepPayment"><b>2</b> Thanh toán</span>
             </div>
 
-            <div class="subscription-benefits">
-                <span>✓ Tóm tắt email AI không giới hạn</span>
-                <span>✓ Xử lý nhiều bước trong một yêu cầu</span>
-                <span>✓ Phản hồi AI nâng cao</span>
-                <span>✓ Lịch sử hoạt động không giới hạn</span>
-            </div>
+            <section id="subscriptionPlanStep" class="subscription-flow-step">
+                <div class="subscription-compare-grid" role="radiogroup" aria-label="So sánh gói FlowMate">
+                    <button type="button" class="subscription-compare-card" data-subscription-plan="free" role="radio" aria-checked="false">
+                        <span class="subscription-plan-name">Freemium</span>
+                        <strong>0đ</strong>
+                        <small>Miễn phí mãi mãi</small>
+                        <ul>
+                            <li>Chat và soạn trả lời AI</li>
+                            <li>10 lượt tóm tắt email/ngày</li>
+                            <li>Lưu lịch sử 30 ngày</li>
+                            <li class="limited">Không xử lý nhiều bước</li>
+                        </ul>
+                        <em id="freePlanCurrentBadge" class="subscription-current-plan-badge">Gói hiện tại</em>
+                    </button>
 
-            <div class="subscription-payment-methods" aria-label="Phương thức thanh toán">
-                <span>Phương thức thanh toán</span>
-                <div>
-                    <button type="button" class="subscription-payment-option active" data-payment-method="vnpay">VNPay <small>Sắp có</small></button>
-                    <button type="button" class="subscription-payment-option" data-payment-method="momo">MoMo <small>Sắp có</small></button>
+                    <button type="button" class="subscription-compare-card active" data-subscription-plan="monthly" role="radio" aria-checked="true">
+                        <span class="subscription-plan-name">Premium tháng</span>
+                        <strong>49.000đ</strong>
+                        <small>/ tháng</small>
+                        <ul>
+                            <li>Tóm tắt email không giới hạn</li>
+                            <li>Xử lý nhiều bước</li>
+                            <li>Phản hồi AI nâng cao</li>
+                            <li>Lịch sử không giới hạn</li>
+                        </ul>
+                        <em class="subscription-plan-highlight">Linh hoạt</em>
+                    </button>
+
+                    <button type="button" class="subscription-compare-card annual" data-subscription-plan="yearly" role="radio" aria-checked="false">
+                        <span class="subscription-discount-badge">Tiết kiệm 7%</span>
+                        <span class="subscription-plan-name">Premium năm</span>
+                        <strong>549.000đ</strong>
+                        <small>/ năm · chỉ 45.750đ/tháng</small>
+                        <ul>
+                            <li>Toàn bộ quyền lợi Premium</li>
+                            <li>Dùng liên tục 12 tháng</li>
+                            <li>Tiết kiệm 39.000đ/năm</li>
+                            <li>Không lo gia hạn hàng tháng</li>
+                        </ul>
+                        <em class="subscription-plan-highlight">Ưu đãi tốt nhất</em>
+                    </button>
                 </div>
-            </div>
 
-            <button type="button" id="subscriptionSubmitBtn" class="btn-primary subscription-submit-btn">Nâng cấp 49.000đ/tháng</button>
-            <p class="subscription-contact-note">
-                Cổng thanh toán đang được tích hợp. Hiện tại yêu cầu sẽ được gửi đến FlowMate để xử lý thủ công.
-            </p>
+                <button type="button" id="subscriptionContinueBtn" class="btn-primary subscription-submit-btn">
+                    Tiếp tục với Premium tháng
+                </button>
+            </section>
+
+            <section id="subscriptionPaymentStep" class="subscription-flow-step" hidden>
+                <div class="subscription-payment-summary">
+                    <div>
+                        <span>Gói đã chọn</span>
+                        <strong id="subscriptionSelectedPlanName">Premium tháng</strong>
+                        <small id="subscriptionSelectedPlanDescription">49.000đ / tháng</small>
+                    </div>
+                    <button type="button" id="subscriptionChangePlanBtn">Thay đổi</button>
+                </div>
+
+                <div class="subscription-payment-methods" aria-label="Phương thức thanh toán">
+                    <span>Chọn phương thức thanh toán</span>
+                    <div>
+                        <button type="button" class="subscription-payment-option active" data-payment-method="vnpay">
+                            <b>V</b> VNPay <small>Sắp có</small>
+                        </button>
+                        <button type="button" class="subscription-payment-option" data-payment-method="momo">
+                            <b>M</b> MoMo <small>Sắp có</small>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="subscription-payment-actions">
+                    <button type="button" id="subscriptionBackBtn" class="btn-secondary">← Quay lại</button>
+                    <button type="button" id="subscriptionSubmitBtn" class="btn-primary">Gửi yêu cầu thanh toán</button>
+                </div>
+                <p class="subscription-contact-note">
+                    Cổng thanh toán đang được tích hợp. Hiện tại yêu cầu sẽ được gửi đến FlowMate để xử lý thủ công.
+                </p>
+            </section>
         </div>
     </div>
 
@@ -745,6 +797,6 @@
         </div>
     </div>
     
-    <script src="/js/app.js?v=20260724-web-premium-01"></script>
+    <script src="/js/app.js?v=20260724-web-premium-02"></script>
 </body>
 </html>

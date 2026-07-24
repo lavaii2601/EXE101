@@ -38,6 +38,17 @@ class WebSubscriptionFrontendContractTests(unittest.TestCase):
         self.assertIn("VNPay", self.html)
         self.assertIn("MoMo", self.html)
 
+    def test_upgrade_modal_compares_three_plans_before_payment(self):
+        self.assertIn('data-subscription-plan="free"', self.html)
+        self.assertIn('data-subscription-plan="monthly"', self.html)
+        self.assertIn('data-subscription-plan="yearly"', self.html)
+        self.assertIn("Tiết kiệm 7%", self.html)
+        self.assertIn('id="subscriptionPlanStep"', self.html)
+        self.assertIn('id="subscriptionPaymentStep"', self.html)
+        self.assertIn('id="subscriptionContinueBtn"', self.html)
+        self.assertIn("showSubscriptionPaymentStep", self.javascript)
+        self.assertIn("showSubscriptionPlanStep", self.javascript)
+
 
 if __name__ == "__main__":
     unittest.main()
