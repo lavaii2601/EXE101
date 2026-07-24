@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css?v=20260724-web-premium-02">
+    <link rel="stylesheet" href="/css/style.css?v=20260724-web-premium-03">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -538,7 +538,7 @@
             <button type="button" id="subscriptionModalClose" class="subscription-modal-close" aria-label="Đóng">&times;</button>
             <span class="subscription-modal-kicker">FLOWMATE PREMIUM</span>
             <h2 id="subscriptionModalTitle">Nâng cấp Premium</h2>
-            <p id="subscriptionModalSubtitle">So sánh các gói và chọn lựa phù hợp với bạn.</p>
+            <p id="subscriptionModalSubtitle">Gói hiện tại của bạn là Freemium. So sánh với hai gói Premium để chọn lựa phù hợp.</p>
 
             <div id="subscriptionCurrentNotice" class="subscription-current-notice" hidden>
                 <strong>Premium đang hoạt động</strong>
@@ -546,14 +546,15 @@
             </div>
 
             <div class="subscription-stepper" aria-label="Tiến trình nâng cấp">
-                <span id="subscriptionStepPlan" class="active"><b>1</b> Chọn gói</span>
+                <span id="subscriptionStepPlan" class="active"><b>1</b> Chọn Premium</span>
                 <i></i>
                 <span id="subscriptionStepPayment"><b>2</b> Thanh toán</span>
             </div>
 
             <section id="subscriptionPlanStep" class="subscription-flow-step">
-                <div class="subscription-compare-grid" role="radiogroup" aria-label="So sánh gói FlowMate">
-                    <button type="button" class="subscription-compare-card" data-subscription-plan="free" role="radio" aria-checked="false">
+                <div class="subscription-compare-grid" role="radiogroup" aria-label="So sánh Freemium với hai gói Premium">
+                    <article id="freePlanCard" class="subscription-compare-card current" aria-label="Gói hiện tại Freemium">
+                        <span id="freePlanCurrentLabel" class="subscription-current-card-label">Gói hiện tại</span>
                         <span class="subscription-plan-name">Freemium</span>
                         <strong>0đ</strong>
                         <small>Miễn phí mãi mãi</small>
@@ -563,8 +564,8 @@
                             <li>Lưu lịch sử 30 ngày</li>
                             <li class="limited">Không xử lý nhiều bước</li>
                         </ul>
-                        <em id="freePlanCurrentBadge" class="subscription-current-plan-badge">Gói hiện tại</em>
-                    </button>
+                        <em id="freePlanCurrentBadge" class="subscription-current-plan-badge">Đang sử dụng</em>
+                    </article>
 
                     <button type="button" class="subscription-compare-card active" data-subscription-plan="monthly" role="radio" aria-checked="true">
                         <span class="subscription-plan-name">Premium tháng</span>
@@ -797,6 +798,6 @@
         </div>
     </div>
     
-    <script src="/js/app.js?v=20260724-web-premium-02"></script>
+    <script src="/js/app.js?v=20260724-web-premium-03"></script>
 </body>
 </html>

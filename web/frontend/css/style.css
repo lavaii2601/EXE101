@@ -8933,6 +8933,30 @@ body.dark-theme .subscription-modal-close {
     transform: translateY(-2px);
 }
 
+.subscription-compare-card.current {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+    cursor: default;
+}
+
+.subscription-compare-card.current:hover {
+    border-color: #cbd5e1;
+    transform: none;
+}
+
+.subscription-current-card-label {
+    align-self: flex-start;
+    margin: -6px 0 11px;
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
 .subscription-compare-card.active {
     border-color: #7c3aed;
     background: linear-gradient(180deg, #f5f3ff, var(--panel));
@@ -9102,6 +9126,10 @@ body.dark-theme .subscription-modal-close {
 body.dark-theme .subscription-compare-card.active,
 body.dark-theme .subscription-payment-summary {
     background: #1e293b;
+}
+
+body.dark-theme .subscription-compare-card.current {
+    background: #172033;
 }
 
 @media (max-width: 760px) {

@@ -3760,7 +3760,7 @@ function renderSubscriptionUI(subscription = null) {
 }
 
 function selectSubscriptionPlan(plan) {
-    selectedSubscriptionPlan = ['free', 'monthly', 'yearly'].includes(plan)
+    selectedSubscriptionPlan = ['monthly', 'yearly'].includes(plan)
         ? plan
         : 'monthly';
     document.querySelectorAll('[data-subscription-plan]').forEach((button) => {
@@ -3789,13 +3789,6 @@ function subscriptionPlanDetails(plan = selectedSubscriptionPlan) {
             contact: 'Hàng năm (549.000đ/năm, tiết kiệm 7%)'
         };
     }
-    if (plan === 'free') {
-        return {
-            name: 'Freemium',
-            description: ui('0đ · miễn phí mãi mãi', '0 VND · free forever'),
-            contact: 'Freemium'
-        };
-    }
     return {
         name: ui('Premium tháng', 'Monthly Premium'),
         description: ui('49.000đ / tháng', '49,000 VND / month'),
@@ -3810,13 +3803,6 @@ function updateSubscriptionPlanAction() {
         currentSubscription?.is_premium
         || currentSubscription?.tier === 'premium'
     );
-    if (selectedSubscriptionPlan === 'free') {
-        button.disabled = true;
-        button.textContent = isPremium
-            ? ui('Không thể chuyển về Freemium khi Premium còn hạn', 'Premium is still active')
-            : ui('Bạn đang dùng Freemium', 'You are using Freemium');
-        return;
-    }
     button.disabled = false;
     const plan = subscriptionPlanDetails();
     button.textContent = `${isPremium ? ui('Tiếp tục gia hạn', 'Continue renewal') : ui('Tiếp tục với', 'Continue with')} ${plan.name}`;
@@ -3833,13 +3819,6 @@ function showSubscriptionPlanStep() {
 }
 
 function showSubscriptionPaymentStep() {
-    if (selectedSubscriptionPlan === 'free') {
-        showNotification(ui(
-            'Hãy chọn Premium tháng hoặc Premium năm để tiếp tục.',
-            'Choose Monthly or Annual Premium to continue.'
-        ), 'info');
-        return;
-    }
     const plan = subscriptionPlanDetails();
     const name = document.getElementById('subscriptionSelectedPlanName');
     const description = document.getElementById('subscriptionSelectedPlanDescription');
@@ -3887,8 +3866,8 @@ function openSubscriptionModal() {
                 'Compare billing cycles and choose the plan you want to renew.'
             )
             : ui(
-                'So sánh các gói và chọn lựa phù hợp với bạn.',
-                'Compare plans and choose the best fit for you.'
+                'Gói hiện tại của bạn là Freemium. So sánh với hai gói Premium để chọn lựa phù hợp.',
+                'Your current plan is Freemium. Compare it with two Premium options.'
             );
     }
     if (notice) notice.hidden = !isPremium;
@@ -3899,7 +3878,17 @@ function openSubscriptionModal() {
         );
     }
     const freeBadge = document.getElementById('freePlanCurrentBadge');
+    const freeLabel = document.getElementById('freePlanCurrentLabel');
+    const freeCard = document.getElementById('freePlanCard');
     if (freeBadge) freeBadge.hidden = isPremium;
+    if (freeLabel) freeLabel.hidden = isPremium;
+    if (freeCard) {
+        freeCard.classList.toggle('current', !isPremium);
+        freeCard.setAttribute(
+            'aria-label',
+            isPremium ? ui('So sánh với Freemium', 'Compare with Freemium') : ui('Gói hiện tại Freemium', 'Current Freemium plan')
+        );
+    }
     selectSubscriptionPlan(
         isPremium && currentSubscription?.billing_interval === 'yearly'
             ? 'yearly'
