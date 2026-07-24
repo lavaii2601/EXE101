@@ -3785,14 +3785,14 @@ function subscriptionPlanDetails(plan = selectedSubscriptionPlan) {
     if (plan === 'yearly') {
         return {
             name: ui('Premium năm', 'Annual Premium'),
-            description: ui('549.000đ / năm · tiết kiệm 7%', '549,000 VND / year · save 7%'),
-            contact: 'Hàng năm (549.000đ/năm, tiết kiệm 7%)'
+            description: ui('520.000đ / năm (~$19.99) · tiết kiệm 12%', '520,000 VND / year (~$19.99) · save 12%'),
+            contact: 'Hàng năm (520.000đ/năm ~ $19.99, tiết kiệm 12%)'
         };
     }
     return {
         name: ui('Premium tháng', 'Monthly Premium'),
-        description: ui('49.000đ / tháng', '49,000 VND / month'),
-        contact: 'Hàng tháng (49.000đ/tháng)'
+        description: ui('49.000đ / tháng (~$1.99)', '49,000 VND / month (~$1.99)'),
+        contact: 'Hàng tháng (49.000đ/tháng ~ $1.99)'
     };
 }
 

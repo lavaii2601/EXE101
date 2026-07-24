@@ -31,7 +31,7 @@ const PAYMENT_METHODS = [
 // currencies instead of drifting apart under a plain FX conversion.
 const PRICING = {
   monthly: { vnd: '49.000đ', usd: '1.99' },
-  yearly: { vnd: '520.000đ', usd: '20.99' },
+  yearly: { vnd: '520.000đ', usd: '19.99' },
 };
 const YEARLY_SAVE_PERCENT = 12;
 
