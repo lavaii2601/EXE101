@@ -1,4 +1,11 @@
-const state = { timer: null };
+const state = {
+  timer: null,
+  activeTab: 'overview',
+  finance: null,
+  financeLoaded: false,
+  financeLoading: false,
+  financeGeneratedAt: null,
+};
 
 const $ = (id) => document.getElementById(id);
 const number = (value) => new Intl.NumberFormat('vi-VN').format(Number(value || 0));
@@ -14,6 +21,30 @@ const bytes = (value) => {
     index += 1;
   }
   return `${size.toFixed(index ? 1 : 0)} ${units[index]}`;
+};
+const currencyScale = (currency) => {
+  try {
+    const options = new Intl.NumberFormat('vi-VN', {
+      style: 'currency',
+      currency,
+    }).resolvedOptions();
+    return 10 ** Number(options.maximumFractionDigits || 0);
+  } catch {
+    return 1;
+  }
+};
+const money = (minorValue, currency = 'VND', compact = false) => {
+  const value = Number(minorValue || 0) / currencyScale(currency);
+  try {
+    return new Intl.NumberFormat('vi-VN', {
+      style: 'currency',
+      currency,
+      notation: compact ? 'compact' : 'standard',
+      maximumFractionDigits: compact ? 1 : undefined,
+    }).format(value);
+  } catch {
+    return `${number(value)} ${currency}`;
+  }
 };
 const escapeHtml = (value) => String(value ?? '')
   .replaceAll('&', '&amp;')
@@ -58,6 +89,41 @@ function showGate(name, message = '') {
     $('totpError').textContent = message;
     setTimeout(() => $('totpInput').focus(), 0);
   }
+}
+
+function activateTab(name, { focus = false, load = true } = {}) {
+  const next = name === 'finance' ? 'finance' : 'overview';
+  state.activeTab = next;
+  document.querySelectorAll('[data-dashboard-tab]').forEach((tab) => {
+    const active = tab.dataset.dashboardTab === next;
+    tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    tab.tabIndex = active ? 0 : -1;
+    if (active && focus) tab.focus();
+  });
+  document.querySelectorAll('[data-dashboard-panel]').forEach((panel) => {
+    panel.hidden = panel.dataset.dashboardPanel !== next;
+  });
+  if (next === 'finance' && load && !state.financeLoaded) loadFinance();
+}
+
+function handleAdminGate(error) {
+  const code = error.data?.error;
+  if (code === 'admin_totp_required') {
+    showGate('totp');
+    setConnection('waiting', 'Chờ mã TOTP');
+    return true;
+  }
+  if (code === 'admin_not_allowed') {
+    showGate('denied');
+    setConnection('offline', 'Tài khoản không có quyền admin');
+    return true;
+  }
+  if (code === 'admin_google_login_required' || code === 'admin_not_configured' || error.status === 401) {
+    showGate('google', error.message);
+    setConnection('offline', code === 'admin_not_configured' ? 'Admin đang khóa' : 'Cần đăng nhập');
+    return true;
+  }
+  return false;
 }
 
 function renderMetricList(summary) {
@@ -157,6 +223,210 @@ function render(data) {
   renderUsers(data.recent_users || []);
 }
 
+function setMoneyValue(id, value, currency) {
+  const node = $(id);
+  node.textContent = money(value, currency);
+  node.classList.toggle('negative-money', Number(value || 0) < 0);
+}
+
+function financeSummaryFor(finance, currency) {
+  return (finance.currencies || []).find((item) => item.currency === currency) || {
+    currency,
+    gross_revenue_month: 0,
+    fees_month: 0,
+    refunds_month: 0,
+    net_revenue_month: 0,
+    payments_month: 0,
+    active_subscriptions: 0,
+    trialing_subscriptions: 0,
+    past_due_subscriptions: 0,
+    new_subscriptions_month: 0,
+    canceled_subscriptions_month: 0,
+    mrr: 0,
+  };
+}
+
+function populateFinanceCurrencies(finance) {
+  const picker = $('financeCurrency');
+  const current = picker.value || 'VND';
+  const currencies = Array.from(new Set(
+    (finance.currencies || []).map((item) => item.currency).filter(Boolean)
+  ));
+  if (!currencies.length) currencies.push('VND');
+  picker.innerHTML = currencies.map((currency) => (
+    `<option value="${escapeHtml(currency)}">${escapeHtml(currency)}</option>`
+  )).join('');
+  picker.value = currencies.includes(current) ? current : currencies[0];
+  return picker.value;
+}
+
+function renderRevenueChart(finance, currency) {
+  const items = (finance.revenue_12m || []).filter((item) => item.currency === currency);
+  const max = Math.max(
+    ...items.flatMap((item) => [Math.abs(Number(item.gross || 0)), Math.abs(Number(item.net || 0))]),
+    1
+  );
+  const netTotal = items.reduce((sum, item) => sum + Number(item.net || 0), 0);
+  $('revenueChartSummary').textContent = `12T: ${money(netTotal, currency, true)}`;
+  $('revenueChart').setAttribute(
+    'aria-label',
+    `Biểu đồ 12 tháng, tổng thực thu ${money(netTotal, currency)}`
+  );
+  $('revenueChart').innerHTML = items.map((item) => {
+    const grossHeight = Math.max(3, Math.round(Math.abs(Number(item.gross || 0)) / max * 150));
+    const netHeight = Math.max(3, Math.round(Math.abs(Number(item.net || 0)) / max * 150));
+    const [year, month] = String(item.month || '').split('-');
+    return `<div class="chart-column" title="${escapeHtml(item.month)} · Gộp ${escapeHtml(money(item.gross, currency))} · Thực thu ${escapeHtml(money(item.net, currency))}">
+      <span class="chart-value ${Number(item.net || 0) < 0 ? 'negative-money' : ''}">${escapeHtml(money(item.net, currency, true))}</span>
+      <div class="revenue-bars">
+        <div class="revenue-bar gross" style="height:${grossHeight}px"></div>
+        <div class="revenue-bar net" style="height:${netHeight}px"></div>
+      </div>
+      <span class="chart-day">${escapeHtml(month || '—')}/${escapeHtml(String(year || '').slice(-2))}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderFinanceMetrics(summary, currency) {
+  const metrics = [
+    ['Phí cổng thanh toán', money(summary.fees_month, currency), Number(summary.fees_month) ? 'warn' : ''],
+    ['Hoàn tiền trong tháng', money(summary.refunds_month, currency), Number(summary.refunds_month) ? 'warn' : ''],
+    ['Đang dùng thử', number(summary.trialing_subscriptions), ''],
+    ['Quá hạn thanh toán', number(summary.past_due_subscriptions), Number(summary.past_due_subscriptions) ? 'bad' : ''],
+    ['Subscription mới', number(summary.new_subscriptions_month), ''],
+    ['Subscription hủy', number(summary.canceled_subscriptions_month), Number(summary.canceled_subscriptions_month) ? 'warn' : ''],
+  ];
+  $('financeMetrics').innerHTML = metrics.map(([label, value, tone]) => (
+    `<div class="metric-row"><span>${escapeHtml(label)}</span><strong class="${tone}">${escapeHtml(value)}</strong></div>`
+  )).join('');
+}
+
+function renderSubscriptionPlans(finance, currency) {
+  const items = (finance.subscriptions_by_plan || []).filter((item) => item.currency === currency);
+  const max = Math.max(...items.map((item) => Number(item.active || 0)), 1);
+  $('plansTotal').textContent = `${number(items.length)} gói`;
+  $('subscriptionPlans').innerHTML = items.length ? items.map((item) => {
+    const active = Number(item.active || 0);
+    const details = [
+      `${number(active)} active`,
+      Number(item.trialing || 0) ? `${number(item.trialing)} trial` : '',
+      money(item.mrr, currency, true),
+    ].filter(Boolean).join(' · ');
+    return `<div class="bar-row">
+      <span class="bar-label" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.max(2, active / max * 100)}%"></div></div>
+      <span class="bar-value" title="${escapeHtml(details)}">${escapeHtml(details)}</span>
+    </div>`;
+  }).join('') : '<p class="muted">Chưa có subscription cho đơn vị tiền này.</p>';
+}
+
+function statusLabel(status) {
+  return {
+    pending: 'Chờ xử lý',
+    paid: 'Đã thanh toán',
+    failed: 'Thất bại',
+    partially_refunded: 'Hoàn một phần',
+    refunded: 'Đã hoàn tiền',
+    trialing: 'Dùng thử',
+    active: 'Hoạt động',
+    past_due: 'Quá hạn',
+    paused: 'Tạm dừng',
+    canceled: 'Đã hủy',
+    incomplete: 'Chưa hoàn tất',
+    expired: 'Hết hạn',
+  }[status] || status || '—';
+}
+
+function renderRecentPayments(finance, currency) {
+  const items = (finance.recent_payments || []).filter((item) => item.currency === currency);
+  $('recentPaymentsBody').innerHTML = items.length ? items.map((payment) => (
+    `<tr>
+      <td>${escapeHtml(dateTime(payment.paid_at || payment.created_at))}</td>
+      <td><strong>${escapeHtml(payment.customer)}</strong><br><span class="muted">${escapeHtml(payment.description || `#${payment.id}`)}</span></td>
+      <td>${escapeHtml(payment.plan_name || '—')}<br><span class="muted">${escapeHtml(payment.provider)}</span></td>
+      <td>${escapeHtml(money(payment.gross_amount, currency))}</td>
+      <td>${escapeHtml(money(payment.fee_amount, currency))}</td>
+      <td>${escapeHtml(money(payment.refund_amount, currency))}</td>
+      <td class="${Number(payment.net_amount || 0) < 0 ? 'negative-money' : ''}"><strong>${escapeHtml(money(payment.net_amount, currency))}</strong></td>
+      <td><span class="badge ${escapeHtml(payment.status)}">${escapeHtml(statusLabel(payment.status))}</span></td>
+    </tr>`
+  )).join('') : '<tr><td colspan="8" class="muted">Chưa có giao dịch cho đơn vị tiền này.</td></tr>';
+}
+
+function renderRecentSubscriptions(finance, currency) {
+  const items = (finance.recent_subscriptions || []).filter((item) => item.currency === currency);
+  $('recentSubscriptionsBody').innerHTML = items.length ? items.map((subscription) => (
+    `<tr>
+      <td><strong>${escapeHtml(subscription.customer)}</strong><br><span class="muted">${escapeHtml(subscription.provider)}</span></td>
+      <td>${escapeHtml(subscription.plan_name || subscription.plan_code)}</td>
+      <td>${subscription.billing_interval === 'yearly' ? 'Hằng năm' : 'Hằng tháng'}</td>
+      <td>${escapeHtml(money(subscription.unit_amount, currency))}</td>
+      <td>${escapeHtml(dateTime(subscription.current_period_end))}${subscription.cancel_at_period_end ? '<br><span class="muted">Sẽ hủy cuối kỳ</span>' : ''}</td>
+      <td><span class="badge ${escapeHtml(subscription.status)}">${escapeHtml(statusLabel(subscription.status))}</span></td>
+    </tr>`
+  )).join('') : '<tr><td colspan="6" class="muted">Chưa có subscription cho đơn vị tiền này.</td></tr>';
+}
+
+function renderFinance(data) {
+  const finance = data.finance || {};
+  state.finance = finance;
+  state.financeGeneratedAt = data.generated_at;
+  const currency = populateFinanceCurrencies(finance);
+  const summary = financeSummaryFor(finance, currency);
+  const reportDate = data.generated_at ? new Date(data.generated_at) : new Date();
+
+  $('financePeriodLabel').textContent = `${new Intl.DateTimeFormat('vi-VN', {
+    month: 'long',
+    year: 'numeric',
+  }).format(reportDate)} · ${finance.reporting_timezone || 'Asia/Ho_Chi_Minh'}`;
+  $('financeEmptyState').classList.toggle('hidden', Boolean(finance.has_data));
+  setMoneyValue('grossRevenueMonth', summary.gross_revenue_month, currency);
+  setMoneyValue('netRevenueMonth', summary.net_revenue_month, currency);
+  setMoneyValue('monthlyRecurringRevenue', summary.mrr, currency);
+  $('paymentsMonth').textContent = `${number(summary.payments_month)} giao dịch thành công`;
+  $('activeSubscriptions').textContent = number(summary.active_subscriptions);
+  $('subscriptionMovement').textContent = `+${number(summary.new_subscriptions_month)} mới · ${number(summary.canceled_subscriptions_month)} hủy trong tháng`;
+  $('financeGeneratedAt').textContent = `Cập nhật ${dateTime(data.generated_at)}`;
+
+  renderRevenueChart(finance, currency);
+  renderFinanceMetrics(summary, currency);
+  renderSubscriptionPlans(finance, currency);
+  renderRecentPayments(finance, currency);
+  renderRecentSubscriptions(finance, currency);
+}
+
+function rerenderFinanceCurrency() {
+  if (!state.finance) return;
+  renderFinance({
+    finance: state.finance,
+    generated_at: state.financeGeneratedAt,
+  });
+}
+
+async function loadFinance() {
+  if (state.financeLoading) return;
+  state.financeLoading = true;
+  $('refreshButton').disabled = true;
+  $('financeError').classList.add('hidden');
+  setConnection('waiting', 'Đang tải tài chính');
+  try {
+    const data = await api('/api/admin/finance');
+    state.financeLoaded = true;
+    renderFinance(data);
+    setConnection('online', 'Admin đã xác thực');
+  } catch (error) {
+    state.financeLoaded = false;
+    if (!handleAdminGate(error)) {
+      $('financeError').textContent = `Không tải được số liệu tài chính: ${error.message}`;
+      $('financeError').classList.remove('hidden');
+      setConnection('offline', 'Lỗi dữ liệu tài chính');
+    }
+  } finally {
+    state.financeLoading = false;
+    $('refreshButton').disabled = false;
+  }
+}
+
 async function loadDashboard() {
   $('refreshButton').disabled = true;
   setConnection('waiting', 'Đang tải');
@@ -167,18 +437,12 @@ async function loadDashboard() {
     $('dashboard').classList.remove('hidden');
     $('adminLogoutButton').classList.remove('hidden');
     render(data);
+    activateTab(state.activeTab, { load: true });
     setConnection('online', 'Admin đã xác thực');
   } catch (error) {
-    const code = error.data?.error;
-    if (code === 'admin_totp_required') {
-      showGate('totp');
-      setConnection('waiting', 'Chờ mã TOTP');
-    } else if (code === 'admin_not_allowed') {
-      showGate('denied');
-      setConnection('offline', 'Tài khoản không có quyền admin');
-    } else {
+    if (!handleAdminGate(error)) {
       showGate('google', error.message);
-      setConnection('offline', code === 'admin_not_configured' ? 'Admin đang khóa' : 'Cần đăng nhập');
+      setConnection('offline', 'Không tải được dashboard');
     }
   } finally {
     $('refreshButton').disabled = false;
@@ -229,16 +493,38 @@ async function lockDashboard() {
   }
 }
 
-$('refreshButton').addEventListener('click', loadDashboard);
+function refreshActiveTab() {
+  return state.activeTab === 'finance' ? loadFinance() : loadDashboard();
+}
+
+$('refreshButton').addEventListener('click', refreshActiveTab);
 $('googleLoginButton').addEventListener('click', loginWithGoogle);
 $('totpVerifyButton').addEventListener('click', verifyTotp);
 $('adminLogoutButton').addEventListener('click', lockDashboard);
+$('financeCurrency').addEventListener('change', rerenderFinanceCurrency);
 $('totpInput').addEventListener('input', (event) => {
   event.target.value = event.target.value.replace(/\D/g, '').slice(0, 6);
 });
 $('totpInput').addEventListener('keydown', (event) => {
   if (event.key === 'Enter') verifyTotp();
 });
+document.querySelectorAll('[data-dashboard-tab]').forEach((tab) => {
+  tab.addEventListener('click', () => activateTab(tab.dataset.dashboardTab));
+  tab.addEventListener('keydown', (event) => {
+    const tabs = Array.from(document.querySelectorAll('[data-dashboard-tab]'));
+    const index = tabs.indexOf(tab);
+    let nextIndex = index;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    activateTab(tabs[nextIndex].dataset.dashboardTab, { focus: true });
+  });
+});
 
 loadDashboard();
-state.timer = setInterval(loadDashboard, 30000);
+state.timer = setInterval(() => {
+  if (!document.hidden) refreshActiveTab();
+}, 30000);

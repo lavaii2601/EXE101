@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 
-export default function Field({ label, value, onChangeText, placeholder, multiline, keyboardType }) {
+export default function Field({ label, value, onChangeText, placeholder, multiline, keyboardType, inputStyle }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -10,7 +10,7 @@ export default function Field({ label, value, onChangeText, placeholder, multili
     <View style={styles.group}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
-        style={[styles.input, multiline && styles.multiline]}
+        style={[styles.input, multiline && styles.multiline, inputStyle]}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}

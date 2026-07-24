@@ -44,6 +44,10 @@ h2 { font-size: 20px; letter-spacing: -.02em; }
 }
 .button:hover { transform: translateY(-1px); border-color: rgba(53,216,221,.5); }
 .button.primary { border-color: transparent; background: var(--cyan); color: #041316; }
+.button:focus-visible, .dashboard-tab:focus-visible, select:focus-visible {
+  outline: 3px solid rgba(53,216,221,.35);
+  outline-offset: 3px;
+}
 .status { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; white-space: nowrap; }
 .status i { width: 8px; height: 8px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 18px currentColor; }
 .status.online i { background: var(--green); }
@@ -66,6 +70,38 @@ input:focus { border-color: var(--cyan); }
 .totp-input { font-size: 28px; font-weight: 850; letter-spacing: .32em; text-align: center; }
 .error-text { color: var(--red) !important; font-size: 13px; }
 
+.dashboard-tabs {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 34px;
+  padding: 5px;
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255,255,255,.035);
+}
+.dashboard-tab {
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 0 17px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.dashboard-tab[aria-selected="true"] {
+  background: var(--cyan);
+  color: #041316;
+  box-shadow: 0 7px 22px rgba(53,216,221,.17);
+}
+.dashboard-panel[hidden] { display: none; }
+
 .hero-grid { margin-top: 42px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .hero-card, .panel {
   border: 1px solid var(--line); background: var(--panel); backdrop-filter: blur(18px);
@@ -78,6 +114,7 @@ input:focus { border-color: var(--cyan); }
 }
 .hero-card.accent-violet::after { background: var(--violet); }
 .hero-card.accent-amber::after { background: var(--amber); }
+.hero-card.accent-green::after { background: var(--green); }
 .metric-label { color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; }
 .hero-card strong { display: block; margin-top: 18px; font-size: 42px; letter-spacing: -.04em; }
 .hero-card span { display: block; margin-top: 10px; color: var(--muted); font-size: 13px; }
@@ -120,6 +157,109 @@ td { padding: 13px 10px; border-bottom: 1px solid rgba(151,184,210,.09); vertica
 .badge.success { color: var(--green); background: rgba(78,227,154,.1); }
 .badge.failed { color: var(--red); background: rgba(255,102,122,.1); }
 .badge.running, .badge.pending { color: var(--amber); background: rgba(255,181,74,.1); }
+.badge.active, .badge.paid { color: var(--green); background: rgba(78,227,154,.1); }
+.badge.trialing, .badge.partially_refunded { color: var(--cyan); background: rgba(53,216,221,.1); }
+.badge.past_due, .badge.refunded, .badge.paused { color: var(--amber); background: rgba(255,181,74,.1); }
+.badge.canceled, .badge.expired, .badge.incomplete { color: var(--muted); background: rgba(151,184,210,.1); }
+
+.finance-toolbar {
+  margin-top: 24px;
+  padding: 20px 22px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+}
+.finance-toolbar .muted { display: block; margin-top: 7px; }
+.currency-picker { min-width: 150px; }
+.currency-picker span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 36px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #091520;
+  color: var(--text);
+  font: inherit;
+  font-weight: 750;
+}
+.finance-message {
+  margin-top: 14px;
+  padding: 13px 15px;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  border: 1px solid rgba(53,216,221,.2);
+  border-radius: 11px;
+  background: rgba(53,216,221,.065);
+  color: var(--muted);
+  font-size: 13px;
+}
+.finance-message strong { color: var(--text); }
+.finance-message.error-text {
+  border-color: rgba(255,102,122,.32);
+  background: rgba(255,102,122,.08);
+}
+.finance-hero { margin-top: 14px; }
+.money-value {
+  font-size: clamp(25px, 2.8vw, 42px) !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.finance-definition {
+  margin-top: 14px;
+  padding: 12px 15px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  border-left: 3px solid var(--amber);
+  border-radius: 0 10px 10px 0;
+  background: rgba(255,181,74,.055);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.finance-definition strong { color: #ffd99d; white-space: nowrap; }
+.revenue-chart .chart-column { gap: 5px; }
+.revenue-bars {
+  width: 100%;
+  height: 150px;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: 3px;
+}
+.revenue-bar {
+  width: min(15px, 38%);
+  min-height: 3px;
+  border-radius: 4px 4px 2px 2px;
+}
+.revenue-bar.gross { background: rgba(137,120,255,.42); }
+.revenue-bar.net { background: linear-gradient(180deg, var(--cyan), rgba(53,216,221,.22)); }
+.negative-money { color: var(--red) !important; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 @media (max-width: 980px) {
   .topbar { align-items: flex-start; }
@@ -134,6 +274,12 @@ td { padding: 13px 10px; border-bottom: 1px solid rgba(151,184,210,.09); vertica
   .hero-grid { grid-template-columns: 1fr; }
   .hero-card { min-height: 145px; }
   .panel { padding: 17px; }
+  .dashboard-tabs { width: 100%; }
+  .dashboard-tab { min-height: 44px; }
+  .finance-toolbar { align-items: stretch; flex-direction: column; }
+  .currency-picker { min-width: 0; }
+  .finance-message, .finance-definition { align-items: flex-start; flex-direction: column; }
+  .finance-definition strong { white-space: normal; }
   .chart { gap: 4px; }
   .chart-day { transform: rotate(-55deg); transform-origin: center; margin-bottom: 10px; }
 }

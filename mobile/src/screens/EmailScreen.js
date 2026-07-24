@@ -10,10 +10,9 @@ import SegmentedControl from '../components/SegmentedControl';
 import * as FileSystem from 'expo-file-system/legacy';
 import { apiGet, apiPost } from '../api/client';
 import { API_BASE } from '../api/config';
-import { getMobileAccessToken, setMobileUserId } from '../api/session';
+import { getMobileAccessToken } from '../api/session';
 import { connectGoogleAccount } from '../api/googleAuth';
 import { useTheme } from '../theme/ThemeContext';
-import ModeBrief from '../components/ModeBrief';
 
 const filters = [
   { label: 'Tất cả',     value: 'all' },
@@ -38,7 +37,7 @@ const modes = [
   { label: 'Soạn thư', value: 'compose' },
 ];
 
-export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, syncEvent, userMode = 'worker' }) {
+export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, syncEvent }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -55,7 +54,6 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
   const [compose, setCompose] = useState({ to: '', subject: '', body: '' });
   const [reportDate, setReportDate] = useState('');
   const [report, setReport] = useState(null);
-  const [userIdInput, setUserIdInput] = useState('');
   const [summarizingId, setSummarizingId] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -206,13 +204,6 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
       login();
     }
   }, [auth, calendarPermissionAttempted]);
-
-  const applyMobileUser = async () => {
-    setMobileUserId(userIdInput);
-    await loadEmails();
-    onAuthChanged?.();
-    onAgentSync?.(['profile', 'email']);
-  };
 
   const openEmail = async (email) => {
     setSelectedEmail(email);
@@ -386,31 +377,6 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
 
   const renderInbox = () => (
     <>
-      <Card>
-        {__DEV__ ? (
-          <>
-            <Field
-              label="Gmail đã kết nối trên backend (chỉ dev)"
-              value={userIdInput}
-              onChangeText={setUserIdInput}
-              placeholder="ten@gmail.com"
-              keyboardType="email-address"
-            />
-            <Button title="Dùng tài khoản này" variant="secondary" onPress={applyMobileUser} style={styles.applyButton} />
-          </>
-        ) : null}
-        <View style={styles.authRow}>
-          <View style={styles.authText}>
-            <Text style={styles.cardTitle}>{auth?.authenticated ? 'Gmail đã kết nối' : 'Chưa kết nối Gmail'}</Text>
-            <Text style={styles.muted} numberOfLines={1}>{auth?.gmail_email || 'Đăng nhập để đọc và gửi email.'}</Text>
-          </View>
-          <Button
-            title={auth?.authenticated ? 'Đăng nhập lại' : 'Đăng nhập'}
-            variant={auth?.authenticated ? 'secondary' : 'primary'}
-            onPress={login}
-          />
-        </View>
-      </Card>
       <Card style={styles.searchCard}>
         <Field
           label="Tìm kiếm email"
@@ -447,13 +413,10 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
         source === 'outlook' ? (
           <EmptyState title="Outlook chưa được hỗ trợ" detail="FlowMate hiện chỉ đọc được Gmail. Chọn nguồn Gmail hoặc Tất cả." />
         ) : authExpired ? (
-          <Card style={styles.cacheMissCard}>
-            <Text style={styles.cardTitle}>Phiên đăng nhập Gmail đã hết hạn</Text>
-            <Text style={styles.muted}>
-              Đăng nhập lại để FlowMate tiếp tục đọc email của bạn — tài khoản Gmail vẫn đang được kết nối, chỉ là phiên trên điện thoại cần làm mới.
-            </Text>
-            <Button title="Đăng nhập lại" onPress={login} style={styles.applyButton} />
-          </Card>
+          <EmptyState
+            title="Phiên đăng nhập Gmail đã hết hạn"
+            detail="Vào tab Cài đặt để đăng nhập lại Google."
+          />
         ) : cacheMiss ? (
           <Card style={styles.cacheMissCard}>
             <Text style={styles.cardTitle}>Chưa có email trong bộ nhớ đệm</Text>
@@ -572,14 +535,6 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
         onRefresh={refreshEmailsFromGmail}
         actions={<Button title="Gmail" variant="secondary" onPress={() => RNLinking.openURL('https://mail.google.com')} />}
       >
-        <ModeBrief
-          userMode={userMode}
-          stats={[
-            { value: emails.length, label: 'Email hiển thị' },
-            { value: emails.filter((email) => email.is_unread).length, label: 'Chưa đọc' },
-            { value: emails.filter((email) => email.tag === 'meeting').length, label: 'Cuộc họp' },
-          ]}
-        />
         {meetingSuggestions.length > 0 ? (
           <TouchableOpacity
             style={styles.meetingBanner}

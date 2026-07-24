@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <title>FlowMate Server Control</title>
-  <link rel="stylesheet" href="/css/admin.css?v=20260724">
+  <link rel="stylesheet" href="/css/admin.css?v=20260724-finance">
 </head>
 <body>
   <div class="ambient ambient-a"></div>
@@ -66,6 +66,35 @@
     </section>
 
     <div id="dashboard" class="hidden">
+      <nav id="dashboardTabs" class="dashboard-tabs" role="tablist" aria-label="Khu vực quản trị">
+        <button
+          id="overviewTab"
+          class="dashboard-tab"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="overviewPanel"
+          data-dashboard-tab="overview"
+        >Tổng quan</button>
+        <button
+          id="financeTab"
+          class="dashboard-tab"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="financePanel"
+          tabindex="-1"
+          data-dashboard-tab="finance"
+        >Tài chính &amp; Subscription</button>
+      </nav>
+
+      <section
+        id="overviewPanel"
+        class="dashboard-panel"
+        role="tabpanel"
+        aria-labelledby="overviewTab"
+        data-dashboard-panel="overview"
+      >
       <section id="alerts" class="alerts"></section>
 
       <section class="hero-grid">
@@ -168,9 +197,165 @@
           </table>
         </div>
       </section>
+      </section>
+
+      <section
+        id="financePanel"
+        class="dashboard-panel"
+        role="tabpanel"
+        aria-labelledby="financeTab"
+        data-dashboard-panel="finance"
+        hidden
+      >
+        <section class="finance-toolbar" aria-label="Bộ lọc báo cáo tài chính">
+          <div>
+            <p class="eyebrow">BILLING LEDGER</p>
+            <h2>Tài chính &amp; Subscription</h2>
+            <p id="financePeriodLabel" class="muted">Tháng hiện tại · Asia/Ho_Chi_Minh</p>
+          </div>
+          <label class="currency-picker" for="financeCurrency">
+            <span>Đơn vị tiền</span>
+            <select id="financeCurrency" aria-label="Chọn đơn vị tiền">
+              <option value="VND">VND</option>
+            </select>
+          </label>
+        </section>
+
+        <p id="financeError" class="finance-message error-text hidden" role="alert"></p>
+        <div id="financeEmptyState" class="finance-message hidden" role="status">
+          <strong>Chưa có dữ liệu billing.</strong>
+          <span>
+            Dashboard đã sẵn sàng, nhưng cần đồng bộ giao dịch và subscription từ cổng thanh toán
+            trước khi có số liệu thực.
+          </span>
+        </div>
+
+        <section class="hero-grid finance-hero" aria-label="Chỉ số tài chính tháng">
+          <article class="hero-card">
+            <p class="metric-label">Doanh thu gộp tháng</p>
+            <strong id="grossRevenueMonth" class="money-value">0 ₫</strong>
+            <span id="paymentsMonth">0 giao dịch thành công</span>
+          </article>
+          <article class="hero-card accent-green">
+            <p class="metric-label">Thực thu ước tính</p>
+            <strong id="netRevenueMonth" class="money-value">0 ₫</strong>
+            <span>Doanh thu − phí − hoàn tiền</span>
+          </article>
+          <article class="hero-card accent-violet">
+            <p class="metric-label">Subscription hoạt động</p>
+            <strong id="activeSubscriptions">0</strong>
+            <span id="subscriptionMovement">+0 mới · 0 hủy trong tháng</span>
+          </article>
+          <article class="hero-card accent-amber">
+            <p class="metric-label">MRR</p>
+            <strong id="monthlyRecurringRevenue" class="money-value">0 ₫</strong>
+            <span>Doanh thu định kỳ chuẩn hóa theo tháng</span>
+          </article>
+        </section>
+
+        <section class="finance-definition">
+          <strong>Số “thực thu” trên dashboard là số liệu ledger.</strong>
+          <span>
+            Giá trị được tính bằng doanh thu gộp trừ phí và hoàn tiền trong tháng,
+            không đồng nghĩa tiền đã settlement về tài khoản ngân hàng.
+          </span>
+        </section>
+
+        <section class="grid two">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">12 THÁNG</p>
+                <h2>Doanh thu &amp; thực thu</h2>
+              </div>
+              <span id="revenueChartSummary" class="pill">—</span>
+            </div>
+            <div
+              id="revenueChart"
+              class="chart revenue-chart"
+              role="img"
+              aria-label="Biểu đồ thực thu 12 tháng"
+            ></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">ĐỐI SOÁT THÁNG</p>
+                <h2>Phí, hoàn tiền &amp; trạng thái</h2>
+              </div>
+            </div>
+            <div id="financeMetrics" class="metric-list"></div>
+          </article>
+        </section>
+
+        <section class="panel table-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">SUBSCRIPTIONS</p>
+              <h2>Phân bổ theo gói</h2>
+            </div>
+            <span id="plansTotal" class="pill">— gói</span>
+          </div>
+          <div id="subscriptionPlans" class="bars"></div>
+        </section>
+
+        <section class="panel table-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">TRANSACTIONS</p>
+              <h2>Giao dịch gần đây</h2>
+            </div>
+            <span id="financeGeneratedAt" class="muted" aria-live="polite">—</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">Danh sách giao dịch thanh toán gần đây</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Thời gian</th>
+                  <th scope="col">Khách hàng</th>
+                  <th scope="col">Gói / Cổng</th>
+                  <th scope="col">Gộp</th>
+                  <th scope="col">Phí</th>
+                  <th scope="col">Hoàn</th>
+                  <th scope="col">Thực thu</th>
+                  <th scope="col">Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody id="recentPaymentsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel table-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">CUSTOMERS</p>
+              <h2>Subscription gần đây</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">Danh sách subscription cập nhật gần đây</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Khách hàng</th>
+                  <th scope="col">Gói</th>
+                  <th scope="col">Chu kỳ</th>
+                  <th scope="col">Giá</th>
+                  <th scope="col">Gia hạn</th>
+                  <th scope="col">Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody id="recentSubscriptionsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
     </div>
   </main>
 
-  <script src="/js/admin.js?v=20260725" defer></script>
+  <script src="/js/admin.js?v=20260725-finance" defer></script>
 </body>
 </html>

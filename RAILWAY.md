@@ -104,6 +104,30 @@ manually to Google Authenticator/Authy/1Password with issuer `FlowMate` and the
 admin email as the account name. Never commit or paste the secret into source
 files.
 
+### Finance and subscription tab
+
+The admin dashboard also exposes a **Finance & Subscription** tab backed by
+the provider-neutral PostgreSQL tables `subscriptions` and
+`payment_transactions`. Railway creates these tables automatically during the
+next deploy.
+
+The tab reports each currency separately and includes:
+
+- monthly gross revenue, gateway fees, refunds, and estimated net revenue;
+- active, trialing, past-due, new, and canceled subscriptions;
+- normalized monthly recurring revenue (MRR);
+- a 12-month revenue trend, plan distribution, recent payments, and recent
+  subscriptions.
+
+Amounts are stored as integers in each currency's smallest unit (VND = đồng,
+USD = cents). Estimated net revenue is `gross - fees - refunds`; it must not be
+treated as confirmation that a payment provider has settled funds to a bank
+account.
+
+The dashboard never fabricates billing data. Until a payment provider webhook
+or another trusted billing process writes subscriptions and transactions into
+the ledger, the finance tab displays a clear empty state with zero totals.
+
 ## Public privacy policy and terms
 
 FlowMate serves public privacy and terms pages from the same Railway deployment:

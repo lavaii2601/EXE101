@@ -326,6 +326,287 @@ def _sqlite_dashboard():
     }
 
 
+def _empty_finance():
+    return {
+        'has_data': False,
+        'currencies': [{
+            'currency': 'VND',
+            'gross_revenue_month': 0,
+            'fees_month': 0,
+            'refunds_month': 0,
+            'net_revenue_month': 0,
+            'payments_month': 0,
+            'active_subscriptions': 0,
+            'trialing_subscriptions': 0,
+            'past_due_subscriptions': 0,
+            'new_subscriptions_month': 0,
+            'canceled_subscriptions_month': 0,
+            'mrr': 0,
+            'total_subscriptions': 0,
+            'total_transactions': 0,
+        }],
+        'revenue_12m': [],
+        'subscriptions_by_plan': [],
+        'recent_payments': [],
+        'recent_subscriptions': [],
+        'money_unit': 'minor',
+        'reporting_timezone': 'Asia/Ho_Chi_Minh',
+    }
+
+
+def _postgres_finance():
+    """Return provider-neutral finance metrics without combining currencies."""
+    with pg.connection() as conn:
+        currency_summary = conn.execute(
+            """
+            WITH currencies AS (
+                SELECT 'VND'::TEXT AS currency
+                UNION SELECT currency FROM subscriptions
+                UNION SELECT currency FROM payment_transactions
+            ),
+            payment_stats AS (
+                SELECT
+                    currency,
+                    COALESCE(SUM(gross_amount) FILTER (
+                        WHERE status IN ('paid', 'partially_refunded', 'refunded')
+                          AND paid_at AT TIME ZONE 'Asia/Ho_Chi_Minh'
+                              >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
+                    ), 0)::BIGINT AS gross_revenue_month,
+                    COALESCE(SUM(fee_amount) FILTER (
+                        WHERE status IN ('paid', 'partially_refunded', 'refunded')
+                          AND paid_at AT TIME ZONE 'Asia/Ho_Chi_Minh'
+                              >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
+                    ), 0)::BIGINT AS fees_month,
+                    COALESCE(SUM(refund_amount) FILTER (
+                        WHERE refunded_at AT TIME ZONE 'Asia/Ho_Chi_Minh'
+                              >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
+                    ), 0)::BIGINT AS refunds_month,
+                    COUNT(*) FILTER (
+                        WHERE status IN ('paid', 'partially_refunded', 'refunded')
+                          AND paid_at AT TIME ZONE 'Asia/Ho_Chi_Minh'
+                              >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
+                    ) AS payments_month,
+                    COUNT(*) AS total_transactions
+                FROM payment_transactions
+                GROUP BY currency
+            ),
+            subscription_stats AS (
+                SELECT
+                    currency,
+                    COUNT(*) FILTER (WHERE status = 'active') AS active_subscriptions,
+                    COUNT(*) FILTER (WHERE status = 'trialing') AS trialing_subscriptions,
+                    COUNT(*) FILTER (WHERE status = 'past_due') AS past_due_subscriptions,
+                    COUNT(*) FILTER (
+                        WHERE created_at AT TIME ZONE 'Asia/Ho_Chi_Minh'
+                              >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
+                    ) AS new_subscriptions_month,
+                    COUNT(*) FILTER (
+                        WHERE canceled_at AT TIME ZONE 'Asia/Ho_Chi_Minh'
+                              >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
+                    ) AS canceled_subscriptions_month,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN status <> 'active' THEN 0
+                            WHEN billing_interval = 'yearly' THEN unit_amount / 12
+                            ELSE unit_amount
+                        END
+                    ), 0)::BIGINT AS mrr,
+                    COUNT(*) AS total_subscriptions
+                FROM subscriptions
+                GROUP BY currency
+            )
+            SELECT
+                currencies.currency,
+                COALESCE(payment_stats.gross_revenue_month, 0)::BIGINT AS gross_revenue_month,
+                COALESCE(payment_stats.fees_month, 0)::BIGINT AS fees_month,
+                COALESCE(payment_stats.refunds_month, 0)::BIGINT AS refunds_month,
+                (
+                    COALESCE(payment_stats.gross_revenue_month, 0)
+                    - COALESCE(payment_stats.fees_month, 0)
+                    - COALESCE(payment_stats.refunds_month, 0)
+                )::BIGINT AS net_revenue_month,
+                COALESCE(payment_stats.payments_month, 0)::BIGINT AS payments_month,
+                COALESCE(subscription_stats.active_subscriptions, 0)::BIGINT AS active_subscriptions,
+                COALESCE(subscription_stats.trialing_subscriptions, 0)::BIGINT AS trialing_subscriptions,
+                COALESCE(subscription_stats.past_due_subscriptions, 0)::BIGINT AS past_due_subscriptions,
+                COALESCE(subscription_stats.new_subscriptions_month, 0)::BIGINT AS new_subscriptions_month,
+                COALESCE(subscription_stats.canceled_subscriptions_month, 0)::BIGINT AS canceled_subscriptions_month,
+                COALESCE(subscription_stats.mrr, 0)::BIGINT AS mrr,
+                COALESCE(subscription_stats.total_subscriptions, 0)::BIGINT AS total_subscriptions,
+                COALESCE(payment_stats.total_transactions, 0)::BIGINT AS total_transactions
+            FROM currencies
+            LEFT JOIN payment_stats USING (currency)
+            LEFT JOIN subscription_stats USING (currency)
+            ORDER BY
+                CASE WHEN currencies.currency = 'VND' THEN 0 ELSE 1 END,
+                currencies.currency
+            """
+        ).fetchall()
+
+        revenue_12m = conn.execute(
+            """
+            WITH months AS (
+                SELECT GENERATE_SERIES(
+                    DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '11 months',
+                    DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh'),
+                    INTERVAL '1 month'
+                ) AS month
+            ),
+            currencies AS (
+                SELECT 'VND'::TEXT AS currency
+                UNION SELECT currency FROM subscriptions
+                UNION SELECT currency FROM payment_transactions
+            ),
+            paid AS (
+                SELECT
+                    DATE_TRUNC('month', paid_at AT TIME ZONE 'Asia/Ho_Chi_Minh') AS month,
+                    currency,
+                    SUM(gross_amount)::BIGINT AS gross,
+                    SUM(fee_amount)::BIGINT AS fees,
+                    COUNT(*) AS payments
+                FROM payment_transactions
+                WHERE status IN ('paid', 'partially_refunded', 'refunded')
+                  AND paid_at >= NOW() - INTERVAL '13 months'
+                GROUP BY 1, 2
+            ),
+            refunded AS (
+                SELECT
+                    DATE_TRUNC('month', refunded_at AT TIME ZONE 'Asia/Ho_Chi_Minh') AS month,
+                    currency,
+                    SUM(refund_amount)::BIGINT AS refunds
+                FROM payment_transactions
+                WHERE refunded_at IS NOT NULL
+                  AND refunded_at >= NOW() - INTERVAL '13 months'
+                GROUP BY 1, 2
+            )
+            SELECT
+                TO_CHAR(months.month, 'YYYY-MM') AS month,
+                currencies.currency,
+                COALESCE(paid.gross, 0)::BIGINT AS gross,
+                COALESCE(paid.fees, 0)::BIGINT AS fees,
+                COALESCE(refunded.refunds, 0)::BIGINT AS refunds,
+                (
+                    COALESCE(paid.gross, 0)
+                    - COALESCE(paid.fees, 0)
+                    - COALESCE(refunded.refunds, 0)
+                )::BIGINT AS net,
+                COALESCE(paid.payments, 0)::BIGINT AS payments
+            FROM months
+            CROSS JOIN currencies
+            LEFT JOIN paid
+                ON paid.month = months.month
+               AND paid.currency = currencies.currency
+            LEFT JOIN refunded
+                ON refunded.month = months.month
+               AND refunded.currency = currencies.currency
+            ORDER BY months.month, currencies.currency
+            """
+        ).fetchall()
+
+        subscriptions_by_plan = conn.execute(
+            """
+            SELECT
+                currency,
+                plan_code,
+                COALESCE(NULLIF(plan_name, ''), plan_code) AS label,
+                COUNT(*) FILTER (WHERE status = 'active') AS active,
+                COUNT(*) FILTER (WHERE status = 'trialing') AS trialing,
+                COUNT(*) FILTER (WHERE status = 'past_due') AS past_due,
+                COUNT(*) FILTER (WHERE status = 'canceled') AS canceled,
+                COALESCE(SUM(
+                    CASE
+                        WHEN status <> 'active' THEN 0
+                        WHEN billing_interval = 'yearly' THEN unit_amount / 12
+                        ELSE unit_amount
+                    END
+                ), 0)::BIGINT AS mrr
+            FROM subscriptions
+            GROUP BY currency, plan_code, COALESCE(NULLIF(plan_name, ''), plan_code)
+            ORDER BY active DESC, trialing DESC, label
+            """
+        ).fetchall()
+
+        recent_payments = conn.execute(
+            """
+            SELECT
+                payment.id,
+                payment.provider,
+                payment.provider_payment_id,
+                payment.status,
+                payment.currency,
+                payment.gross_amount,
+                payment.fee_amount,
+                payment.refund_amount,
+                (
+                    payment.gross_amount
+                    - payment.fee_amount
+                    - payment.refund_amount
+                )::BIGINT AS net_amount,
+                payment.description,
+                payment.paid_at,
+                payment.refunded_at,
+                payment.created_at,
+                payment.user_id,
+                COALESCE(
+                    NULLIF(users.gmail_email, ''),
+                    NULLIF(users.email, ''),
+                    payment.user_id
+                ) AS customer,
+                subscription.plan_code,
+                COALESCE(NULLIF(subscription.plan_name, ''), subscription.plan_code) AS plan_name
+            FROM payment_transactions payment
+            LEFT JOIN users ON users.user_id = payment.user_id
+            LEFT JOIN subscriptions subscription ON subscription.id = payment.subscription_id
+            ORDER BY COALESCE(payment.paid_at, payment.created_at) DESC
+            LIMIT 30
+            """
+        ).fetchall()
+
+        recent_subscriptions = conn.execute(
+            """
+            SELECT
+                subscription.id,
+                subscription.user_id,
+                subscription.provider,
+                subscription.plan_code,
+                COALESCE(NULLIF(subscription.plan_name, ''), subscription.plan_code) AS plan_name,
+                subscription.status,
+                subscription.billing_interval,
+                subscription.currency,
+                subscription.unit_amount,
+                subscription.current_period_end,
+                subscription.cancel_at_period_end,
+                subscription.created_at,
+                COALESCE(
+                    NULLIF(users.gmail_email, ''),
+                    NULLIF(users.email, ''),
+                    subscription.user_id
+                ) AS customer
+            FROM subscriptions subscription
+            LEFT JOIN users ON users.user_id = subscription.user_id
+            ORDER BY subscription.updated_at DESC
+            LIMIT 30
+            """
+        ).fetchall()
+
+    normalized_currencies = pg.normalize_rows(currency_summary)
+    has_data = any(
+        int(row.get('total_subscriptions') or 0) > 0
+        or int(row.get('total_transactions') or 0) > 0
+        for row in normalized_currencies
+    )
+    return {
+        'has_data': has_data,
+        'currencies': normalized_currencies,
+        'revenue_12m': pg.normalize_rows(revenue_12m),
+        'subscriptions_by_plan': pg.normalize_rows(subscriptions_by_plan),
+        'recent_payments': pg.normalize_rows(recent_payments),
+        'recent_subscriptions': pg.normalize_rows(recent_subscriptions),
+        'money_unit': 'minor',
+        'reporting_timezone': 'Asia/Ho_Chi_Minh',
+    }
+
+
 @admin_bp.route('/session', methods=['GET'])
 def admin_session_status():
     user_id, error_response = _google_admin_identity()
@@ -402,4 +683,20 @@ def admin_overview():
         'generated_at': datetime.now(timezone.utc).isoformat(),
         'process_uptime_seconds': int(time.time() - _PROCESS_STARTED_AT),
         **payload,
+    })
+
+
+@admin_bp.route('/finance', methods=['GET'])
+def admin_finance():
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+
+    finance = _postgres_finance() if pg.enabled() else _empty_finance()
+    return jsonify({
+        'success': True,
+        'admin': admin,
+        'backend': 'postgres' if pg.enabled() else 'sqlite',
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'finance': finance,
     })

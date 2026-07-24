@@ -17,6 +17,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { getUserMode } from '../config/userModes';
 import { apiGet, apiPost } from '../api/client';
 import { PRIVACY_URL, TERMS_URL } from '../api/config';
+import { connectGoogleAccount } from '../api/googleAuth';
 
 const ACCENT_OPTIONS = [
   { key: 'charcoal', hex: '#242423' },
@@ -38,6 +39,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const [twoFactor,     setTwoFactor]     = useState(false);
   const [outlook,       setOutlook]       = useState({ configured: false, connected: false });
   const [outlookLoading, setOutlookLoading] = useState(false);
+  const [gmailAuth,      setGmailAuth]      = useState(null);
+  const [gmailLoading,   setGmailLoading]   = useState(false);
 
   const name     = profile?.name || profile?.gmail_name || t('Người dùng', 'User');
   const email    = profile?.gmail_email || profile?.email || t('Chưa kết nối Gmail', 'Gmail not connected');
@@ -59,14 +62,39 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
     }
   }, []);
 
-  useEffect(() => { loadOutlookStatus(); }, [loadOutlookStatus]);
+  const loadGmailAuth = useCallback(async () => {
+    try {
+      const data = await apiGet('/email/auth-status');
+      setGmailAuth(data);
+    } catch {
+      setGmailAuth({ authenticated: false });
+    }
+  }, []);
+
+  useEffect(() => { loadOutlookStatus(); loadGmailAuth(); }, [loadOutlookStatus, loadGmailAuth]);
   useEffect(() => {
     if (!syncEvent?.id) return;
-    if (hasSyncTarget(syncEvent, ['settings', 'profile', 'providers'])) {
+    if (hasSyncTarget(syncEvent, ['settings', 'profile', 'providers', 'email'])) {
       loadOutlookStatus();
+      loadGmailAuth();
       onRefresh?.();
     }
-  }, [loadOutlookStatus, onRefresh, syncEvent]);
+  }, [loadOutlookStatus, loadGmailAuth, onRefresh, syncEvent]);
+
+  const reconnectGmail = async () => {
+    setGmailLoading(true);
+    try {
+      const result = await connectGoogleAccount();
+      if (!result.connected) return;
+      await loadGmailAuth();
+      onRefresh?.();
+      onAgentSync?.(['settings', 'profile', 'email', 'schedule', 'overview']);
+    } catch (error) {
+      Alert.alert(t('Không mở được Google OAuth', 'Could not open Google OAuth'), error.message);
+    } finally {
+      setGmailLoading(false);
+    }
+  };
 
   const confirmLogout = () => {
     Alert.alert(t('Đăng xuất', 'Sign out'), t('Bạn có chắc muốn đăng xuất?', 'Are you sure you want to sign out?'), [
@@ -184,9 +212,9 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{name}</Text>
             <Text style={styles.profileEmail} numberOfLines={1}>{email}</Text>
-            <View style={[styles.badge, gmailOk ? styles.badgeOk : styles.badgeWarn]}>
+            <View style={[styles.badge, gmailAuth?.authenticated ? styles.badgeOk : styles.badgeWarn]}>
               <Text style={styles.badgeText}>
-                {gmailOk ? t('● Gmail đã kết nối', '● Gmail connected') : t('● Gmail chưa kết nối', '● Gmail not connected')}
+                {gmailAuth?.authenticated ? t('● Gmail đã kết nối', '● Gmail connected') : t('● Gmail chưa kết nối', '● Gmail not connected')}
               </Text>
             </View>
           </View>
@@ -273,11 +301,20 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>Gmail & Google Calendar</Text>
-            <Text style={styles.settingSub}>{gmailOk ? t('Đã sẵn sàng cho email và lịch Google', 'Ready for Gmail and Google Calendar') : t('Chưa cấu hình hoặc chưa kết nối Gmail', 'Not configured or Gmail not connected')}</Text>
+            <Text style={styles.settingSub} numberOfLines={2}>
+              {gmailAuth?.authenticated
+                ? (gmailAuth.gmail_email || t('Đã kết nối', 'Connected'))
+                : gmailOk
+                  ? t('Chưa đăng nhập Gmail', 'Gmail not signed in')
+                  : t('Chưa cấu hình trên Railway', 'Not configured on Railway')}
+            </Text>
           </View>
-          <View style={[styles.statusPill, gmailOk ? styles.statusOk : styles.statusWarn]}>
-            <Text style={styles.statusText}>{gmailOk ? t('Đã bật', 'Enabled') : t('Chưa bật', 'Disabled')}</Text>
-          </View>
+          <Button
+            title={gmailAuth?.authenticated ? t('Đăng nhập lại', 'Reconnect') : t('Kết nối', 'Connect')}
+            variant={gmailAuth?.authenticated ? 'secondary' : 'primary'}
+            onPress={reconnectGmail}
+            loading={gmailLoading}
+          />
         </View>
 
         <View style={styles.divider} />

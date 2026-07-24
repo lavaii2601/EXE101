@@ -155,6 +155,50 @@ class AdminRouteSecurityTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'Server Control', response.data)
 
+    def test_finance_endpoint_fails_closed_without_admin_session(self):
+        client = self.app.test_client()
+        with (
+            patch.object(Config, 'ADMIN_EMAILS', {'admin@example.com'}),
+            patch.object(Config, 'ADMIN_TOTP_SECRET', RFC_6238_SECRET),
+        ):
+            response = client.get('/api/admin/finance')
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.get_json()['error'],
+            'admin_google_login_required',
+        )
+
+    def test_finance_endpoint_returns_currency_safe_empty_ledger(self):
+        client = self._client_with_google_session()
+        google_user = {
+            'gmail_email': 'admin@example.com',
+            'gmail_connected': 1,
+        }
+        with client.session_transaction() as flask_session:
+            flask_session['admin_totp_user'] = 'admin_example_com'
+            flask_session['admin_totp_verified_at'] = int(time.time())
+
+        with (
+            patch.object(Config, 'ADMIN_EMAILS', {'admin@example.com'}),
+            patch.object(Config, 'ADMIN_TOTP_SECRET', RFC_6238_SECRET),
+            patch.object(admin.User, 'get', return_value=google_user),
+            patch.object(admin.pg, 'enabled', return_value=False),
+        ):
+            response = client.get('/api/admin/finance')
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(payload['finance']['has_data'])
+        self.assertEqual(
+            payload['finance']['currencies'][0]['currency'],
+            'VND',
+        )
+        self.assertEqual(
+            payload['finance']['currencies'][0]['net_revenue_month'],
+            0,
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

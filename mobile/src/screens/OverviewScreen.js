@@ -397,8 +397,9 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
           label="Nhập task hoặc hoạt động"
           value={quickInput}
           onChangeText={setQuickInput}
-          placeholder="Yoga 30 phút, chăm mèo cưng, dọn nhà"
+          placeholder="Hãy nhập hoạt động trong ngày vào checklist"
           multiline
+          inputStyle={styles.quickInputField}
         />
         <View style={styles.quickActions}>
           <Button
@@ -830,6 +831,7 @@ function makeStyles(colors) {
     sourceText: { marginTop: 4, color: colors.textMuted, fontFamily: fontMedium, fontSize: 11 },
     dateCard: { gap: 8 },
     quickCard: { gap: 8 },
+    quickInputField: { minHeight: 48 },
     quickActions: {
       flexDirection: 'row',
       flexWrap: 'wrap',

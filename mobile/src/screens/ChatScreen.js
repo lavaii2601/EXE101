@@ -7,7 +7,6 @@ import Field from '../components/Field';
 import { apiDelete, apiGet, apiPost } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 import { getUserMode } from '../config/userModes';
-import ModeBrief from '../components/ModeBrief';
 import { takePendingAgentNotice } from '../state/agentNotices';
 
 function normalizePlanSuggestion(value) {
@@ -400,15 +399,6 @@ export default function ChatScreen({ userMode = 'worker', agentProfile = null, o
           <Button title="Chat mới" variant="secondary" onPress={startNewChat} />
         </View>
       </View>
-      <ModeBrief
-        userMode={userMode}
-        stats={[
-          { value: messages.filter((item) => item.role === 'assistant').length, label: 'AI phản hồi' },
-          { value: suggestion ? 1 : 0, label: 'Gợi ý lịch' },
-          { value: agentProfile?.capabilities?.length || mode.prompts.length, label: 'Năng lực' },
-        ]}
-      />
-
       <View style={styles.listWrap}>
         <FlatList
           ref={listRef}
