@@ -30,7 +30,7 @@ except ModuleNotFoundError:  # Minimal unit-test environments may omit requests.
 
 
 class BobTrainingCorpusTests(unittest.TestCase):
-    def test_exactly_500_unique_cases_exist_for_every_tool(self):
+    def test_exactly_cases_per_intent_unique_cases_exist_for_every_tool(self):
         for intent in TOOL_NAMES:
             cases = generate_training_cases(intent)
             self.assertEqual(CASES_PER_INTENT, len(cases), intent)
@@ -38,7 +38,8 @@ class BobTrainingCorpusTests(unittest.TestCase):
 
     def test_total_case_and_compact_document_counts(self):
         self.assertEqual(len(TOOL_NAMES) * CASES_PER_INTENT, len(list(iter_labelled_cases())))
-        self.assertEqual(len(TOOL_NAMES) * 10, len(build_rag_training_documents(batch_size=50)))
+        batches_per_intent = CASES_PER_INTENT // 50
+        self.assertEqual(len(TOOL_NAMES) * batches_per_intent, len(build_rag_training_documents(batch_size=50)))
 
     def test_classifier_routes_unseen_paraphrases(self):
         classifier = TrainingIntentClassifier()

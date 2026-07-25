@@ -1287,7 +1287,11 @@ class IntentOrchestrator:
     def _squash(value):
         return re.sub(r"\s+", " ", str(value or "")).strip()
 
+    _EMAIL_SUMMARY_ACTIONS = ("tom tat", "doc", "xem", "summarize", "read", "show")
+
     def _is_latest_email_summary(self, text):
+        if self._is_negated_action(text, self._EMAIL_SUMMARY_ACTIONS):
+            return False
         email_word = r"(?:e-?mails?|gmails?|mails?|thu|hop thu|inbox)"
         has_email = re.search(rf"\b{email_word}\b", text) is not None
         has_latest = (
@@ -1341,23 +1345,60 @@ class IntentOrchestrator:
     def _contains_word(text, words):
         return any(re.search(rf"\b{re.escape(word)}\b", text) for word in words)
 
+    # Negation markers this bypasses AI review for (see detect_with_ai's
+    # confidence_threshold): a bare keyword rule fires at high confidence
+    # regardless of surrounding words, so "khong can tim email" would
+    # otherwise still route to email.search just like "tim email" does.
+    _NEGATION_MARKERS_VI = ("khong", "dung", "chua", "khoi")
+    _NEGATION_FILLERS_VI = ("can", "muon", "phai", "duoc", "nen")
+    _NEGATION_MARKERS_EN = ("do not", "don't", "never", "no need to", "stop", "cannot", "can't")
+
+    def _is_negated_action(self, text, action_words):
+        """True when a word/phrase from action_words is immediately
+        preceded (allowing up to 2 Vietnamese filler words) by an explicit
+        negation marker -- 'khong tao', 'chua can xoa', "don't mark",
+        'never send'. Keeps a rule from firing on an explicit refusal just
+        because the bare action keyword is present, which would otherwise
+        lock detect_with_ai's confidence above threshold and skip AI review
+        entirely. Deliberately conservative: only the marker-immediately-
+        before-verb pattern counts, not a loose whole-sentence negation
+        scan that could suppress an unrelated valid request elsewhere in
+        the same message.
+        """
+        if not action_words:
+            return False
+        action_alt = "|".join(sorted((re.escape(w) for w in action_words), key=len, reverse=True))
+        vi_marker_alt = "|".join(self._NEGATION_MARKERS_VI)
+        filler_alt = "|".join(self._NEGATION_FILLERS_VI)
+        vi_pattern = rf"\b(?:{vi_marker_alt})\s+(?:(?:{filler_alt})\s+){{0,2}}(?:{action_alt})\b"
+        if re.search(vi_pattern, text):
+            return True
+        en_marker_alt = "|".join(re.escape(w) for w in self._NEGATION_MARKERS_EN)
+        en_pattern = rf"\b(?:{en_marker_alt})\s+(?:to\s+)?(?:{action_alt})\b"
+        return re.search(en_pattern, text) is not None
+
     _SCHEDULE_WORDS = ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar", "call", "event")
+    _SCHEDULE_CREATE_ACTIONS = (
+        "tao", "dat", "book", "them", "add", "create", "nhac toi", "remind",
+        "set up", "arrange", "plan", "schedule",
+    )
+    # Negation-only: "xep" ("khong xep lich") is worth catching as a refusal
+    # even though it isn't itself one of the positive-match action words
+    # above (it belongs to _is_day_plan_request's DAY_PLAN_SIGNAL instead).
+    _SCHEDULE_CREATE_NEGATION_ACTIONS = _SCHEDULE_CREATE_ACTIONS + ("xep",)
+    _SCHEDULE_UPDATE_ACTIONS = (
+        "doi", "sua", "cap nhat", "thay doi", "chuyen",
+        "change", "update", "reschedule", "move", "postpone", "shift",
+    )
+    _SCHEDULE_DELETE_ACTIONS = ("xoa", "huy", "bo lich", "cancel", "delete")
 
     def _is_schedule_create(self, text):
         # "schedule" needs a word boundary -- a plain substring check would
         # also match inside "reschedule", which should go to
         # _is_schedule_update instead (checked right after this).
-        if re.search(
-            r"\b(?:(?:khong|dung)\s+(?:duoc\s+)?"
-            r"(?:tao|dat|them|xep)|(?:do\s+not|don't|never)\s+"
-            r"(?:create|book|schedule|add))\b",
-            text,
-        ):
+        if self._is_negated_action(text, self._SCHEDULE_CREATE_NEGATION_ACTIONS):
             return False
-        action = self._contains_word(text, (
-            "tao", "dat", "book", "them", "add", "create", "nhac toi", "remind",
-            "set up", "arrange", "plan", "schedule",
-        ))
+        action = self._contains_word(text, self._SCHEDULE_CREATE_ACTIONS)
         schedule = self._contains_word(text, self._SCHEDULE_WORDS)
         # In English, "schedule" can itself be the imperative verb, so the
         # object need not repeat "meeting/event": "Schedule maintenance
@@ -1371,25 +1412,21 @@ class IntentOrchestrator:
         return action and (schedule or imperative_schedule)
 
     def _is_schedule_update(self, text):
-        action = self._contains_word(text, (
-            "doi", "sua", "cap nhat", "thay doi", "chuyen",
-            "change", "update", "reschedule", "move", "postpone", "shift",
-        ))
+        if self._is_negated_action(text, self._SCHEDULE_UPDATE_ACTIONS):
+            return False
+        action = self._contains_word(text, self._SCHEDULE_UPDATE_ACTIONS)
         schedule = self._contains_word(text, self._SCHEDULE_WORDS)
         return action and schedule
 
     def _is_schedule_delete(self, text):
-        action = self._contains_word(text, ("xoa", "huy", "bo lich", "cancel", "delete"))
+        if self._is_negated_action(text, self._SCHEDULE_DELETE_ACTIONS):
+            return False
+        action = self._contains_word(text, self._SCHEDULE_DELETE_ACTIONS)
         schedule = self._contains_word(text, self._SCHEDULE_WORDS)
         return action and schedule
 
     def _is_schedule_lookup(self, text):
-        if re.search(
-            r"\b(?:(?:khong|dung)\s+(?:duoc\s+)?"
-            r"(?:tao|dat|them|xep)|(?:do\s+not|don't|never)\s+"
-            r"(?:create|book|schedule|add))\b",
-            text,
-        ):
+        if self._is_negated_action(text, self._SCHEDULE_CREATE_NEGATION_ACTIONS):
             return False
         if self._contains_word(text, (
             "lich tuan", "lich hom", "hom nay co lich", "co lich gi", "calendar",
@@ -1413,20 +1450,32 @@ class IntentOrchestrator:
         # before this rule runs, so an action verb can't be present here.
         return has_schedule_word and self._explicit_date_from_text(text) is not None
 
+    _EMAIL_MARK_ACTIONS = ("danh dau", "mark")
+
     def _is_email_mark_read(self, text):
-        if not self._contains_word(text, ("danh dau", "mark")):
+        if self._is_negated_action(text, self._EMAIL_MARK_ACTIONS):
+            return False
+        if not self._contains_word(text, self._EMAIL_MARK_ACTIONS):
             return False
         has_read = self._contains_word(text, ("da doc", "read"))
         has_unread = self._contains_word(text, ("chua doc", "unread"))
         return has_read and not has_unread
 
     def _is_email_mark_unread(self, text):
-        if not self._contains_word(text, ("danh dau", "mark")):
+        if self._is_negated_action(text, self._EMAIL_MARK_ACTIONS):
+            return False
+        if not self._contains_word(text, self._EMAIL_MARK_ACTIONS):
             return False
         return self._contains_word(text, ("chua doc", "unread"))
 
+    _EMAIL_LOOKUP_ACTIONS = ("tim", "kiem", "check", "find", "search")
+
     def _is_email_lookup(self, text):
+        if self._is_negated_action(text, self._EMAIL_LOOKUP_ACTIONS):
+            return False
         return any(term in text for term in ("email", "gmail", "hop thu", "thu chua doc", "mail"))
+
+    _HISTORY_LOOKUP_ACTIONS = ("xem", "cho xem", "check", "show")
 
     def _is_history_lookup(self, text):
         # Deliberately does NOT match bare "hoat dong"/"activity" -- those
@@ -1434,6 +1483,8 @@ class IntentOrchestrator:
         # co cac hoat dong nhu...") as in actual history lookups, so they'd
         # misfire on checklist/day-plan messages. "lich su"/"history" are
         # unambiguous; the rest require an explicit retrospective phrase.
+        if self._is_negated_action(text, self._HISTORY_LOOKUP_ACTIONS):
+            return False
         if "lich su" in text or "history" in text:
             return True
         return any(term in text for term in (
@@ -1448,6 +1499,8 @@ class IntentOrchestrator:
         "arrange my day", "plan out my day", "organize my day",
     )
 
+    _DAY_PLAN_ACTIONS = ("goi y", "sap xep", "xep", "suggest", "arrange", "plan", "organize")
+
     def _is_day_plan_request(self, text):
         """A list of activities the user wants slotted onto the CALENDAR
         (specific times, conflict-aware) -- distinct from
@@ -1456,6 +1509,8 @@ class IntentOrchestrator:
         dong nhu X, Y, Z... goi y lich giup minh' (which also contains
         checklist.create's 'cac hoat dong' signal) routes to the calendar
         suggestion the user explicitly asked for, not a checklist."""
+        if self._is_negated_action(text, self._DAY_PLAN_ACTIONS):
+            return False
         if not any(term in text for term in self.DAY_PLAN_SIGNAL):
             has_arrange_word = any(term in text for term in (
                 "sap xep", "xep", "arrange", "plan", "organize",
@@ -1466,7 +1521,11 @@ class IntentOrchestrator:
         from routes.schedule import _split_day_plan_entries
         return len(_split_day_plan_entries(text)) >= 2
 
+    _CHECKLIST_ACTIONS = ("them", "tao", "add", "create")
+
     def _is_checklist_request(self, text):
+        if self._is_negated_action(text, self._CHECKLIST_ACTIONS):
+            return False
         if not any(term in text for term in self.CHECKLIST_LIST_SIGNAL):
             return False
         from routes.schedule import _split_day_plan_entries
@@ -1504,7 +1563,11 @@ class IntentOrchestrator:
             item.pop("_input_order", None)
         return items
 
+    _MODE_UPDATE_ACTIONS = ("doi che do", "chuyen che do", "set mode", "change mode")
+
     def _is_mode_update(self, text):
+        if self._is_negated_action(text, self._MODE_UPDATE_ACTIONS):
+            return False
         if not any(term in text for term in ("doi che do", "chuyen che do", "set mode", "mode", "che do lam viec")):
             return False
         return self._mode_from_text(text) is not None

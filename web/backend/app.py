@@ -43,7 +43,7 @@ from routes.overview import overview_bp
 from routes.sync import install_workspace_sync_hooks, sync_bp
 from routes.knowledge import knowledge_bp, _seed_if_empty as seed_knowledge_base
 from routes._background import bg_bp
-from routes.admin import admin_bp, _require_admin
+from routes.admin import admin_bp, _require_admin, is_current_user_admin
 from utils.security import authenticated_user_id, enforce_rate_limit, valid_request_origin
 
 # Keep application diagnostics without logging OAuth request/response tokens.
@@ -213,6 +213,8 @@ def serve_admin_login():
     TOTP gate.  A separate route lets unauthenticated users start OAuth
     without exposing the canonical ``/admin`` URL as an open dashboard.
     """
+    if authenticated_user_id() and not is_current_user_admin():
+        return redirect('/app')
     return _serve_admin_shell()
 
 

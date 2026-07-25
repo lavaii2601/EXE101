@@ -4,14 +4,16 @@ Bob does not fine-tune a base model in this repo. These files are imported into
 the FlowMate knowledge base through `scripts/train_bob.py` and used as RAG
 context during chat.
 
-In addition, `services/bob_training_cases.py` generates exactly 500 labelled
-phrases for every executable tool intent (currently 12 intents / 6,000 cases).
+In addition, `services/bob_training_cases.py` generates exactly 750 labelled
+phrases for every executable tool intent (currently 12 intents / 9,000 cases).
 Unlike the passive RAG documents, this corpus trains Bob's built-in offline
 classifier and is also imported in compact 50-case batches during deployment.
-The 500 phrases per intent are deterministic combinations of reviewed semantic
-cores, prefixes, and suffixes; they should not be interpreted as 500 unrelated
+The 750 phrases per intent are deterministic combinations of reviewed semantic
+cores, prefixes, and suffixes; they should not be interpreted as 750 unrelated
 human conversations. The cores now include Vietnamese, English, and real
-code-switch forms for every tool family.
+code-switch forms for every tool family, plus indirect/ambiguous phrasing and
+casual shorthand added to sharpen routing on paraphrases that don't use an
+obvious action verb.
 
 Language/context behavior is not left to RAG retrieval alone. Runtime code also:
 

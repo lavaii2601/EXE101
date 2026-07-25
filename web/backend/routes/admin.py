@@ -84,6 +84,20 @@ def _trusted_google_email(user_id):
     return ''
 
 
+def is_current_user_admin():
+    """Return whether the signed-in Google identity is allowlisted.
+
+    This is deliberately only a role check. Opening the dashboard still
+    requires the independent TOTP gate enforced by ``_require_admin``.
+    """
+    raw_user_id = authenticated_user_id()
+    if not raw_user_id or not Config.ADMIN_EMAILS:
+        return False
+    user_id = sanitize_user_id(raw_user_id)
+    google_email = _trusted_google_email(user_id)
+    return bool(google_email and google_email in Config.ADMIN_EMAILS)
+
+
 def _configuration_error():
     if not Config.ADMIN_EMAILS:
         return 'ADMIN_EMAILS is not configured'

@@ -389,6 +389,11 @@ class GmailService:
             subject = header_value('Subject', 'No Subject')
             sender = header_value('From', 'Unknown')
             date = header_value('Date', '')
+            # To/Cc matter for summarization: whether the user is the sole/
+            # primary recipient versus one of several To/Cc'd people changes
+            # who an action item actually belongs to.
+            to = header_value('To', '')
+            cc = header_value('Cc', '')
             snippet = message.get('snippet', '') or ''
             body = "" if lazy else self._get_email_body(payload)
             attachments = [] if lazy else self._get_attachments(payload)
@@ -400,6 +405,8 @@ class GmailService:
                 'subject': subject,
                 'sender': sender,
                 'date': date,
+                'to': to,
+                'cc': cc,
                 'body': body,
                 'attachments': attachments,
                 'snippet': snippet,

@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
 from services.openrouter_service import OpenRouterService
+from services import extractive_summary
 from models.cache import Cache
 from models import subscription as subscription_model
 from utils.user_context import get_user_db_path
@@ -884,72 +885,32 @@ class AIService:
             return DEMO_RESPONSES["default"]
     
     def summarize_email(self, email_content, user_id=None):
-        """Summarize email content with focus on key points and action items"""
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Bạn là trợ lý giáo viên thông minh. Tóm tắt email CỰC NGẮN (1-2 câu), tập trung vào:\n"
-                    "- Nội dung chính và ý nghĩa\n"
-                    "- Hành động cần thực hiện (nếu có)\n"
-                    "- Thời gian cần phản hồi (nếu có)\n"
-                    "BỎ các phần dư thừa như signature, quảng cáo, lời chào thông thường.\n"
-                    "Viết rõ, ngắn gọn, dễ hiểu." + PLAIN_TEXT_INSTRUCTION
-                )
-            },
-            {
-                "role": "user",
-                "content": f"Tóm tắt email sau (bỏ dư thừa, giữ ý chính):\n\n{self._truncate_text(email_content, self.max_input_chars)}"
-            }
-        ]
-        return self.generate_response(messages, task='summary', user_id=user_id)
+        """Summarize email content with focus on key points and action items.
+
+        Local extractive summarization (services/extractive_summary.py) --
+        no LLM/API call, no token cost. See summarize_email_polished for why.
+        """
+        return extractive_summary.summarize_short('', email_content)
 
     def summarize_email_polished(self, email_data, user_id=None):
-        """Create a structured, accurate and action-oriented email summary."""
+        """Create a structured, accurate and action-oriented email summary.
+
+        Local extractive summarization (services/extractive_summary.py):
+        ranks sentences already in the email by word-frequency importance
+        and reassembles the same 4-section report from verbatim source
+        text -- no LLM/API call, no token cost. Because nothing is
+        generated, only selected, it can never state a fact that isn't
+        literally in the source (the trade-off: it can't paraphrase/
+        synthesize a new sentence the way an LLM summary could).
+        """
         email_data = email_data or {}
         subject = str(email_data.get('subject', '') or '').strip()
         sender = str(email_data.get('sender', '') or '').strip()
-        date = str(email_data.get('date', '') or '').strip()
+        cc = str(email_data.get('cc', '') or '').strip()
+        to = str(email_data.get('to', '') or '').strip()
         body = str(email_data.get('body', '') or email_data.get('snippet', '') or '').strip()
+        return extractive_summary.summarize_structured(subject, body, sender=sender, to=to, cc=cc)
 
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Ban la tro ly email chuyen nghiep cho giao vien. Tra loi bang tieng Viet tu nhien, co dau. "
-                    "Chi dung thong tin co trong email; khong suy dien hay bia dat. Giu chinh xac ten, ngay gio, "
-                    "con so, dia diem va yeu cau. Bo loi chao, chu ky, tracking va quang cao. Trinh bay 4 muc: "
-                    "TOM TAT, DIEM QUAN TRONG, VIEC CAN LAM, THOI HAN / UU TIEN. Neu khong co, ghi 'Khong co'."
-                ) + PLAIN_TEXT_INSTRUCTION
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"From: {sender}\n"
-                    f"Subject: {subject}\n"
-                    f"Date: {date}\n\n"
-                    f"Email:\n{self._truncate_text(body, self.max_input_chars)}"
-                )
-            }
-        ]
-        response = self.generate_response(
-            messages,
-            max_tokens=min(260, self.task_max_tokens.get('summary', 180)),
-            task='summary',
-            user_id=user_id
-        ).strip()
-
-        if self.last_provider_used == 'demo':
-            compact_body = re.sub(r'\s+', ' ', body).strip()
-            preview = self._truncate_text(compact_body, 700)
-            return (
-                f"TOM TAT\n{preview or 'Khong co noi dung de tom tat.'}\n\n"
-                "DIEM QUAN TRONG\n- Can kiem tra lai noi dung email goc.\n\n"
-                "VIEC CAN LAM\n- Khong xac dinh duoc khi AI dang o che do demo.\n\n"
-                "THOI HAN / UU TIEN\n- Khong co thong tin."
-            )
-        return strip_markup(response)
-    
     def generate_reply(self, context, user_choice, user_id=None):
         """Generate automatic reply based on user choice"""
         messages = [
@@ -1078,7 +1039,13 @@ class AIService:
             return email_data.get('snippet', '')[:200]
 
     def summarize_email_report(self, emails, report_date=None, user_id=None):
-        """Summarize multiple emails with intelligent filtering and high-quality summaries."""
+        """Summarize multiple emails with intelligent filtering.
+
+        Local extractive summarization (services/extractive_summary.py) for
+        the per-email one-line summary -- no LLM/API call, no token cost,
+        deterministic. Meeting detection stays rule-based via
+        _infer_meeting_signals, unchanged.
+        """
         if not emails:
             return []
 
@@ -1087,205 +1054,53 @@ class AIService:
         for email in emails:
             subject = (email.get('subject', '') or '').lower()
             body = (email.get('body', '') or '').lower()
-            
+
             # Skip obvious promotions, newsletters, automated notifications
             skip_keywords = [
                 'unsubscribe', 'promotional', 'khuyến mãi', 'đơn hàng', 'shipping',
                 'marketing', 'newsletter', 'subscription', 'confirm your', 'verify your'
             ]
-            
+
             if any(kw in subject or kw in body[:200] for kw in skip_keywords):
                 # Check if it's important despite being promotional
                 important_keywords = ['urgent', 'cần sự chú ý', 'gấp', 'important', 'action required']
                 if not any(kw in subject for kw in important_keywords):
                     continue
-            
+
             filtered_emails.append(email)
-        
+
         # Use original list if all filtered, prevent empty result
         if not filtered_emails:
             filtered_emails = emails[:15]  # Process top 15 if all filtered
 
-        compact_items = []
-        for idx, email in enumerate(filtered_emails, start=1):
-            subject = email.get('subject', '').strip()
-            snippet = (email.get('snippet', '') or '').strip()
-            body = (email.get('body', '') or '').strip()
-            
-            # Build a concise representation
-            content = subject
-            if snippet:
-                content += f"\n{snippet}"
-            elif body:
-                content += f"\n{body[:300]}"
-            
-            compact_text = self._truncate_text(content, 380)
-            compact_items.append(
-                f"[{idx}] Từ: {email.get('sender', 'Unknown')}\n{compact_text}"
+        rows = []
+        for email in filtered_emails:
+            inferred = self._infer_meeting_signals(email, report_date=report_date)
+            summary = extractive_summary.summarize_one_line(
+                email.get('subject', ''),
+                email.get('snippet', ''),
+                email.get('body', ''),
             )
+            rows.append({
+                'id': email.get('id', ''),
+                'sender': email.get('sender', 'Unknown'),
+                'summary': summary,
+                'subject': email.get('subject', ''),
+                'date': email.get('date', ''),
+                'is_unread': bool(email.get('is_unread', False)),
+                'is_meeting': bool(inferred.get('is_meeting', False)),
+                'meeting_note': inferred.get('meeting_note', ''),
+                'schedule_title': inferred.get('schedule_title', ''),
+                'suggested_start_time': inferred.get('suggested_start_time'),
+                'suggested_end_time': inferred.get('suggested_end_time'),
+                'suggested_description': inferred.get('suggested_description', '')
+            })
 
-        prompt = (
-            "Tóm tắt từng email thành đúng 1 câu rất ngắn. Yêu cầu:\n"
-            "1. Chỉ dùng thông tin xuất hiện trong tiêu đề/snippet/nội dung được cung cấp\n"
-            "2. Không suy đoán người nhận, môn học, lớp học, deadline, địa điểm hoặc hành động nếu email không nói rõ\n"
-            "3. Nếu thiếu nội dung, hãy mô tả email theo tiêu đề/thông báo hệ thống\n"
-            "4. BỎ toàn bộ dư thừa, quảng cáo, signature\n"
-            "5. Chỉ đặt is_meeting=true khi email có từ khóa họp/lịch hẹn VÀ có ngày/giờ rõ ràng\n\n"
-            "Trả về JSON array có cấu trúc:\n"
-            "[\n"
-            '  {"index": 1, "summary": "...", "is_meeting": false, ...}\n'
-            "]\n\n"
-            "Chi tiết mỗi object: index (số), summary (chuỗi), is_meeting (bool), "
-            "meeting_note (nếu meeting), schedule_title, suggested_start_time, suggested_end_time, suggested_description.\n"
-            "Tất cả các trường văn bản (summary, meeting_note, schedule_title, suggested_description) phải là "
-            "văn bản thuần, KHÔNG dùng thẻ HTML (như <b>, <i>, <br>) và KHÔNG dùng ký hiệu Markdown (**, __, #).\n"
-            "CHỈ TRẢ VỀ JSON, KHÔNG GIẢI THÍCH THÊM.\n\n"
-            + "\n\n".join(compact_items)
-        )
-
-        max_tokens = min(800, max(240, len(filtered_emails) * 80))
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Bạn là trợ lý giáo viên chuyên nghiệp. Tóm tắt email CHÍNH XÁC, NGẮN GỌN, "
-                    "không bịa thêm chi tiết ngoài dữ liệu email. Nội dung phải rõ ý, hữu ích cho giáo viên. "
-                    "Trả về JSON hợp lệ, không giải thích thêm."
-                )
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-
+        # Cache the rows for user for faster re-use
         try:
-            # Request compact JSON from AI to minimize parsing/roundtrips
-            raw = self.generate_response(messages, max_tokens=max_tokens, task='summary', user_id=user_id)
-            cleaned = raw.strip()
-            if '```json' in cleaned:
-                cleaned = cleaned.split('```json', 1)[1].split('```', 1)[0].strip()
-            elif '```' in cleaned:
-                cleaned = cleaned.split('```', 1)[1].split('```', 1)[0].strip()
-
-            parsed = json.loads(cleaned)
-            if not isinstance(parsed, list):
-                raise ValueError("Invalid JSON structure")
-
-            index_to_item = {}
-            for item in parsed:
-                if not isinstance(item, dict):
-                    continue
-                idx = item.get('index')
-                summary = strip_markup(str(item.get('summary', '')).strip())
-                if isinstance(idx, int) and summary:
-                    inferred = self._infer_meeting_signals(filtered_emails[idx - 1], report_date=report_date) if 1 <= idx <= len(filtered_emails) else {}
-                    index_to_item[idx] = {
-                        'summary': summary,
-                        'is_meeting': bool(item.get('is_meeting', inferred.get('is_meeting', False))),
-                        'meeting_note': strip_markup(str(item.get('meeting_note', inferred.get('meeting_note', ''))).strip()),
-                        'schedule_title': strip_markup(str(item.get('schedule_title', inferred.get('schedule_title', ''))).strip()),
-                        'suggested_start_time': item.get('suggested_start_time') or inferred.get('suggested_start_time'),
-                        'suggested_end_time': item.get('suggested_end_time') or inferred.get('suggested_end_time'),
-                        'suggested_description': strip_markup(str(item.get('suggested_description', inferred.get('suggested_description', ''))).strip()),
-                    }
-
-            rows = []
-            for idx, email in enumerate(filtered_emails, start=1):
-                fallback_summary = self._truncate_text(email.get('snippet', '') or email.get('body', ''), 140)
-                inferred = self._infer_meeting_signals(email, report_date=report_date)
-                item = index_to_item.get(idx, {})
-                safe_summary = self._safe_report_summary(email, item.get('summary'), fallback_summary)
-                rows.append({
-                    'id': email.get('id', ''),
-                    'sender': email.get('sender', 'Unknown'),
-                    'summary': safe_summary,
-                    'subject': email.get('subject', ''),
-                    'date': email.get('date', ''),
-                    'is_unread': bool(email.get('is_unread', False)),
-                    'is_meeting': bool(inferred.get('is_meeting', False)),
-                    'meeting_note': item.get('meeting_note') or inferred.get('meeting_note', ''),
-                    'schedule_title': item.get('schedule_title') or inferred.get('schedule_title', ''),
-                    'suggested_start_time': item.get('suggested_start_time') or inferred.get('suggested_start_time'),
-                    'suggested_end_time': item.get('suggested_end_time') or inferred.get('suggested_end_time'),
-                    'suggested_description': item.get('suggested_description') or inferred.get('suggested_description', '')
-                })
-            # Cache the parsed rows for user for faster re-use
-            try:
-                if user_id:
-                    db_path = get_user_db_path(user_id)
-                    Cache.set(f"email_report:v2:{user_id}::{report_date}", rows, db_path=db_path, ttl=600)
-            except Exception:
-                pass
-            return rows
+            if user_id:
+                db_path = get_user_db_path(user_id)
+                Cache.set(f"email_report:v2:{user_id}::{report_date}", rows, db_path=db_path, ttl=600)
         except Exception:
-            # Retry once with an explicit strict-JSON instruction to the AI
-            try:
-                strict_prompt = (
-                    "Bạn phải trả về CHÍNH XÁC một JSON array duy nhất.\n"
-                    "Mỗi phần tử là 1 object có các trường: index, summary, is_meeting, meeting_note, schedule_title, suggested_start_time, suggested_end_time, suggested_description.\n"
-                    "Trả về KHÔNG có giải thích, không có mã đánh dấu khác. CHỈ JSON.\n\n"
-                    + cleaned
-                )
-                retry_msgs = [
-                    {"role": "system", "content": "Bạn là trợ lý giáo viên. Trả về đúng JSON như yêu cầu."},
-                    {"role": "user", "content": strict_prompt}
-                ]
-                raw2 = self.generate_response(retry_msgs, max_tokens=min(800, max_tokens), task='summary', user_id=user_id)
-                cleaned2 = raw2.strip()
-                if '```json' in cleaned2:
-                    cleaned2 = cleaned2.split('```json', 1)[1].split('```', 1)[0].strip()
-                elif '```' in cleaned2:
-                    cleaned2 = cleaned2.split('```', 1)[1].split('```', 1)[0].strip()
-                parsed2 = json.loads(cleaned2)
-                if isinstance(parsed2, list):
-                    parsed = parsed2
-                else:
-                    raise
-            except Exception:
-                pass
-
-            rows = []
-            for email in emails:
-                fallback_summary = self._truncate_text(email.get('snippet', '') or email.get('body', ''), 180)
-                inferred = self._infer_meeting_signals(email, report_date=report_date)
-                rows.append({
-                    'id': email.get('id', ''),
-                    'sender': email.get('sender', 'Unknown'),
-                    'summary': fallback_summary,
-                    'subject': email.get('subject', ''),
-                    'date': email.get('date', ''),
-                    'is_unread': bool(email.get('is_unread', False)),
-                    'is_meeting': inferred.get('is_meeting', False),
-                    'meeting_note': inferred.get('meeting_note', ''),
-                    'schedule_title': inferred.get('schedule_title', ''),
-                    'suggested_start_time': inferred.get('suggested_start_time'),
-                    'suggested_end_time': inferred.get('suggested_end_time'),
-                    'suggested_description': inferred.get('suggested_description', '')
-                })
-            return rows
-
-    def _safe_report_summary(self, email, ai_summary, fallback_summary):
-        """Prefer AI wording only when it overlaps the actual email enough."""
-        subject = str(email.get('subject') or '').strip()
-        snippet = str(email.get('snippet') or '').strip()
-        body = str(email.get('body') or '').strip()
-        source = re.sub(r'\s+', ' ', ' '.join([subject, snippet, body[:500]])).strip()
-        fallback = self._truncate_text(snippet or body or subject, 180)
-        summary = strip_markup(str(ai_summary or '').strip())
-        if not summary:
-            return fallback or fallback_summary or subject or 'Không có nội dung tóm tắt.'
-
-        source_tokens = set(re.findall(r'[\wÀ-ỹ]+', source.lower()))
-        summary_tokens = [
-            token for token in re.findall(r'[\wÀ-ỹ]+', summary.lower())
-            if len(token) >= 4
-        ]
-        if not source_tokens or not summary_tokens:
-            return fallback or summary
-
-        overlap = sum(1 for token in summary_tokens if token in source_tokens)
-        ratio = overlap / max(len(summary_tokens), 1)
-        if ratio < 0.28:
-            return fallback or subject or summary
-        return self._truncate_text(summary, 220)
+            pass
+        return rows

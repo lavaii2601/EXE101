@@ -6,12 +6,18 @@ from flask import Blueprint, jsonify, request
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.knowledge import KnowledgeDocument
+from routes.admin import _require_admin
 from services.colloquial_knowledge_seed import COLLOQUIAL_SEED_DOCUMENTS
 from services.knowledge_service import KnowledgeService
-from utils.user_context import get_current_user_id
 
 knowledge_bp = Blueprint('knowledge', __name__, url_prefix='/api/knowledge')
 knowledge_service = KnowledgeService()
+
+# Admin-gated (routes.admin._require_admin): no web/mobile UI calls this
+# blueprint, and the table also stores per-user auto-learned rows that must
+# never be exposed or mutated cross-tenant (see models/knowledge.py). Bob's
+# own RAG lookups go through knowledge_service.search(..., user_id=...)
+# directly in services/chat_agents.py, not through these HTTP routes.
 
 # Bob's starter knowledge base: FlowMate's own real feature set, written so
 # Bob can ground "how does X work" answers instead of guessing. Anyone can
@@ -38,10 +44,24 @@ _SEED_DOCUMENTS = [
     (
         "Tab Email",
         "Tab Email hien thi hop thu Gmail da ket noi, ho tro loc theo trang thai (da doc/chua doc), "
-        "tom tat noi dung bang AI, va tu dong quet email de phat hien tin hieu lich hen/cuoc hop "
-        "(meeting suggestion) de goi y tao lich. Nguoi dung phai xac nhan truoc khi mot goi y duoc "
-        "tao thanh lich thuc su.",
+        "tom tat noi dung email (rut ra cac cau quan trong nhat trong thu, khong bia dat thong tin "
+        "ngoai noi dung goc), va tu dong quet email de phat hien tin hieu lich hen/cuoc hop (meeting "
+        "suggestion) de goi y tao lich. Nguoi dung phai xac nhan truoc khi mot goi y duoc tao thanh "
+        "lich thuc su. Free duoc 10 luot tom tat email/ngay, Premium khong gioi han (xem tai lieu "
+        "'Gioi han Free/Premium' de biet chi tiet).",
         "email,gmail,meeting suggestion",
+    ),
+    (
+        "Gioi han Free/Premium",
+        "FlowMate co 2 goi: Free va Premium. Free: toi da 10 luot tom tat email AI/ngay (het luot "
+        "phai cho sang ngay hom sau hoac nang cap); luu tru doan chat toi da 30 ngay; khong xem duoc "
+        "phan tich hoat dong theo tuan (bi khoa); khong xu ly duoc nhieu buoc/nhieu yeu cau trong "
+        "mot cau hoi; chat va soan tra loi AI van khong gioi han. Premium: tom tat email khong gioi "
+        "han; luu tru doan chat toi da 365 ngay; mo khoa phan tich hoat dong theo tuan; xu ly duoc "
+        "nhieu buoc trong mot cau hoi; phan hoi AI duoc uu tien mo hinh chat luong cao hon va chi "
+        "tiet hon. Neu nguoi dung hoi ve nang cap Premium, Bob huong dan mo modal nang cap trong "
+        "ung dung (web/mobile) -- Bob khong tu xu ly thanh toan hay cap Premium qua chat.",
+        "premium,free,freemium,quota,gioi han,goi cuoc,subscription",
     ),
     (
         "Tab Lich (Schedule/Calendar)",
@@ -281,14 +301,18 @@ def _seed_if_empty():
 
 @knowledge_bp.route('', methods=['GET'])
 def list_documents():
-    get_current_user_id(request)
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
     documents = KnowledgeDocument.get_all(limit=500)
     return jsonify({'success': True, 'documents': documents, 'count': len(documents)})
 
 
 @knowledge_bp.route('', methods=['POST'])
 def create_document():
-    get_current_user_id(request)
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
     data = request.get_json() or {}
     title = (data.get('title') or '').strip()
     content = (data.get('content') or '').strip()
@@ -302,7 +326,9 @@ def create_document():
 
 @knowledge_bp.route('/<int:doc_id>', methods=['PUT'])
 def update_document(doc_id):
-    get_current_user_id(request)
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
     data = request.get_json() or {}
     if not KnowledgeDocument.get_by_id(doc_id):
         return jsonify({'success': False, 'error': 'not_found'}), 404
@@ -326,7 +352,9 @@ def update_document(doc_id):
 
 @knowledge_bp.route('/<int:doc_id>', methods=['DELETE'])
 def delete_document(doc_id):
-    get_current_user_id(request)
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
     deleted = knowledge_service.delete_document(doc_id)
     if not deleted:
         return jsonify({'success': False, 'error': 'not_found'}), 404
@@ -335,7 +363,9 @@ def delete_document(doc_id):
 
 @knowledge_bp.route('/search', methods=['GET'])
 def search_documents():
-    get_current_user_id(request)
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
     query = request.args.get('q', '').strip()
     top_k = min(max(request.args.get('top_k', 3, type=int), 1), 10)
     if not query:

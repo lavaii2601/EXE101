@@ -685,6 +685,51 @@ class BobDeepContextTests(unittest.TestCase):
                 prompt,
             )
 
+    def test_negation_avoids_wrong_intent_across_expanded_rules(self):
+        """_is_negated_action (services/intent_orchestrator.py) extends the
+        negation check schedule.create/schedule.lookup already had to the
+        other rule-based detectors, so an explicit refusal doesn't lock a
+        wrong intent above detect_with_ai's confidence_threshold and skip
+        AI review."""
+        negated_cases = (
+            ("dung xoa lich hop do", "schedule.delete"),
+            ("chua muon doi che do sang freelancer", "settings.update_mode"),
+            ("khong can xem lich su hoat dong nua", "history.list"),
+            ("dung danh dau email nay da doc", "email.mark_read"),
+            ("khong can them viec nay vao checklist", "checklist.create"),
+            ("dung sap xep lich cho cac hoat dong nay", "schedule.suggest_plan"),
+            ("don't mark this email as read", "email.mark_read"),
+            ("khong can tom tat email moi nhat", "email.latest_summary"),
+            ("dung cap nhat lich hop nay", "schedule.update"),
+        )
+        for prompt, avoided_intent in negated_cases:
+            self.assertNotEqual(
+                avoided_intent,
+                self.orchestrator.detect(prompt)["intent"],
+                prompt,
+            )
+
+        # The same phrasing without the negation marker must still route
+        # normally -- the new check must not create false negatives on the
+        # existing fast path.
+        positive_cases = (
+            ("xoa lich hop voi sep ngay mai", "schedule.delete"),
+            ("doi che do sang freelancer", "settings.update_mode"),
+            ("xem lich su hoat dong hom qua", "history.list"),
+            ("danh dau email nay da doc", "email.mark_read"),
+            ("them viec nop bao cao vao checklist, va di cho", "checklist.create"),
+            ("sap xep lich cho tap gym va doc sach", "schedule.suggest_plan"),
+            ("mark this email as read", "email.mark_read"),
+            ("tom tat email moi nhat", "email.latest_summary"),
+            ("doi lich hop sang 5 gio chieu mai", "schedule.update"),
+        )
+        for prompt, expected_intent in positive_cases:
+            self.assertEqual(
+                expected_intent,
+                self.orchestrator.detect(prompt)["intent"],
+                prompt,
+            )
+
     def test_email_exclusions_survive_raw_and_entity_queries(self):
         raw_query, _ = _email_lookup_query(
             "Mark all emails read except invoice"

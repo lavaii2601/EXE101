@@ -13,6 +13,7 @@ if BACKEND_DIR not in sys.path:
 
 from config import Config
 from routes import admin
+from routes import email
 
 
 RFC_6238_SECRET = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
@@ -146,6 +147,78 @@ class AdminRouteSecurityTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'Server Control', response.data)
+
+    def test_signed_in_non_admin_cannot_open_admin_login_shell(self):
+        client = self.app.test_client()
+        with (
+            patch('app.authenticated_user_id', return_value='ordinary_user'),
+            patch('app.is_current_user_admin', return_value=False),
+        ):
+            response = client.get('/admin/login')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], '/app')
+
+    def test_signed_in_admin_can_open_admin_login_shell_for_totp(self):
+        client = self.app.test_client()
+        with (
+            patch('app.authenticated_user_id', return_value='admin_user'),
+            patch('app.is_current_user_admin', return_value=True),
+        ):
+            response = client.get('/admin/login')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Server Control', response.data)
+
+    def test_admin_role_check_uses_trusted_google_identity(self):
+        with (
+            patch.object(Config, 'ADMIN_EMAILS', {'admin@example.com'}),
+            patch.object(admin, 'authenticated_user_id', return_value='admin_example_com'),
+            patch.object(admin, '_trusted_google_email', return_value='admin@example.com'),
+        ):
+            self.assertTrue(admin.is_current_user_admin())
+
+    def test_auth_status_exposes_admin_role_from_server_allowlist(self):
+        client = self._client_with_google_session()
+        credential_status = {
+            'token_file': os.path.join(BACKEND_DIR, 'missing-test-token.pickle'),
+            'valid': True,
+            'scopes': [],
+            'has_token': True,
+            'error': None,
+            'refreshed': False,
+        }
+        with (
+            patch.object(email, 'inspect_google_credentials', return_value=credential_status),
+            patch.object(email, 'is_current_user_admin', return_value=True),
+            patch.object(email.User, 'get', return_value={}),
+        ):
+            response = client.get('/api/email/auth-status')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['authenticated'])
+        self.assertTrue(response.get_json()['is_admin'])
+
+    def test_auth_status_keeps_regular_user_out_of_admin_role(self):
+        client = self._client_with_google_session(email='person@example.com')
+        credential_status = {
+            'token_file': os.path.join(BACKEND_DIR, 'missing-test-token.pickle'),
+            'valid': True,
+            'scopes': [],
+            'has_token': True,
+            'error': None,
+            'refreshed': False,
+        }
+        with (
+            patch.object(email, 'inspect_google_credentials', return_value=credential_status),
+            patch.object(email, 'is_current_user_admin', return_value=False),
+            patch.object(email.User, 'get', return_value={}),
+        ):
+            response = client.get('/api/email/auth-status')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['authenticated'])
+        self.assertFalse(response.get_json()['is_admin'])
 
     def test_admin_dashboard_served_after_admin_verification(self):
         client = self.app.test_client()

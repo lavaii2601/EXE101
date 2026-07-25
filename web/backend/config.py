@@ -122,6 +122,19 @@ class Config:
         else:
             raise RuntimeError("SECRET_KEY must be configured when DEBUG is disabled")
 
+    # Fail closed in production: both of these silently downgrade auth when
+    # left at their DEBUG-friendly defaults. MOBILE_USER_HEADER_ENABLED
+    # trusts a client-supplied X-User-Id header as identity with no
+    # verification at all (utils/security.py::header_user_id) -- a full
+    # auth bypass if left on. SESSION_COOKIE_SECURE=False lets the session
+    # cookie travel over plain HTTP. Refuse to boot rather than run either
+    # unsafely once DEBUG is off.
+    if not DEBUG:
+        if MOBILE_USER_HEADER_ENABLED:
+            raise RuntimeError("MOBILE_USER_HEADER_ENABLED must be false when DEBUG is disabled")
+        if not SESSION_COOKIE_SECURE:
+            raise RuntimeError("SESSION_COOKIE_SECURE must be true when DEBUG is disabled")
+
     @classmethod
     def as_dict(cls):
         return {key: value for key, value in cls.__dict__.items() if key.isupper()}

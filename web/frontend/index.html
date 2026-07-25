@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css?v=20260724-web-premium-05">
+    <link rel="stylesheet" href="/css/style.css?v=20260725-admin-choice-01">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -46,12 +46,29 @@
                 </svg>
             </div>
             <h1 id="authGateTitle">FlowMate</h1>
-            <p>Đăng nhập để truy cập không gian làm việc thông minh của bạn.</p>
-            <button type="button" id="authGateLoginBtn" class="auth-google-button">
-                <span class="google-mark" aria-hidden="true">G</span>
-                <span class="auth-button-label">Đăng nhập với Google</span>
-                <span class="auth-spinner" aria-hidden="true"></span>
-            </button>
+            <div id="authLoginStage">
+                <p>Đăng nhập để truy cập không gian làm việc thông minh của bạn.</p>
+                <button type="button" id="authGateLoginBtn" class="auth-google-button">
+                    <span class="google-mark" aria-hidden="true">G</span>
+                    <span class="auth-button-label">Đăng nhập với Google</span>
+                    <span class="auth-spinner" aria-hidden="true"></span>
+                </button>
+            </div>
+            <div id="adminAccessChoice" class="admin-access-choice" hidden>
+                <span class="admin-access-badge">TÀI KHOẢN QUẢN TRỊ</span>
+                <h2>Chọn nơi bạn muốn tiếp tục</h2>
+                <p>Bạn có thể làm việc như người dùng thông thường hoặc mở khu vực quản trị hệ thống.</p>
+                <div class="admin-access-actions">
+                    <button type="button" id="adminOpenAppBtn" class="admin-access-option">
+                        <span class="admin-access-option-icon" aria-hidden="true">◫</span>
+                        <span><strong>Truy cập ứng dụng</strong><small>Email, lịch và công việc cá nhân</small></span>
+                    </button>
+                    <button type="button" id="adminOpenDashboardBtn" class="admin-access-option is-dashboard">
+                        <span class="admin-access-option-icon" aria-hidden="true">⌁</span>
+                        <span><strong>Mở Dashboard</strong><small>Vận hành, người dùng và subscription</small></span>
+                    </button>
+                </div>
+            </div>
             <div id="authGateStatus" class="auth-gate-status" aria-live="polite"></div>
             <div class="auth-links">
                 <a href="/privacy" target="_blank" rel="noopener noreferrer">Xem chính sách bảo mật</a>
@@ -816,6 +833,6 @@
         </div>
     </div>
     
-    <script src="/js/app.js?v=20260724-web-premium-05"></script>
+    <script src="/js/app.js?v=20260725-admin-choice-01"></script>
 </body>
 </html>

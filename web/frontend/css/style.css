@@ -236,6 +236,100 @@ body.workspace-ready .workspace-app {
     font-size: 13px;
 }
 
+.admin-access-choice[hidden],
+#authLoginStage[hidden] {
+    display: none;
+}
+
+.auth-gate.is-admin-choice .auth-card {
+    width: min(680px, 100%);
+}
+
+.admin-access-choice {
+    margin-top: 24px;
+}
+
+.admin-access-choice .admin-access-badge {
+    display: inline-flex;
+    padding: 7px 12px;
+    border: 1px solid rgba(137, 219, 255, .35);
+    border-radius: 999px;
+    background: rgba(85, 190, 254, .12);
+    color: #bfe9ff;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .12em;
+}
+
+.admin-access-choice h2 {
+    margin: 18px 0 0;
+    font-size: 25px;
+}
+
+.admin-access-choice p {
+    margin: 12px auto 24px;
+    font-size: 15px;
+}
+
+.admin-access-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.admin-access-option {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 108px;
+    padding: 18px;
+    border: 1px solid rgba(190, 194, 238, .24);
+    border-radius: 18px;
+    background: rgba(78, 84, 135, .28);
+    color: #f8f8ff;
+    text-align: left;
+    cursor: pointer;
+    transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.admin-access-option:hover {
+    transform: translateY(-2px);
+    border-color: rgba(190, 194, 238, .58);
+    background: rgba(92, 98, 157, .46);
+}
+
+.admin-access-option.is-dashboard {
+    border-color: rgba(137, 219, 255, .34);
+    background: linear-gradient(145deg, rgba(62, 113, 187, .38), rgba(104, 76, 167, .34));
+}
+
+.admin-access-option-icon {
+    display: grid;
+    flex: 0 0 44px;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 13px;
+    background: rgba(255, 255, 255, .1);
+    color: #c8ebff;
+    font-size: 24px;
+}
+
+.admin-access-option span:last-child {
+    display: grid;
+    gap: 6px;
+}
+
+.admin-access-option strong {
+    font-size: 15px;
+}
+
+.admin-access-option small {
+    color: #c7c9e5;
+    font-size: 11px;
+    line-height: 1.45;
+}
+
 .auth-links {
     display: grid;
     gap: 12px;
@@ -299,6 +393,10 @@ body.workspace-ready .workspace-app {
 
     .auth-card p {
         font-size: 16px;
+    }
+
+    .admin-access-actions {
+        grid-template-columns: 1fr;
     }
 }
 

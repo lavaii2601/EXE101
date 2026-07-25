@@ -23,6 +23,7 @@ from googleapiclient.discovery import build
 from services.gmail_service import GmailService, get_cached_gmail_service
 from services.mistral_service import MistralService
 from services.ai_service import AIService
+from routes.admin import is_current_user_admin
 from models.history import History
 from models.schedule import Schedule
 from models.user import User
@@ -1682,7 +1683,8 @@ def gmail_auth_status():
         'credential_error': credential_status['error'],
         'token_refreshed': credential_status['refreshed'],
         'google_scopes': google_scopes,
-        'calendar_write_connected': calendar_write_connected
+        'calendar_write_connected': calendar_write_connected,
+        'is_admin': bool(authenticated and is_current_user_admin())
     })
 
 

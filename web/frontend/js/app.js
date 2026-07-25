@@ -776,6 +776,10 @@ async function initApp() {
                     console.log('📥 Received gmail_auth success message');
                     const authenticatedAfterOAuth = await resolveInitialAuthState();
                     if (!authenticatedAfterOAuth) return;
+                    if (shouldShowAdminAccessChoice()) {
+                        showAdminAccessChoice();
+                        return;
+                    }
                     await refreshAuthButtons();
                     await loadUserProfile();
                     await startWorkspaceSyncWatcher();
@@ -805,6 +809,12 @@ async function initApp() {
     if (!authenticated) {
         checkRuntimeConfig();
         console.log('✅ App initialized in signed-out state');
+        return;
+    }
+
+    if (shouldShowAdminAccessChoice()) {
+        showAdminAccessChoice();
+        console.log('✅ App initialized at admin destination choice');
         return;
     }
 
@@ -844,6 +854,14 @@ async function initApp() {
 function setupAuthGate() {
     const loginButton = document.getElementById('authGateLoginBtn');
     if (loginButton) loginButton.addEventListener('click', gmailLogin);
+    document.getElementById('adminOpenAppBtn')?.addEventListener('click', () => {
+        const key = adminDestinationStorageKey();
+        if (key) sessionStorage.setItem(key, 'app');
+        window.location.replace('/app');
+    });
+    document.getElementById('adminOpenDashboardBtn')?.addEventListener('click', () => {
+        window.location.assign('/admin');
+    });
     showAuthGate(ui('Đang kiểm tra phiên đăng nhập...', 'Checking your sign-in session...'), true);
 }
 
@@ -855,7 +873,12 @@ function showAuthGate(message = '', loading = false) {
     document.body.classList.remove('workspace-ready');
     gate?.classList.remove('is-hidden');
     gate?.classList.remove('is-mode-stage');
+    gate?.classList.remove('is-admin-choice');
     gate?.classList.toggle('is-loading', loading);
+    const loginStage = document.getElementById('authLoginStage');
+    const adminChoice = document.getElementById('adminAccessChoice');
+    if (loginStage) loginStage.hidden = false;
+    if (adminChoice) adminChoice.hidden = true;
     if (status) status.textContent = message;
     if (button) button.disabled = loading;
     if (label) {
@@ -869,9 +892,46 @@ function showAuthGate(message = '', loading = false) {
 function showWorkspace() {
     const gate = document.getElementById('authGate');
     gate?.classList.add('is-hidden');
-    gate?.classList.remove('is-loading', 'is-mode-stage');
+    gate?.classList.remove('is-loading', 'is-mode-stage', 'is-admin-choice');
     document.body.classList.add('workspace-ready');
     document.getElementById('workspaceApp')?.setAttribute('aria-hidden', 'false');
+}
+
+function adminDestinationStorageKey() {
+    const identity = lastAuthStatus?.user_id || lastAuthStatus?.gmail_email;
+    return identity ? `flowmate-admin-destination:${identity}` : '';
+}
+
+function shouldShowAdminAccessChoice() {
+    if (!lastAuthStatus?.authenticated || !lastAuthStatus?.is_admin) return false;
+
+    const key = adminDestinationStorageKey();
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('admin_destination') === 'app' && key) {
+        sessionStorage.setItem(key, 'app');
+        params.delete('admin_destination');
+        const query = params.toString();
+        window.history.replaceState(
+            {},
+            document.title,
+            `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`
+        );
+    }
+    return !key || sessionStorage.getItem(key) !== 'app';
+}
+
+function showAdminAccessChoice() {
+    const gate = document.getElementById('authGate');
+    const status = document.getElementById('authGateStatus');
+    const loginStage = document.getElementById('authLoginStage');
+    const adminChoice = document.getElementById('adminAccessChoice');
+    document.body.classList.remove('workspace-ready');
+    gate?.classList.remove('is-hidden', 'is-loading', 'is-mode-stage');
+    gate?.classList.add('is-admin-choice');
+    if (loginStage) loginStage.hidden = true;
+    if (adminChoice) adminChoice.hidden = false;
+    if (status) status.textContent = '';
+    document.getElementById('workspaceApp')?.setAttribute('aria-hidden', 'true');
 }
 
 function showModeSelectionStage() {
@@ -2646,6 +2706,9 @@ async function checkOAuthCallback() {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('gmail_auth') === 'success') {
         console.log('✅ OAuth callback detected');
+        Object.keys(sessionStorage)
+            .filter((key) => key.startsWith('flowmate-admin-destination:'))
+            .forEach((key) => sessionStorage.removeItem(key));
         window.history.replaceState({}, document.title, window.location.pathname);
 
         try {
@@ -2662,16 +2725,6 @@ async function checkOAuthCallback() {
                 ui('⏳ Đang quét Gmail của bạn, chuyển sang tab Email để xem...', '⏳ Scanning your Gmail, switch to the Email tab to see results...'),
                 'info'
             ), 800);
-            if (userModeRequired) {
-                pendingPageAfterMode = 'overview';
-                return;
-            }
-
-            showWorkspace();
-            const overviewNavBtn = document.querySelector('[data-page="overview"]');
-            if (overviewNavBtn) {
-                await handlePageChange(overviewNavBtn);
-            }
         } catch (error) {
             console.error('OAuth completion refresh failed:', error);
         }
@@ -2929,6 +2982,9 @@ async function gmailLogout() {
             showNotification(ui('✅ Đã đăng xuất Gmail', '✅ Signed out of Gmail'), 'success');
             isAuthenticated = false;
             lastAuthStatus = null;
+            Object.keys(sessionStorage)
+                .filter((key) => key.startsWith('flowmate-admin-destination:'))
+                .forEach((key) => sessionStorage.removeItem(key));
             stopWorkspaceSyncWatcher();
             userModeRequired = false;
             pendingPageAfterMode = '';
@@ -6209,8 +6265,8 @@ async function loadCalendarEvents() {
             const locale = currentLanguage === 'en' ? 'en-US' : 'vi-VN';
             const startTime = new Date(event.start).toLocaleString(locale);
             const endTime = new Date(event.end).toLocaleString(locale);
-            const attendeeList = event.attendees && event.attendees.length > 0 
-                ? `<div style="margin-top: 8px; font-size: 12px; color: #666;"><strong>${ui('Người tham dự', 'Attendees')}:</strong> ${event.attendees.join(', ')}</div>`
+            const attendeeList = event.attendees && event.attendees.length > 0
+                ? `<div style="margin-top: 8px; font-size: 12px; color: #666;"><strong>${ui('Người tham dự', 'Attendees')}:</strong> ${event.attendees.map(escapeHtml).join(', ')}</div>`
                 : '';
             
             eventDiv.innerHTML = `
