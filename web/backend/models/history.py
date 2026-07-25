@@ -8,6 +8,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
 from models import postgres_db as pg
+from models import subscription as subscription_model
+from models import entitlements
 
 
 class History:
@@ -65,18 +67,20 @@ class History:
             return str(uuid.uuid4())
 
     @staticmethod
-    def _clamp_retention_days(value):
+    def _clamp_retention_days(value, is_premium=False):
+        cap = entitlements.limits_for(is_premium)['chat_retention_days']
         try:
-            days = int(value or 90)
+            days = int(value) if value is not None else cap
         except (TypeError, ValueError):
-            days = 90
-        return max(30, min(days, 93))
+            days = cap
+        return max(7, min(days, cap))
 
     @staticmethod
-    def ensure_chat_session(user_id, session_id=None, title=None, mode='worker', retention_days=90, db_path=None):
+    def ensure_chat_session(user_id, session_id=None, title=None, mode='worker', retention_days=None, db_path=None):
         session_id = History._normalize_session_id(session_id)
         title = (title or 'Chat').strip()[:120] or 'Chat'
-        retention_days = History._clamp_retention_days(retention_days)
+        is_premium = pg.enabled() and subscription_model.is_premium(user_id)
+        retention_days = History._clamp_retention_days(retention_days, is_premium=is_premium)
         safe_mode = mode if mode in {
             'student', 'worker', 'freelancer', 'creator', 'business', 'mentor', 'teacher'
         } else 'worker'
@@ -311,7 +315,8 @@ class History:
             assignments.append("title = %s" if pg.enabled() else "title = ?")
             values.append((title or 'Chat').strip()[:120] or 'Chat')
         if retention_days is not None:
-            days = History._clamp_retention_days(retention_days)
+            is_premium = pg.enabled() and subscription_model.is_premium(user_id)
+            days = History._clamp_retention_days(retention_days, is_premium=is_premium)
             if pg.enabled():
                 assignments.extend(["retention_days = %s", "expires_at = NOW() + (%s || ' days')::INTERVAL"])
                 values.extend([days, days])

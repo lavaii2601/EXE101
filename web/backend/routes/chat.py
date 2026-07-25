@@ -29,6 +29,7 @@ from models.session_memory import SessionMemory
 from models.user import User
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from models import subscription as subscription_model
+from models import entitlements
 from datetime import datetime
 
 # Configure module logger
@@ -493,13 +494,14 @@ def get_chat_sessions():
     db_path = get_user_db_path(user_id)
     limit = request.args.get('limit', 30, type=int)
     sessions = History.list_chat_sessions(user_id=user_id, limit=limit, db_path=db_path)
+    cap = entitlements.limits_for(subscription_model.is_premium(user_id))['chat_retention_days']
     return jsonify({
         'success': True,
         'sessions': sessions,
         'retention': {
-            'min_days': 30,
-            'max_days': 93,
-            'default_days': 90,
+            'min_days': 7,
+            'max_days': cap,
+            'default_days': cap,
         }
     })
 

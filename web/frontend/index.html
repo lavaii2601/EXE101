@@ -560,10 +560,10 @@
                         <small>Miễn phí mãi mãi</small>
                         <ul>
                             <li>Chat và soạn trả lời AI</li>
-                            <li>10 lượt tóm tắt email/ngày</li>
-                            <li>Lưu lịch sử 30 ngày</li>
-                            <li class="limited">Không xử lý nhiều bước</li>
-                            <li class="limited">Phân tích 7 ngày: khóa</li>
+                            <li data-feature="email_summary" data-tier="free">10 lượt tóm tắt email/ngày</li>
+                            <li data-feature="chat_retention" data-tier="free">Lưu lịch sử 30 ngày</li>
+                            <li class="limited" data-feature="multi_step" data-tier="free">Không xử lý nhiều bước</li>
+                            <li class="limited" data-feature="analytics" data-tier="free">Phân tích tuần: khóa</li>
                         </ul>
                         <em id="freePlanCurrentBadge" class="subscription-current-plan-badge">Đang sử dụng</em>
                     </article>
@@ -574,11 +574,11 @@
                         <small>/ tháng</small>
                         <small class="subscription-price-usd">~ $1.99</small>
                         <ul>
-                            <li>Tóm tắt email không giới hạn</li>
-                            <li>Xử lý nhiều bước</li>
-                            <li>Phản hồi AI nâng cao</li>
-                            <li>Lịch sử không giới hạn</li>
-                            <li>Phân tích 7 ngày: mở khóa</li>
+                            <li data-feature="email_summary" data-tier="premium">Tóm tắt email không giới hạn</li>
+                            <li data-feature="multi_step" data-tier="premium">Xử lý nhiều bước</li>
+                            <li data-feature="ai_quality" data-tier="premium">Phản hồi AI nâng cao</li>
+                            <li data-feature="chat_retention" data-tier="premium">Lịch sử tới 365 ngày</li>
+                            <li data-feature="analytics" data-tier="premium">Phân tích tuần: mở khóa</li>
                         </ul>
                         <em class="subscription-plan-highlight">Linh hoạt</em>
                     </button>
@@ -626,13 +626,27 @@
                     </div>
                 </div>
 
-                <div class="subscription-payment-actions">
+                <div id="subscriptionPaymentControls" class="subscription-payment-actions">
                     <button type="button" id="subscriptionBackBtn" class="btn-secondary">← Quay lại</button>
                     <button type="button" id="subscriptionSubmitBtn" class="btn-primary">Gửi yêu cầu thanh toán</button>
                 </div>
-                <p class="subscription-contact-note">
+                <p id="subscriptionContactNote" class="subscription-contact-note">
                     Cổng thanh toán đang được tích hợp. Hiện tại yêu cầu sẽ được gửi đến FlowMate để xử lý thủ công.
                 </p>
+
+                <div id="subscriptionRequestPanel" class="subscription-request-panel" hidden>
+                    <p>Yêu cầu của bạn đã được soạn sẵn bên dưới. Bấm "Mở ứng dụng email" để gửi, hoặc sao chép nội dung nếu máy bạn không có sẵn ứng dụng email.</p>
+                    <div class="subscription-request-preview">
+                        <div><span>Đến</span><strong id="subscriptionRequestTo"></strong></div>
+                        <div><span>Tiêu đề</span><strong id="subscriptionRequestSubject"></strong></div>
+                        <div><span>Nội dung</span><p id="subscriptionRequestBody"></p></div>
+                    </div>
+                    <div class="subscription-request-actions">
+                        <a id="subscriptionRequestMailLink" class="btn-secondary" href="#" target="_blank" rel="noopener">Mở ứng dụng email</a>
+                        <button type="button" id="subscriptionRequestCopyBtn" class="btn-primary">Sao chép nội dung yêu cầu</button>
+                    </div>
+                    <button type="button" id="subscriptionRequestDoneBtn" class="subscription-request-done">Đóng</button>
+                </div>
             </section>
         </div>
     </div>

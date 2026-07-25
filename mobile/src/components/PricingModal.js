@@ -5,15 +5,17 @@ import Button from './Button';
 import { useTheme } from '../theme/ThemeContext';
 import { apiPost } from '../api/client';
 
-const FEATURES = [
-  { label: 'Chat với Bob (AI)', free: 'Không giới hạn', premium: 'Không giới hạn' },
-  { label: 'Soạn trả lời AI', free: 'Không giới hạn', premium: 'Không giới hạn' },
-  { label: 'Tóm tắt email AI', free: '10 lượt/ngày', premium: 'Không giới hạn' },
-  { label: 'Xử lý nhiều bước trong 1 câu hỏi', free: 'Chưa hỗ trợ', premium: 'Có', freeLocked: true },
-  { label: 'Chất lượng phản hồi AI', free: 'Tiêu chuẩn', premium: 'Nâng cao' },
-  { label: 'Lưu trữ đoạn chat', free: '30 ngày', premium: 'Tới 365 ngày' },
-  { label: 'Phân tích 7 ngày', free: 'Khóa', premium: 'Mở khóa', freeLocked: true },
-  { label: 'Lịch sử hoạt động', free: '30 ngày', premium: 'Không giới hạn' },
+// Static fallback only, used until /api/user's 'features' field (backend
+// models/entitlements.py -- the single source of truth for these numbers)
+// has loaded. Keep this in sync with FEATURE_TABLE there if it ever changes.
+const FALLBACK_FEATURES = [
+  { key: 'chat', label: 'Chat với Bob (AI)', free: 'Không giới hạn', premium: 'Không giới hạn' },
+  { key: 'compose', label: 'Soạn trả lời AI', free: 'Không giới hạn', premium: 'Không giới hạn' },
+  { key: 'email_summary', label: 'Tóm tắt email AI', free: '10 lượt/ngày', premium: 'Không giới hạn' },
+  { key: 'multi_step', label: 'Xử lý nhiều bước trong 1 câu hỏi', free: 'Chưa hỗ trợ', premium: 'Có', free_locked: true },
+  { key: 'ai_quality', label: 'Chất lượng phản hồi AI', free: 'Tiêu chuẩn', premium: 'Nâng cao (ưu tiên mô hình tốt hơn, phản hồi chi tiết hơn)' },
+  { key: 'chat_retention', label: 'Lưu trữ đoạn chat', free: '30 ngày', premium: '365 ngày' },
+  { key: 'analytics', label: 'Phân tích tuần', free: 'Khóa', premium: 'Mở khóa', free_locked: true },
 ];
 
 const REASON_TEXT = {
@@ -73,6 +75,10 @@ export default function PricingModal({
   const [billing, setBilling] = useState('monthly');
   const [method, setMethod] = useState('vnpay');
   const [submitting, setSubmitting] = useState(false);
+
+  const features = Array.isArray(subscription?.features) && subscription.features.length
+    ? subscription.features
+    : FALLBACK_FEATURES;
 
   const price = PRICING[billing].vnd;
   const priceUsd = PRICING[billing].usd;
@@ -173,7 +179,7 @@ export default function PricingModal({
               priceText="0đ"
               periodText="mãi mãi"
               isCurrent={!isPremiumTier}
-              rows={FEATURES.map((item) => ({ label: item.label, value: item.free, locked: item.freeLocked }))}
+              rows={features.map((item) => ({ label: item.label, value: item.free, locked: item.free_locked }))}
             />
             <PlanCard
               colors={colors}
@@ -185,7 +191,7 @@ export default function PricingModal({
               periodText={period}
               priceUsdText={`~ $${priceUsd}`}
               isCurrent={isPremiumTier}
-              rows={FEATURES.map((item) => ({ label: item.label, value: item.premium }))}
+              rows={features.map((item) => ({ label: item.label, value: item.premium }))}
             />
 
             {isPremiumTier ? (

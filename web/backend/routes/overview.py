@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from models import subscription as subscription_model
 from services.overview_service import (
     build_weekly_analytics,
     get_or_start_daily_overview,
@@ -36,6 +37,8 @@ def daily_overview():
 @overview_bp.route('/analytics', methods=['GET'])
 def weekly_analytics():
     user_id = get_current_user_id(request)
+    if not subscription_model.is_premium(user_id):
+        return jsonify({'error': 'premium_required', 'feature': 'analytics'}), 403
     end_day = parse_overview_date(request.args.get('end_date'))
     days = min(max(request.args.get('days', 7, type=int), 1), 30)
     return jsonify(build_weekly_analytics(user_id, end_day, days=days))

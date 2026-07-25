@@ -59,7 +59,17 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
         setChecklistState({ revision: 0, completed: {}, custom_items: [] });
       }
 
-      setAnalytics(analyticsResult.status === 'fulfilled' ? analyticsResult.value : null);
+      if (analyticsResult.status === 'fulfilled') {
+        setAnalytics(analyticsResult.value);
+      } else if (analyticsResult.reason?.status === 403 && analyticsResult.reason?.data?.error === 'premium_required') {
+        // apiGet() throws on non-2xx responses (unlike the web client, which
+        // resolves regardless of status), so the free-tier 403 from
+        // routes/overview.py::weekly_analytics lands here, not in the
+        // 'fulfilled' branch above.
+        setAnalytics({ error: 'premium_required' });
+      } else {
+        setAnalytics(null);
+      }
     } catch (error) {
       Alert.alert('Không tổng hợp được dữ liệu', error.message);
     } finally {
@@ -310,6 +320,21 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
   };
 
   const renderAnalytics = () => {
+    if (analytics?.error === 'premium_required') {
+      return (
+        <Card>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.kicker}>PHÂN TÍCH TUẦN</Text>
+            <Text style={styles.sectionTitle}>Xu hướng hoạt động</Text>
+          </View>
+          <Text style={styles.analyticsLockedText}>
+            Phân tích tuần là tính năng Premium. Nâng cấp để xem xu hướng hoàn thành task và email theo ngày.
+          </Text>
+          <Button title="Mở khóa Premium" onPress={() => onNavigate?.('settings')} />
+        </Card>
+      );
+    }
+
     const daily = Array.isArray(analytics?.daily) ? analytics.daily : [];
     if (!daily.length) return null;
     const totals = analytics.totals || {};
@@ -939,6 +964,14 @@ function makeStyles(colors) {
     statLabel: { marginTop: 3, color: colors.textMuted, fontFamily: fontMedium, fontSize: 11 },
     sectionHeader: { marginBottom: 4 },
     sectionTitle: { marginTop: 2, color: colors.text, fontFamily: fontSemiBold, fontSize: 14 },
+    analyticsLockedText: {
+      marginTop: 10,
+      marginBottom: 12,
+      color: colors.textMuted,
+      fontFamily: fontMedium,
+      fontSize: 12,
+      lineHeight: 18,
+    },
     checklistMeta: { marginTop: 4, color: colors.textMuted, fontFamily: fontMedium, fontSize: 11 },
     checklistProgressTrack: {
       marginTop: 6,

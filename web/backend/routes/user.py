@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.user import User
 from models import subscription as subscription_model
+from models import entitlements
 from models.ai_usage import get_usage_snapshot
 from utils.user_context import get_current_user_id
 
@@ -50,9 +51,12 @@ def _build_subscription_block(user_id):
     """Free/Premium tier + today's AI-usage snapshot, surfaced on the shared
     profile endpoint so both web and mobile pick it up from the one call
     App.js's refreshShell already makes."""
+    entitlement = subscription_model.get_entitlement(user_id)
     return {
-        **subscription_model.get_entitlement(user_id),
+        **entitlement,
         'usage': get_usage_snapshot(user_id),
+        'limits': entitlements.limits_for(entitlement['is_premium']),
+        'features': entitlements.FEATURE_TABLE,
     }
 
 

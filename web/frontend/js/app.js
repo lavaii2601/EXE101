@@ -699,6 +699,10 @@ async function initApp() {
         if (subscriptionChangePlanBtn) subscriptionChangePlanBtn.addEventListener('click', showSubscriptionPlanStep);
         const subscriptionSubmitBtn = document.getElementById('subscriptionSubmitBtn');
         if (subscriptionSubmitBtn) subscriptionSubmitBtn.addEventListener('click', submitSubscriptionIntent);
+        const subscriptionRequestCopyBtn = document.getElementById('subscriptionRequestCopyBtn');
+        if (subscriptionRequestCopyBtn) subscriptionRequestCopyBtn.addEventListener('click', copySubscriptionRequestText);
+        const subscriptionRequestDoneBtn = document.getElementById('subscriptionRequestDoneBtn');
+        if (subscriptionRequestDoneBtn) subscriptionRequestDoneBtn.addEventListener('click', closeSubscriptionModal);
         const settingsDarkMode = document.getElementById('settingsDarkMode');
         if (settingsDarkMode) {
             settingsDarkMode.checked = document.body.classList.contains('dark-theme');
@@ -2001,6 +2005,22 @@ function escapeAttr(value) {
 }
 
 function renderOverviewAnalytics(analytics) {
+    if (analytics?.error === 'premium_required') {
+        return `
+            <section class="overview-panel overview-analytics overview-analytics-locked">
+                <div class="overview-panel-head">
+                    <span class="overview-kicker">${ui('PHÂN TÍCH TUẦN', 'WEEKLY ANALYTICS')}</span>
+                    <strong>${ui('Xu hướng hoạt động', 'Activity trend')}</strong>
+                </div>
+                <p>${ui(
+                    'Phân tích tuần là tính năng Premium. Nâng cấp để xem xu hướng hoàn thành task và email theo ngày.',
+                    'Weekly analytics is a Premium feature. Upgrade to see your daily task and email trends.'
+                )}</p>
+                <button type="button" class="btn-primary" onclick="openSubscriptionModal()">${ui('Mở khóa Premium', 'Unlock Premium')}</button>
+            </section>
+        `;
+    }
+
     const daily = Array.isArray(analytics?.daily) ? analytics.daily : [];
     if (!daily.length) return '';
 
@@ -3757,6 +3777,24 @@ function renderSubscriptionUI(subscription = null) {
             ? ui('Gia hạn Premium', 'Renew Premium')
             : ui('Nâng cấp Premium', 'Upgrade to Premium');
     }
+
+    applySubscriptionFeatureCopy(currentSubscription.features);
+}
+
+// The compare-grid <li> copy (retention days, quota, analytics lock) is
+// hardcoded in index.html as a static fallback, but the real numbers come
+// from backend models/entitlements.py via /api/user's 'features' field --
+// this keeps the two from drifting apart again the way "365 days" vs
+// "unlimited" vs a 93-day backend clamp did.
+function applySubscriptionFeatureCopy(features) {
+    if (!Array.isArray(features)) return;
+    const byKey = new Map(features.map((item) => [item.key, item]));
+    document.querySelectorAll('[data-feature][data-tier]').forEach((el) => {
+        const feature = byKey.get(el.dataset.feature);
+        if (!feature) return;
+        const value = el.dataset.tier === 'premium' ? feature.premium : feature.free;
+        if (typeof value === 'string') el.textContent = value;
+    });
 }
 
 function selectSubscriptionPlan(plan) {
@@ -3830,6 +3868,7 @@ function showSubscriptionPaymentStep() {
     if (paymentStep) paymentStep.hidden = false;
     document.getElementById('subscriptionStepPlan')?.classList.remove('active');
     document.getElementById('subscriptionStepPayment')?.classList.add('active');
+    hideSubscriptionRequestPanel();
 
     const isPremium = !!(
         currentSubscription?.is_premium
@@ -3840,6 +3879,52 @@ function showSubscriptionPaymentStep() {
         submit.textContent = isPremium
             ? ui('Gửi yêu cầu gia hạn', 'Send renewal request')
             : ui('Gửi yêu cầu thanh toán', 'Send payment request');
+    }
+}
+
+// No payment gateway is wired up yet, so a submitted request is emailed to
+// FlowMate for manual activation. window.location.href = 'mailto:...' can't
+// tell whether the OS actually has a mail client configured -- on desktop
+// browsers (very common for users who only use Gmail via the web) it just
+// silently does nothing, yet the old code declared success unconditionally.
+// This panel replaces that blind "success" toast with the actual request
+// content plus a copy-to-clipboard fallback that works regardless of
+// whether a mail client exists.
+let lastSubscriptionRequestText = '';
+
+function showSubscriptionRequestPanel({ to, subject, body }) {
+    const panel = document.getElementById('subscriptionRequestPanel');
+    if (!panel) return;
+    document.getElementById('subscriptionRequestTo').textContent = to;
+    document.getElementById('subscriptionRequestSubject').textContent = subject;
+    document.getElementById('subscriptionRequestBody').textContent = body;
+    const mailLink = document.getElementById('subscriptionRequestMailLink');
+    if (mailLink) {
+        mailLink.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    }
+    lastSubscriptionRequestText = `Đến: ${to}\nTiêu đề: ${subject}\n\n${body}`;
+
+    document.getElementById('subscriptionPaymentControls')?.setAttribute('hidden', '');
+    document.getElementById('subscriptionContactNote')?.setAttribute('hidden', '');
+    panel.hidden = false;
+}
+
+function hideSubscriptionRequestPanel() {
+    document.getElementById('subscriptionRequestPanel')?.setAttribute('hidden', '');
+    document.getElementById('subscriptionPaymentControls')?.removeAttribute('hidden');
+    document.getElementById('subscriptionContactNote')?.removeAttribute('hidden');
+}
+
+async function copySubscriptionRequestText() {
+    if (!lastSubscriptionRequestText) return;
+    try {
+        await navigator.clipboard.writeText(lastSubscriptionRequestText);
+        showNotification(ui('Đã sao chép nội dung yêu cầu.', 'Request text copied.'), 'success');
+    } catch (error) {
+        showNotification(ui(
+            'Không thể tự động sao chép. Vui lòng bôi đen và sao chép nội dung phía trên.',
+            'Could not copy automatically. Please select and copy the text above.'
+        ), 'error');
     }
 }
 
@@ -3947,18 +4032,13 @@ async function submitSubscriptionIntent() {
         const plan = subscriptionPlanDetails().contact;
         const method = selectedSubscriptionPaymentMethod === 'momo' ? 'MoMo' : 'VNPay';
         const actionLabel = action === 'renew' ? 'gia hạn' : 'nâng cấp';
-        const subject = encodeURIComponent(
-            action === 'renew' ? 'Gia hạn FlowMate Premium' : 'Nâng cấp FlowMate Premium'
-        );
-        const body = encodeURIComponent(
-            `Tôi muốn ${actionLabel} gói: ${plan}.\nPhương thức thanh toán mong muốn: ${method}.`
-        );
-        window.location.href = `mailto:lecaoduyanh123@gmail.com?subject=${subject}&body=${body}`;
-        closeSubscriptionModal();
-        showNotification(ui(
-            'Đã mở yêu cầu Premium trong ứng dụng email.',
-            'The Premium request was opened in your email app.'
-        ), 'success');
+        const subjectText = action === 'renew' ? 'Gia hạn FlowMate Premium' : 'Nâng cấp FlowMate Premium';
+        const bodyText = `Tôi muốn ${actionLabel} gói: ${plan}.\nPhương thức thanh toán mong muốn: ${method}.`;
+        showSubscriptionRequestPanel({
+            to: 'lecaoduyanh123@gmail.com',
+            subject: subjectText,
+            body: bodyText,
+        });
     } catch (error) {
         showNotification(error.message || ui('Không thể xử lý yêu cầu Premium', 'Unable to process Premium request'), 'error');
         renderSubscriptionUI(currentSubscription);

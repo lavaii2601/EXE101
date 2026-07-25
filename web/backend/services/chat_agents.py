@@ -26,6 +26,7 @@ from models.session_memory import SessionMemory
 from models.schedule import Schedule, LOCAL_TZ
 from models.user import User
 from utils.user_context import get_user_token_file
+from utils.quota import enforce_ai_quota
 from routes.knowledge import knowledge_service
 from routes.schedule import (
     _clear_schedule_cache,
@@ -499,11 +500,20 @@ def _summarize_latest_emails(user_id, count=1, query_override=None):
 
     emails = []
     sections = []
+    quota_exhausted = False
     for email_id in email_ids:
         email = full_emails.get(email_id)
         if not email:
             logger.warning("Could not load full Gmail message %s", email_id)
             continue
+
+        # Chat can request up to 50 emails in one message, so this loop is
+        # the same 'email_summary' cost center as routes/email.py's batch
+        # endpoint -- without this check a free user could summarize far
+        # more than the advertised daily quota through chat alone.
+        if enforce_ai_quota(user_id, 'email_summary'):
+            quota_exhausted = True
+            break
 
         summary = ai_service.summarize_email_polished(email, user_id=user_id)
         emails.append(email)
@@ -516,10 +526,21 @@ def _summarize_latest_emails(user_id, count=1, query_override=None):
         )
 
     if not emails:
+        if quota_exhausted:
+            raise RuntimeError(
+                'Bạn đã dùng hết lượt tóm tắt email AI miễn phí hôm nay. '
+                'Nâng cấp Premium để tóm tắt không giới hạn.'
+            )
         raise RuntimeError('Không thể tải nội dung đầy đủ của các email gần nhất.')
 
     heading = "EMAIL MỚI NHẤT" if len(emails) == 1 else f"{len(emails)} EMAIL GẦN NHẤT"
-    return f"{heading}\n\n" + "\n\n--------------------\n\n".join(sections), emails
+    body = f"{heading}\n\n" + "\n\n--------------------\n\n".join(sections)
+    if quota_exhausted:
+        body += (
+            f"\n\n(Đã dừng ở {len(emails)} email do hết lượt tóm tắt email AI miễn phí hôm nay. "
+            "Nâng cấp Premium để tóm tắt không giới hạn.)"
+        )
+    return body, emails
 
 
 def _intent_sources(message):
