@@ -27,6 +27,44 @@ def limits_for(is_premium):
     return PREMIUM_LIMITS if is_premium else FREE_LIMITS
 
 
+# Student-mode-only features (see routes/course.py, routes/chat.py's
+# summarize-study, overview_service.py's upcoming_deadlines, and
+# routes/schedule.py's checklist subject grouping). These don't exist for
+# any other user_mode at all -- callers must check user_mode == 'student'
+# first; is_premium only decides the depth within that mode, mirroring the
+# global FREE_LIMITS/PREMIUM_LIMITS split above but scoped to Student.
+STUDENT_FREE_LIMITS = {
+    "study_summary_daily": 5,
+    "gpa_persist": False,
+    "checklist_subject_grouping": False,
+    "deadline_countdown_full_list": False,
+}
+
+STUDENT_PREMIUM_LIMITS = {
+    "study_summary_daily": None,  # None = unlimited
+    "gpa_persist": True,
+    "checklist_subject_grouping": True,
+    "deadline_countdown_full_list": True,
+}
+
+
+def student_limits_for(is_premium):
+    return STUDENT_PREMIUM_LIMITS if is_premium else STUDENT_FREE_LIMITS
+
+
+def student_context(user_id):
+    """Resolve (is_student, is_premium) for a user in one place, since every
+    student-only route needs both checks: user_mode == 'student' decides
+    whether the feature exists at all, is_premium then decides free vs
+    premium depth within it (student_limits_for)."""
+    from models.user import User
+    from models import subscription as subscription_model
+
+    user = User.get(user_id) or {}
+    is_student = (user.get('user_mode') or '').strip().lower() == 'student'
+    return is_student, subscription_model.is_premium(user_id)
+
+
 FEATURE_TABLE = [
     {
         "key": "chat",

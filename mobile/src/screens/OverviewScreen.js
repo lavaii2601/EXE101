@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Button from '../components/Button';
 import Card from '../components/Card';
@@ -9,9 +9,11 @@ import Screen from '../components/Screen';
 import { apiGet, apiPost, apiPut } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 
-export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
+export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, userMode, subscription }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const isStudent = userMode === 'student';
+  const isPremium = !!(subscription?.is_premium || subscription?.tier === 'premium');
 
   const [date, setDate] = useState(() => formatDateForApi(new Date()));
   const [emails, setEmails] = useState([]);
@@ -26,6 +28,25 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
   const [planSuggestion, setPlanSuggestion] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [selectedEmail, setSelectedEmail] = useState(null);
+
+  // Student-mode-only widgets (deadline countdown, checklist subject tag,
+  // study-material summarizer, GPA calculator) -- see entitlements.py's
+  // STUDENT_*_LIMITS on the backend for what free vs premium unlocks.
+  const [upcomingDeadlines, setUpcomingDeadlines] = useState(null);
+  const [subjectEditItem, setSubjectEditItem] = useState(null);
+  const [subjectEditValue, setSubjectEditValue] = useState('');
+  const [groupedVisible, setGroupedVisible] = useState(false);
+  const [groupedSubjects, setGroupedSubjects] = useState([]);
+  const [summarizerVisible, setSummarizerVisible] = useState(false);
+  const [summaryTitle, setSummaryTitle] = useState('');
+  const [summaryContent, setSummaryContent] = useState('');
+  const [summaryResult, setSummaryResult] = useState('');
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [gpaVisible, setGpaVisible] = useState(false);
+  const [gpaRows, setGpaRows] = useState([{ name: '', credits: '', grade: '' }, { name: '', credits: '', grade: '' }, { name: '', credits: '', grade: '' }]);
+  const [gpaResult, setGpaResult] = useState(null);
+  const [gpaCalculated, setGpaCalculated] = useState(false);
+  const [gpaLoading, setGpaLoading] = useState(false);
 
   const loadOverview = useCallback(async (options = {}) => {
     const force = options?.force === true;
@@ -47,6 +68,10 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
         setRefreshNote(overviewResult.value.refreshing
           ? 'AI đang cập nhật email trong nền. Lịch/task đã sẵn sàng để xem ngay.'
           : '');
+        // Only present for Student mode (routes/overview.py::_attach_student_deadlines).
+        setUpcomingDeadlines(Array.isArray(overviewResult.value.upcoming_deadlines)
+          ? overviewResult.value.upcoming_deadlines
+          : null);
       } else {
         setSchedules([]);
         setEmails([]);
@@ -158,6 +183,98 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
     saveChecklist(nextState);
     setQuickMessage('Đã sắp xếp checklist theo ưu tiên.');
   }, [checklistState, saveChecklist]);
+
+  // ---- Student-mode-only handlers ----
+
+  const openSubjectEditor = useCallback((item) => {
+    setSubjectEditItem(item);
+    setSubjectEditValue(item.subject || '');
+  }, []);
+
+  const saveSubjectEdit = useCallback(() => {
+    if (!subjectEditItem) return;
+    const customItems = (checklistState.custom_items || []).map((entry) => (
+      entry.id === subjectEditItem.id ? { ...entry, subject: subjectEditValue.trim().slice(0, 60) } : entry
+    ));
+    const nextState = { revision: checklistState.revision, completed: checklistState.completed || {}, custom_items: customItems };
+    setChecklistState(nextState);
+    saveChecklist(nextState);
+    setSubjectEditItem(null);
+  }, [checklistState, saveChecklist, subjectEditItem, subjectEditValue]);
+
+  const openGroupedBySubject = useCallback(async () => {
+    if (!isPremium) {
+      Alert.alert(
+        'Tính năng Premium',
+        'Xem checklist theo môn học là tính năng Premium.',
+        [
+          { text: 'Để sau', style: 'cancel' },
+          { text: 'Nâng cấp', onPress: () => onNavigate?.('settings') },
+        ],
+      );
+      return;
+    }
+    try {
+      const data = await apiGet(`/schedule/checklist?date=${encodeURIComponent(date)}&group_by=subject`);
+      setGroupedSubjects(Array.isArray(data.grouped_by_subject) ? data.grouped_by_subject : []);
+      setGroupedVisible(true);
+    } catch (error) {
+      Alert.alert('Không tải được', error.message);
+    }
+  }, [date, isPremium, onNavigate]);
+
+  const submitStudySummary = useCallback(async () => {
+    const content = summaryContent.trim();
+    if (!content) {
+      Alert.alert('Thiếu nội dung', 'Hãy dán nội dung cần tóm tắt.');
+      return;
+    }
+    setSummaryLoading(true);
+    try {
+      const data = await apiPost('/chat/summarize-study', { title: summaryTitle.trim(), content });
+      setSummaryResult(data.summary || '');
+    } catch (error) {
+      if (error.status === 403 && error.data?.error === 'ai_limit_reached') {
+        Alert.alert('Hết lượt miễn phí', `Bạn đã dùng hết ${error.data.limit} lượt tóm tắt miễn phí hôm nay.`);
+      } else {
+        Alert.alert('Không thể tóm tắt', error.message);
+      }
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [summaryContent, summaryTitle]);
+
+  const updateGpaRow = useCallback((index, field, value) => {
+    setGpaRows((rows) => rows.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+  }, []);
+
+  const addGpaRow = useCallback(() => {
+    setGpaRows((rows) => [...rows, { name: '', credits: '', grade: '' }]);
+  }, []);
+
+  const removeGpaRow = useCallback((index) => {
+    setGpaRows((rows) => rows.filter((_, i) => i !== index));
+  }, []);
+
+  const calculateGpa = useCallback(async () => {
+    const courses = gpaRows
+      .map((row) => ({ name: row.name.trim(), credits: row.credits, grade: row.grade }))
+      .filter((row) => row.name && row.credits !== '' && row.grade !== '');
+    if (!courses.length) {
+      Alert.alert('Chưa đủ dữ liệu', 'Hãy nhập ít nhất một môn hợp lệ.');
+      return;
+    }
+    setGpaLoading(true);
+    try {
+      const data = await apiPost('/courses/calculate', { courses });
+      setGpaResult(data.gpa);
+      setGpaCalculated(true);
+    } catch (error) {
+      Alert.alert('Không thể tính GPA', error.message);
+    } finally {
+      setGpaLoading(false);
+    }
+  }, [gpaRows]);
 
   const refreshAfterQuickChange = useCallback(async (targetDate) => {
     const nextDate = normalizeApiDate(targetDate);
@@ -475,6 +592,47 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
         <StatCard label="Mail họp" value={meetingEmails.length} styles={styles} />
       </View>
 
+      {upcomingDeadlines ? (
+        <Card>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.kicker}>ĐẾM NGƯỢC</Text>
+            <Text style={styles.sectionTitle}>Deadline sắp tới</Text>
+          </View>
+          {upcomingDeadlines.length === 0 ? (
+            <Text style={styles.itemMeta}>Chưa có deadline nào sắp tới.</Text>
+          ) : upcomingDeadlines.map((deadline) => (
+            <View key={deadline.id} style={styles.countdownRow}>
+              <Text style={[
+                styles.countdownDays,
+                deadline.days_until <= 3 && styles.countdownUrgent,
+                deadline.days_until > 3 && deadline.days_until <= 7 && styles.countdownSoon,
+              ]}>
+                {deadline.days_until <= 0 ? 'Hôm nay' : `Còn ${deadline.days_until} ngày`}
+              </Text>
+              <Text style={styles.countdownTitle} numberOfLines={1}>{deadline.title}</Text>
+            </View>
+          ))}
+          {!isPremium ? (
+            <Text style={styles.studentUpsellText}>
+              Free chỉ hiện deadline gần nhất. Nâng cấp Premium để xem đầy đủ danh sách.
+            </Text>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {isStudent ? (
+        <Card>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.kicker}>CÔNG CỤ SINH VIÊN</Text>
+            <Text style={styles.sectionTitle}>Học tập & điểm số</Text>
+          </View>
+          <View style={styles.studentToolsRow}>
+            <Button title="Tóm tắt tài liệu" variant="secondary" style={styles.studentToolButton} onPress={() => setSummarizerVisible(true)} />
+            <Button title="Tính GPA" variant="secondary" style={styles.studentToolButton} onPress={() => setGpaVisible(true)} />
+          </View>
+        </Card>
+      ) : null}
+
       <Card>
         <View style={styles.checklistHeaderRow}>
           <View style={styles.checklistHeaderText}>
@@ -488,9 +646,16 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
               ]} />
             </View>
           </View>
-          <TouchableOpacity style={styles.sortButton} onPress={sortChecklist} activeOpacity={0.78}>
-            <Text style={styles.sortButtonText}>Sắp xếp AI</Text>
-          </TouchableOpacity>
+          <View style={styles.checklistHeaderButtons}>
+            {isStudent ? (
+              <TouchableOpacity style={styles.sortButton} onPress={openGroupedBySubject} activeOpacity={0.78}>
+                <Text style={styles.sortButtonText}>Xem theo môn</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity style={styles.sortButton} onPress={sortChecklist} activeOpacity={0.78}>
+              <Text style={styles.sortButtonText}>Sắp xếp AI</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         {checklistItems.length === 0 ? (
           <EmptyState title="Checklist đang trống" detail="Thêm việc hoặc lịch ở ô Thêm nhanh phía trên." />
@@ -514,6 +679,15 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
                 {item.title}
               </Text>
               {item.meta ? <Text style={styles.itemMeta} numberOfLines={2}>{item.meta}</Text> : null}
+              {isStudent && item.kind === 'custom' ? (
+                <TouchableOpacity onPress={() => openSubjectEditor(item)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+                  {item.subject ? (
+                    <Text style={styles.subjectChip}>{item.subject}</Text>
+                  ) : (
+                    <Text style={styles.subjectAddText}>+ Môn học</Text>
+                  )}
+                </TouchableOpacity>
+              ) : null}
             </TouchableOpacity>
             <View style={styles.checklistActions}>
               <Text style={styles.checklistSource}>{item.sourceLabel || 'Lịch'}</Text>
@@ -606,6 +780,106 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate }) {
           ) : null}
         </Screen>
       </Modal>
+
+      <Modal visible={!!subjectEditItem} animationType="fade" transparent onRequestClose={() => setSubjectEditItem(null)}>
+        <View style={styles.centeredModalOverlay}>
+          <View style={styles.centeredModalCard}>
+            <Text style={styles.sectionTitle}>Môn học</Text>
+            <Field label="Tên môn" value={subjectEditValue} onChangeText={setSubjectEditValue} placeholder="Ví dụ: Toán cao cấp" />
+            <View style={styles.studentToolsActions}>
+              <Button title="Hủy" variant="secondary" onPress={() => setSubjectEditItem(null)} />
+              <Button title="Lưu" onPress={saveSubjectEdit} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={groupedVisible} animationType="slide" onRequestClose={() => setGroupedVisible(false)}>
+        <Screen title="Checklist theo môn" actions={<Button title="Đóng" variant="secondary" onPress={() => setGroupedVisible(false)} />}>
+          <Card>
+            {groupedSubjects.length === 0 ? (
+              <EmptyState title="Checklist đang trống" detail="Chưa có việc nào để nhóm theo môn." />
+            ) : groupedSubjects.map((group) => (
+              <View key={group.subject}>
+                <Text style={styles.groupSubjectHeading}>{group.subject}</Text>
+                {group.items.map((item) => (
+                  <View key={item.id} style={styles.countdownRow}>
+                    <Text style={styles.countdownTitle} numberOfLines={1}>{item.title}</Text>
+                    {item.completed ? <Text style={styles.checklistSource}>Xong</Text> : null}
+                  </View>
+                ))}
+              </View>
+            ))}
+          </Card>
+        </Screen>
+      </Modal>
+
+      <Modal visible={summarizerVisible} animationType="slide" onRequestClose={() => setSummarizerVisible(false)}>
+        <Screen title="Tóm tắt tài liệu học tập" actions={<Button title="Đóng" variant="secondary" onPress={() => setSummarizerVisible(false)} />}>
+          <Card>
+            <Text style={styles.itemMeta}>Dán bài giảng, ghi chú hoặc tài liệu học tập để Bob tóm tắt các ý chính.</Text>
+            <Field label="Tiêu đề (không bắt buộc)" value={summaryTitle} onChangeText={setSummaryTitle} placeholder="Ví dụ: Bài giảng chương 3" />
+            <Field label="Nội dung" value={summaryContent} onChangeText={setSummaryContent} placeholder="Dán nội dung vào đây..." multiline inputStyle={styles.summaryTextarea} />
+            {!isPremium ? <Text style={styles.studentUpsellText}>Free: 5 lượt/ngày. Premium: không giới hạn.</Text> : null}
+            <Button title="Tóm tắt" onPress={submitStudySummary} loading={summaryLoading} style={styles.detailButton} />
+            {summaryResult ? (
+              <View style={styles.summaryResultBox}>
+                <Text style={styles.itemPreview}>{summaryResult}</Text>
+              </View>
+            ) : null}
+          </Card>
+        </Screen>
+      </Modal>
+
+      <Modal visible={gpaVisible} animationType="slide" onRequestClose={() => setGpaVisible(false)}>
+        <Screen title="Tính GPA" actions={<Button title="Đóng" variant="secondary" onPress={() => setGpaVisible(false)} />}>
+          <Card>
+            <Text style={styles.itemMeta}>Nhập môn học, tín chỉ và điểm (theo thang điểm bạn đang dùng).</Text>
+            {!isPremium ? (
+              <Text style={styles.studentUpsellText}>Free: tính tại chỗ, không lưu lại. Nâng cấp Premium để lưu danh sách môn.</Text>
+            ) : null}
+            {gpaRows.map((row, index) => (
+              <View key={index} style={styles.gpaRow}>
+                <TextInput
+                  style={[styles.gpaInput, styles.gpaInputName]}
+                  value={row.name}
+                  onChangeText={(value) => updateGpaRow(index, 'name', value)}
+                  placeholder="Môn"
+                  placeholderTextColor={colors.inputPlaceholder}
+                />
+                <TextInput
+                  style={styles.gpaInput}
+                  value={String(row.credits)}
+                  onChangeText={(value) => updateGpaRow(index, 'credits', value)}
+                  placeholder="TC"
+                  placeholderTextColor={colors.inputPlaceholder}
+                  keyboardType="numeric"
+                />
+                <TextInput
+                  style={styles.gpaInput}
+                  value={String(row.grade)}
+                  onChangeText={(value) => updateGpaRow(index, 'grade', value)}
+                  placeholder="Điểm"
+                  placeholderTextColor={colors.inputPlaceholder}
+                  keyboardType="numeric"
+                />
+                <TouchableOpacity style={styles.checklistRemove} onPress={() => removeGpaRow(index)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                  <Text style={styles.checklistRemoveText}>×</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            <View style={styles.studentToolsActions}>
+              <Button title="+ Thêm môn" variant="secondary" onPress={addGpaRow} />
+              <Button title="Tính GPA" onPress={calculateGpa} loading={gpaLoading} />
+            </View>
+            {gpaCalculated ? (
+              <View style={styles.gpaResultBox}>
+                <Text style={styles.gpaResultText}>{gpaResult === null ? 'Chưa đủ dữ liệu hợp lệ' : `GPA: ${gpaResult}`}</Text>
+              </View>
+            ) : null}
+          </Card>
+        </Screen>
+      </Modal>
     </Screen>
   );
 }
@@ -670,6 +944,7 @@ function buildChecklistItems({ schedules, checklistState }) {
         due_at: item.due_at || '',
         due_date: item.due_date || '',
         created_at: item.created_at || '',
+        subject: item.subject || '',
       };
     });
   const scheduleItems = schedules
@@ -993,6 +1268,109 @@ function makeStyles(colors) {
       marginBottom: 4,
     },
     checklistHeaderText: { flex: 1, minWidth: 0 },
+    checklistHeaderButtons: { flexDirection: 'row', gap: 6 },
+    // Student-mode-only widgets (deadline countdown, subject tag/chip,
+    // study-material summarizer, GPA calculator modals).
+    countdownRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+      paddingVertical: 8,
+      borderTopColor: colors.border,
+      borderTopWidth: 1,
+    },
+    countdownDays: { color: colors.textMuted, fontFamily: fontBold, fontSize: 12 },
+    countdownSoon: { color: colors.warning },
+    countdownUrgent: { color: colors.danger },
+    countdownTitle: { flex: 1, color: colors.text, fontFamily: fontMedium, fontSize: 13 },
+    studentUpsellText: {
+      marginTop: 10,
+      color: colors.textMuted,
+      fontFamily: fontMedium,
+      fontSize: 11,
+      lineHeight: 16,
+    },
+    studentToolsRow: { flexDirection: 'row', gap: 8 },
+    studentToolButton: { flex: 1 },
+    subjectChip: {
+      alignSelf: 'flex-start',
+      marginTop: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 999,
+      backgroundColor: 'rgba(99,102,241,0.14)',
+      color: '#4338ca',
+      fontFamily: fontSemiBold,
+      fontSize: 10,
+    },
+    subjectAddText: {
+      marginTop: 4,
+      color: colors.textMuted,
+      fontFamily: fontMedium,
+      fontSize: 11,
+    },
+    centeredModalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.4)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 24,
+    },
+    centeredModalCard: {
+      width: '100%',
+      maxWidth: 420,
+      borderRadius: 16,
+      padding: 18,
+      backgroundColor: colors.panel,
+    },
+    studentToolsActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 10,
+      marginTop: 10,
+    },
+    groupSubjectHeading: {
+      marginTop: 12,
+      marginBottom: 2,
+      color: colors.text,
+      fontFamily: fontBold,
+      fontSize: 13,
+    },
+    summaryTextarea: { minHeight: 140 },
+    summaryResultBox: {
+      marginTop: 12,
+      padding: 12,
+      borderRadius: 10,
+      backgroundColor: `${colors.primary}0d`,
+    },
+    gpaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 8,
+    },
+    gpaInput: {
+      width: 64,
+      minHeight: 40,
+      borderColor: colors.border,
+      borderWidth: 1,
+      borderRadius: 8,
+      backgroundColor: colors.panel,
+      color: colors.text,
+      paddingHorizontal: 8,
+      fontFamily: fontRegular,
+      fontSize: 12,
+    },
+    gpaInputName: { flex: 1, width: undefined },
+    gpaResultBox: {
+      marginTop: 12,
+      padding: 12,
+      borderRadius: 10,
+      backgroundColor: 'rgba(99,102,241,0.12)',
+      alignItems: 'center',
+    },
+    gpaResultText: { color: '#4338ca', fontFamily: fontBold, fontSize: 15 },
     sortButton: {
       borderRadius: 999,
       paddingHorizontal: 10,

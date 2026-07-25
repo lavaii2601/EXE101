@@ -18,6 +18,7 @@ from models.schedule import Schedule, LOCAL_TZ
 from models.history import History
 from models.sync_job import SyncJob
 from models.workspace_sync import WorkspaceSync
+from models import entitlements
 from services.intent_orchestrator import IntentOrchestrator
 from utils.user_context import (
     get_current_user_id,
@@ -366,6 +367,23 @@ def _sort_custom_items(items):
     return sorted(items or [], key=_custom_item_sort_key)
 
 
+def _group_custom_items_by_subject(items):
+    """Group already-sorted custom checklist items by their `subject` tag
+    (Student-mode Premium feature, entitlements.STUDENT_*_LIMITS
+    ['checklist_subject_grouping']). Items without a subject land in a
+    'Khac' bucket. Sort order within each group is whatever _sort_custom_items
+    already produced (soonest due / highest priority first)."""
+    groups = {}
+    order = []
+    for item in items or []:
+        subject = item.get('subject') or 'Khac'
+        if subject not in groups:
+            groups[subject] = []
+            order.append(subject)
+        groups[subject].append(item)
+    return [{'subject': subject, 'items': groups[subject]} for subject in order]
+
+
 def _split_day_plan_entries(text):
     raw = str(text or '').strip()
     if not raw:
@@ -634,6 +652,10 @@ def _normalize_checklist_payload(data):
             'ai_reason': str(item.get('ai_reason') or '')[:260],
             'priority_score': int(item.get('priority_score') or 0),
             'pinned': bool(item.get('pinned')),
+            # Student-mode-only tag (see routes/overview.py's sibling
+            # entitlements.student_context pattern) -- harmless free text
+            # for every other mode, just never surfaced as a group there.
+            'subject': str(item.get('subject') or '').strip()[:60],
         })
     return {
         'revision': revision,
@@ -847,11 +869,19 @@ def get_overview_checklist():
     date_value = (request.args.get('date') or datetime.now(LOCAL_TZ).date().isoformat()).strip()
     cached = Cache.get(_checklist_cache_key(user_id, date_value), db_path=db_path)
     payload = _normalize_checklist_payload(cached)
-    return jsonify({
+    response = {
         'success': True,
         'date': date_value,
         **payload,
-    })
+    }
+    if request.args.get('group_by') == 'subject':
+        is_student, is_premium = entitlements.student_context(user_id)
+        if not is_student:
+            return jsonify({'error': 'not_found'}), 404
+        if not entitlements.student_limits_for(is_premium)['checklist_subject_grouping']:
+            return jsonify({'error': 'premium_required', 'feature': 'checklist_subject_grouping'}), 403
+        response['grouped_by_subject'] = _group_custom_items_by_subject(payload['custom_items'])
+    return jsonify(response)
 
 
 @schedule_bp.route('/checklist', methods=['PUT', 'POST'])

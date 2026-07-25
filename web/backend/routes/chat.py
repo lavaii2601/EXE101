@@ -17,6 +17,7 @@ from services.chat_agents import (
 )
 from services.gmail_service import get_cached_gmail_service
 from services.conversation_context import latest_user_language
+from services import extractive_summary
 from services.tool_catalog import (
     AGENT_CAPABILITIES,
     AGENT_SYNC_TARGETS,
@@ -30,6 +31,7 @@ from models.user import User
 from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
 from models import subscription as subscription_model
 from models import entitlements
+from utils.quota import enforce_ai_quota
 from datetime import datetime
 
 # Configure module logger
@@ -384,6 +386,42 @@ def summarize_email():
         'success': True,
         'summary': summary
     })
+
+
+@chat_bp.route('/summarize-study', methods=['POST'])
+def summarize_study_material():
+    """Student-mode-only: summarize pasted study material (lecture notes,
+    reading material) -- separate quota from email_summary. Free gets
+    STUDENT_FREE_LIMITS['study_summary_daily'] lượt/ngày, Premium unlimited
+    (see entitlements.student_limits_for)."""
+    user_id = get_current_user_id(request)
+    is_student, _ = entitlements.student_context(user_id)
+    if not is_student:
+        return jsonify({'error': 'not_found'}), 404
+
+    data = request.get_json() or {}
+    title = (data.get('title') or '').strip()
+    content = (data.get('content') or '').strip()
+    if not content:
+        return jsonify({'error': 'Empty content'}), 400
+
+    quota_rejection = enforce_ai_quota(user_id, 'study_summary')
+    if quota_rejection:
+        return jsonify({'error': 'ai_limit_reached', **quota_rejection}), 403
+
+    db_path = get_user_db_path(user_id)
+    summary = extractive_summary.summarize_short(title, content)
+    # action_type is a strict Postgres enum (activity_type, database/postgres_schema.sql)
+    # with no 'study_summary' member -- reuse 'chat' rather than take on an
+    # enum migration (ALTER TYPE ... ADD VALUE has transaction-ordering
+    # subtleties) for what's just a History-tab label.
+    History.create(f"Tóm tắt tài liệu học tập: {title}" if title else "Tóm tắt tài liệu học tập", summary, action_type='chat', db_path=db_path)
+
+    return jsonify({
+        'success': True,
+        'summary': summary,
+    })
+
 
 @chat_bp.route('/generate-reply', methods=['POST'])
 def generate_reply():

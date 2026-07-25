@@ -685,6 +685,14 @@ async function initApp() {
                 if (event.target === subscriptionModal) closeSubscriptionModal();
             });
         }
+        const studentToolsModal = document.getElementById('studentToolsModal');
+        const studentToolsClose = studentToolsModal?.querySelector('.student-tools-close');
+        if (studentToolsClose) studentToolsClose.addEventListener('click', closeStudentToolsModal);
+        if (studentToolsModal) {
+            studentToolsModal.addEventListener('click', (event) => {
+                if (event.target === studentToolsModal) closeStudentToolsModal();
+            });
+        }
         document.querySelectorAll('[data-subscription-plan]').forEach((button) => {
             button.addEventListener('click', () => selectSubscriptionPlan(button.dataset.subscriptionPlan));
         });
@@ -2020,6 +2028,7 @@ function renderOverviewChecklist(schedules, checklistState) {
     const items = buildOverviewChecklistItems(schedules, checklistState);
     const doneCount = items.filter((item) => item.completed).length;
     const progress = items.length ? Math.round((doneCount / items.length) * 100) : 0;
+    const isStudent = currentUserMode === 'student';
     const rows = items.length
         ? items.map((item) => `
             <div class="overview-checklist-item">
@@ -2030,6 +2039,12 @@ function renderOverviewChecklist(schedules, checklistState) {
                     <strong>${escapeHtml(item.title || ui('Việc cần làm', 'Task'))}</strong>
                     <span>${escapeHtml(item.meta || '')}</span>
                 </button>
+                ${isStudent && item.kind !== 'schedule' ? `
+                    ${item.subject ? `<span class="overview-chip is-subject">${escapeHtml(item.subject)}</span>` : ''}
+                    <button class="overview-checklist-subject-btn" type="button" data-checklist-subject="${escapeHtml(item.id)}" data-current-subject="${escapeAttr(item.subject || '')}">
+                        ${item.subject ? ui('Đổi môn', 'Edit subject') : ui('+ Môn học', '+ Subject')}
+                    </button>
+                ` : ''}
                 <div class="overview-checklist-actions">
                     <span class="overview-checklist-source ${item.kind === 'schedule' ? 'is-schedule' : 'is-manual'}">${escapeHtml(item.sourceLabel || '')}</span>
                     ${item.kind === 'schedule' ? '' : `<button class="overview-checklist-remove" type="button" data-checklist-remove="${escapeHtml(item.id)}" aria-label="${ui('Xóa khỏi checklist', 'Remove from checklist')}">×</button>`}
@@ -2049,7 +2064,10 @@ function renderOverviewChecklist(schedules, checklistState) {
                         <span style="width: ${progress}%"></span>
                     </div>
                 </div>
-                <button class="overview-sort-btn" type="button" data-checklist-sort>${ui('Sắp xếp', 'AI sort')}</button>
+                <div>
+                    ${isStudent ? `<button class="overview-sort-btn" type="button" data-checklist-group-by-subject>${ui('Xem theo môn', 'View by subject')}</button>` : ''}
+                    <button class="overview-sort-btn" type="button" data-checklist-sort>${ui('Sắp xếp', 'AI sort')}</button>
+                </div>
             </div>
             <div class="overview-checklist-list">${rows}</div>
         </section>
@@ -2285,6 +2303,60 @@ function bindOverviewChecklist(container, selectedDate, schedules, checklistStat
             showNotification(ui('Đã sắp xếp checklist theo ưu tiên', 'Checklist sorted by priority'), 'success');
         });
     }
+
+    container.querySelectorAll('[data-checklist-subject]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const id = button.getAttribute('data-checklist-subject');
+            const current = button.getAttribute('data-current-subject') || '';
+            const next = window.prompt(ui('Nhập tên môn học:', 'Enter subject name:'), current);
+            if (next === null || next.trim() === current) return;
+            const nextCustomItems = (state.custom_items || []).map((customItem) => (
+                customItem.id === id ? { ...customItem, subject: next.trim().slice(0, 60) } : customItem
+            ));
+            await save({ completed: state.completed || {}, custom_items: nextCustomItems });
+            rerender();
+        });
+    });
+
+    const groupBySubjectButton = container.querySelector('[data-checklist-group-by-subject]');
+    if (groupBySubjectButton) {
+        groupBySubjectButton.addEventListener('click', async () => {
+            if (!isCurrentUserPremium()) {
+                showNotification(ui(
+                    'Xem checklist theo môn là tính năng Premium.',
+                    'Grouping the checklist by subject is a Premium feature.'
+                ), 'error');
+                openSubscriptionModal();
+                return;
+            }
+            try {
+                const response = await apiFetch(`${API_BASE}/schedule/checklist?date=${encodeURIComponent(selectedDate)}&group_by=subject`);
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || ui('Không tải được danh sách theo môn', 'Unable to load subject groups'));
+                }
+                const groups = Array.isArray(data.grouped_by_subject) ? data.grouped_by_subject : [];
+                const body = groups.length
+                    ? groups.map((group) => `
+                        <p style="margin: 12px 0 4px; font-weight: 700;">${escapeHtml(group.subject)}</p>
+                        ${group.items.map((item) => `
+                            <div class="overview-countdown-item">
+                                <span class="overview-countdown-title">${escapeHtml(item.title || '')}</span>
+                                <span class="overview-countdown-days">${item.completed ? ui('Xong', 'Done') : ''}</span>
+                            </div>
+                        `).join('')}
+                    `).join('')
+                    : `<p>${ui('Checklist đang trống.', 'Checklist is empty.')}</p>`;
+                openStudentToolsModal(ui('Checklist theo môn', 'Checklist by subject'), body + `
+                    <div class="student-tools-actions">
+                        <button type="button" class="btn-secondary" onclick="closeStudentToolsModal()">${ui('Đóng', 'Close')}</button>
+                    </div>
+                `);
+            } catch (error) {
+                showNotification(error.message, 'error');
+            }
+        });
+    }
 }
 
 function bindOverviewQuickAdd(container, selectedDate) {
@@ -2431,6 +2503,249 @@ function bindOverviewQuickAdd(container, selectedDate) {
             if (button) button.disabled = false;
         }
     });
+}
+
+// ---- Student-mode-only widgets (deadline countdown, study-material
+// summarizer, GPA calculator, checklist-by-subject) -- all driven off
+// currentUserMode/currentSubscription globals already set by
+// updateUserModeUI/renderSubscriptionUI, and the same 'premium_required'
+// locked-card pattern renderOverviewAnalytics already established. ----
+
+function isCurrentUserPremium() {
+    return !!(currentSubscription?.is_premium || currentSubscription?.tier === 'premium');
+}
+
+function renderOverviewCountdown(deadlines) {
+    if (!Array.isArray(deadlines)) return ''; // backend omits this for non-Student modes
+    const rows = deadlines.map((item) => {
+        const urgency = item.days_until <= 3 ? 'is-urgent' : (item.days_until <= 7 ? 'is-soon' : '');
+        const daysLabel = item.days_until <= 0
+            ? ui('Hôm nay', 'Today')
+            : ui(`Còn ${item.days_until} ngày`, `${item.days_until}d left`);
+        return `
+            <div class="overview-countdown-item ${urgency}">
+                <span class="overview-countdown-days">${escapeHtml(daysLabel)}</span>
+                <span class="overview-countdown-title">${escapeHtml(item.title || '')}</span>
+            </div>
+        `;
+    }).join('');
+    const upsell = !isCurrentUserPremium()
+        ? `<p class="overview-countdown-upsell">${ui(
+            'Free chỉ hiện deadline gần nhất. <a href="#" onclick="openSubscriptionModal();return false;">Nâng cấp Premium</a> để xem đầy đủ danh sách.',
+            'Free shows only the nearest deadline. <a href="#" onclick="openSubscriptionModal();return false;">Upgrade to Premium</a> for the full list.'
+        )}</p>`
+        : '';
+    return `
+        <section class="overview-panel overview-countdown">
+            <div class="overview-panel-head">
+                <span class="overview-kicker">${ui('ĐẾM NGƯỢC', 'COUNTDOWN')}</span>
+                <strong>${ui('Deadline sắp tới', 'Upcoming deadlines')}</strong>
+            </div>
+            ${rows || `<p class="overview-countdown-upsell">${ui('Chưa có deadline nào sắp tới.', 'No upcoming deadlines yet.')}</p>`}
+            ${rows ? `<div class="overview-countdown-list">${rows}</div>` : ''}
+            ${upsell}
+        </section>
+    `;
+}
+
+function renderStudentToolsPanel() {
+    if (currentUserMode !== 'student') return '';
+    return `
+        <section class="overview-panel overview-student-tools">
+            <div class="overview-panel-head">
+                <span class="overview-kicker">${ui('CÔNG CỤ SINH VIÊN', 'STUDENT TOOLS')}</span>
+                <strong>${ui('Học tập & điểm số', 'Study & grades')}</strong>
+            </div>
+            <div class="overview-quick-add-row" style="padding: 0 14px 14px;">
+                <button type="button" id="studentToolSummarizeBtn" class="btn-secondary">${ui('Tóm tắt tài liệu học tập', 'Summarize study material')}</button>
+                <button type="button" id="studentToolGpaBtn" class="btn-secondary">${ui('Tính GPA', 'Calculate GPA')}</button>
+            </div>
+        </section>
+    `;
+}
+
+function openStudentToolsModal(title, bodyHtml) {
+    const modal = document.getElementById('studentToolsModal');
+    const titleEl = document.getElementById('studentToolsModalTitle');
+    const bodyEl = document.getElementById('studentToolsModalBody');
+    if (!modal || !bodyEl) return;
+    if (titleEl) titleEl.textContent = title;
+    bodyEl.innerHTML = bodyHtml;
+    modal.classList.add('show');
+    document.body.classList.add('modal-open');
+}
+
+function closeStudentToolsModal() {
+    document.getElementById('studentToolsModal')?.classList.remove('show');
+    document.body.classList.remove('modal-open');
+}
+
+function renderStudySummarizerBody() {
+    return `
+        <p>${ui('Dán bài giảng, ghi chú hoặc tài liệu học tập để Bob tóm tắt các ý chính.', 'Paste lecture notes or study material for Bob to summarize the key points.')}</p>
+        <input type="text" id="studentSummaryTitle" placeholder="${ui('Tiêu đề (không bắt buộc)', 'Title (optional)')}" style="width:100%; margin-top:8px; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--panel); color:var(--text);">
+        <textarea id="studentSummaryContent" class="student-tools-textarea" placeholder="${ui('Dán nội dung vào đây...', 'Paste content here...')}"></textarea>
+        ${!isCurrentUserPremium() ? `<p class="student-tools-quota-note">${ui('Free: 5 lượt/ngày. Premium: không giới hạn.', 'Free: 5/day. Premium: unlimited.')}</p>` : ''}
+        <div id="studentSummaryResult"></div>
+        <div class="student-tools-actions">
+            <button type="button" class="btn-secondary" onclick="closeStudentToolsModal()">${ui('Đóng', 'Close')}</button>
+            <button type="button" id="studentSummarySubmitBtn" class="btn-primary">${ui('Tóm tắt', 'Summarize')}</button>
+        </div>
+    `;
+}
+
+function bindStudySummarizerBody() {
+    const submitBtn = document.getElementById('studentSummarySubmitBtn');
+    if (!submitBtn) return;
+    submitBtn.addEventListener('click', async () => {
+        const title = document.getElementById('studentSummaryTitle')?.value.trim() || '';
+        const content = document.getElementById('studentSummaryContent')?.value.trim() || '';
+        const resultBox = document.getElementById('studentSummaryResult');
+        if (!content) {
+            showNotification(ui('Hãy dán nội dung cần tóm tắt', 'Paste content to summarize first'), 'error');
+            return;
+        }
+        submitBtn.disabled = true;
+        submitBtn.textContent = ui('Đang tóm tắt...', 'Summarizing...');
+        try {
+            const response = await apiFetch(`${API_BASE}/chat/summarize-study`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, content })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                if (data.error === 'ai_limit_reached') {
+                    throw new Error(ui(
+                        `Bạn đã dùng hết ${data.limit} lượt tóm tắt miễn phí hôm nay.`,
+                        `You've used all ${data.limit} free summaries today.`
+                    ));
+                }
+                throw new Error(data.error || ui('Không thể tóm tắt', 'Unable to summarize'));
+            }
+            if (resultBox) resultBox.innerHTML = `<div class="student-tools-summary">${escapeHtml(data.summary)}</div>`;
+        } catch (error) {
+            showNotification(error.message, 'error');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = ui('Tóm tắt', 'Summarize');
+        }
+    });
+}
+
+function renderGpaRow(course) {
+    const name = course?.name || '';
+    const credits = course?.credits ?? '';
+    const grade = course?.grade ?? '';
+    return `
+        <tr class="student-gpa-row">
+            <td><input type="text" data-gpa-name value="${escapeAttr(name)}" placeholder="${ui('Tên môn', 'Course name')}"></td>
+            <td><input type="number" data-gpa-credits value="${escapeAttr(credits)}" min="0" step="0.5" placeholder="${ui('TC', 'Cr')}"></td>
+            <td><input type="number" data-gpa-grade value="${escapeAttr(grade)}" min="0" step="0.1" placeholder="${ui('Điểm', 'Grade')}"></td>
+            <td><button type="button" class="overview-checklist-remove" data-gpa-remove aria-label="${ui('Xóa dòng', 'Remove row')}">×</button></td>
+        </tr>
+    `;
+}
+
+function renderGpaCalculatorBody() {
+    const premium = isCurrentUserPremium();
+    return `
+        <p>${ui(
+            'Nhập môn học, số tín chỉ và điểm (theo thang điểm bạn đang dùng) để tính GPA trung bình theo tín chỉ.',
+            'Enter courses, credits, and grade (on whatever scale you use) to compute a credit-weighted GPA.'
+        )}</p>
+        ${!premium ? `<p class="student-tools-quota-note">${ui(
+            'Free: tính tại chỗ, không lưu lại. <a href="#" onclick="openSubscriptionModal();return false;">Nâng cấp Premium</a> để lưu danh sách môn và xem lại sau.',
+            'Free: computes on the spot, nothing is saved. <a href="#" onclick="openSubscriptionModal();return false;">Upgrade to Premium</a> to save your course list.'
+        )}</p>` : ''}
+        <table class="student-tools-gpa-table">
+            <thead><tr><th>${ui('Môn', 'Course')}</th><th>${ui('Tín chỉ', 'Credits')}</th><th>${ui('Điểm', 'Grade')}</th><th></th></tr></thead>
+            <tbody id="studentGpaRows">${renderGpaRow({})}${renderGpaRow({})}${renderGpaRow({})}</tbody>
+        </table>
+        <div class="student-tools-actions" style="justify-content: space-between;">
+            <button type="button" class="btn-secondary" id="studentGpaAddRowBtn">${ui('+ Thêm môn', '+ Add course')}</button>
+            <div>
+                <button type="button" class="btn-secondary" onclick="closeStudentToolsModal()">${ui('Đóng', 'Close')}</button>
+                <button type="button" id="studentGpaCalculateBtn" class="btn-primary">${ui('Tính GPA', 'Calculate')}</button>
+            </div>
+        </div>
+        <div id="studentGpaResult"></div>
+    `;
+}
+
+function bindGpaCalculatorBody() {
+    const addRowBtn = document.getElementById('studentGpaAddRowBtn');
+    const rowsBody = document.getElementById('studentGpaRows');
+    const calculateBtn = document.getElementById('studentGpaCalculateBtn');
+    if (!rowsBody || !calculateBtn) return;
+
+    const bindRemoveButtons = () => {
+        rowsBody.querySelectorAll('[data-gpa-remove]').forEach((button) => {
+            button.onclick = () => {
+                button.closest('.student-gpa-row')?.remove();
+            };
+        });
+    };
+    bindRemoveButtons();
+
+    if (addRowBtn) {
+        addRowBtn.addEventListener('click', () => {
+            rowsBody.insertAdjacentHTML('beforeend', renderGpaRow({}));
+            bindRemoveButtons();
+        });
+    }
+
+    calculateBtn.addEventListener('click', async () => {
+        const courses = Array.from(rowsBody.querySelectorAll('.student-gpa-row')).map((row) => ({
+            name: row.querySelector('[data-gpa-name]')?.value.trim() || '',
+            credits: row.querySelector('[data-gpa-credits]')?.value || '',
+            grade: row.querySelector('[data-gpa-grade]')?.value || ''
+        })).filter((course) => course.name && course.credits !== '' && course.grade !== '');
+
+        if (!courses.length) {
+            showNotification(ui('Hãy nhập ít nhất một môn hợp lệ', 'Enter at least one valid course'), 'error');
+            return;
+        }
+        calculateBtn.disabled = true;
+        try {
+            const response = await apiFetch(`${API_BASE}/courses/calculate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ courses })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || ui('Không thể tính GPA', 'Unable to calculate GPA'));
+            }
+            const resultBox = document.getElementById('studentGpaResult');
+            if (resultBox) {
+                resultBox.innerHTML = data.gpa === null
+                    ? `<div class="student-tools-gpa-result">${ui('Chưa đủ dữ liệu hợp lệ', 'Not enough valid data')}</div>`
+                    : `<div class="student-tools-gpa-result">GPA: ${escapeHtml(String(data.gpa))}</div>`;
+            }
+        } catch (error) {
+            showNotification(error.message, 'error');
+        } finally {
+            calculateBtn.disabled = false;
+        }
+    });
+}
+
+function bindStudentToolsPanel(container) {
+    const summarizeBtn = container.querySelector('#studentToolSummarizeBtn');
+    if (summarizeBtn) {
+        summarizeBtn.addEventListener('click', () => {
+            openStudentToolsModal(ui('Tóm tắt tài liệu học tập', 'Summarize study material'), renderStudySummarizerBody());
+            bindStudySummarizerBody();
+        });
+    }
+    const gpaBtn = container.querySelector('#studentToolGpaBtn');
+    if (gpaBtn) {
+        gpaBtn.addEventListener('click', () => {
+            openStudentToolsModal(ui('Tính GPA', 'Calculate GPA'), renderGpaCalculatorBody());
+            bindGpaCalculatorBody();
+        });
+    }
 }
 
 function bindOverviewEmailClicks(container, emails, selectedDate) {
@@ -2581,6 +2896,10 @@ async function loadOverviewPage(options = {}) {
 
             ${renderOverviewQuickAdd()}
 
+            ${renderOverviewCountdown(overviewData.upcoming_deadlines)}
+
+            ${renderStudentToolsPanel()}
+
             ${renderOverviewChecklist(schedules, checklistState)}
 
             ${renderOverviewAnalytics(analyticsData)}
@@ -2605,6 +2924,7 @@ async function loadOverviewPage(options = {}) {
         bindOverviewQuickAdd(container, selectedDate);
         bindOverviewChecklist(container, selectedDate, schedules, checklistState);
         bindOverviewEmailClicks(container, emails, selectedDate);
+        bindStudentToolsPanel(container, selectedDate);
         if (overviewData.refreshing) {
             scheduleOverviewRefreshPoll(selectedDate, Number(options.pollAttempt || 0));
         } else {

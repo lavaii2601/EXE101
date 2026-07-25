@@ -12,6 +12,7 @@ from models import postgres_db as pg
 
 FREE_LIMITS = {
     "email_summary": 10,
+    "study_summary": 5,
 }
 
 

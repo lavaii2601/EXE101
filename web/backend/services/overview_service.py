@@ -261,6 +261,48 @@ def _is_deadline(schedule):
     return bool(_DEADLINE_PATTERN.search(text))
 
 
+DEADLINE_LOOKAHEAD_DAYS = 30
+
+
+def get_upcoming_deadlines(user_id, today=None, limit=None):
+    """Deadline-flagged schedules (see _is_deadline) from now through
+    DEADLINE_LOOKAHEAD_DAYS ahead, nearest first. Pure data lookup, no
+    entitlement awareness -- callers (routes/overview.py) decide how many
+    of these a free vs premium Student sees via `limit`."""
+    user_id = sanitize_user_id(user_id)
+    today = today or datetime.now(LOCAL_TZ).date()
+    now = datetime.now(LOCAL_TZ)
+    db_path = get_user_db_path(user_id)
+    start = datetime.combine(today, time.min, tzinfo=LOCAL_TZ)
+    end = start + timedelta(days=DEADLINE_LOOKAHEAD_DAYS)
+    schedules = Schedule.get_between(start, end, limit=500, db_path=db_path)
+
+    deadlines = []
+    for schedule in schedules:
+        if not _is_deadline(schedule):
+            continue
+        start_time_raw = schedule.get('start_time')
+        if not start_time_raw:
+            continue
+        try:
+            event_time = datetime.fromisoformat(str(start_time_raw))
+        except ValueError:
+            continue
+        if event_time.tzinfo is None:
+            event_time = event_time.replace(tzinfo=LOCAL_TZ)
+        if event_time < now:
+            continue
+        deadlines.append({
+            'id': schedule.get('id'),
+            'title': schedule.get('title'),
+            'start_time': start_time_raw,
+            'days_until': (event_time.date() - today).days,
+        })
+
+    deadlines.sort(key=lambda item: item['start_time'])
+    return deadlines[:limit] if limit else deadlines
+
+
 def build_weekly_analytics(user_id, end_day=None, days=7):
     """Aggregate task/email activity for the `days` ending on `end_day`.
 

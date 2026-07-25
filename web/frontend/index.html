@@ -696,6 +696,17 @@
         </div>
     </div>
     
+    <!-- Student mode tools: study-material summarizer, GPA calculator, checklist-by-subject view.
+         Body is filled dynamically per tool (see openStudentToolsModal in app.js) instead of
+         three separate modals, since only one is ever open at a time. -->
+    <div id="studentToolsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="studentToolsModalTitle">
+        <div class="modal-content student-tools-modal-content">
+            <button type="button" class="close student-tools-close" aria-label="Đóng">&times;</button>
+            <h2 id="studentToolsModalTitle">Công cụ Sinh viên</h2>
+            <div id="studentToolsModalBody"></div>
+        </div>
+    </div>
+
     <!-- New Schedule Modal -->
     <div id="newScheduleModal" class="modal">
         <div class="modal-content">

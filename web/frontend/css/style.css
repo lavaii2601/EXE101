@@ -2217,6 +2217,151 @@ select:focus {
     color: #b45309;
 }
 
+.overview-chip.is-subject {
+    background: rgba(99, 102, 241, 0.14);
+    color: #4338ca;
+}
+
+/* Student-mode-only widgets: deadline countdown card, checklist subject
+   chip button, and the shared #studentToolsModal body (study-material
+   summarizer, GPA calculator, checklist-by-subject view). */
+.overview-countdown-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+}
+
+.overview-countdown-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--panel-soft, rgba(0, 0, 0, 0.03));
+}
+
+.overview-countdown-days {
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.overview-countdown-item.is-soon .overview-countdown-days {
+    color: var(--warning);
+}
+
+.overview-countdown-item.is-urgent .overview-countdown-days {
+    color: var(--danger);
+}
+
+.overview-countdown-title {
+    flex: 1;
+    color: var(--text);
+    font-size: 13px;
+}
+
+.overview-countdown-upsell {
+    margin: 0;
+    padding: 10px 14px 14px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.overview-checklist-subject-btn {
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 4px;
+}
+
+.student-tools-modal-content {
+    width: min(560px, 100%);
+}
+
+.student-tools-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.student-tools-textarea {
+    width: 100%;
+    min-height: 160px;
+    margin-top: 8px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    resize: vertical;
+}
+
+.student-tools-summary {
+    margin-top: 14px;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--panel-soft, rgba(0, 0, 0, 0.03));
+    white-space: pre-wrap;
+    font-size: 13px;
+    color: var(--text);
+}
+
+.student-tools-quota-note {
+    margin: 6px 0 0;
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.student-tools-gpa-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+.student-tools-gpa-table th {
+    text-align: left;
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    padding: 4px 6px;
+}
+
+.student-tools-gpa-table td {
+    padding: 4px 6px;
+}
+
+.student-tools-gpa-table input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 12px;
+}
+
+.student-tools-gpa-table input[type="number"] {
+    width: 70px;
+}
+
+.student-tools-gpa-result {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    background: rgba(99, 102, 241, 0.1);
+    color: #4338ca;
+    font-weight: 700;
+    text-align: center;
+}
+
 .overview-empty,
 .overview-loading,
 .overview-error {
