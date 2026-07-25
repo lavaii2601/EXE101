@@ -210,7 +210,7 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
     archived_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT chat_sessions_retention_days_check CHECK (retention_days BETWEEN 30 AND 93)
+    CONSTRAINT chat_sessions_retention_days_check CHECK (retention_days BETWEEN 30 AND 365)
 );
 
 CREATE TABLE IF NOT EXISTS history (
@@ -405,7 +405,7 @@ BEGIN
     ) THEN
         ALTER TABLE chat_sessions
             ADD CONSTRAINT chat_sessions_retention_days_check
-            CHECK (retention_days BETWEEN 30 AND 93);
+            CHECK (retention_days BETWEEN 30 AND 365);
     END IF;
 END;
 $$;

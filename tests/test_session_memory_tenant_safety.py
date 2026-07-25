@@ -159,6 +159,34 @@ class SessionMemoryTenantTests(unittest.TestCase):
 
 
 class ChatSessionTenantTests(unittest.TestCase):
+    def test_premium_session_uses_supported_365_day_retention(self):
+        supplied = str(uuid.uuid4())
+        connection = _RecordingConnection([
+            _Result(one=None),
+            _Result(one={"id": supplied}),
+        ])
+
+        with (
+            patch.object(history_module.pg, "enabled", return_value=True),
+            patch.object(history_module.pg, "ensure_user"),
+            patch.object(
+                history_module.pg,
+                "connection",
+                side_effect=lambda: _connection(connection),
+            ),
+            patch.object(
+                history_module.subscription_model,
+                "is_premium",
+                return_value=True,
+            ),
+        ):
+            actual = History.ensure_chat_session("alice", session_id=supplied)
+
+        self.assertEqual(supplied, actual)
+        insert_params = connection.calls[1][1]
+        self.assertEqual(365, insert_params[4])
+        self.assertEqual(365, insert_params[5])
+
     def test_foreign_supplied_session_id_is_replaced(self):
         supplied = str(uuid.uuid4())
         replacement = uuid.uuid4()
@@ -170,6 +198,11 @@ class ChatSessionTenantTests(unittest.TestCase):
         with (
             patch.object(history_module.pg, "enabled", return_value=True),
             patch.object(history_module.pg, "ensure_user"),
+            patch.object(
+                history_module.subscription_model,
+                "is_premium",
+                return_value=False,
+            ),
             patch.object(
                 history_module.pg,
                 "connection",
@@ -195,6 +228,11 @@ class ChatSessionTenantTests(unittest.TestCase):
         with (
             patch.object(history_module.pg, "enabled", return_value=True),
             patch.object(history_module.pg, "ensure_user"),
+            patch.object(
+                history_module.subscription_model,
+                "is_premium",
+                return_value=False,
+            ),
             patch.object(
                 history_module.pg,
                 "connection",

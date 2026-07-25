@@ -34,7 +34,7 @@ class WebSubscriptionFrontendContractTests(unittest.TestCase):
 
     def test_web_pricing_matches_mobile_and_admin(self):
         self.assertIn("49.000đ", self.html)
-        self.assertIn("549.000đ", self.html)
+        self.assertIn("520.000đ", self.html)
         self.assertIn("VNPay", self.html)
         self.assertIn("MoMo", self.html)
 
@@ -44,7 +44,7 @@ class WebSubscriptionFrontendContractTests(unittest.TestCase):
         self.assertIn("Gói hiện tại", self.html)
         self.assertIn('data-subscription-plan="monthly"', self.html)
         self.assertIn('data-subscription-plan="yearly"', self.html)
-        self.assertIn("Tiết kiệm 7%", self.html)
+        self.assertIn("Tiết kiệm 12%", self.html)
         self.assertIn('id="subscriptionPlanStep"', self.html)
         self.assertIn('id="subscriptionPaymentStep"', self.html)
         self.assertIn('id="subscriptionContinueBtn"', self.html)

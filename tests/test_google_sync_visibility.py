@@ -27,7 +27,7 @@ class _GoogleApiError(Exception):
 
 
 class _FailingRequest:
-    def execute(self):
+    def execute(self, **_kwargs):
         raise _GoogleApiError()
 
 

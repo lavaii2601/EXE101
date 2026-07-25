@@ -56,6 +56,25 @@ def _connection(connection):
 
 
 class SubscriptionModelTests(unittest.TestCase):
+    def test_postgres_schema_accepts_premium_chat_retention(self):
+        schema = (REPO_ROOT / "database" / "postgres_schema.sql").read_text(
+            encoding="utf-8"
+        )
+        migration = (
+            REPO_ROOT
+            / "database"
+            / "migrations"
+            / "20260726_chat_retention_premium.sql"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("retention_days BETWEEN 30 AND 93", schema)
+        self.assertIn("retention_days BETWEEN 30 AND 365", schema)
+        self.assertIn(
+            "DROP CONSTRAINT IF EXISTS chat_sessions_retention_days_check",
+            migration,
+        )
+        self.assertIn("retention_days BETWEEN 30 AND 365", migration)
+
     def _grant(self, connection, **kwargs):
         with (
             patch.object(subscription.pg, "enabled", return_value=True),
