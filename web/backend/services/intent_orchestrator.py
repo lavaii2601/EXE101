@@ -79,7 +79,7 @@ class IntentOrchestrator:
     )
     _EXPLICIT_WORKSPACE_COMMANDS = (
         "tao lich", "dat lich", "them lich", "xep lich", "nhac toi",
-        "schedule", "book a meeting", "book an appointment", "remind me",
+        "book a meeting", "book an appointment", "remind me",
         "them vao checklist", "dua vao checklist", "create a checklist",
         "tim email", "kiem email", "search email", "find email",
         "danh dau email", "mark email", "doi che do", "change mode",
@@ -1398,6 +1398,11 @@ class IntentOrchestrator:
         # _is_schedule_update instead (checked right after this).
         if self._is_negated_action(text, self._SCHEDULE_CREATE_NEGATION_ACTIONS):
             return False
+        if re.search(
+            r"\b(?:la gi|nghia la gi|what is|what does|how does|algorithm|definition|meaning)\b",
+            text,
+        ):
+            return False
         action = self._contains_word(text, self._SCHEDULE_CREATE_ACTIONS)
         schedule = self._contains_word(text, self._SCHEDULE_WORDS)
         # In English, "schedule" can itself be the imperative verb, so the
@@ -1473,7 +1478,12 @@ class IntentOrchestrator:
     def _is_email_lookup(self, text):
         if self._is_negated_action(text, self._EMAIL_LOOKUP_ACTIONS):
             return False
-        return any(term in text for term in ("email", "gmail", "hop thu", "thu chua doc", "mail"))
+        has_email_object = self._contains_word(
+            text,
+            ("email", "gmail", "hop thu", "thu chua doc", "mail"),
+        )
+        has_lookup_action = self._contains_word(text, self._EMAIL_LOOKUP_ACTIONS)
+        return has_email_object and has_lookup_action
 
     _HISTORY_LOOKUP_ACTIONS = ("xem", "cho xem", "check", "show")
 

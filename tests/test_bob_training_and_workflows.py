@@ -2,6 +2,7 @@ import sys
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +14,8 @@ from services.bob_training_cases import (  # noqa: E402
     generate_training_cases,
     iter_labelled_cases,
 )
+from config import Config  # noqa: E402
+from services.ai_service import AIService  # noqa: E402
 from services.intent_orchestrator import IntentOrchestrator  # noqa: E402
 from services.chat_agents import (  # noqa: E402
     ChatContext,
@@ -20,6 +23,7 @@ from services.chat_agents import (  # noqa: E402
     LOCAL_TZ,
     _build_agent_system_prompt,
     _direct_current_time_response,
+    _web_research_fallback_response,
 )
 from services.tool_catalog import TOOL_NAMES  # noqa: E402
 from services.training_intent_classifier import TrainingIntentClassifier  # noqa: E402
@@ -203,6 +207,72 @@ class BobWebResearchIntentTests(unittest.TestCase):
             workspace_sources={"email"},
             force_research=True,
         ))
+
+    def test_demo_mode_preserves_grounded_internet_results(self):
+        context = """INTERNET RESEARCH
+Query: donald trump
+Retrieved at: 2026-07-25T10:00:00Z
+Use these external sources only for public web facts.
+1. Donald Trump - latest information
+   URL: https://example.com/donald-trump
+   Snippet: Recent public information about Donald Trump.
+2. Donald Trump profile
+   URL: https://example.org/profile
+   Snippet: Background and related public updates.
+"""
+        ctx = ChatContext(
+            user_message="tìm kiếm trên internet thông tin về Donald Trump",
+            user_id="test-user",
+            db_path="test.db",
+            chat_session_id="00000000-0000-4000-8000-000000000002",
+            mode="worker",
+            mode_prompt="worker",
+            task="chat",
+            intent_result={"intent": "chat.freeform", "entities": {}},
+        )
+
+        with (
+            patch(
+                "services.chat_agents._build_workspace_context",
+                return_value=({"internet"}, context),
+            ),
+            patch("services.chat_agents.ai_service.generate_response") as generate,
+            patch(
+                "services.chat_agents.SessionMemory.list_for_session",
+                return_value=[],
+            ),
+        ):
+            result = FreeformChatAgent().handle(ctx)
+
+        generate.assert_not_called()
+        self.assertEqual("internet", result.provider)
+        self.assertFalse(result.demo_mode)
+        self.assertFalse(result.ai_used)
+        self.assertIn("https://example.com/donald-trump", result.response)
+        self.assertIn("Recent public information", result.response)
+        self.assertNotIn("AI provider", result.response)
+
+    def test_web_fallback_requires_citable_results(self):
+        self.assertIsNone(
+            _web_research_fallback_response(
+                "INTERNET RESEARCH\nQuery: donald trump",
+                target_language="vi",
+            )
+        )
+
+    def test_local_only_blocks_external_provider_even_when_called_directly(self):
+        service = AIService()
+        self.assertTrue(Config.BOB_LOCAL_ONLY)
+        self.assertEqual([], service.configured_providers)
+        with self.assertRaisesRegex(RuntimeError, "BOB_LOCAL_ONLY"):
+            service._call_provider("openrouter", [], 10)
+
+    def test_general_questions_that_mention_tools_do_not_trigger_actions(self):
+        orchestrator = IntentOrchestrator()
+        for prompt in ("email marketing là gì", "schedule algorithm là gì"):
+            with self.subTest(prompt=prompt):
+                result = orchestrator.detect_with_ai(prompt, ai_service=None)
+                self.assertEqual("chat.freeform", result["intent"])
 
 
 if __name__ == "__main__":

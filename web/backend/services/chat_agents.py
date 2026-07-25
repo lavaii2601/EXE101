@@ -298,50 +298,7 @@ def _translate_response_language(response, target_language, user_message, user_i
     response = str(response or '')
     if not response.strip():
         return response
-
-    if not getattr(ai_service, 'configured_providers', None):
-        return _fallback_translate_common_response(response, target_language)
-
-    target_name = 'English' if target_language == 'en' else 'Vietnamese'
-    source_name = 'Vietnamese' if target_language == 'en' else 'English'
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                f"Translate the assistant response from {source_name} to {target_name}. "
-                "Preserve all factual data exactly: names, email addresses, IDs, dates, "
-                "times, URLs, quoted titles, bullet structure, and code-like values. "
-                "Do not add new facts, explanations, greetings, or markdown fences. "
-                "Return only the translated response."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Latest user message:\n{user_message}\n\n"
-                f"Assistant response to translate:\n{response}"
-            ),
-        },
-    ]
-    try:
-        translated = ai_service.generate_response(
-            messages,
-            max_tokens=min(max(220, len(response) // 2 + 160), 900),
-            task='chat',
-            user_id=user_id,
-        )
-        translated = translated.strip() or response
-        if _is_demo_ai_response(translated):
-            return _fallback_translate_common_response(response, target_language)
-        if not _preserves_grounded_values(response, translated):
-            logger.warning("Rejected response translation that dropped grounded values")
-            return response
-        if _detect_text_language(translated) != target_language:
-            return _fallback_translate_common_response(response, target_language)
-        return translated
-    except Exception:
-        logger.warning("Response language normalization failed", exc_info=True)
-        return response
+    return _fallback_translate_common_response(response, target_language)
 
 
 def _render_bilingual_response(response, user_message, user_id=None):
@@ -354,47 +311,7 @@ def _render_bilingual_response(response, user_message, user_id=None):
         and re.search(r'(?im)^\s*english\s*:', response)
     ):
         return response
-    if not getattr(ai_service, 'configured_providers', None):
-        return response
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "Rewrite the assistant response as two concise, semantically equivalent sections. "
-                "The first heading must be 'Tiếng Việt:' and the second heading must be 'English:'. "
-                "Preserve every fact and structured value exactly, including names, email addresses, "
-                "IDs, dates, times, URLs, event titles, bullets, and action status. Do not add facts, "
-                "perform a new action, or include markdown fences. Return only the two sections."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Latest user message:\n{user_message}\n\n"
-                f"Grounded assistant response:\n{response}"
-            ),
-        },
-    ]
-    try:
-        bilingual = ai_service.generate_response(
-            messages,
-            max_tokens=min(max(320, len(response) + 240), 1400),
-            task='chat',
-            user_id=user_id,
-        )
-        bilingual = str(bilingual or '').strip()
-        if (
-            not _is_demo_ai_response(bilingual)
-            and _preserves_grounded_values(response, bilingual)
-            and
-            re.search(r'(?im)^\s*(?:tiếng việt|vietnamese)\s*:', bilingual)
-            and re.search(r'(?im)^\s*english\s*:', bilingual)
-        ):
-            return bilingual
-    except Exception:
-        logger.warning("Bilingual response rendering failed", exc_info=True)
-    return response
+    return _render_action_bilingual_without_ai(response)
 
 
 def normalize_agent_result_language(
@@ -1095,6 +1012,8 @@ def _should_extract_web_learning(query):
 
 
 def _extract_web_learning_candidate(research_result, user_id):
+    if getattr(Config, 'BOB_LOCAL_ONLY', True):
+        return None
     if not getattr(ai_service, 'configured_providers', None):
         return None
     query = str((research_result or {}).get('query') or '').strip()
@@ -1160,6 +1079,8 @@ def _extract_web_learning_candidate(research_result, user_id):
 
 
 def _learn_from_web_research(research_result, user_id, db_path=None):
+    if getattr(Config, 'BOB_LOCAL_ONLY', True):
+        return
     if not getattr(Config, 'WEB_RESEARCH_AUTO_LEARN_ENABLED', True):
         return
     if not user_id or user_id == 'default':
@@ -1282,6 +1203,126 @@ def _build_workspace_context(
     return sources, "\n\n".join(context_parts)
 
 
+def _web_research_fallback_response(workspace_context, target_language='vi'):
+    """Render bounded web evidence without relying on an AI provider."""
+    context = str(workspace_context or '')
+    marker = 'INTERNET RESEARCH'
+    if marker not in context:
+        return None
+
+    research_context = context.split(marker, 1)[1]
+    matches = re.findall(
+        r'(?ms)^\s*\d+\.\s+(.+?)\n'
+        r'\s*URL:\s*(https?://\S+)'
+        r'(?:\n\s*Snippet:\s*(.*?))?'
+        r'(?=^\s*\d+\.\s+|\Z)',
+        research_context,
+    )
+    if not matches:
+        return None
+
+    entries = []
+    for title, url, snippet in matches[:5]:
+        clean_title = re.sub(r'\s+', ' ', title).strip()[:200]
+        clean_url = url.strip().rstrip('.,;')
+        clean_snippet = re.sub(r'\s+', ' ', snippet or '').strip()
+        if len(clean_snippet) > 500:
+            clean_snippet = clean_snippet[:500].rsplit(' ', 1)[0].rstrip() + '...'
+        if clean_title and clean_url:
+            entries.append((clean_title, clean_url, clean_snippet))
+    if not entries:
+        return None
+
+    if target_language == 'en':
+        lines = [f"I found {len(entries)} public Internet sources:"]
+        source_label = "Source"
+        footer = "The descriptions above are bounded extracts from the listed sources."
+    else:
+        lines = [f"Mình tìm được {len(entries)} nguồn công khai trên Internet:"]
+        source_label = "Nguồn"
+        footer = "Các mô tả trên là phần trích dẫn có giới hạn từ đúng nguồn được liệt kê."
+
+    for index, (title, url, snippet) in enumerate(entries, start=1):
+        lines.extend([
+            "",
+            f"{index}. {title}",
+            *([snippet] if snippet else []),
+            f"{source_label}: {url}",
+        ])
+    lines.extend(["", footer])
+    return "\n".join(lines)
+
+
+def _knowledge_fallback_response(workspace_context, target_language='vi'):
+    """Render retrieved Bob knowledge without generating unsupported facts."""
+    context = str(workspace_context or '')
+    marker = 'KIẾN THỨC THAM KHẢO (FlowMate/Bob)'
+    if marker not in context:
+        return None
+    section = context.split(marker, 1)[1].split('INTERNET RESEARCH', 1)[0]
+    entries = []
+    for _, title, content in re.findall(
+        r'(?ms)^\s*(\d+)\.\s+([^:\n]{1,200}):\s*(.*?)'
+        r'(?=^\s*\d+\.\s+|\Z)',
+        section,
+    ):
+        clean_title = re.sub(r'\s+', ' ', title).strip()
+        clean_content = re.sub(r'\s+', ' ', content).strip()
+        if clean_title and clean_content:
+            entries.append((clean_title[:160], clean_content[:700]))
+    if not entries:
+        return None
+    if target_language == 'en':
+        lines = ["Based on Bob's stored knowledge:"]
+    else:
+        lines = ["Dựa trên kiến thức Bob đã học:"]
+    for index, (title, content) in enumerate(entries[:3], start=1):
+        lines.append(f"{index}. {title}: {content}")
+    return "\n".join(lines)
+
+
+def _local_freeform_response(user_message, workspace_context, workspace_sources):
+    """Compose a deterministic answer from local knowledge and web evidence."""
+    language = detect_prompt_language(user_message)
+    web_answer = _web_research_fallback_response(workspace_context, language)
+    knowledge_answer = _knowledge_fallback_response(workspace_context, language)
+    if web_answer:
+        return web_answer, 'internet', True
+    if knowledge_answer:
+        return knowledge_answer, 'bob-local', True
+
+    normalized = _normalize_intent_text(user_message)
+    if re.search(r'\b(?:xin chao|chao|hello|hi|hey)\b', normalized):
+        if language == 'en':
+            return (
+                "Hello, I'm Bob. I can work with your email, calendar, checklist, "
+                "stored knowledge, and public Internet research.",
+                'bob-local',
+                True,
+            )
+        return (
+            "Chào bạn, mình là Bob. Mình có thể xử lý email, lịch, checklist, "
+            "kiến thức đã học và tìm thông tin công khai trên Internet.",
+            'bob-local',
+            True,
+        )
+    if any(term in normalized for term in ('ban lam duoc gi', 'giup duoc gi', 'what can you do', 'capabilities')):
+        return tool_catalog.build_capabilities_summary(), 'bob-local', True
+    if language == 'en':
+        return (
+            "I don't yet have enough local knowledge or source data to answer this reliably. "
+            "Please narrow the task, ask me to search the Internet, or teach Bob a specific rule.",
+            'bob-local',
+            False,
+        )
+    return (
+        "Mình chưa có đủ kiến thức cục bộ hoặc dữ liệu nguồn để trả lời chắc chắn. "
+        "Bạn hãy nói rõ tác vụ, yêu cầu mình tìm trên Internet, hoặc dạy Bob một quy tắc cụ thể.",
+        'bob-local',
+        False,
+    )
+
+
 # Cheap, local gate before paying for an AI round-trip to check "is there
 # anything worth remembering here" -- most chat turns aren't (a one-off
 # question, a status check, small talk), so most messages should never reach
@@ -1318,44 +1359,21 @@ def _parse_memory_json(raw):
 
 
 def _extract_memory_candidate(user_message, assistant_response, user_id):
-    system_message = {
-        "role": "system",
-        "content": (
-            "Ban la module trich xuat tri nho dai han cho tro ly AI Bob. Doc tin nhan cua "
-            "nguoi dung va cau tra loi cua Bob, xac dinh xem co THONG TIN ON DINH dang nho "
-            "lau dai khong: nguoi dung sua loi Bob, neu so thich/quy tac ca nhan, cach xung "
-            "ho rieng, thuat ngu/quy tac nghiep vu rieng cua ho. KHONG trich xuat du lieu "
-            "tam thoi mot lan (mot lich hen cu the, mot email cu the, cau hoi thong thuong, "
-            "small talk). Neu khong co gi dang nho, tra ve should_remember=false. Nguoi dung "
-            "co the viet tieng Viet hoac tieng Anh. TRA VE DUY NHAT JSON, khong giai thich, "
-            "khong dung markdown: "
-            '{"should_remember": true/false, "title": "<ngan gon>", '
-            '"content": "<noi dung can nho, 1-2 cau>", "tags": "<tu khoa, cach nhau boi dau phay>"}'
-        ),
+    """Store only explicit user-authored rules/preferences, verbatim."""
+    message = re.sub(r'\s+', ' ', str(user_message or '')).strip()
+    if not message or not _has_memory_hint(message):
+        return None
+    normalized = _normalize_intent_text(message)
+    kind = 'preference'
+    if any(term in normalized for term in ('khong phai', 'ma la', "actually it")):
+        kind = 'correction'
+    elif any(term in normalized for term in ('quy tac', 'luon luon', 'always', 'every time')):
+        kind = 'rule'
+    return {
+        "title": f"User {kind}: {message[:110]}",
+        "content": message[:500],
+        "tags": f"auto-memory,{kind},explicit-user-rule",
     }
-    user_turn = {
-        "role": "user",
-        "content": f"TIN NHAN NGUOI DUNG: \"{user_message}\"\n\nTRA LOI CUA BOB: \"{assistant_response}\"",
-    }
-    try:
-        raw = ai_service.generate_response(
-            [system_message, user_turn],
-            max_tokens=220,
-            task="memory_extraction",
-            user_id=user_id,
-        )
-    except Exception:
-        logger.warning("Memory extraction AI call failed", exc_info=True)
-        return None
-    data = _parse_memory_json(raw)
-    if not data or not data.get("should_remember"):
-        return None
-    title = str(data.get("title") or "").strip()[:150]
-    content = str(data.get("content") or "").strip()[:500]
-    tags = str(data.get("tags") or "").strip()[:200]
-    if not title or not content:
-        return None
-    return {"title": title, "content": content, "tags": tags}
 
 
 def learn_from_exchange(user_message, assistant_response, user_id):
@@ -1443,6 +1461,8 @@ def _parse_mentor_providers():
 
 
 def _mentor_learning_allowed(user_message, user_id, intent_result=None, workspace_sources=None):
+    if getattr(Config, 'BOB_LOCAL_ONLY', True):
+        return False
     if not getattr(Config, 'AI_MENTOR_LEARNING_ENABLED', True):
         return False
     if not user_id or user_id == 'default':
@@ -1831,12 +1851,12 @@ class EmailLatestSummaryAgent:
             ]
             return AgentResult(
                 response=response,
-                provider=ai_service.last_provider_used,
-                demo_mode=ai_service.last_provider_used == 'demo',
+                provider='bob-local',
+                demo_mode=False,
                 suggested_actions=suggested_actions,
                 workspace_sources=['email'],
                 refresh_targets=ctx.refresh_targets,
-                ai_used=True,
+                ai_used=False,
                 action='Tóm tắt email mới nhất',
                 email_source={
                     'id': source_email.get('id'),
@@ -2862,8 +2882,13 @@ class FreeformChatAgent:
             "content": ctx.user_message
         })
 
-        # Generate response
-        response = ai_service.generate_response(messages, task=ctx.task, user_id=ctx.user_id)
+        response, provider, grounded = _local_freeform_response(
+            original_turn,
+            workspace_context,
+            workspace_sources,
+        )
+        demo_mode = False
+        ai_used = False
 
         # Pull out any session-memory fact the model flagged (see
         # MEMORY_MARKER / the system prompt's SESSION MEMORY instruction),
@@ -2889,14 +2914,14 @@ class FreeformChatAgent:
 
         return AgentResult(
             response=response,
-            provider=ai_service.last_provider_used,
-            demo_mode=ai_service.last_provider_used == 'demo',
+            provider=provider,
+            demo_mode=demo_mode,
             schedule_created=schedule_created,
             schedule_suggestion=schedule_suggestion,
             workspace_sources=sorted(workspace_sources),
             refresh_targets=sorted(refresh_targets),
-            ai_used=True,
-            grounded=bool(workspace_sources),
+            ai_used=ai_used,
+            grounded=grounded,
             action='Tạo lịch sau xác nhận' if schedule_created else ('Đề xuất lịch cần xác nhận' if schedule_suggestion else None),
         )
 

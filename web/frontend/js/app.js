@@ -3684,10 +3684,6 @@ async function sendMessageConfirmed(message, opts = {}) {
             addMessage(data.response, 'assistant', sourceBadge);
             loadChatSessions().catch(() => {});
 
-            if (data.demo_mode) {
-                showNotification(ui('⚠️ Chế độ demo - Tất cả nhà cung cấp AI đang tạm nghỉ', '⚠️ Demo mode - All AI providers are cooling down'), 'info');
-            }
-
             await refreshWorkspaceTargets(data.refresh_targets);
 
             // Handle schedule results from server
@@ -4997,11 +4993,11 @@ async function checkRuntimeConfig() {
         
         if (data.success && data.providers) {
             const providers = data.providers;
-            if (providers.demo_mode) {
-                console.warn('⚠️ Demo Mode - Tất cả AI providers đang cooldown hoặc chưa cấu hình');
-            } else {
-                console.log('✅ AI providers configured and active');
-            }
+            console.log(
+                providers.local_only
+                    ? '✅ Bob local engine active'
+                    : '✅ Bob runtime active'
+            );
         }
     } catch (err) {
         console.error('Config check failed:', err);

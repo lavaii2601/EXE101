@@ -255,14 +255,8 @@ def get_status():
     gmail_from_json = bool(Config.GMAIL_CREDENTIALS_JSON)
     gmail_from_file = os.path.exists(Config.GMAIL_CREDENTIALS_FILE)
 
-    ai_map = {
-        'openrouter': bool(getattr(Config, 'OPENROUTER_API_KEY', None)),
-        'openai': bool(Config.OPENAI_API_KEY),
-        'mistral': bool(Config.MISTRAL_API_KEY),
-        'claude': bool(Config.CLAUDE_API_KEY),
-        'gemini': bool(Config.GEMINI_API_KEY)
-    }
-    missing_ai = [name for name, ok in ai_map.items() if not ok]
+    ai_map = {'bob-local': True}
+    missing_ai = []
 
     return jsonify({
         'gmail_configured': gmail_from_env or gmail_from_json or gmail_from_file,
@@ -277,7 +271,8 @@ def get_status():
         },
         'ai_providers': {k: v for k, v in ai_map.items()},
         'missing_ai_providers': missing_ai,
-        'all_ready': not missing_ai
+        'local_only': True,
+        'all_ready': True
     })
 
 @app.route('/api/debug/session', methods=['GET'])

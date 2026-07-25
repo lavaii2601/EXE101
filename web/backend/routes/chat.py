@@ -82,7 +82,7 @@ def _agent_profile():
         'rules': [
             'Dùng dữ liệu workspace thật khi trả lời về email, lịch, lịch sử, hồ sơ.',
             'Khi cần dữ liệu web công khai hoặc thông tin mới, tra cứu Internet có giới hạn và nêu nguồn.',
-            'Có thể học quy tắc xử lý từ các AI mentor đã cấu hình; bài học được lưu riêng theo user và không thay thế xác nhận của người dùng.',
+            'Tự học các quy tắc hoặc sở thích do người dùng nói rõ; kiến thức được lưu riêng theo user.',
             'Không bịa email, người gửi, ngày giờ, deadline hoặc hành động đã hoàn tất.',
             'Chỉ thực hiện hành động ghi dữ liệu sau khi người dùng xác nhận.',
             'Luôn trả refresh_targets để web/mobile đồng bộ màn liên quan.',
@@ -249,19 +249,15 @@ def send_message():
             chat_session_id=chat_session_id if action_type == 'chat' else None,
         )
 
-    # Multi-step workflow chaining (e.g. "đặt lịch rồi tóm tắt email") is a
-    # Premium-only feature: it re-runs AI intent classification once per
-    # detected step, so gating it here both draws the Free/Premium line and
-    # avoids multiplying AI calls for Free users. Free users still get their
-    # full message classified normally via detect_with_ai (the same fallback
-    # detect_workflow_with_ai itself uses when it finds fewer than 2 steps).
+    # Intent routing is fully local: deterministic rules, local cache and the
+    # offline trained classifier. No model provider receives user content.
     if subscription_model.is_premium(user_id):
         intent_result = intent_orchestrator.detect_workflow_with_ai(
-            user_message, ai_service, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
+            user_message, None, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
         )
     else:
         intent_result = intent_orchestrator.detect_with_ai(
-            user_message, ai_service, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
+            user_message, None, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
         )
     refresh_targets = list(intent_result.get('refresh_targets') or [])
     resolved_user_message = intent_result.get('resolved_message') or user_message

@@ -144,15 +144,12 @@ _SEED_DOCUMENTS = [
         "internet,web,research,tu hoc,nguon,bob",
     ),
     (
-        "Bob hoc tu AI mentor",
-        "Bob co the hoc cach xu ly thong tin va hanh dong tu cac AI mentor da cau hinh tren backend "
-        "nhu OpenAI/ChatGPT, Gemini, Claude, OpenRouter, Mistral hoac Ollama. Sau mot luot chat phu "
-        "hop, mot tien trinh nen co the gui yeu cau da gioi han cho 1-2 provider mentor de nho critique "
-        "cach Bob xu ly. Mentor chi duoc tra ve mot bai hoc quy trinh tong quat (source='mentor'), vi du "
-        "cach dung nguon, cach hoi xac nhan, cach tach viec hoac tranh hanh dong rui ro. Co quota/ngay va "
-        "loc trung de tranh lam roi knowledge DB. Bob khong tu train lai trong so model nen; day la co che "
-        "hoc bang knowledge/RAG rieng theo user va khong duoc dung de bo qua xac nhan cua nguoi dung.",
-        "mentor,ai-peer,chatgpt,gemini,claude,tu hoc,bob",
+        "Bob hoc quy tac tu nguoi dung",
+        "Bob khong gui hoi thoai den model AI ben ngoai. Khi nguoi dung noi ro mot sua loi, so thich, "
+        "cach xung ho hoac quy tac on dinh, Bob co the luu nguyen van thanh tri nho knowledge rieng "
+        "theo user. Du lieu nay duoc tra cuu cuc bo trong cac luot sau va khong duoc dung de bo qua "
+        "xac nhan cua nguoi dung cho hanh dong ghi.",
+        "tu hoc,quy tac,so thich,tri nho,cuc bo,bob",
     ),
     (
         "Bob ho tro song ngu Viet-Anh",
@@ -246,8 +243,8 @@ _SEED_DOCUMENTS = [
         "Bo training 500 truong hop moi loai cua Bob",
         "Moi intent cong cu cua Bob co dung 500 cau mau duoc gan nhan, gom tieng Viet, tieng Anh, "
         "khau ngu va bien the ngan gon. Hien co 12 intent nen tong cong 6000 truong hop. Bo du lieu "
-        "nay huan luyen bo phan loai offline de Bob van nhan dien paraphrase khi AI provider khong "
-        "san sang, dong thoi duoc dong goi theo batch vao kho RAG. Day khong phai fine-tune trong so "
+        "nay huan luyen bo phan loai offline de Bob nhan dien paraphrase ma khong can model ben ngoai, "
+        "dong thoi duoc dong goi theo batch vao kho RAG. Day khong phai fine-tune trong so "
         "model nen; entity nhu ngay gio, nguoi gui va noi dung van luon duoc trich tu cau hien tai.",
         "training,500 cases,intent,offline classifier,bob",
     ),

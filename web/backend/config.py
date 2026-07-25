@@ -40,6 +40,11 @@ class Config:
 
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
     OPENROUTER_ENABLED = _bool(os.getenv("OPENROUTER_ENABLED"), default=bool(OPENROUTER_API_KEY))
+    # Bob's production engine is deterministic/local by default. External
+    # model adapters remain in the repository only for backwards-compatible
+    # experiments; core chat, tools, RAG, summaries, and learning must never
+    # require them.
+    BOB_LOCAL_ONLY = True
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
     MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
     CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
@@ -74,7 +79,7 @@ class Config:
     AI_TASK_PROVIDERS_ANALYZE = os.getenv("AI_TASK_PROVIDERS_ANALYZE", "")
 
     WEB_RESEARCH_ENABLED = _bool(os.getenv("WEB_RESEARCH_ENABLED"), default=True)
-    WEB_RESEARCH_AUTO_LEARN_ENABLED = _bool(os.getenv("WEB_RESEARCH_AUTO_LEARN_ENABLED"), default=True)
+    WEB_RESEARCH_AUTO_LEARN_ENABLED = _bool(os.getenv("WEB_RESEARCH_AUTO_LEARN_ENABLED"), default=False)
     WEB_RESEARCH_MAX_RESULTS = int(os.getenv("WEB_RESEARCH_MAX_RESULTS", 3))
     WEB_RESEARCH_FETCH_PAGES = int(os.getenv("WEB_RESEARCH_FETCH_PAGES", 2))
     WEB_RESEARCH_TIMEOUT = int(os.getenv("WEB_RESEARCH_TIMEOUT", 8))
@@ -82,7 +87,7 @@ class Config:
     WEB_RESEARCH_MAX_CHARS = int(os.getenv("WEB_RESEARCH_MAX_CHARS", 1800))
     WEB_RESEARCH_LEARNING_MAX_PER_DAY = int(os.getenv("WEB_RESEARCH_LEARNING_MAX_PER_DAY", 6))
 
-    AI_MENTOR_LEARNING_ENABLED = _bool(os.getenv("AI_MENTOR_LEARNING_ENABLED"), default=True)
+    AI_MENTOR_LEARNING_ENABLED = _bool(os.getenv("AI_MENTOR_LEARNING_ENABLED"), default=False)
     AI_MENTOR_ALLOW_PRIVATE_CONTEXT = _bool(os.getenv("AI_MENTOR_ALLOW_PRIVATE_CONTEXT"), default=False)
     AI_MENTOR_PROVIDERS = os.getenv("AI_MENTOR_PROVIDERS", "openai,gemini,claude,openrouter,mistral,ollama")
     AI_MENTOR_MAX_PROVIDERS = int(os.getenv("AI_MENTOR_MAX_PROVIDERS", 2))

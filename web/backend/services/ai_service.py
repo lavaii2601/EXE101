@@ -87,6 +87,7 @@ class AIService:
         }
         self.last_provider_used = None
         self.provider_usage = {
+            'bob-local': 0,
             'openrouter': 0,
             'openai': 0,
             'mistral': 0,
@@ -112,7 +113,9 @@ class AIService:
             except Exception:
                 self.openrouter_service = None
 
-        if not self.configured_providers:
+        if Config.BOB_LOCAL_ONLY:
+            logger.info("Bob local-only engine enabled; external model providers are disabled")
+        elif not self.configured_providers:
             logger.warning("⚠️  Không có AI provider khả dụng - sử dụng Demo Mode")
     def _is_quota_error(self, error_message, status_code=None):
         """Detect if error is related to quota/rate limits"""
@@ -176,6 +179,11 @@ class AIService:
     
     def generate_response(self, messages, max_tokens=None, task='chat', user_id=None):
         """Generate AI response using round-robin rotation with intelligent fallback"""
+        if Config.BOB_LOCAL_ONLY:
+            self.last_provider_used = 'bob-local'
+            self.provider_usage['bob-local'] += 1
+            return self._get_local_response(messages)
+
         if max_tokens is None:
             max_tokens = self.task_max_tokens.get(task, self.default_max_tokens)
 
@@ -285,6 +293,8 @@ class AIService:
         "senior" model for process feedback without changing the normal
         round-robin/fallback behavior that serves the user's visible answer.
         """
+        if Config.BOB_LOCAL_ONLY:
+            raise RuntimeError("External model providers are disabled by BOB_LOCAL_ONLY")
         provider = (provider or '').strip().lower()
         if not provider:
             raise ValueError("Provider is required")
@@ -325,6 +335,8 @@ class AIService:
         return [p.strip().lower() for p in value.split(',') if p.strip()]
 
     def _detect_configured_providers(self):
+        if Config.BOB_LOCAL_ONLY:
+            return []
         configured = []
 
         # OpenRouter is the primary choice if enabled
@@ -570,6 +582,8 @@ class AIService:
         return optimized
 
     def _call_provider(self, provider, messages, max_tokens):
+        if Config.BOB_LOCAL_ONLY:
+            raise RuntimeError("External model providers are disabled by BOB_LOCAL_ONLY")
         if provider == 'openrouter':
             return self._call_openrouter(messages, max_tokens)
         if provider == 'openai':
@@ -824,6 +838,31 @@ class AIService:
 
     def get_provider_status(self):
         """Return provider configuration for UI/debug"""
+        if Config.BOB_LOCAL_ONLY:
+            return {
+                "engine": "bob-local",
+                "local_only": True,
+                "primary_provider": "bob-local",
+                "provider_order": [],
+                "configured_providers": [],
+                "missing_providers": [],
+                "active_chain": ["bob-local"],
+                "task_provider_overrides": {},
+                "task_chains": {
+                    task: ["bob-local"]
+                    for task in ("chat", "summary", "reply", "analyze")
+                },
+                "provider_health": {
+                    "bob-local": {
+                        "healthy": True,
+                        "usage_count": self.provider_usage.get("bob-local", 0),
+                    }
+                },
+                "provider_usage": self.provider_usage,
+                "last_provider_used": self.last_provider_used,
+                "rotation_index": 0,
+                "demo_mode": False,
+            }
         chain = self._build_provider_chain() if self.configured_providers else []
         missing_providers = [
             provider for provider in ['openai', 'mistral', 'claude', 'gemini', 'ollama']
@@ -883,6 +922,25 @@ class AIService:
             return DEMO_RESPONSES["lịch"]
         else:
             return DEMO_RESPONSES["default"]
+
+    def _get_local_response(self, messages):
+        """Safe last-resort response for legacy call sites in local-only mode."""
+        user_message = ''
+        for message in reversed(messages or []):
+            if message.get('role') == 'user':
+                user_message = str(message.get('content') or '').strip()
+                break
+        normalized = user_message.casefold()
+        if any(term in normalized for term in ('xin chào', 'chào bob', 'hello', 'hi bob')):
+            return (
+                "Chào bạn, mình là Bob. Mình có thể xử lý email, lịch, checklist, "
+                "kiến thức đã học và tìm thông tin công khai trên Internet."
+            )
+        return (
+            "Mình chưa có đủ dữ liệu hoặc quy tắc cục bộ để trả lời chắc chắn. "
+            "Bạn hãy nói rõ tác vụ cần làm, yêu cầu tìm Internet, hoặc dạy Bob "
+            "một quy tắc cụ thể để mình ghi nhớ."
+        )
     
     def summarize_email(self, email_content, user_id=None):
         """Summarize email content with focus on key points and action items.
@@ -912,36 +970,34 @@ class AIService:
         return extractive_summary.summarize_structured(subject, body, sender=sender, to=to, cc=cc)
 
     def generate_reply(self, context, user_choice, user_id=None):
-        """Generate automatic reply based on user choice"""
-        messages = [
-            {
-                "role": "system",
-                "content": "Bạn là trợ lý giáo viên. Viết email trả lời ngắn gọn, lịch sự, rõ ràng." + PLAIN_TEXT_INSTRUCTION
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Bối cảnh: {self._truncate_text(context, self.max_input_chars)}\n\n"
-                    f"Lựa chọn: {user_choice}\n\n"
-                    "Viết email trả lời phù hợp."
-                )
-            }
-        ]
-        return strip_markup(self.generate_response(messages, task='reply', user_id=user_id))
+        """Create a bounded, deterministic email reply without a model."""
+        choice = re.sub(r'\s+', ' ', str(user_choice or '')).strip()
+        if not choice:
+            choice = "Tôi đã nhận được thông tin và sẽ phản hồi sớm."
+        if re.search(r'\b(thanks?|cảm ơn|cam on)\b', choice, re.IGNORECASE):
+            body = choice
+        else:
+            body = f"Cảm ơn bạn đã liên hệ.\n\n{choice}"
+        return strip_markup(f"Xin chào,\n\n{body}\n\nTrân trọng.")
     
     def analyze_text(self, text):
-        """Analyze text for sentiment and intent"""
-        messages = [
-            {
-                "role": "system",
-                "content": "Phân tích ngắn: cảm xúc, ý định chính, hành động đề xuất."
-            },
-            {
-                "role": "user",
-                "content": f"Phân tích:\n\n{self._truncate_text(text, self.max_input_chars)}"
-            }
-        ]
-        return self.generate_response(messages, task='analyze')
+        """Analyze text with transparent keyword rules."""
+        value = str(text or '')
+        lowered = value.casefold()
+        negative = ('khẩn', 'gấp', 'lỗi', 'không hài lòng', 'urgent', 'error', 'failed')
+        positive = ('cảm ơn', 'tốt', 'tuyệt', 'thanks', 'great', 'excellent')
+        sentiment = 'tiêu cực/khẩn cấp' if any(x in lowered for x in negative) else (
+            'tích cực' if any(x in lowered for x in positive) else 'trung tính'
+        )
+        actions = []
+        if re.search(r'\b(phản hồi|trả lời|reply|respond)\b', lowered):
+            actions.append('phản hồi')
+        if re.search(r'\b(họp|lịch|meeting|schedule|deadline)\b', lowered):
+            actions.append('kiểm tra lịch/deadline')
+        return (
+            f"Cảm xúc: {sentiment}.\n"
+            f"Hành động gợi ý: {', '.join(actions) if actions else 'chưa phát hiện hành động rõ ràng'}."
+        )
     
     def classify_email(self, email_data, user_id=None):
         """Classify email into categories: education, business, ads, notification, personal, etc.
@@ -956,48 +1012,24 @@ class AIService:
         sender = email_data.get('sender', '')
         body = email_data.get('body', '') or email_data.get('snippet', '')
         
-        email_text = f"Subject: {subject}\nFrom: {sender}\n\n{self._truncate_text(body, self.max_input_chars)}"
-        
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Classify this email into ONE category from: education, business, ads, notification, personal, social, other\n"
-                    "Return JSON: {\"tag\": \"category\", \"confidence\": 0.0-1.0, \"reason\": \"brief reason\"}\n"
-                    "Categories:\n"
-                    "- education: courses, tutorials, learning materials, school/university\n"
-                    "- business: work, meetings, professional communication, invoices\n"
-                    "- ads: marketing, promotions, newsletters, unsolicted ads\n"
-                    "- notification: system alerts, confirmations, OTP, status updates\n"
-                    "- personal: from friends/family, informal communication\n"
-                    "- social: social media, communities, group messages\n"
-                    "- other: everything else\n"
-                    "Return ONLY valid JSON, no other text."
-                )
-            },
-            {
-                "role": "user",
-                "content": email_text
-            }
-        ]
-        
-        try:
-            response = self.generate_response(messages, max_tokens=100, task='analyze', user_id=user_id)
-            response_clean = response.strip()
-            if '```json' in response_clean:
-                response_clean = response_clean.split('```json', 1)[1].split('```', 1)[0].strip()
-            elif '```' in response_clean:
-                response_clean = response_clean.split('```', 1)[1].split('```', 1)[0].strip()
-            
-            result = json.loads(response_clean)
-            return {
-                'tag': result.get('tag', 'other'),
-                'confidence': float(result.get('confidence', 0.5)),
-                'reason': result.get('reason', '')
-            }
-        except Exception as e:
-            logger.warning(f"Email classification failed: {e}")
-            return {'tag': 'other', 'confidence': 0.0, 'reason': 'Classification failed'}
+        email_text = f"{subject} {sender} {body}".casefold()
+        rules = (
+            ('ads', ('sale', 'discount', 'promotion', 'ưu đãi', 'khuyến mãi', 'unsubscribe')),
+            ('notification', ('otp', 'verification', 'xác nhận', 'alert', 'notification')),
+            ('education', ('course', 'lesson', 'university', 'school', 'khóa học', 'bài học')),
+            ('business', ('invoice', 'meeting', 'project', 'hợp đồng', 'hóa đơn', 'công việc')),
+            ('social', ('facebook', 'linkedin', 'instagram', 'community', 'group')),
+            ('personal', ('family', 'friend', 'gia đình', 'bạn bè')),
+        )
+        for tag, keywords in rules:
+            matches = [word for word in keywords if word in email_text]
+            if matches:
+                return {
+                    'tag': tag,
+                    'confidence': min(0.95, 0.65 + 0.1 * len(matches)),
+                    'reason': f"Matched local rules: {', '.join(matches[:3])}",
+                }
+        return {'tag': 'other', 'confidence': 0.4, 'reason': 'No local category rule matched'}
     
     def summarize_email_short(self, email_data, user_id=None):
         """Create a short summary (1-2 sentences) of email content
@@ -1011,32 +1043,7 @@ class AIService:
         subject = email_data.get('subject', '')
         body = email_data.get('body', '') or email_data.get('snippet', '')
         
-        email_text = f"Subject: {subject}\n\n{self._truncate_text(body, self.max_input_chars)}"
-        
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Summarize this email in 1-2 SHORT sentences. Focus on:\n"
-                    "1. Main point or purpose\n"
-                    "2. Key action items (if any)\n"
-                    "3. Urgency level (if implied)\n"
-                    "Remove: greetings, signatures, unnecessary details, spam content\n"
-                    "Be concise and clear for busy professionals."
-                )
-            },
-            {
-                "role": "user",
-                "content": email_text
-            }
-        ]
-        
-        try:
-            summary = self.generate_response(messages, max_tokens=120, task='summary', user_id=user_id)
-            return summary.strip()
-        except Exception as e:
-            logger.warning(f"Email summarization failed: {e}")
-            return email_data.get('snippet', '')[:200]
+        return extractive_summary.summarize_short(subject, body)
 
     def summarize_email_report(self, emails, report_date=None, user_id=None):
         """Summarize multiple emails with intelligent filtering.

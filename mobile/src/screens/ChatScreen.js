@@ -668,9 +668,6 @@ export default function ChatScreen({
                   {item.role === 'assistant' ? renderFormattedText(item.text, colors) : item.text}
                 </Text>
                 {item.meta ? <Text style={styles.agentMeta}>{item.meta}</Text> : null}
-                {item.demoMode ? (
-                  <Text style={styles.demoNote}>⚠ Chế độ demo — chưa có AI provider khả dụng, phản hồi có thể hạn chế.</Text>
-                ) : null}
                 {item.suggestedActions?.length ? (
                   <View style={styles.suggestedActions}>
                     {item.suggestedActions.map((action, index) => (

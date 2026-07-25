@@ -235,8 +235,8 @@ AGENT_CAPABILITIES = [
     },
     {
         'id': 'provider.status',
-        'label': 'Trạng thái AI provider',
-        'description': 'Theo dõi provider AI, demo mode và fallback để người dùng biết phản hồi đến từ đâu.',
+        'label': 'Trạng thái Bob local',
+        'description': 'Theo dõi engine cục bộ và các nguồn dữ liệu mà Bob đang dùng.',
         'workspace_sources': ['profile'],
         'refresh_targets': ['providers', 'settings'],
         'confirmation_required': False,
@@ -259,8 +259,8 @@ AGENT_CAPABILITIES = [
     },
     {
         'id': 'mentor.learning',
-        'label': 'Học từ AI mentor',
-        'description': 'Chạy nền có quota để hỏi provider như ChatGPT/OpenAI, Gemini, Claude hoặc OpenRouter critique cách Bob xử lý, rồi chỉ lưu bài học quy trình đã lọc/dedupe vào knowledge riêng của user.',
+        'label': 'Học quy tắc người dùng',
+        'description': 'Ghi nhớ quy tắc, sửa lỗi và sở thích mà người dùng nói rõ; dữ liệu được tách riêng theo tài khoản.',
         'workspace_sources': ['knowledge'],
         'refresh_targets': [],
         'confirmation_required': False,

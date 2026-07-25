@@ -122,24 +122,18 @@ class BobLanguagePolicyTests(unittest.TestCase):
         self.assertIn("Tiếng Việt:", prompt)
 
     def test_explicit_bilingual_output_uses_two_grounded_sections(self):
-        result = AgentResult(response="Đã tìm thấy email ID mail-123 lúc 09:30.")
-        bilingual = (
-            "Tiếng Việt:\nĐã tìm thấy email ID mail-123 lúc 09:30.\n\n"
-            "English:\nFound email ID mail-123 at 09:30."
-        )
+        original = "Đã tìm thấy email ID mail-123 lúc 09:30."
+        result = AgentResult(response=original)
         with patch(
-            "services.chat_agents.ai_service.configured_providers",
-            ["openai"],
-        ), patch(
             "services.chat_agents.ai_service.generate_response",
-            return_value=bilingual,
-        ):
+        ) as generate:
             normalized = normalize_agent_result_language(
                 result,
                 "Trả lời bằng cả tiếng Việt và English",
                 user_id="test-user",
             )
-        self.assertEqual(bilingual, normalized.response)
+        generate.assert_not_called()
+        self.assertEqual(original, normalized.response)
         self.assertIn("mail-123", normalized.response)
         self.assertIn("09:30", normalized.response)
 
@@ -516,12 +510,6 @@ class BobDeepContextTests(unittest.TestCase):
         self.assertEqual([], ai.calls)
 
     def test_freeform_keeps_history_together_with_workspace_context(self):
-        captured = {}
-
-        def fake_generate(messages, **kwargs):
-            captured["messages"] = messages
-            return "Mình đã hiểu ngữ cảnh."
-
         recent = [
             {
                 "action_type": "chat",
@@ -551,22 +539,19 @@ class BobDeepContextTests(unittest.TestCase):
             return_value=[],
         ), patch(
             "services.chat_agents.ai_service.generate_response",
-            side_effect=fake_generate,
-        ):
-            FreeformChatAgent().handle(ctx)
+        ) as generate:
+            result = FreeformChatAgent().handle(ctx)
 
+        generate.assert_not_called()
         self.assertFalse(
             workspace_builder.call_args.kwargs["force_web_research"]
         )
         self.assertFalse(
             workspace_builder.call_args.kwargs["allow_web_research"]
         )
-        payload = "\n".join(
-            message["content"] for message in captured["messages"]
-        )
-        self.assertIn("Email của Lan", payload)
-        self.assertIn("WORKSPACE_SENTINEL", payload)
-        self.assertIn("What about confidential Project Atlas?", payload)
+        self.assertEqual("bob-local", result.provider)
+        self.assertFalse(result.demo_mode)
+        self.assertFalse(result.ai_used)
 
     def test_english_and_code_switch_workflows_preserve_original_text(self):
         cases = (

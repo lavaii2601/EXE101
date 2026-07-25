@@ -95,9 +95,9 @@
             <p>FlowMate chỉ yêu cầu các quyền Google cần cho Gmail và Calendar. Dữ liệu Google không được bán, không dùng cho quảng cáo và không dùng để huấn luyện mô hình AI nền tảng. Khi cần AI tóm tắt hoặc phân tích, FlowMate chỉ gửi phần nội dung cần thiết cho tác vụ hiện tại đến provider AI đã cấu hình trên backend.</p>
             <p>Bạn có thể thu hồi quyền truy cập từ tài khoản Google của mình bất cứ lúc nào tại <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer">Google Account Permissions</a>.</p>
 
-            <h2>4. AI providers</h2>
-            <p>FlowMate có thể dùng OpenRouter, OpenAI, Mistral, Claude, Gemini hoặc provider khác do backend cấu hình. Nội dung gửi đến AI được giới hạn theo tác vụ như tóm tắt email, soạn nháp, phân tích lịch hoặc trả lời chat. FlowMate không hiển thị provider/model nền dưới cho người dùng cuối trong trải nghiệm Bob.</p>
-            <p>Nếu bật tính năng AI mentor learning hoặc web learning, FlowMate có thể gửi một bản trích yếu giới hạn của lượt chat/research phù hợp đến provider AI đã cấu hình để lấy nhận xét quy trình. Kết quả chỉ được lưu thành bài học tổng quát đã lọc trong knowledge riêng của tài khoản, không lưu raw search result hàng loạt, không dùng để huấn luyện lại model nền và không thay thế xác nhận của bạn cho các hành động nhạy cảm.</p>
+            <h2>4. Xử lý cục bộ của Bob</h2>
+            <p>Bob dùng bộ định tuyến ý định, quy tắc tác vụ, tra cứu knowledge TF-IDF và tóm tắt trích xuất chạy trên backend FlowMate. Nội dung chat, email và lịch không được gửi đến OpenRouter, OpenAI, Mistral, Claude, Gemini hoặc model ngôn ngữ bên ngoài.</p>
+            <p>Khi bạn yêu cầu tra cứu Internet, FlowMate chỉ gửi truy vấn cần thiết đến công cụ tìm kiếm hoặc website công khai và trả lại URL nguồn. Các quy tắc hoặc sở thích bạn nói rõ có thể được lưu vào knowledge riêng của tài khoản để Bob dùng ở các lần sau.</p>
 
             <h2>5. Lưu trữ và bảo vệ dữ liệu</h2>
             <ul>
@@ -131,7 +131,7 @@
                 <h1>FlowMate AI Privacy Policy</h1>
                 <p class="meta">Effective July 1, 2026. Official URL: <a href="https://exe101.up.railway.app/privacy">https://exe101.up.railway.app/privacy</a></p>
                 <p>FlowMate AI helps users manage email, calendar, workflow, study tasks, and AI chat. This policy applies to the Railway web deployment and the Android APK that uses the same backend.</p>
-                <p>FlowMate collects only the account, Gmail, Calendar, chat, schedule, checklist, history, internet research queries/results needed for the current answer, curated learning lessons, and technical data needed to provide the requested features. Google data is not sold, not used for advertising, and not used to train foundation AI models. When AI processing is needed, only task-relevant content is sent to the configured AI provider. When Bob is asked to research the public web or answer current-information prompts, a limited query may be sent to search/web sources. If web or AI mentor learning is enabled, limited summaries may be sent to configured AI providers for process critique/distillation and saved only as user-scoped curated lessons, not raw search dumps.</p>
+                <p>FlowMate collects only the account, Gmail, Calendar, chat, schedule, checklist, history, internet research queries/results, explicit user rules, and technical data needed to provide the requested features. Google data is not sold, not used for advertising, and not sent to an external language-model provider. When Bob is asked to research the public web, a limited query may be sent to search/web sources and the result is returned with source URLs.</p>
                 <p>Users can disconnect Google, delete activity history, revoke Google permissions, and request backend data deletion through the project owner or support channel. Secrets and API keys must be stored in Railway Variables, not in source code.</p>
             </section>
         </article>
