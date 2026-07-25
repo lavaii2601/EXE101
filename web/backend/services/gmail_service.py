@@ -5,6 +5,10 @@ import pickle
 import base64
 import html
 import re
+import socket
+import ssl
+import random
+import time
 import httplib2
 from datetime import datetime, timedelta
 
@@ -28,6 +32,33 @@ GMAIL_EXECUTE_RETRIES = 2
 
 # Configure module logger
 logger = logging.getLogger(__name__)
+
+
+def _is_transient_batch_error(exc):
+    """Whether exc is the kind of transient error googleapiclient's own
+    num_retries would normally retry (5xx, SSL, timeout, connection drop)."""
+    if isinstance(exc, HttpError):
+        return exc.resp is not None and exc.resp.status >= 500
+    return isinstance(exc, (ssl.SSLError, socket.timeout, ConnectionError, TimeoutError, httplib2.HttpLib2Error))
+
+
+def _execute_batch_with_retries(batch, num_retries):
+    """BatchHttpRequest.execute() has no num_retries parameter (unlike
+    HttpRequest.execute()), so retry transient errors on the /batch call
+    itself here. Per-item errors inside the batch are reported via each
+    request's callback, not raised here, so they are unaffected."""
+    for retry_num in range(num_retries + 1):
+        try:
+            return batch.execute()
+        except Exception as exc:
+            if retry_num == num_retries or not _is_transient_batch_error(exc):
+                raise
+            sleep_time = random.random() * 2 ** retry_num
+            logger.warning(
+                f"Batch execute failed (attempt {retry_num + 1}/{num_retries + 1}), "
+                f"retrying in {sleep_time:.2f}s: {exc}"
+            )
+            time.sleep(sleep_time)
 
 
 def get_cached_gmail_service(token_file):
@@ -213,7 +244,7 @@ class GmailService:
                         callback=_callback
                     )
 
-                batch.execute(num_retries=GMAIL_EXECUTE_RETRIES)
+                _execute_batch_with_retries(batch, GMAIL_EXECUTE_RETRIES)
 
             if raise_errors and batch_errors and not collected:
                 raise batch_errors[0]
