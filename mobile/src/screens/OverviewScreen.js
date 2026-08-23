@@ -1,20 +1,36 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import EmptyState from '../components/EmptyState';
 import Field from '../components/Field';
 import Screen from '../components/Screen';
 import { apiGet, apiPost, apiPut } from '../api/client';
+import { connectGoogleAccount } from '../api/googleAuth';
 import { useTheme } from '../theme/ThemeContext';
 
-export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, userMode, subscription, userName }) {
+export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, userMode, subscription, userName, gmailConnected }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const isStudent = userMode === 'student';
   const isPremium = !!(subscription?.is_premium || subscription?.tier === 'premium');
   const greeting = buildGreeting(String(userName || '').trim());
+  const [connectingGmail, setConnectingGmail] = useState(false);
+
+  const handleConnectGmail = useCallback(async () => {
+    setConnectingGmail(true);
+    try {
+      const result = await connectGoogleAccount();
+      if (!result.connected) return;
+      onAgentSync?.(['profile', 'settings', 'email', 'schedule', 'overview', 'calendar']);
+    } catch (error) {
+      Alert.alert('Không kết nối được Google', error.message);
+    } finally {
+      setConnectingGmail(false);
+    }
+  }, [onAgentSync]);
 
   const [date, setDate] = useState(() => formatDateForApi(new Date()));
   const [emails, setEmails] = useState([]);
@@ -542,6 +558,28 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, use
         {refreshNote ? <Text style={styles.refreshNote}>{refreshNote}</Text> : null}
         <Text style={styles.sourceText}>{sourceText}</Text>
       </LinearGradient>
+
+      {!gmailConnected ? (
+        <Card style={styles.gmailPromptCard}>
+          <View style={styles.gmailPromptRow}>
+            <View style={styles.gmailPromptIcon}>
+              <Ionicons name="mail-unread-outline" size={22} color={colors.primary} />
+            </View>
+            <View style={styles.gmailPromptBody}>
+              <Text style={styles.gmailPromptTitle}>Kết nối Gmail để bắt đầu</Text>
+              <Text style={styles.gmailPromptText}>
+                FlowMate cần quyền Gmail và Calendar để tóm tắt email, tạo lịch và nhắc deadline tự động.
+              </Text>
+            </View>
+          </View>
+          <Button
+            title="Kết nối Gmail"
+            icon="logo-google"
+            onPress={handleConnectGmail}
+            loading={connectingGmail}
+          />
+        </Card>
+      ) : null}
 
       <Card style={styles.deadlineCard}>
         <View style={styles.sectionHeader}>
@@ -1214,6 +1252,23 @@ function makeStyles(colors) {
     heroText: { color: colors.textMuted, fontFamily: fontRegular, fontSize: 13, lineHeight: 19 },
     refreshNote: { marginTop: 4, color: colors.primary, fontFamily: fontMedium, fontSize: 12, lineHeight: 18 },
     sourceText: { marginTop: 4, color: colors.textMuted, fontFamily: fontMedium, fontSize: 11 },
+    gmailPromptCard: {
+      gap: 12,
+      borderColor: `${colors.primary}55`,
+      backgroundColor: colors.primarySoft,
+    },
+    gmailPromptRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+    gmailPromptIcon: {
+      width: 42,
+      height: 42,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.panel,
+    },
+    gmailPromptBody: { flex: 1, minWidth: 0 },
+    gmailPromptTitle: { color: colors.text, fontFamily: fontBold, fontSize: 14 },
+    gmailPromptText: { marginTop: 4, color: colors.textMuted, fontFamily: fontMedium, fontSize: 12, lineHeight: 18 },
     deadlineCard: { gap: 4 },
     deadlineRingRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 6 },
     deadlineRing: {
