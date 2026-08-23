@@ -1,15 +1,42 @@
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import Button from '../components/Button';
 import { radius, useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
+import { PRIVACY_URL, TERMS_URL } from '../api/config';
+
+function PolicyLine({ title, detail, styles }) {
+  return (
+    <View style={styles.policyLine}>
+      <Text style={styles.policyTitle}>{title}</Text>
+      <Text style={styles.policyDetail}>{detail}</Text>
+    </View>
+  );
+}
 
 export default function WelcomeScreen({ onGetStarted, onLogIn }) {
   const { colors } = useTheme();
   const { t } = useLanguage();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  const openPrivacyPolicy = async () => {
+    try {
+      await WebBrowser.openBrowserAsync(PRIVACY_URL);
+    } catch (error) {
+      Alert.alert(t('Không mở được chính sách', 'Could not open policy'), error.message);
+    }
+  };
+
+  const openTerms = async () => {
+    try {
+      await WebBrowser.openBrowserAsync(TERMS_URL);
+    } catch (error) {
+      Alert.alert(t('Không mở được điều khoản', 'Could not open terms'), error.message);
+    }
+  };
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.body}>
@@ -51,6 +78,43 @@ export default function WelcomeScreen({ onGetStarted, onLogIn }) {
       />
       <TouchableOpacity onPress={onLogIn} activeOpacity={0.75} style={styles.logInLinkWrap}>
         <Text style={styles.logInLink}>{t('Đăng nhập', 'Log In')}</Text>
+      </TouchableOpacity>
+
+      <View style={styles.policyCard}>
+        <Text style={styles.policyHeading}>{t('Dữ liệu của bạn, do bạn kiểm soát', 'Your data, your control')}</Text>
+        <PolicyLine
+          styles={styles}
+          title="Gmail"
+          detail={t('Đọc và tóm tắt email, deadline và yêu cầu công việc.', 'Read and summarize messages, deadlines, and requests.')}
+        />
+        <PolicyLine
+          styles={styles}
+          title="Google Calendar"
+          detail={t('Xem sự kiện và chỉ thay đổi sau khi bạn xác nhận.', 'Show events and create changes only after confirmation.')}
+        />
+        <PolicyLine
+          styles={styles}
+          title={t('Quyền riêng tư', 'Privacy')}
+          detail={t('Chỉ lưu tóm tắt và hành động, không lưu toàn bộ nội dung email trừ khi cần thiết.', 'Store summaries and actions, not full email content unless needed.')}
+        />
+        <PolicyLine
+          styles={styles}
+          title={t('Kiểm soát', 'Control')}
+          detail={t('Ngắt kết nối Google và xóa lịch sử hoạt động bất cứ lúc nào.', 'Disconnect Google and delete activity history at any time.')}
+        />
+      </View>
+
+      <Text style={styles.consent}>
+        {t(
+          'Bằng việc tiếp tục, bạn đồng ý với Điều khoản dịch vụ, Chính sách quyền riêng tư của FlowMate AI và các quyền hiển thị trên màn hình xác nhận của Google.',
+          "By continuing, you agree to FlowMate AI's Terms of Service, Privacy Policy, and the permissions shown on Google's consent screen."
+        )}
+      </Text>
+      <TouchableOpacity onPress={openPrivacyPolicy} activeOpacity={0.75}>
+        <Text style={styles.policyLink}>{t('Đọc chính sách bảo mật', 'Read privacy policy')}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={openTerms} activeOpacity={0.75}>
+        <Text style={styles.policyLink}>{t('Đọc điều khoản dịch vụ', 'Read terms of service')}</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -119,5 +183,22 @@ function makeStyles(colors) {
     ctaButton: { width: '100%', minHeight: 54 },
     logInLinkWrap: { marginTop: 16, padding: 6 },
     logInLink: { color: colors.primary, fontFamily: 'Poppins_600SemiBold', fontSize: 14 },
+    policyCard: {
+      width: '100%',
+      marginTop: 30,
+      marginBottom: 18,
+      padding: 18,
+      borderRadius: radius.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.panel,
+      ...colors.shadow,
+    },
+    policyHeading: { color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 16 },
+    policyLine: { marginTop: 13 },
+    policyTitle: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
+    policyDetail: { marginTop: 2, color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 12.5, lineHeight: 18 },
+    consent: { marginTop: 4, color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 11.5, textAlign: 'center', lineHeight: 17 },
+    policyLink: { marginTop: 10, color: colors.primary, fontFamily: 'Poppins_600SemiBold', fontSize: 12.5 },
   });
 }
