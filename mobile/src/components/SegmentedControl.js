@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity } from 'react-native';
-import { useTheme } from '../theme/ThemeContext';
+import { radius, useTheme } from '../theme/ThemeContext';
 
 export default function SegmentedControl({ options, value, onChange }) {
   const { colors } = useTheme();
@@ -29,14 +29,14 @@ function makeStyles(colors) {
   return StyleSheet.create({
     wrap:       { gap: 8, paddingVertical: 2 },
     option: {
-      minHeight: 36,
+      minHeight: 38,
       justifyContent: 'center',
-      paddingHorizontal: 12,
-      borderRadius: 12,
+      paddingHorizontal: 14,
+      borderRadius: radius.control,
       backgroundColor: colors.secondaryBg,
     },
-    active:     { backgroundColor: colors.primary },
-    text:       { color: colors.secondaryText, fontWeight: '700' },
+    active:     { backgroundColor: colors.primary, ...colors.shadow },
+    text:       { color: colors.secondaryText, fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
     activeText: { color: '#ffffff' },
   });
 }

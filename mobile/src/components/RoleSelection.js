@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import Button from './Button';
 import { USER_MODES } from '../config/userModes';
-import { useTheme } from '../theme/ThemeContext';
+import { radius, useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
 
 function GradientLine({ width }) {
@@ -135,11 +136,16 @@ export default function RoleSelection({ initialValue = '', onContinue, saving })
                 activeOpacity={0.85}
               >
                 <View style={[styles.icon, active && styles.iconActive]}>
-                  <Text style={styles.iconText}>{mode.icon}</Text>
+                  <Ionicons name={mode.icon} size={18} color={active ? '#ffffff' : colors.accentText} />
                 </View>
                 <Text style={styles.cardTitle}>{mode.label}</Text>
                 <Text style={styles.cardDescription}>{mode.description}</Text>
-                {active ? <Text style={styles.check}>{t('Đã chọn', 'Selected')}</Text> : null}
+                {active ? (
+                  <View style={styles.checkRow}>
+                    <Ionicons name="checkmark-circle" size={13} color={colors.accentText} />
+                    <Text style={styles.check}>{t('Đã chọn', 'Selected')}</Text>
+                  </View>
+                ) : null}
               </TouchableOpacity>
             );
           })}
@@ -172,34 +178,34 @@ function makeStyles(colors) {
       shadowRadius: 22,
       elevation: 12,
     },
-    eyebrow: { marginTop: 18, color: colors.accentText, fontSize: 11, fontWeight: '800', letterSpacing: 1.4 },
-    title: { marginTop: 7, color: colors.text, fontSize: 25, fontWeight: '900' },
-    subtitle: { marginTop: 8, color: colors.textMuted, textAlign: 'center', lineHeight: 20 },
+    eyebrow: { marginTop: 18, color: colors.accentText, fontFamily: 'Poppins_700Bold', fontSize: 11, letterSpacing: 1.4 },
+    title: { marginTop: 7, color: colors.text, fontFamily: 'Poppins_800ExtraBold', fontSize: 25 },
+    subtitle: { marginTop: 8, color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 13, textAlign: 'center', lineHeight: 20 },
     body: { paddingHorizontal: 16, paddingBottom: 30 },
     grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
     card: {
       width: '48.5%',
       minHeight: 166,
       padding: 14,
-      borderRadius: 18,
-      borderWidth: 1,
+      borderRadius: radius.card,
+      borderWidth: 1.5,
       borderColor: colors.border,
       backgroundColor: colors.panel,
     },
-    cardActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+    cardActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft, ...colors.shadow },
     icon: {
       width: 38,
       height: 38,
-      borderRadius: 12,
+      borderRadius: radius.control,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.panelSoft,
     },
     iconActive: { backgroundColor: colors.primary },
-    iconText: { color: '#ffffff', fontSize: 11, fontWeight: '900' },
-    cardTitle: { marginTop: 12, color: colors.text, fontWeight: '800', fontSize: 14 },
-    cardDescription: { marginTop: 5, color: colors.textMuted, fontSize: 11, lineHeight: 16 },
-    check: { marginTop: 8, color: colors.accentText, fontSize: 11, fontWeight: '800' },
-    continueButton: { marginTop: 18, borderRadius: 14, minHeight: 50 },
+    cardTitle: { marginTop: 12, color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 14 },
+    cardDescription: { marginTop: 5, color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 11, lineHeight: 16 },
+    checkRow: { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
+    check: { color: colors.accentText, fontFamily: 'Poppins_700Bold', fontSize: 11 },
+    continueButton: { marginTop: 18, minHeight: 52 },
   });
 }

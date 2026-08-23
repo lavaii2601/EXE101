@@ -2,8 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
+import { Ionicons } from '@expo/vector-icons';
 import Button from '../components/Button';
-import { useTheme } from '../theme/ThemeContext';
+import { radius, useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { connectGoogleAccount } from '../api/googleAuth';
 import { PRIVACY_URL, TERMS_URL } from '../api/config';
@@ -63,7 +64,7 @@ export default function LoginScreen({ onLoggedIn }) {
         end={{ x: 1, y: 1 }}
         style={styles.orb}
       >
-        <Text style={styles.orbGlyph}>✦</Text>
+        <Ionicons name="sparkles" size={34} color="#ffffff" />
       </LinearGradient>
 
       <Text style={styles.brand}>FlowMate AI</Text>
@@ -138,26 +139,26 @@ function makeStyles(colors) {
       shadowRadius: 22,
       elevation: 12,
     },
-    orbGlyph: { color: '#ffffff', fontSize: 32, fontWeight: '800' },
-    brand: { marginTop: 18, color: colors.text, fontSize: 30, fontWeight: '800' },
-    headline: { marginTop: 34, color: colors.text, fontSize: 24, fontWeight: '800', textAlign: 'center' },
-    intro: { marginTop: 10, color: colors.textMuted, fontSize: 15, textAlign: 'center', lineHeight: 21 },
+    brand: { marginTop: 20, color: colors.text, fontFamily: 'Poppins_800ExtraBold', fontSize: 28, letterSpacing: -0.4 },
+    headline: { marginTop: 34, color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 23, textAlign: 'center', lineHeight: 30 },
+    intro: { marginTop: 10, color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 14, textAlign: 'center', lineHeight: 21 },
     policyCard: {
       width: '100%',
       marginTop: 30,
       marginBottom: 18,
-      padding: 16,
-      borderRadius: 14,
+      padding: 18,
+      borderRadius: radius.card,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.panel,
+      ...colors.shadow,
     },
-    policyHeading: { color: colors.text, fontSize: 17, fontWeight: '800' },
+    policyHeading: { color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 16 },
     policyLine: { marginTop: 13 },
-    policyTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
-    policyDetail: { marginTop: 2, color: colors.textMuted, fontSize: 13 },
-    signInButton: { width: '100%', minHeight: 52, borderRadius: 14 },
-    consent: { marginTop: 14, color: colors.textMuted, fontSize: 12, textAlign: 'center' },
-    policyLink: { marginTop: 10, color: colors.primary, fontSize: 13, fontWeight: '700' },
+    policyTitle: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
+    policyDetail: { marginTop: 2, color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 12.5, lineHeight: 18 },
+    signInButton: { width: '100%', minHeight: 54 },
+    consent: { marginTop: 14, color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 11.5, textAlign: 'center', lineHeight: 17 },
+    policyLink: { marginTop: 10, color: colors.primary, fontFamily: 'Poppins_600SemiBold', fontSize: 12.5 },
   });
 }

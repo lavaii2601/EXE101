@@ -12,6 +12,15 @@ export const ACCENTS = {
   orange:   { primary: '#ea580c', primaryDark: '#c2410c' },
 };
 
+// Shared corner-radius scale so every screen/component curves consistently
+// instead of drifting between ad-hoc values (8, 14, 18, 20...).
+export const radius = {
+  control: 12,
+  button: 14,
+  card: 20,
+  pill: 999,
+};
+
 function buildColors(isDark, accentKey) {
   const { primary, primaryDark } = ACCENTS[accentKey] || ACCENTS.purple;
   if (isDark) {

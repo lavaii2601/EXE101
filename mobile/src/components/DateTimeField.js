@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Button from './Button';
-import { useTheme } from '../theme/ThemeContext';
+import { radius, useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
 
 function parseValue(value) {
@@ -123,19 +123,19 @@ export default function DateTimeField({ label, value, onChange, placeholder }) {
 function makeStyles(colors) {
   return StyleSheet.create({
     group: { marginBottom: 12 },
-    label: { color: colors.textMuted, fontWeight: '700', marginBottom: 6 },
+    label: { color: colors.textMuted, fontFamily: 'Poppins_600SemiBold', fontSize: 12, marginBottom: 6 },
     input: {
-      minHeight: 44,
+      minHeight: 46,
       borderColor: colors.border,
-      borderWidth: 1,
-      borderRadius: 8,
-      backgroundColor: colors.panel,
+      borderWidth: 1.5,
+      borderRadius: radius.control,
+      backgroundColor: colors.panelSoft,
       color: colors.text,
-      paddingHorizontal: 12,
+      paddingHorizontal: 14,
       justifyContent: 'center',
     },
-    valueText: { color: colors.text },
-    placeholderText: { color: colors.inputPlaceholder },
+    valueText: { color: colors.text, fontFamily: 'Poppins_400Regular', fontSize: 14 },
+    placeholderText: { color: colors.inputPlaceholder, fontFamily: 'Poppins_400Regular', fontSize: 14 },
     modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
     modalCard: { backgroundColor: colors.panel, padding: 16, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
     modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 10 },

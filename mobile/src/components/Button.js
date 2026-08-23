@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity } from 'react-native';
-import { useTheme } from '../theme/ThemeContext';
+import { radius, useTheme } from '../theme/ThemeContext';
 
 export default function Button({ title, onPress, variant = 'primary', disabled, loading, style }) {
   const { colors } = useTheme();
@@ -34,17 +34,18 @@ export default function Button({ title, onPress, variant = 'primary', disabled, 
 function makeStyles(colors) {
   return StyleSheet.create({
     button: {
-      minHeight: 46,
-      paddingHorizontal: 16,
-      borderRadius: 14,
+      minHeight: 48,
+      paddingHorizontal: 18,
+      borderRadius: radius.button,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.primary,
+      ...colors.shadow,
     },
-    secondary: { backgroundColor: colors.secondaryBg },
+    secondary: { backgroundColor: colors.secondaryBg, shadowOpacity: 0, elevation: 0 },
     danger:    { backgroundColor: colors.danger },
-    disabled:  { opacity: 0.55 },
-    text:      { color: '#ffffff', fontWeight: '700', fontSize: 14, fontFamily: 'Poppins_700Bold' },
+    disabled:  { opacity: 0.55, shadowOpacity: 0, elevation: 0 },
+    text:      { color: '#ffffff', fontWeight: '700', fontSize: 14, fontFamily: 'Poppins_700Bold', letterSpacing: 0.2 },
     secondaryText: { color: colors.secondaryText, fontFamily: 'Poppins_600SemiBold' },
   });
 }

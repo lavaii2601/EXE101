@@ -10,9 +10,10 @@ import {
   View,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import { Ionicons } from '@expo/vector-icons';
 import Button from '../components/Button';
 import SegmentedControl from '../components/SegmentedControl';
-import { ACCENTS, useTheme } from '../theme/ThemeContext';
+import { ACCENTS, radius, useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { getUserMode } from '../config/userModes';
 import { apiGet, apiPost } from '../api/client';
@@ -198,7 +199,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         <View style={styles.divider} />
         <TouchableOpacity style={styles.settingRow} onPress={onChangeMode} activeOpacity={0.75}>
           <View style={[styles.iconWrap, { backgroundColor: colors.primarySoft }]}>
-            <Text style={[styles.modeIcon, { color: colors.accentText }]}>{mode.icon}</Text>
+            <Ionicons name={mode.icon} size={18} color={colors.accentText} />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>{t('Chế độ người dùng', 'User mode')}</Text>
@@ -214,7 +215,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: isDark ? '#1e3a5f' : '#e8eef8' }]}>
-            <Text style={styles.settingIcon}>{isDark ? '🌙' : '☀️'}</Text>
+            <Ionicons name={isDark ? 'moon' : 'sunny'} size={18} color={isDark ? '#93c5fd' : '#f59e0b'} />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>{t('Chế độ hiển thị', 'Display theme')}</Text>
@@ -273,7 +274,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: '#dbeafe' }]}>
-            <Text style={styles.settingIcon}>G</Text>
+            <Ionicons name="logo-google" size={17} color="#ea4335" />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>Gmail & Google Calendar</Text>
@@ -297,7 +298,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: '#e0f2fe' }]}>
-            <Text style={styles.settingIcon}>O</Text>
+            <Ionicons name="mail-outline" size={17} color="#0284c7" />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>Outlook Mail & Calendar</Text>
@@ -316,7 +317,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         <Text style={styles.sectionLabel}>{t('GÓI DỊCH VỤ', 'PLAN')}</Text>
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: isPremiumTier ? '#fef3c7' : colors.primarySoft }]}>
-            <Text style={styles.settingIcon}>{isPremiumTier ? '★' : 'F'}</Text>
+            <Ionicons name={isPremiumTier ? 'star' : 'pricetag-outline'} size={17} color={isPremiumTier ? '#f59e0b' : colors.accentText} />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>{isPremiumTier ? 'Premium' : 'Free'}</Text>
@@ -357,7 +358,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: '#fef3c7' }]}>
-            <Text style={styles.settingIcon}>🔔</Text>
+            <Ionicons name="notifications-outline" size={18} color="#d97706" />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>{t('Thông báo đẩy', 'Push notifications')}</Text>
@@ -378,7 +379,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: '#dbeafe' }]}>
-            <Text style={styles.settingIcon}>📧</Text>
+            <Ionicons name="mail-outline" size={18} color="#2563eb" />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>{t('Thông báo email', 'Email notifications')}</Text>
@@ -396,7 +397,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: '#d1fae5' }]}>
-            <Text style={styles.settingIcon}>⏰</Text>
+            <Ionicons name="alarm-outline" size={18} color="#059669" />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>{t('Nhắc lịch', 'Schedule reminders')}</Text>
@@ -417,7 +418,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: '#ede9fe' }]}>
-            <Text style={styles.settingIcon}>👆</Text>
+            <Ionicons name="finger-print-outline" size={18} color="#7c3aed" />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>{t('Xác thực sinh trắc học', 'Biometric authentication')}</Text>
@@ -445,7 +446,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
           activeOpacity={0.75}
         >
           <View style={[styles.iconWrap, { backgroundColor: '#fce7f3' }]}>
-            <Text style={styles.settingIcon}>🔑</Text>
+            <Ionicons name="key-outline" size={18} color="#db2777" />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>{t('Đổi mật khẩu', 'Change password')}</Text>
@@ -458,7 +459,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: '#dcfce7' }]}>
-            <Text style={styles.settingIcon}>🛡️</Text>
+            <Ionicons name="shield-checkmark-outline" size={18} color="#16a34a" />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>{t('Xác thực hai yếu tố', 'Two-factor authentication')}</Text>
@@ -486,7 +487,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
           activeOpacity={0.75}
         >
           <View style={[styles.iconWrap, { backgroundColor: '#ffedd5' }]}>
-            <Text style={styles.settingIcon}>📱</Text>
+            <Ionicons name="phone-portrait-outline" size={18} color="#ea580c" />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>{t('Phiên đăng nhập', 'Signed-in sessions')}</Text>
@@ -502,7 +503,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
 
         <View style={styles.settingRow}>
           <View style={[styles.iconWrap, { backgroundColor: colors.secondaryBg }]}>
-            <Text style={styles.settingIcon}>ℹ️</Text>
+            <Ionicons name="information-circle-outline" size={18} color={colors.secondaryText} />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>{t('Phiên bản', 'Version')}</Text>
@@ -518,7 +519,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
           activeOpacity={0.75}
         >
           <View style={[styles.iconWrap, { backgroundColor: colors.secondaryBg }]}>
-            <Text style={styles.settingIcon}>📄</Text>
+            <Ionicons name="document-text-outline" size={18} color={colors.secondaryText} />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>{t('Chính sách bảo mật', 'Privacy policy')}</Text>
@@ -535,7 +536,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
           activeOpacity={0.75}
         >
           <View style={[styles.iconWrap, { backgroundColor: colors.secondaryBg }]}>
-            <Text style={styles.settingIcon}>📃</Text>
+            <Ionicons name="reader-outline" size={18} color={colors.secondaryText} />
           </View>
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>{t('Điều khoản dịch vụ', 'Terms of service')}</Text>
@@ -624,7 +625,7 @@ function makeStyles(colors) {
       backgroundColor: colors.panel,
       borderColor: colors.border,
       borderWidth: 1,
-      borderRadius: 14,
+      borderRadius: radius.card,
       padding: 16,
       gap: 14,
       ...colors.shadow,
@@ -646,14 +647,12 @@ function makeStyles(colors) {
     /* Setting row */
     settingRow:  { flexDirection: 'row', alignItems: 'center', gap: 12 },
     iconWrap: {
-      width: 36,
-      height: 36,
-      borderRadius: 8,
+      width: 38,
+      height: 38,
+      borderRadius: radius.control,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    settingIcon: { fontSize: 18 },
-    modeIcon: { fontSize: 11, fontWeight: '900' },
     settingInfo: { flex: 1, flexShrink: 1, minWidth: 0 },
     settingTitle: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 14, flexShrink: 1 },
     settingSub:   { color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 12, marginTop: 1, flexShrink: 1 },

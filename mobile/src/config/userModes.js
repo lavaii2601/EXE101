@@ -1,7 +1,7 @@
 export const USER_MODES = [
   {
     value: 'student',
-    icon: 'ST',
+    icon: 'school-outline',
     label: 'Sinh viên',
     shortLabel: 'Học tập',
     description: 'Môn học, bài tập, deadline, email lớp, lịch thi và kế hoạch ôn tập.',
@@ -9,7 +9,7 @@ export const USER_MODES = [
   },
   {
     value: 'worker',
-    icon: 'VP',
+    icon: 'briefcase-outline',
     label: 'Nhân viên văn phòng',
     shortLabel: 'Công việc',
     description: 'Họp, báo cáo, email công việc và việc cần theo dõi.',
@@ -17,7 +17,7 @@ export const USER_MODES = [
   },
   {
     value: 'freelancer',
-    icon: 'FR',
+    icon: 'laptop-outline',
     label: 'Freelancer',
     shortLabel: 'Dự án',
     description: 'Khách hàng, dự án, hóa đơn và lịch bàn giao.',
@@ -25,7 +25,7 @@ export const USER_MODES = [
   },
   {
     value: 'mentor',
-    icon: 'MT',
+    icon: 'people-outline',
     label: 'Mentor',
     shortLabel: 'Giảng dạy',
     description: 'Học viên, lịch hướng dẫn, phản hồi và theo dõi tiến độ.',
@@ -33,7 +33,7 @@ export const USER_MODES = [
   },
   {
     value: 'teacher',
-    icon: 'GV',
+    icon: 'easel-outline',
     label: 'Giáo viên',
     shortLabel: 'Lớp học',
     description: 'Lớp học, giáo án, học sinh, chấm bài và lịch giảng dạy.',
@@ -41,7 +41,7 @@ export const USER_MODES = [
   },
   {
     value: 'business',
-    icon: 'KD',
+    icon: 'trending-up-outline',
     label: 'Kinh doanh',
     shortLabel: 'Vận hành',
     description: 'Vận hành, quyết định, đội nhóm và rủi ro.',
@@ -49,7 +49,7 @@ export const USER_MODES = [
   },
   {
     value: 'creator',
-    icon: 'CR',
+    icon: 'color-palette-outline',
     label: 'Nhà sáng tạo',
     shortLabel: 'Nội dung',
     description: 'Thương hiệu, chiến dịch và lịch nội dung.',
