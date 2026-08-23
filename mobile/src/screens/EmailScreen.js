@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Linking as RNLinking, Modal, PanResponder, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Linking as RNLinking, Modal, PanResponder, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Button from '../components/Button';
 import Card from '../components/Card';
@@ -13,7 +13,7 @@ import { apiGet, apiPost } from '../api/client';
 import { API_BASE } from '../api/config';
 import { getMobileAccessToken } from '../api/session';
 import { connectGoogleAccount } from '../api/googleAuth';
-import { useTheme } from '../theme/ThemeContext';
+import { radius, useTheme } from '../theme/ThemeContext';
 
 const filters = [
   { label: 'Tất cả',     value: 'all' },
@@ -69,10 +69,8 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
   const [meetingSuggestions, setMeetingSuggestions] = useState([]);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [pricingVisible, setPricingVisible] = useState(false);
-
-  const isDefaultFilters = filter === 'all' && source === 'all';
-  const activeFilterLabel = filters.find((item) => item.value === filter)?.label || 'Tất cả';
-  const activeSourceLabel = sourceFilters.find((item) => item.value === source)?.label || 'Tất cả';
+  const hasLoadedInboxRef = useRef(false);
+  const emailRequestSeqRef = useRef(0);
 
   const loadAuth = useCallback(async () => {
     try {
@@ -97,7 +95,9 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
     }
 
     const targetPage = options.page || 1;
-    if (options.append) setLoadingMore(true); else setLoading(true);
+    const requestId = ++emailRequestSeqRef.current;
+    if (options.append) setLoadingMore(true);
+    else if (!options.silent) setLoading(true);
     try {
       const params = new URLSearchParams({
         max_results: '20',
@@ -108,21 +108,27 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
       });
       params.set(options.fresh ? 'fresh' : 'cache_only', 'true');
 
-      const authPromise = loadAuth();
+      const authPromise = options.silent ? Promise.resolve() : loadAuth();
       const data = await apiGet(`/email/get-unread?${params.toString()}`);
       await authPromise;
+      if (requestId !== emailRequestSeqRef.current) return;
       setAuthExpired(false);
       setCacheMiss(Boolean(data.cache_miss));
       const nextEmails = (data.emails || data.items || []).map(normalizeEmailProvider);
       if ((data.needs_refresh || data.cache_miss) && nextEmails.length === 0 && !options.fresh && !options.autoRefreshAttempted) {
         setCacheMiss(true);
-        await loadEmails({ fresh: true, autoRefreshAttempted: true });
-        apiPost('/email/meeting-suggestions/scan').catch(() => {});
+        await loadEmails({
+          fresh: true,
+          silent: options.silent,
+          autoRefreshAttempted: true,
+        });
         return;
       }
       setEmails((current) => (options.append ? [...current, ...nextEmails] : nextEmails));
+      hasLoadedInboxRef.current = true;
       if (data.pagination) setPageInfo(data.pagination);
     } catch (error) {
+      if (requestId !== emailRequestSeqRef.current) return;
       if (error.status === 401) {
         // The mobile bearer token expired (or Gmail was never connected).
         // Showing a plain empty inbox here is misleading when auth-status
@@ -132,10 +138,13 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
         setEmails([]);
         setAuthExpired(true);
       } else {
-        Alert.alert('Lỗi tải email', error.message);
+        if (options.silent) console.warn('Silent email refresh failed:', error);
+        else Alert.alert('Lỗi tải email', error.message);
       }
     } finally {
-      if (options.append) setLoadingMore(false); else setLoading(false);
+      if (requestId !== emailRequestSeqRef.current) return;
+      if (options.append) setLoadingMore(false);
+      else if (!options.silent) setLoading(false);
     }
   }, [filter, includeRead, loadAuth, searchKeyword, source]);
 
@@ -170,11 +179,18 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
     }
   }, []);
 
-  useEffect(() => { loadEmails(); loadMeetingSuggestions(); }, [loadEmails, loadMeetingSuggestions]);
+  useEffect(() => {
+    loadEmails({ silent: hasLoadedInboxRef.current });
+    loadMeetingSuggestions();
+  }, [loadEmails, loadMeetingSuggestions]);
   useEffect(() => {
     if (!syncEvent?.id) return;
+    if (syncEvent.source === 'email_screen') return;
     if (hasSyncTarget(syncEvent, ['email', 'profile', 'settings'])) {
-      loadEmails({ fresh: hasSyncTarget(syncEvent, ['email']) });
+      loadEmails({
+        fresh: hasSyncTarget(syncEvent, ['email']),
+        silent: hasLoadedInboxRef.current,
+      });
       loadMeetingSuggestions();
     }
   }, [loadEmails, loadMeetingSuggestions, syncEvent]);
@@ -195,7 +211,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
         setScanningGmail(false);
       }
       onAuthChanged?.();
-      onAgentSync?.(['profile', 'settings', 'email']);
+      onAgentSync?.(['profile', 'settings', 'email'], { source: 'email_screen' });
     } catch (error) {
       Alert.alert('Không mở được Gmail OAuth', error.message);
     }
@@ -260,7 +276,10 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
       setEmails((current) => current.map((item) => (
         item.id === email.id ? { ...item, summary: data.summary || '' } : item
       )));
-      onAgentSync?.(['email', 'overview', 'history'], data);
+      onAgentSync?.(
+        ['email', 'overview', 'history'],
+        { ...data, source: 'email_screen' },
+      );
     } catch (error) {
       if (isQuotaError(error)) setPricingVisible(true);
       else Alert.alert('Không tóm tắt được', error.message);
@@ -287,7 +306,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
       setSelectedEmail(null);
       setMode('compose');
       Alert.alert('Đã tạo bản nháp', 'Vui lòng kiểm tra nội dung trước khi gửi.');
-      onAgentSync?.(['history'], data);
+      onAgentSync?.(['history'], { ...data, source: 'email_screen' });
     } catch (error) {
       Alert.alert('Không tạo được trả lời', error.message);
     } finally {
@@ -305,7 +324,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
       if (selectedEmail?.id === email.id) {
         setSelectedEmail((current) => ({ ...current, is_unread: !wasUnread }));
       }
-      onAgentSync?.(['email', 'overview', 'history']);
+      onAgentSync?.(['email', 'overview', 'history'], { source: 'email_screen' });
     } catch (error) {
       Alert.alert('Không cập nhật được email', error.message);
     }
@@ -315,7 +334,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
     try {
       await apiPost(`/email/archive/${email.id}`);
       setEmails((current) => current.filter((item) => item.id !== email.id));
-      onAgentSync?.(['email', 'overview', 'history']);
+      onAgentSync?.(['email', 'overview', 'history'], { source: 'email_screen' });
     } catch (error) {
       Alert.alert('Không lưu trữ được email', error.message);
     }
@@ -325,7 +344,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
     try {
       await apiPost(`/email/trash/${email.id}`);
       setEmails((current) => current.filter((item) => item.id !== email.id));
-      onAgentSync?.(['email', 'overview', 'history']);
+      onAgentSync?.(['email', 'overview', 'history'], { source: 'email_screen' });
     } catch (error) {
       Alert.alert('Không xóa được email', error.message);
     }
@@ -341,7 +360,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
       await apiPost('/email/send-reply', compose);
       setCompose({ to: '', subject: '', body: '' });
       Alert.alert('Đã gửi email');
-      onAgentSync?.(['email', 'overview', 'history']);
+      onAgentSync?.(['email', 'overview', 'history'], { source: 'email_screen' });
     } catch (error) {
       Alert.alert('Không gửi được email', error.message);
     } finally {
@@ -358,7 +377,10 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
     try {
       const data = await apiPost('/email/summarize-by-date', { date: reportDate, max_results: 50 });
       setReport(data);
-      onAgentSync?.(['email', 'overview', 'history'], data);
+      onAgentSync?.(
+        ['email', 'overview', 'history'],
+        { ...data, source: 'email_screen' },
+      );
     } catch (error) {
       Alert.alert('Không tạo được báo cáo', error.message);
     } finally {
@@ -403,13 +425,15 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
           />
         ) : null}
       </Card>
-      <TouchableOpacity style={styles.filterTrigger} onPress={() => setFilterModalVisible(true)} activeOpacity={0.85}>
-        <Ionicons name="options-outline" size={18} color={colors.primary} />
-        <Text style={styles.filterTriggerText}>
-          {isDefaultFilters ? 'Bộ lọc' : `${activeFilterLabel} · ${activeSourceLabel}`}
-        </Text>
-        {isDefaultFilters ? null : <View style={styles.filterDot} />}
-      </TouchableOpacity>
+      <View style={styles.categoryRow}>
+        <View style={styles.categoryScroll}>
+          <SegmentedControl options={filters} value={filter} onChange={setFilter} />
+        </View>
+        <TouchableOpacity style={styles.filterTrigger} onPress={() => setFilterModalVisible(true)} activeOpacity={0.85}>
+          <Ionicons name="options-outline" size={18} color={colors.primary} />
+          {source !== 'all' ? <View style={styles.filterDot} /> : null}
+        </TouchableOpacity>
+      </View>
       <Card>
         <View style={styles.switchRow}>
           <Text style={styles.cardTitle}>Giữ email đã đọc trong hộp thư</Text>
@@ -455,19 +479,26 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
           >
             <Card style={[styles.emailCard, email.is_unread ? styles.emailUnread : styles.emailRead]}>
               <TouchableOpacity onPress={() => openEmail(email)} activeOpacity={0.86}>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.subject} numberOfLines={2}>{email.subject || '(Không tiêu đề)'}</Text>
-                  <View style={styles.badges}>
-                    <Text style={[styles.providerBadge, email.provider === 'outlook' ? styles.outlookBadge : styles.gmailBadge]}>
-                      {email.provider_label || providerLabel(email.provider)}
-                    </Text>
-                    <Text style={[styles.readBadge, email.is_unread ? styles.unreadBadge : styles.readBadgeDone]}>
-                      {email.is_unread ? 'CHƯA ĐỌC' : 'ĐÃ ĐỌC'}
-                    </Text>
-                    <Text style={styles.tag}>{email.tag || 'email'}</Text>
+                <View style={styles.emailHeadRow}>
+                  <View style={styles.emailAvatarWrap}>
+                    <View style={styles.emailAvatar}>
+                      <Text style={styles.emailAvatarText}>{senderInitial(email.sender || email.from)}</Text>
+                    </View>
+                    {email.is_unread ? <View style={styles.unreadDot} /> : null}
+                  </View>
+                  <View style={styles.emailHeadBody}>
+                    <View style={styles.rowBetween}>
+                      <Text style={styles.sender} numberOfLines={1}>{email.sender || email.from || 'Người gửi'}</Text>
+                      <View style={styles.badges}>
+                        <Text style={[styles.providerBadge, email.provider === 'outlook' ? styles.outlookBadge : styles.gmailBadge]}>
+                          {email.provider_label || providerLabel(email.provider)}
+                        </Text>
+                        <Text style={styles.tag}>{email.tag || 'email'}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.subject} numberOfLines={2}>{email.subject || '(Không tiêu đề)'}</Text>
                   </View>
                 </View>
-                <Text style={styles.sender} numberOfLines={1}>{email.sender || email.from || 'Người gửi'}</Text>
                 {email.summary ? (
                   <View style={styles.aiSummary}>
                     <Text style={styles.aiSummaryLabel}>AI TÓM TẮT</Text>
@@ -548,23 +579,36 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
         actions={<Button title="Gmail" variant="secondary" onPress={() => RNLinking.openURL('https://mail.google.com')} />}
       >
         {meetingSuggestions.length > 0 ? (
-          <TouchableOpacity
-            style={styles.meetingBanner}
-            activeOpacity={0.86}
-            onPress={() => {
-              onAgentSync?.(['email', 'schedule', 'overview']);
-              onNavigate?.('schedule');
-            }}
-          >
-            <Text style={styles.meetingBannerIcon}>📅</Text>
-            <View style={styles.meetingBannerBody}>
-              <Text style={styles.meetingBannerTitle}>Bob phát hiện lịch hẹn trong email</Text>
-              <Text style={styles.meetingBannerText} numberOfLines={2}>
-                {meetingSuggestions.length} gợi ý đang chờ · Chạm để kiểm tra và tạo lịch
-              </Text>
-            </View>
-            <Text style={styles.meetingBannerArrow}>›</Text>
-          </TouchableOpacity>
+          <View style={styles.suggestionsSection}>
+            <Text style={styles.suggestionsLabel}>GỢI Ý THÔNG MINH</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionsRow}>
+              {meetingSuggestions.slice(0, 5).map((suggestion) => (
+                <TouchableOpacity
+                  key={suggestion.id}
+                  style={styles.suggestionCard}
+                  activeOpacity={0.86}
+                  onPress={() => {
+                    onAgentSync?.(
+                      ['email', 'schedule', 'overview'],
+                      { source: 'email_screen' },
+                    );
+                    onNavigate?.('schedule');
+                  }}
+                >
+                  <View style={styles.suggestionCardHead}>
+                    <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+                    <Text style={styles.suggestionCardKicker}>Lịch hẹn</Text>
+                  </View>
+                  <Text style={styles.suggestionCardTitle} numberOfLines={2}>
+                    {suggestion.title || suggestion.subject || 'Lịch hẹn từ email'}
+                  </Text>
+                  <Text style={styles.suggestionCardMeta} numberOfLines={1}>
+                    {suggestion.start_time ? formatSuggestionTime(suggestion.start_time) : (suggestion.sender || 'Chưa rõ thời gian')}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
         ) : null}
         <SegmentedControl options={modes} value={mode} onChange={setMode} />
         {mode === 'compose' ? renderCompose() : mode === 'report' ? renderReport() : renderInbox()}
@@ -631,8 +675,6 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
                 <Ionicons name="close" size={22} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.filterSectionLabel}>Danh mục</Text>
-            <SegmentedControl options={filters} value={filter} onChange={setFilter} />
             <Text style={styles.filterSectionLabel}>Nguồn email</Text>
             <SegmentedControl options={sourceFilters} value={source} onChange={setSource} />
             <Button title="Xong" onPress={() => setFilterModalVisible(false)} style={styles.filterModalDone} />
@@ -746,6 +788,24 @@ function extractEmailAddress(value) {
   return match ? match[1] : String(value || '').trim();
 }
 
+function formatSuggestionTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('vi-VN', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function senderInitial(sender) {
+  const name = String(sender || '').split('<')[0].trim();
+  const letter = (name || String(sender || '')).charAt(0);
+  return letter ? letter.toUpperCase() : '?';
+}
+
 function providerLabel(provider) {
   if (provider === 'outlook' || provider === 'microsoft') return 'Outlook';
   return 'Gmail';
@@ -781,19 +841,24 @@ function makeStyles(colors) {
     cardTitle:{ color: colors.text, fontFamily: 'Poppins_700Bold' },
     muted:    { marginTop: 4, color: colors.textMuted, fontFamily: 'Poppins_400Regular' },
     filterTrigger: {
-      flexDirection: 'row',
+      width: 40,
+      height: 40,
       alignItems: 'center',
-      gap: 8,
-      alignSelf: 'flex-start',
-      paddingHorizontal: 14,
-      paddingVertical: 10,
+      justifyContent: 'center',
       borderRadius: 12,
       backgroundColor: colors.panel,
       borderWidth: 1,
       borderColor: colors.border,
     },
-    filterTriggerText: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
-    filterDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.primary },
+    filterDot: {
+      position: 'absolute',
+      top: 6,
+      right: 6,
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+      backgroundColor: colors.primary,
+    },
     filterModalOverlay: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.4)',
@@ -865,15 +930,6 @@ function makeStyles(colors) {
     },
     rowBetween:{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
     badges: { alignItems: 'flex-end', gap: 5 },
-    readBadge: {
-      paddingHorizontal: 7,
-      paddingVertical: 3,
-      borderRadius: 999,
-      fontSize: 9,
-      fontFamily: 'Poppins_700Bold',
-    },
-    unreadBadge: { color: colors.accentText, backgroundColor: colors.primarySoft },
-    readBadgeDone: { color: '#5eead4', backgroundColor: 'rgba(13,148,136,0.22)' },
     providerBadge: {
       paddingHorizontal: 7,
       paddingVertical: 3,
@@ -884,9 +940,32 @@ function makeStyles(colors) {
     },
     gmailBadge: { color: colors.primary, backgroundColor: `${colors.primary}18` },
     outlookBadge: { color: '#0369a1', backgroundColor: 'rgba(14,165,233,0.16)' },
-    subject:  { flex: 1, color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 15, lineHeight: 21 },
+    emailHeadRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+    emailAvatarWrap: { position: 'relative' },
+    emailAvatar: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primary,
+    },
+    emailAvatarText: { color: '#ffffff', fontFamily: 'Poppins_700Bold', fontSize: 15 },
+    unreadDot: {
+      position: 'absolute',
+      top: -1,
+      right: -1,
+      width: 11,
+      height: 11,
+      borderRadius: 6,
+      backgroundColor: colors.danger,
+      borderWidth: 2,
+      borderColor: colors.panel,
+    },
+    emailHeadBody: { flex: 1, minWidth: 0 },
+    subject:  { marginTop: 3, color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 15, lineHeight: 21 },
     tag:      { color: colors.primary, fontSize: 12, fontFamily: 'Poppins_700Bold' },
-    sender:   { marginTop: 6, color: colors.textMuted, fontFamily: 'Poppins_500Medium' },
+    sender:   { flex: 1, color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
     preview:  { marginTop: 8, color: colors.textMuted, fontFamily: 'Poppins_400Regular', lineHeight: 20 },
     aiSummary: {
       marginTop: 10,
@@ -948,21 +1027,28 @@ function makeStyles(colors) {
       fontFamily: 'Poppins_600SemiBold',
       fontSize: 13,
     },
-    meetingBanner: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-      padding: 14,
-      borderRadius: 18,
+    suggestionsSection: { gap: 8 },
+    suggestionsLabel: {
+      color: colors.primary,
+      fontFamily: 'Poppins_700Bold',
+      fontSize: 10,
+      letterSpacing: 1,
+    },
+    suggestionsRow: { gap: 10, paddingRight: 16 },
+    suggestionCard: {
+      width: 210,
+      padding: 13,
+      borderRadius: radius.card,
       borderWidth: 1,
-      borderColor: `${colors.primary}55`,
+      borderColor: `${colors.primary}33`,
       backgroundColor: colors.primarySoft,
       ...colors.shadow,
     },
-    meetingBannerIcon: { fontSize: 28 },
-    meetingBannerBody: { flex: 1, minWidth: 0 },
-    meetingBannerTitle: { color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 13 },
-    meetingBannerText: { marginTop: 2, color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 11 },
-    meetingBannerArrow: { color: colors.primary, fontFamily: 'Poppins_700Bold', fontSize: 28 },
+    suggestionCardHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    suggestionCardKicker: { color: colors.primary, fontFamily: 'Poppins_700Bold', fontSize: 11 },
+    suggestionCardTitle: { marginTop: 8, color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 13, lineHeight: 18 },
+    suggestionCardMeta: { marginTop: 6, color: colors.textMuted, fontFamily: 'Poppins_500Medium', fontSize: 11 },
+    categoryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    categoryScroll: { flex: 1, minWidth: 0 },
   });
 }
