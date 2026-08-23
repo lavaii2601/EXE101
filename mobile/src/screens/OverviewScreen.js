@@ -9,11 +9,12 @@ import Screen from '../components/Screen';
 import { apiGet, apiPost, apiPut } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 
-export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, userMode, subscription }) {
+export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, userMode, subscription, userName }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const isStudent = userMode === 'student';
   const isPremium = !!(subscription?.is_premium || subscription?.tier === 'premium');
+  const greeting = buildGreeting(String(userName || '').trim());
 
   const [date, setDate] = useState(() => formatDateForApi(new Date()));
   const [emails, setEmails] = useState([]);
@@ -111,6 +112,8 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, use
   }, [loadOverview, syncEvent]);
 
   const deadlines = schedules.filter((item) => priorityLabel(item) === 'Deadline');
+  const nextDeadline = nearestDeadline(deadlines);
+  const nextDeadlineDays = nextDeadline ? daysUntil(nextDeadline.start_time) : null;
   const openTasks = schedules.filter((item) => item.status !== 'completed');
   const meetingEmails = emails.filter((item) => item.is_meeting);
   const insight = buildInsight({ emails, schedules, date });
@@ -527,8 +530,8 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, use
       >
         <View style={styles.heroTopRow}>
           <View style={styles.heroTopText}>
-            <Text style={styles.kicker}>FLOWMATE AI</Text>
-            <Text style={styles.heroTitle}>{formatReportDate(date)}</Text>
+            <Text style={styles.kicker}>{formatReportDate(date)}</Text>
+            <Text style={styles.heroTitle}>{greeting}</Text>
           </View>
           <View style={styles.heroScore}>
             <Text style={styles.heroScoreValue}>{openTasks.length + emails.length}</Text>
@@ -539,6 +542,33 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, use
         {refreshNote ? <Text style={styles.refreshNote}>{refreshNote}</Text> : null}
         <Text style={styles.sourceText}>{sourceText}</Text>
       </LinearGradient>
+
+      <Card style={styles.deadlineCard}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.kicker}>ĐẾM NGƯỢC</Text>
+          <Text style={styles.sectionTitle}>Deadline gần nhất</Text>
+        </View>
+        {nextDeadline ? (
+          <View style={styles.deadlineRingRow}>
+            <View style={[styles.deadlineRing, nextDeadlineDays !== null && nextDeadlineDays <= 3 && styles.deadlineRingUrgent]}>
+              <Text style={styles.deadlineRingValue}>
+                {nextDeadlineDays === null ? '–' : nextDeadlineDays <= 0 ? 'Nay' : nextDeadlineDays}
+              </Text>
+              {nextDeadlineDays !== null && nextDeadlineDays > 0 ? <Text style={styles.deadlineRingLabel}>ngày</Text> : null}
+            </View>
+            <View style={styles.deadlineInfo}>
+              <Text style={styles.deadlineTitle} numberOfLines={2}>{nextDeadline.title || 'Deadline'}</Text>
+              <Text style={styles.deadlineMeta}>{formatScheduleTime(nextDeadline.start_time, nextDeadline.end_time)}</Text>
+            </View>
+          </View>
+        ) : (
+          <EmptyState
+            icon="flag-outline"
+            title="Không có deadline sắp tới"
+            detail="FlowMate sẽ nhắc bạn ngay khi có deadline mới."
+          />
+        )}
+      </Card>
 
       <Card style={styles.dateCard}>
         <Field
@@ -744,7 +774,7 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, use
             activeOpacity={0.78}
             onPress={() => setSelectedEmail(item)}
           >
-            <View style={styles.itemIndex}><Text style={styles.itemIndexText}>{index + 1}</Text></View>
+            <View style={styles.emailAvatar}><Text style={styles.emailAvatarText}>{senderInitial(item.sender)}</Text></View>
             <View style={styles.itemBody}>
               <Text style={styles.itemTitle}>{item.subject || 'Email không tiêu đề'}</Text>
               <Text style={styles.itemMeta} numberOfLines={1}>{item.sender || 'Người gửi'}</Text>
@@ -1035,6 +1065,34 @@ function buildSourceText({ emails, schedules }) {
   return `Nguồn: ${Array.from(providers).join(', ')}`;
 }
 
+function buildGreeting(name) {
+  const hour = new Date().getHours();
+  const timeGreeting = hour < 5 ? 'Chào bạn'
+    : hour < 12 ? 'Chào buổi sáng'
+    : hour < 18 ? 'Chào buổi chiều'
+    : 'Chào buổi tối';
+  return name ? `${timeGreeting}, ${name}` : timeGreeting;
+}
+
+function nearestDeadline(deadlines) {
+  if (!deadlines.length) return null;
+  const withTime = deadlines
+    .map((item) => ({ item, time: new Date(item.start_time).getTime() }))
+    .filter((entry) => !Number.isNaN(entry.time));
+  if (!withTime.length) return deadlines[0];
+  withTime.sort((a, b) => a.time - b.time);
+  return withTime[0].item;
+}
+
+function daysUntil(value) {
+  const target = new Date(value);
+  if (Number.isNaN(target.getTime())) return null;
+  const now = new Date();
+  const startOfTarget = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+  const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((startOfTarget - startOfNow) / 86400000);
+}
+
 function formatDateForApi(value) {
   const date = new Date(value);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -1082,6 +1140,12 @@ function formatScheduleTime(startValue, endValue) {
   const end = new Date(endValue);
   if (Number.isNaN(end.getTime())) return startText;
   return `${startText} - ${end.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function senderInitial(sender) {
+  const name = String(sender || '').split('<')[0].trim();
+  const letter = (name || String(sender || '')).charAt(0);
+  return letter ? letter.toUpperCase() : '?';
 }
 
 function stripHtml(value) {
@@ -1150,6 +1214,33 @@ function makeStyles(colors) {
     heroText: { color: colors.textMuted, fontFamily: fontRegular, fontSize: 13, lineHeight: 19 },
     refreshNote: { marginTop: 4, color: colors.primary, fontFamily: fontMedium, fontSize: 12, lineHeight: 18 },
     sourceText: { marginTop: 4, color: colors.textMuted, fontFamily: fontMedium, fontSize: 11 },
+    deadlineCard: { gap: 4 },
+    deadlineRingRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 6 },
+    deadlineRing: {
+      width: 84,
+      height: 84,
+      borderRadius: 42,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primarySoft,
+      borderWidth: 6,
+      borderColor: colors.primary,
+    },
+    deadlineRingUrgent: { borderColor: colors.danger, backgroundColor: `${colors.danger}14` },
+    deadlineRingValue: { color: colors.text, fontFamily: fontBold, fontSize: 22, lineHeight: 26 },
+    deadlineRingLabel: { color: colors.textMuted, fontFamily: fontMedium, fontSize: 10 },
+    deadlineInfo: { flex: 1, minWidth: 0 },
+    deadlineTitle: { color: colors.text, fontFamily: fontSemiBold, fontSize: 15, lineHeight: 20 },
+    deadlineMeta: { marginTop: 4, color: colors.textMuted, fontFamily: fontMedium, fontSize: 12 },
+    emailAvatar: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primary,
+    },
+    emailAvatarText: { color: '#ffffff', fontFamily: fontBold, fontSize: 13 },
     dateCard: { gap: 8 },
     quickCard: { gap: 8 },
     quickInputField: { minHeight: 48 },
