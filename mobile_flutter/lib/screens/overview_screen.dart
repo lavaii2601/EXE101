@@ -1,6 +1,8 @@
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/client.dart';
+import '../api/google_auth.dart';
 import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
@@ -22,6 +24,25 @@ class _OverviewScreenState extends State<OverviewScreen> {
   List<dynamic> emails = [];
   Map<String, dynamic> checklist = {'revision': 0, 'completed': {}, 'custom_items': []};
   bool loading = false;
+  bool connectingGmail = false;
+
+  Future<void> _connectGmail() async {
+    final t = context.read<LanguageController>().t;
+    final appLinks = context.read<AppLinks>();
+    setState(() => connectingGmail = true);
+    try {
+      final result = await connectGoogleAccount(appLinks);
+      if (result.connected && mounted) {
+        await context.read<AppState>().refreshShell();
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${t('Kết nối Gmail thất bại', 'Failed to connect Gmail')}: $error')));
+      }
+    } finally {
+      if (mounted) setState(() => connectingGmail = false);
+    }
+  }
 
   @override
   void initState() {
@@ -179,14 +200,21 @@ class _OverviewScreenState extends State<OverviewScreen> {
                                   style: TextStyle(color: colors.text, fontWeight: FontWeight.w700, fontSize: 14)),
                               const SizedBox(height: 4),
                               Text(
-                                t('Đăng nhập Google trên bản Flutter đang được hoàn thiện. Dùng bản React Native để kết nối Gmail lúc này.',
-                                    'Google sign-in on the Flutter build is still in progress. Use the React Native app to connect Gmail for now.'),
+                                t('Cho phép FlowMate đọc email và lịch của bạn để tóm tắt công việc hằng ngày.',
+                                    'Allow FlowMate to read your email and calendar to summarize your day.'),
                                 style: TextStyle(color: colors.textMuted, fontSize: 12, height: 1.4),
                               ),
                             ],
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 12),
+                    AppButton(
+                      title: t('Kết nối Gmail', 'Connect Gmail'),
+                      icon: Icons.link,
+                      onPressed: _connectGmail,
+                      loading: connectingGmail,
                     ),
                   ],
                 ),

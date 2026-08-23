@@ -1,5 +1,7 @@
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../api/google_auth.dart';
 import '../config/user_modes.dart';
 import '../state/app_state.dart';
 import '../state/language_controller.dart';
@@ -7,9 +9,34 @@ import '../state/theme_controller.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_screen.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   final VoidCallback onChangeMode;
   const SettingsScreen({super.key, required this.onChangeMode});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool connectingGmail = false;
+
+  Future<void> _connectGmail() async {
+    final t = context.read<LanguageController>().t;
+    final appLinks = context.read<AppLinks>();
+    setState(() => connectingGmail = true);
+    try {
+      final result = await connectGoogleAccount(appLinks);
+      if (result.connected && mounted) {
+        await context.read<AppState>().refreshShell();
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${t('Kết nối Gmail thất bại', 'Failed to connect Gmail')}: $error')));
+      }
+    } finally {
+      if (mounted) setState(() => connectingGmail = false);
+    }
+  }
 
   Future<void> _confirmLogout(BuildContext context) async {
     final t = context.read<LanguageController>().t;
@@ -65,7 +92,7 @@ class SettingsScreen extends StatelessWidget {
                   iconColor: colors.primary,
                   title: t('Chế độ người dùng', 'User mode'),
                   subtitle: '${mode.label} · ${t('Chạm để thay đổi', 'Tap to change')}',
-                  onTap: onChangeMode,
+                  onTap: widget.onChangeMode,
                 ),
               ],
             ),
@@ -128,11 +155,19 @@ class SettingsScreen extends StatelessWidget {
                   subtitle: gmailReady
                       ? ((profile?['gmail_email'] as String?) ?? t('Đã kết nối', 'Connected'))
                       : t('Chưa kết nối', 'Not connected'),
-                  trailing: Text(
-                    gmailReady ? t('Đã kết nối', 'Connected') : t('Chưa hỗ trợ trên Flutter', 'Not on Flutter yet'),
-                    style: TextStyle(color: colors.textMuted, fontSize: 11),
-                  ),
+                  trailing: gmailReady
+                      ? Text(t('Đã kết nối', 'Connected'), style: TextStyle(color: colors.success, fontSize: 11, fontWeight: FontWeight.w700))
+                      : null,
                 ),
+                if (!gmailReady) ...[
+                  const SizedBox(height: 10),
+                  AppButton(
+                    title: t('Kết nối Gmail', 'Connect Gmail'),
+                    variant: AppButtonVariant.secondary,
+                    onPressed: _connectGmail,
+                    loading: connectingGmail,
+                  ),
+                ],
               ],
             ),
             _Section(

@@ -1,6 +1,8 @@
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/auth_api.dart';
+import '../api/google_auth.dart';
 import '../api/session.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
@@ -19,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool isSignup = false;
   bool showPassword = false;
   bool submitting = false;
+  bool googleSubmitting = false;
 
   final nameController = TextEditingController();
   final emailController = TextEditingController();
@@ -82,14 +85,22 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _handleGoogleSignIn() {
+  Future<void> _handleGoogleSignIn() async {
     final t = context.read<LanguageController>().t;
-    // Native Google Sign-In needs its own OAuth client setup
-    // (google-services.json, SHA-1 fingerprint) -- out of scope for this
-    // first Flutter pass. The React Native app's flow is the reference
-    // implementation once that's wired up here.
-    _showMessage(t('Sắp có', 'Coming soon'),
-        t('Đăng nhập Google trên bản Flutter đang được hoàn thiện.', 'Google sign-in on the Flutter build is still in progress.'));
+    final appLinks = context.read<AppLinks>();
+    setState(() => googleSubmitting = true);
+    try {
+      final result = await connectGoogleAccount(appLinks);
+      if (result.connected) {
+        widget.onLoggedIn();
+      }
+    } catch (error) {
+      if (mounted) {
+        _showMessage(t('Không đăng nhập được', 'Sign-in failed'), error.toString());
+      }
+    } finally {
+      if (mounted) setState(() => googleSubmitting = false);
+    }
   }
 
   @override
@@ -220,7 +231,12 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                     ),
                     const SizedBox(height: 18),
-                    AppButton(title: 'Google', variant: AppButtonVariant.secondary, onPressed: _handleGoogleSignIn),
+                    AppButton(
+                      title: 'Google',
+                      variant: AppButtonVariant.secondary,
+                      onPressed: _handleGoogleSignIn,
+                      loading: googleSubmitting,
+                    ),
                     const SizedBox(height: 20),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,

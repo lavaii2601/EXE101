@@ -1,3 +1,4 @@
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/welcome_screen.dart';
@@ -22,6 +23,9 @@ class FlowMateApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeController()),
         ChangeNotifierProvider(create: (_) => LanguageController()),
         ChangeNotifierProvider(create: (_) => AppState()..bootstrap()),
+        // Single shared listener for the flowmateai://oauth-callback deep
+        // link the backend redirects to once Google OAuth consent finishes.
+        Provider(create: (_) => AppLinks()),
       ],
       child: Consumer<ThemeController>(
         builder: (context, theme, _) {
