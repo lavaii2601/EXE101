@@ -34,6 +34,7 @@ from models.knowledge import KnowledgeDocument
 from models.workspace_sync import WorkspaceSync
 from models import postgres_db as pg
 from services.overview_scheduler import start_overview_scheduler
+from routes.auth import auth_bp
 from routes.chat import chat_bp
 from routes.email import email_bp
 from routes.schedule import schedule_bp
@@ -85,6 +86,8 @@ def make_session_permanent():
         '/api/email/oauth2callback',
         '/api/email/oauth-config-check',
         '/api/email/google-auth',
+        '/api/auth/register',
+        '/api/auth/login',
     }
     if (
         request.path.startswith('/api/')
@@ -136,6 +139,7 @@ def add_security_headers(response):
     return response
 
 # Register blueprints
+app.register_blueprint(auth_bp)
 app.register_blueprint(chat_bp)
 app.register_blueprint(email_bp)
 app.register_blueprint(schedule_bp)

@@ -22,6 +22,7 @@ USER_MODES = {
 def _merge_gmail_profile(user):
     """Merge stored user record with Gmail session fields for a complete profile."""
     merged = dict(user or {})
+    merged.pop('password_hash', None)
 
     session_gmail_email = (session.get('gmail_user_email') or '').strip()
     session_gmail_name = (session.get('gmail_user_name') or '').strip()
@@ -163,11 +164,11 @@ def mark_gmail_connected():
     """Mark user Gmail as connected"""
     user_id = get_current_user_id(request)
     User.update(user_id, gmail_connected=1)
-    
+
     user = User.get(user_id)
     return jsonify({
         'success': True,
-        'user': user
+        'user': _merge_gmail_profile(user)
     })
 
 
@@ -176,11 +177,11 @@ def mark_gmail_disconnected():
     """Mark user Gmail as disconnected"""
     user_id = get_current_user_id(request)
     User.update(user_id, gmail_connected=0)
-    
+
     user = User.get(user_id)
     return jsonify({
         'success': True,
-        'user': user
+        'user': _merge_gmail_profile(user)
     })
 
 

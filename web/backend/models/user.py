@@ -30,6 +30,7 @@ class User:
                 name TEXT,
                 email TEXT,
                 avatar_url TEXT,
+                password_hash TEXT,
                 gmail_email TEXT,
                 gmail_name TEXT,
                 gmail_picture TEXT,
@@ -67,7 +68,11 @@ class User:
             cursor.execute("ALTER TABLE users ADD COLUMN user_mode_selected_at DATETIME")
         except sqlite3.OperationalError:
             pass
-        
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        except sqlite3.OperationalError:
+            pass
+
         conn.commit()
         conn.close()
         User._initialized_dbs.add(db_path)
@@ -106,7 +111,7 @@ class User:
             allowed_fields = [
                 'name', 'email', 'avatar_url', 'gmail_connected', 'gmail_email',
                 'gmail_name', 'gmail_picture', 'gmail_connected_at', 'user_mode',
-                'user_mode_selected_at'
+                'user_mode_selected_at', 'password_hash'
             ]
             updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
             if not updates:
@@ -137,10 +142,10 @@ class User:
         allowed_fields = [
             'name', 'email', 'avatar_url', 'gmail_connected', 'gmail_email',
             'gmail_name', 'gmail_picture', 'gmail_connected_at', 'user_mode',
-            'user_mode_selected_at'
+            'user_mode_selected_at', 'password_hash'
         ]
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
-        
+
         if not updates:
             conn.close()
             return False
@@ -182,6 +187,51 @@ class User:
         user = cursor.fetchone()
         conn.close()
         
+        return dict(user) if user else None
+
+    @staticmethod
+    def get_by_email(email):
+        """Look up a user by their login email or connected Gmail address.
+
+        Used by password-based register/login, which have no user_id to key
+        off of until the account is found. Case-insensitive; returns the
+        oldest matching account if more than one row happens to match.
+        """
+        email = (email or '').strip().lower()
+        if not email:
+            return None
+
+        if pg.enabled():
+            with pg.connection() as conn:
+                user = conn.execute(
+                    """
+                    SELECT * FROM users
+                    WHERE LOWER(COALESCE(email, '')) = %s
+                       OR LOWER(COALESCE(gmail_email, '')) = %s
+                    ORDER BY created_at ASC
+                    LIMIT 1
+                    """,
+                    (email, email),
+                ).fetchone()
+                return pg.normalize_row(user)
+
+        db_path = Config.DATABASE_PATH
+        User.init_db()
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT * FROM users
+            WHERE LOWER(COALESCE(email, '')) = ?
+               OR LOWER(COALESCE(gmail_email, '')) = ?
+            ORDER BY created_at ASC
+            LIMIT 1
+            ''',
+            (email, email),
+        )
+        user = cursor.fetchone()
+        conn.close()
         return dict(user) if user else None
 
     @staticmethod

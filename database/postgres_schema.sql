@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS users (
     name TEXT,
     email TEXT,
     avatar_url TEXT,
+    password_hash TEXT,
 
     gmail_email TEXT,
     gmail_name TEXT,
@@ -395,6 +396,9 @@ ALTER TABLE chat_sessions
 
 ALTER TABLE knowledge_documents
     ADD COLUMN IF NOT EXISTS user_id TEXT DEFAULT NULL;
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS password_hash TEXT;
 
 DO $$
 BEGIN

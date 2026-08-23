@@ -78,7 +78,7 @@ def valid_request_origin():
         return True
     if bearer_user_id() or header_user_id():
         return True
-    if request.path == "/api/email/google-auth":
+    if request.path in ("/api/email/google-auth", "/api/auth/register", "/api/auth/login"):
         return True
 
     origin = request.headers.get("Origin")
