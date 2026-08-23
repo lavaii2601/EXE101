@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../api/auth_api.dart';
 import '../api/session.dart';
+import '../state/language_controller.dart';
+import '../state/theme_controller.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 
@@ -48,12 +51,14 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleSubmit() async {
+    final t = context.read<LanguageController>().t;
     if (isSignup && nameController.text.trim().isEmpty) {
-      _showMessage('Thiếu thông tin', 'Vui lòng nhập họ tên.');
+      _showMessage(t('Thiếu thông tin', 'Missing info'), t('Vui lòng nhập họ tên.', 'Please enter your full name.'));
       return;
     }
     if (emailController.text.trim().isEmpty || passwordController.text.isEmpty) {
-      _showMessage('Thiếu thông tin', 'Vui lòng nhập email và mật khẩu.');
+      _showMessage(t('Thiếu thông tin', 'Missing info'),
+          t('Vui lòng nhập email và mật khẩu.', 'Please enter your email and password.'));
       return;
     }
     setState(() => submitting = true);
@@ -64,15 +69,12 @@ class _LoginScreenState extends State<LoginScreen> {
               email: emailController.text.trim(),
               password: passwordController.text,
             )
-          : await loginWithEmail(
-              email: emailController.text.trim(),
-              password: passwordController.text,
-            );
+          : await loginWithEmail(email: emailController.text.trim(), password: passwordController.text);
       await setMobileSession(userId: result.userId, accessToken: result.accessToken);
       widget.onLoggedIn();
     } catch (error) {
       _showMessage(
-        isSignup ? 'Không tạo được tài khoản' : 'Không đăng nhập được',
+        isSignup ? t('Không tạo được tài khoản', 'Could not create account') : t('Không đăng nhập được', 'Sign-in failed'),
         error.toString(),
       );
     } finally {
@@ -81,17 +83,22 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _handleGoogleSignIn() {
+    final t = context.read<LanguageController>().t;
     // Native Google Sign-In needs its own OAuth client setup
     // (google-services.json, SHA-1 fingerprint) -- out of scope for this
-    // first Flutter screen pass. The React Native app's flow is the
-    // reference implementation once that's wired up here.
-    _showMessage('Sắp có', 'Đăng nhập Google trên bản Flutter đang được hoàn thiện.');
+    // first Flutter pass. The React Native app's flow is the reference
+    // implementation once that's wired up here.
+    _showMessage(t('Sắp có', 'Coming soon'),
+        t('Đăng nhập Google trên bản Flutter đang được hoàn thiện.', 'Google sign-in on the Flutter build is still in progress.'));
   }
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.watch<ThemeController>().colors;
+    final t = context.watch<LanguageController>().t;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: colors.background,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
@@ -101,15 +108,15 @@ class _LoginScreenState extends State<LoginScreen> {
               Text(
                 'FlowMate AI',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w800, fontSize: 22, letterSpacing: -0.4),
+                style: TextStyle(color: colors.text, fontWeight: FontWeight.w800, fontSize: 22, letterSpacing: -0.4),
               ),
               const SizedBox(height: 18),
               Container(
                 padding: const EdgeInsets.all(22),
                 decoration: BoxDecoration(
-                  color: AppColors.panel,
+                  color: colors.panel,
                   borderRadius: BorderRadius.circular(AppRadius.card),
-                  border: Border.all(color: AppColors.border),
+                  border: Border.all(color: colors.border),
                   boxShadow: [
                     BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 14, offset: const Offset(0, 6)),
                   ],
@@ -121,11 +128,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       height: 64,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(AppRadius.control),
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: AppColors.orbGradient,
-                        ),
+                        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: kOrbGradient),
                         boxShadow: [
                           BoxShadow(color: const Color(0xFF5A54FB).withValues(alpha: 0.4), blurRadius: 16, offset: const Offset(0, 8)),
                         ],
@@ -134,25 +137,29 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      isSignup ? 'Tạo tài khoản' : 'Chào mừng trở lại',
-                      style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w700, fontSize: 20),
+                      isSignup ? t('Tạo tài khoản', 'Create Account') : t('Chào mừng trở lại', 'Welcome Back'),
+                      style: TextStyle(color: colors.text, fontWeight: FontWeight.w700, fontSize: 20),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      isSignup ? 'Tham gia FlowMate AI ngay hôm nay.' : 'Vui lòng nhập thông tin để đăng nhập.',
-                      style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                      isSignup
+                          ? t('Tham gia FlowMate AI ngay hôm nay.', 'Join FlowMate AI today.')
+                          : t('Vui lòng nhập thông tin để đăng nhập.', 'Please enter your details to sign in.'),
+                      style: TextStyle(color: colors.textMuted, fontSize: 13),
                     ),
                     if (isSignup) ...[
                       const SizedBox(height: 18),
                       _LabeledField(
-                        label: 'Họ và tên',
+                        colors: colors,
+                        label: t('Họ và tên', 'Full Name'),
                         icon: Icons.person_outline,
                         controller: nameController,
-                        hint: 'Nhập họ và tên',
+                        hint: t('Nhập họ và tên', 'Enter your full name'),
                       ),
                     ],
                     const SizedBox(height: 18),
                     _LabeledField(
+                      colors: colors,
                       label: 'Email',
                       icon: Icons.mail_outline,
                       controller: emailController,
@@ -162,37 +169,40 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 18),
                     Row(
                       children: [
-                        Text('Mật khẩu', style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w600, fontSize: 12.5)),
+                        Text(t('Mật khẩu', 'Password'), style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 12.5)),
                         const Spacer(),
                         if (!isSignup)
                           TextButton(
                             style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero),
                             onPressed: () => _showMessage(
-                              'Sắp có',
-                              'Khôi phục mật khẩu qua email sẽ có trong bản cập nhật tới.',
+                              t('Sắp có', 'Coming soon'),
+                              t('Khôi phục mật khẩu qua email sẽ có trong bản cập nhật tới.',
+                                  'Email password recovery is coming in a future update.'),
                             ),
-                            child: Text('Quên mật khẩu?',
-                                style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600, fontSize: 12)),
+                            child: Text(t('Quên mật khẩu?', 'Forgot Password?'),
+                                style: TextStyle(color: colors.primary, fontWeight: FontWeight.w600, fontSize: 12)),
                           ),
                       ],
                     ),
                     const SizedBox(height: 7),
                     _PasswordField(
+                      colors: colors,
                       controller: passwordController,
                       show: showPassword,
-                      hint: isSignup ? 'Tạo mật khẩu' : '••••••••',
+                      hint: isSignup ? t('Tạo mật khẩu', 'Create a password') : '••••••••',
                       onToggle: () => setState(() => showPassword = !showPassword),
                     ),
                     if (isSignup) ...[
                       const SizedBox(height: 6),
                       Align(
                         alignment: Alignment.centerLeft,
-                        child: Text('Tối thiểu 8 ký tự.', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                        child: Text(t('Tối thiểu 8 ký tự.', 'Must be at least 8 characters.'),
+                            style: TextStyle(color: colors.textMuted, fontSize: 11)),
                       ),
                     ],
                     const SizedBox(height: 22),
                     AppButton(
-                      title: isSignup ? 'Tạo tài khoản' : 'Đăng nhập',
+                      title: isSignup ? t('Tạo tài khoản', 'Create Account') : t('Đăng nhập', 'Sign In'),
                       icon: isSignup ? Icons.arrow_forward : null,
                       onPressed: _handleSubmit,
                       loading: submitting,
@@ -200,34 +210,30 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 18),
                     Row(
                       children: [
-                        Expanded(child: Divider(color: AppColors.border)),
+                        Expanded(child: Divider(color: colors.border)),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 10),
-                          child: Text('HOẶC TIẾP TỤC VỚI',
-                              style: TextStyle(color: AppColors.textMuted, fontSize: 11, letterSpacing: 0.4)),
+                          child: Text(t('HOẶC TIẾP TỤC VỚI', 'OR CONTINUE WITH'),
+                              style: TextStyle(color: colors.textMuted, fontSize: 11, letterSpacing: 0.4)),
                         ),
-                        Expanded(child: Divider(color: AppColors.border)),
+                        Expanded(child: Divider(color: colors.border)),
                       ],
                     ),
                     const SizedBox(height: 18),
-                    AppButton(
-                      title: 'Google',
-                      variant: AppButtonVariant.secondary,
-                      onPressed: _handleGoogleSignIn,
-                    ),
+                    AppButton(title: 'Google', variant: AppButtonVariant.secondary, onPressed: _handleGoogleSignIn),
                     const SizedBox(height: 20),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          isSignup ? 'Đã có tài khoản?' : 'Chưa có tài khoản?',
-                          style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                          isSignup ? t('Đã có tài khoản?', 'Already have an account?') : t('Chưa có tài khoản?', "Don't have an account?"),
+                          style: TextStyle(color: colors.textMuted, fontSize: 13),
                         ),
                         TextButton(
                           onPressed: _toggleMode,
                           child: Text(
-                            isSignup ? 'Đăng nhập' : 'Đăng ký',
-                            style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 13),
+                            isSignup ? t('Đăng nhập', 'Sign In') : t('Đăng ký', 'Sign up'),
+                            style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 13),
                           ),
                         ),
                       ],
@@ -244,6 +250,7 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 class _LabeledField extends StatelessWidget {
+  final AppColors colors;
   final String label;
   final IconData icon;
   final TextEditingController controller;
@@ -251,6 +258,7 @@ class _LabeledField extends StatelessWidget {
   final TextInputType? keyboardType;
 
   const _LabeledField({
+    required this.colors,
     required this.label,
     required this.icon,
     required this.controller,
@@ -263,29 +271,30 @@ class _LabeledField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w600, fontSize: 12.5)),
+        Text(label, style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 12.5)),
         const SizedBox(height: 7),
         TextField(
           controller: controller,
           keyboardType: keyboardType,
+          style: TextStyle(color: colors.text),
           decoration: InputDecoration(
-            prefixIcon: Icon(icon, size: 18, color: AppColors.textMuted),
+            prefixIcon: Icon(icon, size: 18, color: colors.textMuted),
             hintText: hint,
-            hintStyle: TextStyle(color: AppColors.inputPlaceholder),
+            hintStyle: TextStyle(color: colors.inputPlaceholder),
             filled: true,
-            fillColor: AppColors.panelSoft,
+            fillColor: colors.panelSoft,
             contentPadding: const EdgeInsets.symmetric(vertical: 12),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(AppRadius.control),
-              borderSide: BorderSide(color: AppColors.border, width: 1.5),
+              borderSide: BorderSide(color: colors.border, width: 1.5),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(AppRadius.control),
-              borderSide: BorderSide(color: AppColors.border, width: 1.5),
+              borderSide: BorderSide(color: colors.border, width: 1.5),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(AppRadius.control),
-              borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+              borderSide: BorderSide(color: colors.primary, width: 1.5),
             ),
           ),
         ),
@@ -295,40 +304,48 @@ class _LabeledField extends StatelessWidget {
 }
 
 class _PasswordField extends StatelessWidget {
+  final AppColors colors;
   final TextEditingController controller;
   final bool show;
   final String hint;
   final VoidCallback onToggle;
 
-  const _PasswordField({required this.controller, required this.show, required this.hint, required this.onToggle});
+  const _PasswordField({
+    required this.colors,
+    required this.controller,
+    required this.show,
+    required this.hint,
+    required this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       obscureText: !show,
+      style: TextStyle(color: colors.text),
       decoration: InputDecoration(
-        prefixIcon: Icon(Icons.lock_outline, size: 18, color: AppColors.textMuted),
+        prefixIcon: Icon(Icons.lock_outline, size: 18, color: colors.textMuted),
         suffixIcon: IconButton(
-          icon: Icon(show ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18, color: AppColors.textMuted),
+          icon: Icon(show ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18, color: colors.textMuted),
           onPressed: onToggle,
         ),
         hintText: hint,
-        hintStyle: TextStyle(color: AppColors.inputPlaceholder),
+        hintStyle: TextStyle(color: colors.inputPlaceholder),
         filled: true,
-        fillColor: AppColors.panelSoft,
+        fillColor: colors.panelSoft,
         contentPadding: const EdgeInsets.symmetric(vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.control),
-          borderSide: BorderSide(color: AppColors.border, width: 1.5),
+          borderSide: BorderSide(color: colors.border, width: 1.5),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.control),
-          borderSide: BorderSide(color: AppColors.border, width: 1.5),
+          borderSide: BorderSide(color: colors.border, width: 1.5),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.control),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+          borderSide: BorderSide(color: colors.primary, width: 1.5),
         ),
       ),
     );

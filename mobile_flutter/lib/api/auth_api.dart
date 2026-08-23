@@ -1,66 +1,28 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'config.dart';
-
-class ApiException implements Exception {
-  final String message;
-  ApiException(this.message);
-  @override
-  String toString() => message;
-}
+import 'client.dart';
 
 class AuthResult {
   final String userId;
   final String email;
   final String accessToken;
   AuthResult({required this.userId, required this.email, required this.accessToken});
+
+  factory AuthResult.fromJson(Map<String, dynamic> json) => AuthResult(
+        userId: json['user_id'] as String? ?? '',
+        email: json['email'] as String? ?? '',
+        accessToken: json['access_token'] as String? ?? '',
+      );
 }
 
 Future<AuthResult> registerWithEmail({
   required String name,
   required String email,
   required String password,
-}) {
-  return _postAuth('/auth/register', {
-    'name': name,
-    'email': email,
-    'password': password,
-  });
+}) async {
+  final data = await apiPost('/auth/register', {'name': name, 'email': email, 'password': password});
+  return AuthResult.fromJson(data as Map<String, dynamic>);
 }
 
-Future<AuthResult> loginWithEmail({
-  required String email,
-  required String password,
-}) {
-  return _postAuth('/auth/login', {
-    'email': email,
-    'password': password,
-  });
-}
-
-Future<AuthResult> _postAuth(String path, Map<String, dynamic> body) async {
-  final response = await http.post(
-    Uri.parse('$kApiBase$path'),
-    headers: {'Content-Type': 'application/json'},
-    body: jsonEncode(body),
-  );
-
-  Map<String, dynamic> data;
-  try {
-    data = jsonDecode(response.body) as Map<String, dynamic>;
-  } catch (_) {
-    data = {};
-  }
-
-  if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw ApiException(
-      (data['message'] as String?) ?? (data['error'] as String?) ?? 'HTTP ${response.statusCode}',
-    );
-  }
-
-  return AuthResult(
-    userId: data['user_id'] as String? ?? '',
-    email: data['email'] as String? ?? '',
-    accessToken: data['access_token'] as String? ?? '',
-  );
+Future<AuthResult> loginWithEmail({required String email, required String password}) async {
+  final data = await apiPost('/auth/login', {'email': email, 'password': password});
+  return AuthResult.fromJson(data as Map<String, dynamic>);
 }
