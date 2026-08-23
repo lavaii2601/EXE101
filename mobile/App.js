@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, AppState, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import * as SecureStore from 'expo-secure-store';
 import {
   useFonts,
   Poppins_400Regular,
@@ -17,6 +18,7 @@ import ScheduleScreen from './src/screens/ScheduleScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import LoginScreen from './src/screens/LoginScreen';
+import WelcomeScreen from './src/screens/WelcomeScreen';
 import ProfileHeader from './src/components/ProfileHeader';
 import RoleSelection from './src/components/RoleSelection';
 import { apiGet, apiPost } from './src/api/client';
@@ -41,6 +43,7 @@ const tabs = [
   { key: 'settings', icon: 'settings-outline',    label: ['Cài đặt', 'Settings'] },
 ];
 
+const ONBOARDING_SEEN_KEY = 'flowmate.onboardingSeen';
 const NEW_MAIL_POLL_INTERVAL_MS = 5000;
 const WORKSPACE_SYNC_POLL_INTERVAL_MS = 12000;
 const WORKSPACE_SYNC_POLL_MIN_MS = 10000;
@@ -116,6 +119,9 @@ function AppShell() {
   // null = not checked yet (show loading screen), false = no backend session
   // (show LoginScreen), true = signed in with Google.
   const [isAuthenticated, setIsAuthenticated] = useState(null);
+  // null = not checked yet, true = show the one-time welcome screen before
+  // LoginScreen, false = already dismissed on this device.
+  const [showWelcome, setShowWelcome] = useState(null);
   const [agentProfile, setAgentProfile] = useState(null);
   const [syncEvent, setSyncEvent] = useState({ id: 0, targets: [] });
   const [savingMode, setSavingMode] = useState(false);
@@ -173,6 +179,17 @@ function AppShell() {
     // every app restart silently calls the backend as an anonymous user.
     loadPersistedSession().finally(refreshShell);
   }, [refreshShell]);
+
+  useEffect(() => {
+    SecureStore.getItemAsync(ONBOARDING_SEEN_KEY)
+      .then((value) => setShowWelcome(value !== 'true'))
+      .catch(() => setShowWelcome(true));
+  }, []);
+
+  const dismissWelcome = useCallback(() => {
+    setShowWelcome(false);
+    SecureStore.setItemAsync(ONBOARDING_SEEN_KEY, 'true').catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return undefined;
@@ -425,10 +442,17 @@ function AppShell() {
   }
 
   if (!isAuthenticated) {
+    if (showWelcome === null) {
+      return <SafeAreaView style={styles.safe}><View style={styles.loadingScreen} /></SafeAreaView>;
+    }
     return (
       <SafeAreaView style={styles.safe}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
-        <LoginScreen onLoggedIn={handleLoggedIn} />
+        {showWelcome ? (
+          <WelcomeScreen onGetStarted={dismissWelcome} onLogIn={dismissWelcome} />
+        ) : (
+          <LoginScreen onLoggedIn={handleLoggedIn} />
+        )}
       </SafeAreaView>
     );
   }
