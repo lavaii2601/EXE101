@@ -9857,6 +9857,133 @@ body.dark-theme .subscription-compare-card.current {
     }
 }
 
+@property --mobile-indicator-x {
+    syntax: "<length>";
+    inherits: true;
+    initial-value: 0px;
+}
+
+/* Mobile liquid navigation: the notch and floating indicator share one
+   animated position so they move as a single elastic surface. */
+@media (max-width: 860px) {
+    .workspace-app > .sidebar,
+    .workspace-app > .sidebar.open {
+        --liquid-nav-bg: #111127;
+        border-top: 0;
+        background:
+            linear-gradient(
+                to bottom,
+                transparent 0 var(--mobile-nav-height),
+                var(--liquid-nav-bg) var(--mobile-nav-height)
+            ) !important;
+        box-shadow: none;
+        backdrop-filter: none;
+    }
+
+    .workspace-app > .sidebar .sidebar-nav {
+        --mobile-indicator-x: calc((100% / 6 - 58px) / 2);
+        position: relative;
+        isolation: isolate;
+        overflow: visible;
+        border-radius: 20px 20px 0 0;
+        background:
+            radial-gradient(
+                circle 36px at calc(var(--mobile-indicator-x) + 29px) 0,
+                transparent 34px,
+                var(--liquid-nav-bg) 35px
+            );
+        box-shadow: 0 -12px 30px rgba(17, 17, 39, 0.22);
+        transition: --mobile-indicator-x 520ms cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    }
+
+    .workspace-app > .sidebar .sidebar-nav.indicator-no-transition {
+        transition: none;
+    }
+
+    .workspace-app > .sidebar .sidebar-nav::before {
+        position: absolute;
+        z-index: 1;
+        top: -29px;
+        left: 0;
+        display: block;
+        width: 58px;
+        height: 58px;
+        border: 0;
+        border-radius: 50%;
+        background: #ffffff;
+        box-shadow:
+            0 10px 24px rgba(4, 4, 18, 0.22),
+            inset 0 0 0 1px rgba(108, 99, 255, 0.10);
+        content: "";
+        opacity: 1;
+        pointer-events: none;
+        transform: translate3d(var(--mobile-indicator-x), 0, 0);
+    }
+
+    .workspace-app > .sidebar .sidebar-nav > .nav-btn {
+        position: relative;
+        z-index: 2;
+        overflow: visible;
+        color: #b9b9ca;
+        background: transparent !important;
+        box-shadow: none !important;
+        transition: color 220ms ease;
+    }
+
+    .workspace-app > .sidebar .nav-btn:hover,
+    .workspace-app > .sidebar .nav-btn.active {
+        color: #ffffff;
+        background: transparent !important;
+    }
+
+    .workspace-app > .sidebar .nav-btn .icon,
+    .workspace-app > .sidebar .nav-btn.active .icon {
+        position: relative;
+        z-index: 3;
+        border-radius: 50%;
+        color: inherit;
+        background: transparent !important;
+        transform: translateY(0) scale(1);
+        transition:
+            color 220ms ease,
+            transform 520ms cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    }
+
+    .workspace-app > .sidebar .nav-btn.active .icon {
+        color: var(--primary);
+        transform: translateY(-27px) scale(1.08);
+    }
+
+    .workspace-app > .sidebar .nav-btn .nav-label {
+        color: #b9b9ca;
+        opacity: 0.82;
+        transform: translateY(0);
+        transition:
+            color 220ms ease,
+            opacity 220ms ease,
+            transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .workspace-app > .sidebar .nav-btn.active .nav-label {
+        color: #ffffff;
+        opacity: 1;
+        transform: translateY(2px);
+    }
+
+    body.dark-theme .workspace-app > .sidebar,
+    body.dark-theme .workspace-app > .sidebar.open {
+        --liquid-nav-bg: #090d1a;
+    }
+}
+
+@media (max-width: 860px) and (prefers-reduced-motion: reduce) {
+    .workspace-app > .sidebar .sidebar-nav,
+    .workspace-app > .sidebar .nav-btn .icon,
+    .workspace-app > .sidebar .nav-btn .nav-label {
+        transition-duration: 0.01ms !important;
+    }
+}
+
 @media (min-width: 861px) and (max-width: 1279px) {
     .container.workspace-app {
         --sidebar-expanded-width: 224px;

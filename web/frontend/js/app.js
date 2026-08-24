@@ -3417,6 +3417,9 @@ function syncSidebarIndicator({ instant = false } = {}) {
     if (instant) navigation.classList.add('indicator-no-transition');
     navigation.style.setProperty('--nav-indicator-y', `${activeButton.offsetTop}px`);
     navigation.style.setProperty('--nav-indicator-height', `${activeButton.offsetHeight}px`);
+    const mobileIndicatorSize = 58;
+    const mobileIndicatorX = activeButton.offsetLeft + ((activeButton.offsetWidth - mobileIndicatorSize) / 2);
+    navigation.style.setProperty('--mobile-indicator-x', `${Math.max(0, mobileIndicatorX)}px`);
     navigation.dataset.indicatorReady = 'true';
 
     if (instant) {
