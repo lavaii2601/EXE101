@@ -9699,8 +9699,8 @@ body.dark-theme .subscription-compare-card.current {
         pointer-events: none;
         transform: translateY(var(--nav-indicator-y, 0));
         transition:
-            transform 380ms cubic-bezier(0.22, 1, 0.36, 1),
-            height 280ms cubic-bezier(0.22, 1, 0.36, 1),
+            transform 500ms cubic-bezier(0.68, -0.55, 0.265, 1.55),
+            height 420ms cubic-bezier(0.68, -0.35, 0.265, 1.35),
             opacity 160ms ease;
     }
 
@@ -9742,6 +9742,22 @@ body.dark-theme .subscription-compare-card.current {
     .workspace-app > .sidebar .nav-btn:hover,
     .workspace-app > .sidebar .nav-btn.active {
         transform: translateX(3px);
+    }
+
+    .workspace-app > .sidebar .nav-btn .icon {
+        transform: scale(1);
+        transition:
+            color 180ms ease,
+            background 220ms ease,
+            transform 500ms cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    }
+
+    .workspace-app > .sidebar .nav-btn.active .icon {
+        transform: scale(1.12);
+    }
+
+    .workspace-app.sidebar-collapsed > .sidebar .nav-btn.active .icon {
+        transform: scale(1.08);
     }
 
     .sidebar-new-chat-btn,
@@ -9867,7 +9883,39 @@ body.dark-theme .subscription-compare-card.current {
     .menu-toggle,
     .menu-toggle-icon > span,
     .sidebar-nav::before,
-    .workspace-app > .sidebar .nav-btn {
+    .workspace-app > .sidebar .nav-btn,
+    .workspace-app > .sidebar .nav-btn .icon {
         transition-duration: 0.01ms !important;
+    }
+}
+
+/* Match the reference video's `.links_name` fade behavior. */
+@media (min-width: 861px) {
+    .workspace-app > .sidebar .nav-btn .nav-label {
+        max-width: 148px;
+        color: inherit;
+        white-space: nowrap;
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transform: translateX(0);
+        transition:
+            max-width 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+            opacity 0.4s ease,
+            transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+            visibility 0s linear;
+    }
+
+    .workspace-app.sidebar-collapsed > .sidebar .nav-btn .nav-label {
+        max-width: 0;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transform: translateX(-10px);
+        transition:
+            max-width 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+            opacity 0.4s ease,
+            transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+            visibility 0s linear 0.4s;
     }
 }
