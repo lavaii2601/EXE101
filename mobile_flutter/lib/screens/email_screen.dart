@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/client.dart';
 import '../api/google_auth.dart';
+import '../config/app_icons.dart';
 import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
@@ -36,11 +39,25 @@ class _EmailScreenState extends State<EmailScreen> {
   bool authenticated = false;
   String filter = 'all';
 
+  bool showSearch = false;
+  final searchController = TextEditingController();
+  String searchKeyword = '';
+  Timer? _searchDebounce;
+
+  bool includeRead = true;
+
   @override
   void initState() {
     super.initState();
     _load();
     _loadSuggestions();
+  }
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    _searchDebounce?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -50,13 +67,14 @@ class _EmailScreenState extends State<EmailScreen> {
       final isAuthed = auth is Map && auth['authenticated'] == true;
       setState(() => authenticated = isAuthed);
       if (isAuthed) {
-        var data = await apiGet('/email/get-unread?max_results=20&include_read=true&filter=$filter&cache_only=true');
+        final query = 'max_results=20&include_read=$includeRead&filter=$filter&search=${Uri.encodeQueryComponent(searchKeyword)}';
+        var data = await apiGet('/email/get-unread?$query&cache_only=true');
         var items = (data is Map) ? ((data['emails'] as List?) ?? (data['items'] as List?) ?? []) : [];
         // Freshly-connected accounts have nothing cached yet -- fall back to a
         // live Gmail fetch once so the inbox isn't misleadingly empty.
         final needsRefresh = data is Map && (data['cache_miss'] == true || data['needs_refresh'] == true);
         if (items.isEmpty && needsRefresh) {
-          data = await apiGet('/email/get-unread?max_results=20&include_read=true&filter=$filter&fresh=true');
+          data = await apiGet('/email/get-unread?$query&fresh=true');
           items = (data is Map) ? ((data['emails'] as List?) ?? (data['items'] as List?) ?? []) : [];
         }
         setState(() => emails = items);
@@ -107,6 +125,157 @@ class _EmailScreenState extends State<EmailScreen> {
     } catch (_) {}
   }
 
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      searchKeyword = value.trim();
+      _load();
+    });
+  }
+
+  void _openFilterSheet() {
+    final colors = context.read<ThemeController>().colors;
+    final t = context.read<LanguageController>().t;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: colors.panel,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            return Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(t('Bộ lọc email', 'Email filters'), style: TextStyle(color: colors.text, fontWeight: FontWeight.w700, fontSize: 17)),
+                      IconButton(icon: Icon(AppIcons.emailSearchClear, color: colors.textMuted), onPressed: () => Navigator.pop(sheetContext)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(t('Hiện email đã đọc', 'Show read emails'), style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 14)),
+                            Text(t('Tắt để chỉ xem email chưa đọc.', 'Turn off to only see unread emails.'),
+                                style: TextStyle(color: colors.textMuted, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: includeRead,
+                        activeTrackColor: colors.primary,
+                        onChanged: (value) => setSheetState(() => includeRead = value),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  AppButton(
+                    title: t('Áp dụng', 'Apply'),
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      _load();
+                    },
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _openComposeSheet() {
+    final toController = TextEditingController();
+    final subjectController = TextEditingController();
+    final bodyController = TextEditingController();
+    bool sending = false;
+    String? error;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final colors = context.read<ThemeController>().colors;
+        final t = context.read<LanguageController>().t;
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            Future<void> submit() async {
+              final to = toController.text.trim();
+              final subject = subjectController.text.trim();
+              final body = bodyController.text.trim();
+              if (to.isEmpty || subject.isEmpty || body.isEmpty) {
+                setSheetState(() => error = t('Vui lòng điền người nhận, tiêu đề và nội dung.', 'Please fill in recipient, subject, and body.'));
+                return;
+              }
+              setSheetState(() {
+                sending = true;
+                error = null;
+              });
+              try {
+                await apiPost('/email/send-reply', {'to': to, 'subject': subject, 'body': body});
+                if (sheetContext.mounted) Navigator.pop(sheetContext);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('Đã gửi email', 'Email sent'))));
+                  _load();
+                }
+              } catch (e) {
+                setSheetState(() {
+                  sending = false;
+                  error = '${t('Không gửi được email', 'Could not send email')}: $e';
+                });
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+                decoration: BoxDecoration(color: colors.panel, borderRadius: const BorderRadius.vertical(top: Radius.circular(24))),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(t('Soạn email mới', 'New email'), style: TextStyle(color: colors.text, fontWeight: FontWeight.w700, fontSize: 17)),
+                          IconButton(icon: Icon(AppIcons.emailSearchClear, color: colors.textMuted), onPressed: () => Navigator.pop(sheetContext)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      AppField(label: t('Người nhận', 'To'), controller: toController, hint: 'name@company.com', keyboardType: TextInputType.emailAddress),
+                      AppField(label: t('Tiêu đề', 'Subject'), controller: subjectController, hint: t('Tiêu đề email', 'Email subject')),
+                      AppField(label: t('Nội dung', 'Body'), controller: bodyController, hint: t('Nội dung email', 'Email body'), multiline: true),
+                      if (error != null) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Text(error!, style: TextStyle(color: colors.danger, fontSize: 12.5)),
+                        ),
+                      ] else
+                        const SizedBox(height: 6),
+                      AppButton(title: t('Gửi email', 'Send email'), icon: AppIcons.emailSend, onPressed: submit, loading: sending),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.watch<ThemeController>().colors;
@@ -114,6 +283,13 @@ class _EmailScreenState extends State<EmailScreen> {
 
     return Scaffold(
       backgroundColor: colors.background,
+      floatingActionButton: authenticated
+          ? FloatingActionButton(
+              onPressed: _openComposeSheet,
+              backgroundColor: colors.primary,
+              child: Icon(AppIcons.emailCompose, color: Colors.white),
+            )
+          : null,
       body: SafeArea(
         top: false,
         child: AppScreen(
@@ -124,38 +300,85 @@ class _EmailScreenState extends State<EmailScreen> {
             await _loadSuggestions();
           },
           children: [
-            SizedBox(
-              height: 38,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: _kFilters
-                    .map((f) => Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() => filter = f.$1);
-                              _load();
-                            },
-                            child: Container(
-                              alignment: Alignment.center,
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              decoration: BoxDecoration(
-                                color: filter == f.$1 ? colors.primary : colors.panel,
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(color: filter == f.$1 ? colors.primary : colors.border),
-                              ),
-                              child: Text(t(f.$2, f.$3),
-                                  style: TextStyle(
-                                    color: filter == f.$1 ? Colors.white : colors.textMuted,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 12.5,
-                                  )),
-                            ),
-                          ),
-                        ))
-                    .toList(),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 38,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: _kFilters
+                          .map((f) => Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(() => filter = f.$1);
+                                    _load();
+                                  },
+                                  child: Container(
+                                    alignment: Alignment.center,
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    decoration: BoxDecoration(
+                                      color: filter == f.$1 ? colors.primary : colors.panel,
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(color: filter == f.$1 ? colors.primary : colors.border),
+                                    ),
+                                    child: Text(t(f.$2, f.$3),
+                                        style: TextStyle(
+                                          color: filter == f.$1 ? Colors.white : colors.textMuted,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12.5,
+                                        )),
+                                  ),
+                                ),
+                              ))
+                          .toList(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _IconTrigger(
+                  icon: AppIcons.emailSearch,
+                  active: showSearch,
+                  onTap: () => setState(() => showSearch = !showSearch),
+                ),
+                const SizedBox(width: 8),
+                _IconTrigger(
+                  icon: AppIcons.emailFilter,
+                  active: !includeRead,
+                  onTap: _openFilterSheet,
+                ),
+              ],
             ),
+            if (showSearch) ...[
+              const SizedBox(height: 10),
+              TextField(
+                controller: searchController,
+                autofocus: true,
+                onChanged: _onSearchChanged,
+                style: TextStyle(color: colors.text, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: t('Tìm theo người gửi, tiêu đề...', 'Search sender, subject...'),
+                  hintStyle: TextStyle(color: colors.inputPlaceholder),
+                  prefixIcon: Icon(AppIcons.emailSearch, size: 18, color: colors.textMuted),
+                  suffixIcon: searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: Icon(AppIcons.emailSearchClear, size: 18, color: colors.textMuted),
+                          onPressed: () {
+                            searchController.clear();
+                            _onSearchChanged('');
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: colors.panelSoft,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: colors.border)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: colors.border)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: colors.primary)),
+                ),
+              ),
+            ],
             if (suggestions.isNotEmpty)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -186,7 +409,7 @@ class _EmailScreenState extends State<EmailScreen> {
                             children: [
                               Row(
                                 children: [
-                                  Icon(Icons.event_outlined, size: 16, color: colors.primary),
+                                  Icon(AppIcons.emailMeeting, size: 16, color: colors.primary),
                                   const SizedBox(width: 6),
                                   Text(t('Lịch hẹn', 'Meeting'), style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 11)),
                                 ],
@@ -210,22 +433,30 @@ class _EmailScreenState extends State<EmailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     AppEmptyState(
-                      icon: Icons.mail_lock_outlined,
+                      icon: AppIcons.emailLocked,
                       title: t('Cần đăng nhập Gmail', 'Gmail sign-in required'),
                       detail: t('Kết nối Gmail để xem hộp thư và nhận gợi ý thông minh.', 'Connect Gmail to view your inbox and get smart suggestions.'),
                     ),
                     const SizedBox(height: 4),
                     AppButton(
                       title: t('Kết nối Gmail', 'Connect Gmail'),
-                      icon: Icons.link,
+                      icon: AppIcons.emailConnect,
                       onPressed: _connectGmail,
                       loading: connectingGmail,
                     ),
                   ],
                 ),
               )
+            else if (emails.isEmpty && loading)
+              const Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator()))
             else if (emails.isEmpty)
-              AppCard(child: AppEmptyState(icon: Icons.inbox_outlined, title: t('Không tìm thấy email', 'No emails found')))
+              AppCard(
+                child: AppEmptyState(
+                  icon: AppIcons.emailInbox,
+                  title: t('Không tìm thấy email', 'No emails found'),
+                  detail: searchKeyword.isNotEmpty ? t('Không có kết quả cho "$searchKeyword".', 'No results for "$searchKeyword".') : null,
+                ),
+              )
             else
               ...emails.map((raw) {
                 final email = Map<String, dynamic>.from(raw as Map);
@@ -304,8 +535,35 @@ class _EmailScreenState extends State<EmailScreen> {
                   ),
                 );
               }),
+            const SizedBox(height: 64),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _IconTrigger extends StatelessWidget {
+  final IconData icon;
+  final bool active;
+  final VoidCallback onTap;
+  const _IconTrigger({required this.icon, required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.watch<ThemeController>().colors;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 38,
+        height: 38,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active ? colors.primary : colors.panel,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: active ? colors.primary : colors.border),
+        ),
+        child: Icon(icon, size: 18, color: active ? Colors.white : colors.primary),
       ),
     );
   }
