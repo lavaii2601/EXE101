@@ -9486,7 +9486,8 @@ body.dark-theme .subscription-compare-card.current {
         --sidebar-expanded-width: 268px;
         --sidebar-collapsed-width: 88px;
         --sidebar-current-width: var(--sidebar-expanded-width);
-        transition: grid-template-columns 360ms cubic-bezier(0.22, 1, 0.36, 1);
+        transition: grid-template-columns 460ms cubic-bezier(0.16, 1, 0.3, 1);
+        will-change: grid-template-columns;
     }
 
     .container.workspace-app.sidebar-collapsed {
@@ -9512,9 +9513,9 @@ body.dark-theme .subscription-compare-card.current {
         overflow-x: visible;
         overflow-y: hidden;
         transition:
-            padding 360ms cubic-bezier(0.22, 1, 0.36, 1),
-            gap 260ms ease,
-            box-shadow 260ms ease;
+            padding 460ms cubic-bezier(0.16, 1, 0.3, 1),
+            gap 360ms cubic-bezier(0.16, 1, 0.3, 1),
+            box-shadow 320ms ease;
     }
 
     .workspace-app.sidebar-collapsed > .sidebar {
@@ -9530,16 +9531,21 @@ body.dark-theme .subscription-compare-card.current {
     }
 
     .sidebar-brand {
+        position: relative;
         display: flex;
         align-items: center;
         gap: 10px;
         min-height: 42px;
-        transition: gap 280ms ease;
+        padding-right: 46px;
+        transition: gap 360ms cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .brand-mark {
         flex: 0 0 40px;
-        transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+        opacity: 1;
+        transition:
+            opacity 220ms ease,
+            transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .brand-copy,
@@ -9554,9 +9560,9 @@ body.dark-theme .subscription-compare-card.current {
         opacity: 1;
         transform: translateX(0);
         transition:
-            max-width 280ms cubic-bezier(0.22, 1, 0.36, 1),
-            opacity 180ms ease 80ms,
-            transform 280ms cubic-bezier(0.22, 1, 0.36, 1),
+            max-width 380ms cubic-bezier(0.16, 1, 0.3, 1),
+            opacity 220ms ease 70ms,
+            transform 380ms cubic-bezier(0.16, 1, 0.3, 1),
             visibility 0s linear;
         white-space: nowrap;
     }
@@ -9601,14 +9607,17 @@ body.dark-theme .subscription-compare-card.current {
     }
 
     .menu-toggle {
-        position: static !important;
+        position: absolute !important;
+        top: 3px;
+        right: 0;
+        left: auto !important;
         display: grid !important;
         flex: 0 0 36px;
         place-items: center;
         width: 36px;
         height: 36px;
         min-height: 36px;
-        margin: 0 0 0 auto;
+        margin: 0;
         padding: 0;
         border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
         border-radius: 12px;
@@ -9617,9 +9626,10 @@ body.dark-theme .subscription-compare-card.current {
         box-shadow: none;
         transform: none;
         transition:
+            right 460ms cubic-bezier(0.16, 1, 0.3, 1),
             background 180ms ease,
             color 180ms ease,
-            transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+            transform 280ms cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .menu-toggle:hover {
@@ -9717,7 +9727,10 @@ body.dark-theme .subscription-compare-card.current {
         box-shadow: none;
         transition:
             color 180ms ease,
-            transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+            width 460ms cubic-bezier(0.16, 1, 0.3, 1),
+            padding 420ms cubic-bezier(0.16, 1, 0.3, 1),
+            gap 360ms cubic-bezier(0.16, 1, 0.3, 1),
+            transform 320ms cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .workspace-app > .sidebar .nav-btn:hover,
@@ -9736,22 +9749,19 @@ body.dark-theme .subscription-compare-card.current {
     .user-mode-picker,
     .sidebar-footer #clearBtn {
         transition:
-            padding 300ms cubic-bezier(0.22, 1, 0.36, 1),
-            width 300ms cubic-bezier(0.22, 1, 0.36, 1),
+            padding 420ms cubic-bezier(0.16, 1, 0.3, 1),
+            width 460ms cubic-bezier(0.16, 1, 0.3, 1),
+            gap 360ms cubic-bezier(0.16, 1, 0.3, 1),
             background 180ms ease;
     }
 
-    .workspace-app.sidebar-collapsed .sidebar-brand {
-        flex-direction: column;
-        gap: 8px;
-    }
-
     .workspace-app.sidebar-collapsed .menu-toggle {
-        margin-left: 0;
+        right: 14px;
     }
 
     .workspace-app.sidebar-collapsed .brand-mark {
-        transform: scale(0.94);
+        opacity: 0;
+        transform: translateX(10px) scale(0.72);
     }
 
     .workspace-app.sidebar-collapsed .brand-copy,
@@ -9767,11 +9777,6 @@ body.dark-theme .subscription-compare-card.current {
         transform: translateX(-8px);
         visibility: hidden;
         transition-delay: 0s;
-    }
-
-    .workspace-app.sidebar-collapsed .brand-copy {
-        width: 0;
-        height: 0;
     }
 
     .workspace-app.sidebar-collapsed .user-profile-section,
@@ -9809,18 +9814,24 @@ body.dark-theme .subscription-compare-card.current {
     }
 
     .workspace-app.sidebar-collapsed .sidebar-chat-history {
-        flex: 0 0 0;
-        max-height: 0;
-        margin: 0;
-        overflow: hidden;
         opacity: 0;
         pointer-events: none;
-        transition: max-height 200ms ease, opacity 120ms ease;
+        transform: translateX(-12px);
+        visibility: hidden;
+        transition:
+            opacity 160ms ease,
+            transform 360ms cubic-bezier(0.16, 1, 0.3, 1),
+            visibility 0s linear 360ms;
     }
 
     .workspace-app:not(.sidebar-collapsed) .sidebar-chat-history {
         opacity: 1;
-        transition: opacity 220ms ease 100ms;
+        transform: translateX(0);
+        visibility: visible;
+        transition:
+            opacity 260ms ease 110ms,
+            transform 420ms cubic-bezier(0.16, 1, 0.3, 1) 40ms,
+            visibility 0s linear;
     }
 
     body.dark-theme .sidebar-nav::before {

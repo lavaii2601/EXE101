@@ -3492,11 +3492,16 @@ function setupSidebarMenu() {
             if (isMobile()) closeMobileSidebar();
         });
     });
-    window.addEventListener('resize', () => applyResponsiveState({ instant: true }));
-    if ('ResizeObserver' in window) {
-        const indicatorObserver = new ResizeObserver(() => syncSidebarIndicator({ instant: true }));
-        indicatorObserver.observe(sidebar);
-    }
+    let resizeFrame = 0;
+    window.addEventListener('resize', () => {
+        cancelAnimationFrame(resizeFrame);
+        resizeFrame = requestAnimationFrame(() => applyResponsiveState({ instant: true }));
+    });
+    container.addEventListener('transitionend', (event) => {
+        if (event.propertyName === 'grid-template-columns') {
+            syncSidebarIndicator({ instant: true });
+        }
+    });
     applyResponsiveState({ instant: true });
 }
 
