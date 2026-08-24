@@ -21,6 +21,8 @@ class AppIcons {
   static const IconData emailLocked = Icons.mail_lock_outlined;
   static const IconData emailMeeting = Icons.event_outlined;
   static const IconData emailSend = Icons.send_outlined;
+  static const IconData emailSummarize = Icons.auto_awesome;
+  static const IconData emailBack = Icons.arrow_back;
 
   // Overview
   static const IconData overviewDeadline = Icons.flag_outlined;

@@ -263,9 +263,16 @@ def _set_flow_code_verifier(flow, code_verifier):
             pass
 
 def _get_cache_key(user_id, filter_type, include_read=False, scan_limit=EMAIL_SCAN_DEFAULT):
-    """Generate cache key"""
+    """Generate one shared inbox cache key for every client-side filter.
+
+    Older versions included ``filter_type`` in this key and stored only the
+    matching rows. Switching filters therefore caused another Gmail scan,
+    which was both slow and capable of exhausting Railway's request window.
+    Filtering now happens after the common metadata cache is loaded.
+    ``filter_type`` stays in the signature for backwards compatibility.
+    """
     read_scope = 'with_read' if include_read else 'unread'
-    return f"{user_id}:emails:list:{filter_type}:{read_scope}:{scan_limit}"
+    return f"{user_id}:emails:list:v3:inbox:{read_scope}:{scan_limit}"
 
 
 def _email_body_cache_key(user_id, email_id):
@@ -1106,15 +1113,15 @@ def get_unread_emails():
         cache_hit = False
         cached_emails, cached_total = (None, None) if fresh else _get_cached_emails(cache_key)
         if cached_emails is not None:
-            filtered_emails = cached_emails
+            inbox_emails = cached_emails
             total_raw = cached_total
             cache_hit = True
         else:
             cached_db = None if fresh else Cache.get(db_cache_key, db_path=db_path)
             if isinstance(cached_db, dict) and cached_db.get('emails') is not None:
-                filtered_emails = cached_db.get('emails') or []
-                total_raw = cached_db.get('total', len(filtered_emails))
-                _cache_emails(cache_key, filtered_emails, total_raw)
+                inbox_emails = cached_db.get('emails') or []
+                total_raw = cached_db.get('total', len(inbox_emails))
+                _cache_emails(cache_key, inbox_emails, total_raw)
                 cache_hit = True
             else:
                 if cache_only:
@@ -1177,20 +1184,24 @@ def get_unread_emails():
 
                 _store_meeting_suggestions(hydrated, db_path)
                 suggestions_scanned = True
-                filtered_emails = [email for email in hydrated if _matches_filter(email, filter_type)]
+                inbox_emails = hydrated
                 total_raw = len(raw_emails)
 
-                _cache_emails(cache_key, filtered_emails, total_raw)
+                _cache_emails(cache_key, inbox_emails, total_raw)
                 Cache.set(db_cache_key, {
-                    'emails': filtered_emails,
+                    'emails': inbox_emails,
                     'total': total_raw,
-                    'filter': filter_type,
+                    'filter': 'all',
                     'include_read': include_read,
                     'scan_limit': scan_limit,
                     'timestamp': datetime.now().isoformat()
                 }, ttl=EMAIL_LIST_CACHE_TTL, db_path=db_path)
                 cache_hit = False
-        
+
+        filtered_emails = [
+            email for email in inbox_emails
+            if _matches_filter(email, filter_type)
+        ]
         if search:
             filtered_emails = [email for email in filtered_emails if _matches_search(email, search)]
 

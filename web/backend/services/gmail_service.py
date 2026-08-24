@@ -27,8 +27,14 @@ from utils.user_context import persist_google_credentials, user_id_from_token_fi
 # connect/read timeout is also required -- without one, a stalled connection
 # can hang indefinitely and later surface as a raw SSL record-layer error
 # instead of a clean, retryable timeout.
-GMAIL_HTTP_TIMEOUT_SECONDS = 20
+GMAIL_HTTP_TIMEOUT_SECONDS = 8
 GMAIL_EXECUTE_RETRIES = 2
+# Inbox reads are interactive and often require both a list request and one
+# metadata batch. Retrying each phase inside the same HTTP request can exceed
+# Railway's edge timeout and surface as "Application failed to respond".
+# Writes retain the safer retry policy below; reads fail fast and the clients
+# keep showing the last cached inbox.
+GMAIL_INTERACTIVE_READ_RETRIES = 0
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -180,7 +186,7 @@ class GmailService:
                 userId='me',
                 q=query,
                 maxResults=max_results
-            ).execute(num_retries=GMAIL_EXECUTE_RETRIES)
+            ).execute(num_retries=GMAIL_INTERACTIVE_READ_RETRIES)
 
             messages = results.get('messages', [])
             logger.info(f"Found {len(messages)} messages matching query: {query}")
@@ -244,7 +250,7 @@ class GmailService:
                         callback=_callback
                     )
 
-                _execute_batch_with_retries(batch, GMAIL_EXECUTE_RETRIES)
+                _execute_batch_with_retries(batch, GMAIL_INTERACTIVE_READ_RETRIES)
 
             if raise_errors and batch_errors and not collected:
                 raise batch_errors[0]
@@ -303,7 +309,7 @@ class GmailService:
 
             results = self.service.users().messages().list(
                 userId='me', q=query, maxResults=max_results
-            ).execute(num_retries=GMAIL_EXECUTE_RETRIES)
+            ).execute(num_retries=GMAIL_INTERACTIVE_READ_RETRIES)
             return [msg.get('id') for msg in results.get('messages', []) if msg.get('id')]
         except Exception as e:
             logger.warning(f"Error listing message ids by date: {e}")
@@ -326,7 +332,7 @@ class GmailService:
                 q='is:unread',
                 maxResults=max_results,
                 fields='messages(id),resultSizeEstimate'
-            ).execute(num_retries=GMAIL_EXECUTE_RETRIES)
+            ).execute(num_retries=GMAIL_INTERACTIVE_READ_RETRIES)
             message_ids = [msg.get('id') for msg in results.get('messages', []) if msg.get('id')]
             return {
                 'ids': message_ids,
@@ -368,7 +374,9 @@ class GmailService:
             }
             if lazy:
                 request_kwargs['metadataHeaders'] = ['Subject', 'From', 'Date']
-            message = self.service.users().messages().get(**request_kwargs).execute(num_retries=GMAIL_EXECUTE_RETRIES)
+            message = self.service.users().messages().get(**request_kwargs).execute(
+                num_retries=GMAIL_INTERACTIVE_READ_RETRIES
+            )
             return self._parse_message(message, message_id, lazy=lazy)
         except Exception as e:
             print(f"Error getting email details: {str(e)}")

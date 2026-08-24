@@ -12,6 +12,7 @@ import '../state/theme_controller.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_screen.dart';
+import 'email_detail_screen.dart';
 
 const List<(String value, String vi, String en)> _kFilters = [
   ('all', 'Tất cả', 'All'),
@@ -119,10 +120,19 @@ class _EmailScreenState extends State<EmailScreen> {
   Future<void> _toggleRead(Map<String, dynamic> email) async {
     final id = email['id'];
     if (id == null) return;
+    final wasUnread = email['is_unread'] == true;
     try {
-      await apiPost('/email/mark-read/$id');
-      setState(() => email['is_unread'] = !(email['is_unread'] == true));
+      await apiPost(wasUnread ? '/email/mark-as-read/$id' : '/email/mark-as-unread/$id');
+      setState(() => email['is_unread'] = !wasUnread);
     } catch (_) {}
+  }
+
+  Future<void> _openEmailDetail(Map<String, dynamic> email) async {
+    if (email['is_unread'] == true) {
+      await _toggleRead(email);
+    }
+    if (!mounted) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => EmailDetailScreen(email: email, onToggleRead: _toggleRead)));
   }
 
   void _onSearchChanged(String value) {
@@ -469,7 +479,7 @@ class _EmailScreenState extends State<EmailScreen> {
                   padding: const EdgeInsets.only(bottom: 10),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(16),
-                    onTap: () => _toggleRead(email),
+                    onTap: () => _openEmailDetail(email),
                     child: Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
