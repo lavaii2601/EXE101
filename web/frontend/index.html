@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css?v=20260725-admin-choice-01">
+    <link rel="stylesheet" href="/css/style.css?v=20260824-responsive-sidebar-01">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -78,9 +78,6 @@
     </section>
 
     <div id="workspaceApp" class="container workspace-app" data-current-page="overview" aria-hidden="true">
-        <button id="menuToggle" class="menu-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
-            <span class="menu-toggle-icon" aria-hidden="true">☰</span>
-        </button>
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-header">
@@ -108,6 +105,13 @@
                         </svg>
                     </span>
                     <span class="brand-copy"><strong>FlowMate</strong><small>Không gian AI</small></span>
+                    <button id="menuToggle" class="menu-toggle" type="button" aria-label="Thu gọn thanh điều hướng" aria-expanded="true">
+                        <span class="menu-toggle-icon" aria-hidden="true">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </span>
+                    </button>
                 </div>
                 <div class="user-profile-section">
                     <img id="userAvatar" class="user-avatar" alt="User Avatar" title="Đăng nhập Gmail">
@@ -844,6 +848,6 @@
         </div>
     </div>
     
-    <script src="/js/app.js?v=20260725-admin-choice-01"></script>
+    <script src="/js/app.js?v=20260824-responsive-sidebar-01"></script>
 </body>
 </html>

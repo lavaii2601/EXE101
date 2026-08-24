@@ -3339,6 +3339,7 @@ async function handlePageChange(btn) {
     navBtns.forEach(b => {
         if (b.dataset.page === page) b.classList.add('active');
     });
+    syncSidebarIndicator();
     
     // Hide all pages
     document.querySelectorAll('.page').forEach(p => {
@@ -3408,6 +3409,21 @@ async function handlePageChange(btn) {
     }
 }
 
+function syncSidebarIndicator({ instant = false } = {}) {
+    const navigation = document.querySelector('.sidebar-nav');
+    const activeButton = navigation?.querySelector('.nav-btn.active');
+    if (!navigation || !activeButton) return;
+
+    if (instant) navigation.classList.add('indicator-no-transition');
+    navigation.style.setProperty('--nav-indicator-y', `${activeButton.offsetTop}px`);
+    navigation.style.setProperty('--nav-indicator-height', `${activeButton.offsetHeight}px`);
+    navigation.dataset.indicatorReady = 'true';
+
+    if (instant) {
+        requestAnimationFrame(() => navigation.classList.remove('indicator-no-transition'));
+    }
+}
+
 function setupSidebarMenu() {
     const container = document.querySelector('.container');
     const sidebar = document.querySelector('.sidebar');
@@ -3423,16 +3439,17 @@ function setupSidebarMenu() {
         document.body.appendChild(overlay);
     }
 
+    const storageKey = 'flowmate-sidebar-collapsed';
     const isMobile = () => window.innerWidth <= 860;
     const updateToggle = () => {
         const mobileOpen = sidebar.classList.contains('open');
-        const expanded = isMobile() ? mobileOpen : true;
+        const collapsed = container.classList.contains('sidebar-collapsed');
+        const expanded = isMobile() ? mobileOpen : !collapsed;
         menuToggle.setAttribute('aria-expanded', String(expanded));
         menuToggle.setAttribute('aria-label', isMobile()
             ? ui(mobileOpen ? 'Đóng menu' : 'Mở menu', mobileOpen ? 'Close menu' : 'Open menu')
-            : ui('Thanh điều hướng', 'Navigation'));
-        const icon = menuToggle.querySelector('.menu-toggle-icon');
-        if (icon) icon.textContent = isMobile() ? (mobileOpen ? '×' : '☰') : '‹';
+            : ui(collapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng', collapsed ? 'Expand navigation' : 'Collapse navigation'));
+        menuToggle.classList.toggle('is-collapsed', collapsed);
     };
 
     const closeMobileSidebar = () => {
@@ -3441,16 +3458,17 @@ function setupSidebarMenu() {
         updateToggle();
     };
 
-    const applyDesktopPreference = () => {
-        container.classList.remove('sidebar-collapsed');
-        localStorage.removeItem('flowmate-sidebar-collapsed');
+    const applyResponsiveState = ({ instant = false } = {}) => {
         if (isMobile()) {
+            container.classList.remove('sidebar-collapsed');
             closeMobileSidebar();
         } else {
             sidebar.classList.remove('open');
             overlay.classList.remove('show');
+            container.classList.toggle('sidebar-collapsed', localStorage.getItem(storageKey) === 'true');
             updateToggle();
         }
+        requestAnimationFrame(() => syncSidebarIndicator({ instant }));
     };
 
     menuToggle.addEventListener('click', (event) => {
@@ -3459,6 +3477,11 @@ function setupSidebarMenu() {
             const shouldOpen = !sidebar.classList.contains('open');
             sidebar.classList.toggle('open', shouldOpen);
             overlay.classList.toggle('show', shouldOpen);
+        } else {
+            const collapsed = !container.classList.contains('sidebar-collapsed');
+            container.classList.toggle('sidebar-collapsed', collapsed);
+            localStorage.setItem(storageKey, String(collapsed));
+            requestAnimationFrame(() => syncSidebarIndicator());
         }
         updateToggle();
     });
@@ -3469,8 +3492,12 @@ function setupSidebarMenu() {
             if (isMobile()) closeMobileSidebar();
         });
     });
-    window.addEventListener('resize', applyDesktopPreference);
-    applyDesktopPreference();
+    window.addEventListener('resize', () => applyResponsiveState({ instant: true }));
+    if ('ResizeObserver' in window) {
+        const indicatorObserver = new ResizeObserver(() => syncSidebarIndicator({ instant: true }));
+        indicatorObserver.observe(sidebar);
+    }
+    applyResponsiveState({ instant: true });
 }
 
 // TAB MANAGEMENT
@@ -4916,8 +4943,6 @@ async function startNewChat() {
     document.getElementById('sidebarOverlay')?.classList.remove('show');
     const menuToggle = document.getElementById('menuToggle');
     menuToggle?.setAttribute('aria-expanded', 'false');
-    const menuIcon = menuToggle?.querySelector('.menu-toggle-icon');
-    if (menuIcon && window.innerWidth <= 860) menuIcon.textContent = '☰';
     updateChatSessionTitle();
     await loadChatSessions();
     showNotification(ui('Đã bắt đầu chat mới', 'Started a new chat'), 'success');
