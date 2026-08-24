@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_html/flutter_html.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../api/client.dart';
 import '../config/app_icons.dart';
 import '../state/language_controller.dart';
@@ -21,6 +23,7 @@ class EmailDetailScreen extends StatefulWidget {
 class _EmailDetailScreenState extends State<EmailDetailScreen> {
   bool loadingBody = true;
   String body = '';
+  String htmlBody = '';
   String? bodyError;
   late String summary;
   bool summarizing = false;
@@ -58,7 +61,14 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
     try {
       final data = await apiGet('/email/get-email-body/$id');
       final fetched = (data is Map ? data['body'] as String? : null) ?? '';
-      if (mounted) setState(() => body = fetched);
+      final emailData = data is Map ? data['email'] as Map? : null;
+      final fetchedHtml = (emailData?['html_body'] as String?) ?? '';
+      if (mounted) {
+        setState(() {
+          body = fetched;
+          htmlBody = fetchedHtml;
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => bodyError = error.toString());
     } finally {
@@ -166,6 +176,23 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
                     const Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator()))
                   else if (bodyError != null)
                     Text('${t('Không tải được nội dung', 'Could not load content')}: $bodyError', style: TextStyle(color: colors.danger, fontSize: 13))
+                  else if (htmlBody.isNotEmpty)
+                    Html(
+                      data: htmlBody,
+                      onLinkTap: (url, attributes, element) {
+                        if (url != null) launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                      },
+                      style: {
+                        'body': Style(
+                          margin: Margins.zero,
+                          padding: HtmlPaddings.zero,
+                          color: colors.text,
+                          fontSize: FontSize(14),
+                          lineHeight: const LineHeight(1.6),
+                        ),
+                        'a': Style(color: colors.primary, textDecoration: TextDecoration.underline),
+                      },
+                    )
                   else
                     SelectableText(
                       body.isEmpty ? ((email['snippet'] as String?) ?? '') : body,

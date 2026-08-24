@@ -403,7 +403,12 @@ class GmailService:
             to = header_value('To', '')
             cc = header_value('Cc', '')
             snippet = message.get('snippet', '') or ''
-            body = "" if lazy else self._get_email_body(payload)
+            if lazy:
+                body, html_body = "", ""
+            else:
+                text_plain, text_html = self._get_email_body_parts(payload)
+                body = text_plain or (self._html_to_text(text_html) if text_html else "") or "Email body unavailable"
+                html_body = self._sanitize_html_body(text_html)
             attachments = [] if lazy else self._get_attachments(payload)
             label_ids = message.get('labelIds', []) or []
 
@@ -416,6 +421,7 @@ class GmailService:
                 'to': to,
                 'cc': cc,
                 'body': body,
+                'html_body': html_body,
                 'attachments': attachments,
                 'snippet': snippet,
                 'is_unread': 'UNREAD' in label_ids
@@ -424,48 +430,65 @@ class GmailService:
             logger.warning(f"Error parsing email message {message_id}: {e}")
             return None
     
-    def _get_email_body(self, payload):
-        """Extract email body from payload - handles multipart, HTML, and plain text"""
+    def _get_email_body_parts(self, payload):
+        """Return (plain_text, html) found anywhere in a Gmail MIME payload.
+
+        Recurses into nested parts (e.g. multipart/alternative inside
+        multipart/mixed) and keeps the first text/plain and first text/html
+        part found, so callers can pick whichever they need instead of only
+        getting the already-flattened, formatting-stripped text.
+        """
+        text_plain = None
+        text_html = None
         try:
-            body = ""
-            
-            # If payload has multiple parts (multipart email)
             if 'parts' in payload:
-                # Priority: text/plain > text/html > first available part
-                text_plain = None
-                text_html = None
-                
                 for part in payload['parts']:
                     mime_type = part.get('mimeType', '')
-                    data = part['body'].get('data', '')
-                    
-                    if mime_type == 'text/plain' and data:
+                    data = (part.get('body') or {}).get('data', '')
+
+                    if mime_type == 'text/plain' and data and not text_plain:
                         text_plain = base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')
-                    elif mime_type == 'text/html' and data:
+                    elif mime_type == 'text/html' and data and not text_html:
                         text_html = base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')
-                    
-                    # Handle nested parts (e.g., alternative/related)
-                    if 'parts' in part and not body:
-                        nested_body = self._get_email_body(part)
-                        if nested_body and nested_body != "Could not extract email body":
-                            body = nested_body
-                
-                # Prefer plain text over HTML
-                if text_plain:
-                    body = text_plain
-                elif text_html:
-                    body = self._html_to_text(text_html)
-                elif body:
-                    body = body
-                else:
-                    body = ""
+
+                    if 'parts' in part:
+                        nested_plain, nested_html = self._get_email_body_parts(part)
+                        text_plain = text_plain or nested_plain
+                        text_html = text_html or nested_html
             else:
-                # Simple payload (not multipart)
-                data = payload['body'].get('data', '')
+                data = (payload.get('body') or {}).get('data', '')
                 if data:
                     decoded = base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')
-                    body = self._html_to_text(decoded) if payload.get('mimeType') == 'text/html' else decoded
-            
+                    if payload.get('mimeType') == 'text/html':
+                        text_html = decoded
+                    else:
+                        text_plain = decoded
+        except Exception as e:
+            print(f"Error extracting email body parts: {str(e)}")
+        return text_plain, text_html
+
+    @staticmethod
+    def _sanitize_html_body(html_content):
+        """Strip scripts/styles/comments before an HTML body ever reaches a client renderer."""
+        if not html_content:
+            return ''
+        text = re.sub(r'(?is)<!--.*?-->', '', html_content)
+        text = re.sub(r'(?is)<script.*?</script>', '', text)
+        text = re.sub(r'(?is)<style.*?</style>', '', text)
+        return text.strip()
+
+    def _get_email_body(self, payload):
+        """Extract a plain-text email body from payload (legacy helper, still
+        used for search/summary text -- prefer _get_email_body_parts when the
+        original HTML formatting is needed too)."""
+        try:
+            text_plain, text_html = self._get_email_body_parts(payload)
+            if text_plain:
+                body = text_plain
+            elif text_html:
+                body = self._html_to_text(text_html)
+            else:
+                body = ""
             return body if body else "Email body unavailable"
         except Exception as e:
             print(f"Error extracting email body: {str(e)}")
