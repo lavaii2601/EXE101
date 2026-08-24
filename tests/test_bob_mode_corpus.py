@@ -35,9 +35,9 @@ class BobModeCorpusTests(unittest.TestCase):
     def test_preserves_old_documents_and_adds_exactly_500_contexts(self):
         documents = [doc for _, payload in self.payloads for doc in payload["documents"]]
         additions = [doc for doc in documents if "new-500" in doc.get("tags", "").split(",")]
-        self.assertEqual(1119, len(documents))
+        self.assertEqual(1139, len(documents))
         self.assertEqual(500, len(additions))
-        self.assertEqual(1119, len({doc["title"] for doc in documents}))
+        self.assertEqual(1139, len({doc["title"] for doc in documents}))
 
     def test_checklist_time_corrections_are_present(self):
         documents = [doc for _, payload in self.payloads for doc in payload["documents"]]
@@ -54,6 +54,15 @@ class BobModeCorpusTests(unittest.TestCase):
         corrections = [doc for doc in documents if "web-fallback-correction" in doc.get("tags", "")]
         self.assertEqual(10, len(corrections))
 
+    def test_agent_and_academic_lessons_are_present(self):
+        documents = [doc for _, payload in self.payloads for doc in payload["documents"]]
+        lessons = [doc for doc in documents if "agent-academic-v1" in doc.get("tags", "")]
+        self.assertEqual(20, len(lessons))
+        content = " ".join(doc["content_en"] for doc in lessons)
+        self.assertIn("requested deliverable", content)
+        self.assertIn("Never invent authors", content)
+        self.assertIn("correlation from causation", content)
+
     def test_every_mode_receives_new_contexts(self):
         for path, payload in self.payloads:
             additions = [doc for doc in payload["documents"] if "new-500" in doc.get("tags", "")]
@@ -61,7 +70,7 @@ class BobModeCorpusTests(unittest.TestCase):
 
     def test_every_document_has_one_to_one_english_semantics(self):
         documents = [doc for _, payload in self.payloads for doc in payload["documents"]]
-        self.assertEqual(1119, len(documents))
+        self.assertEqual(1139, len(documents))
         for document in documents:
             self.assertTrue(str(document.get("content_en") or "").strip(), document["title"])
             tags = set(str(document.get("tags") or "").split(","))
@@ -136,7 +145,7 @@ class BobModeCorpusTests(unittest.TestCase):
         cases = (
             ("an ambiguous schedule request in Teacher Mode", {"teacher", "schedule"}),
             ("an urgent client invoice email in Freelancer Mode", {"freelancer", "email"}),
-            ("do not put private email data into a public web search", {"privacy", "web"}),
+            ("keep private workspace data local and offline", {"privacy", "agent-academic-v1"}),
             ("sort gym at 7:30 AM before class at 9:00 AM in my checklist", {"checklist", "time"}),
             ("who founded Facebook?", {"knowledge-negative-correction"}),
         )

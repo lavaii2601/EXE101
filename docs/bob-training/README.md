@@ -20,7 +20,7 @@ Language/context behavior is not left to RAG retrieval alone. Runtime code also:
 - detects explicit Vietnamese, English, or bilingual output requests;
 - understands code-switch prompts as one goal with shared entities/constraints;
 - lets neutral turns such as `OK` inherit the last clear session language;
-- injects recent same-session dialogue even when email/calendar/web workspace
+- injects recent same-session dialogue even when email/calendar/knowledge workspace
   evidence is present;
 - resolves elliptical follow-ups through the AI intent contextualizer without
   caching phrases such as `do it` outside their original session;
@@ -35,17 +35,22 @@ topic files were consolidated so deploy and manual training read one complete,
 predictable corpus:
 
 - `shared.json`: behavior shared by every mode, including intent, safety,
-  privacy, web research, auth, email and calendar fundamentals.
+  privacy, offline research, auth, email and calendar fundamentals.
 - `student.json`, `worker.json`, `freelancer.json`, `creator.json`,
   `business.json`, `mentor.json`, `teacher.json`: mode-specific priorities and
   contexts.
 
-The corpus contains 1,119 documents: all 569 prior documents, exactly 500 new
+The corpus contains 1,139 documents: all 569 prior documents, exactly 500 new
 context documents tagged `new-500`, plus 10 focused checklist/time correction
 lessons that preserve clock expressions and sort timed tasks correctly, and 30
 negative-intent lessons that keep company/founder questions out of workspace tools.
-It also includes 10 web-fallback lessons for answering out-of-scope information
-questions with sourced public-web research while protecting private workspace data.
+It also includes 10 offline-research lessons for answering out-of-scope
+questions with Ollama and local RAG while protecting private workspace data and
+disclosing when current information cannot be verified offline.
+Twenty curated `agent-academic-v1` lessons teach deliverable-first planning,
+constraint tracking, tool/source selection, verification, scholarly source
+hierarchy, claim-level citations, research synthesis, methodology, statistics,
+academic integrity, technical debugging, and honest capability boundaries.
 Every document has a one-to-one `content_en` semantic pair tagged
 `semantic-pair,vi-en`. During import, the English equivalent is appended to the
 same RAG record as the Vietnamese rule. This keeps titles and source IDs stable

@@ -71,6 +71,23 @@ class WebResearchService:
         'find information', 'find out', 'verify', 'fact check', 'research',
     )
     _PRIVATE_WORKSPACE_SOURCES = {'email', 'calendar', 'history', 'profile'}
+    _ACADEMIC_TERMS = (
+        'hoc thuat', 'nghien cuu', 'bai bao khoa hoc', 'tai lieu khoa hoc',
+        'luan van', 'luan an', 'tong quan tai lieu', 'tong quan he thong',
+        'phuong phap nghien cuu', 'trich dan', 'doi', 'doi.org',
+        'academic', 'research paper', 'scientific paper', 'journal article',
+        'literature review', 'systematic review', 'meta-analysis', 'thesis',
+        'dissertation', 'methodology', 'peer reviewed', 'peer-reviewed',
+    )
+    _SCHOLARLY_HOSTS = (
+        'doi.org', 'pubmed.ncbi.nlm.nih.gov', 'ncbi.nlm.nih.gov',
+        'arxiv.org', 'semanticscholar.org', 'openalex.org', 'crossref.org',
+        'nature.com', 'science.org', 'sciencedirect.com', 'springer.com',
+        'wiley.com', 'tandfonline.com', 'jstor.org', 'acm.org', 'ieee.org',
+    )
+    _PRIMARY_SOURCE_HOSTS = (
+        '.gov', '.edu', 'who.int', 'worldbank.org', 'oecd.org', 'un.org',
+    )
 
     # Short greetings/acks that would otherwise look like a "knowledge gap"
     # (the TF-IDF knowledge base has no document about "chao"/"hi" either)
@@ -151,6 +168,15 @@ class WebResearchService:
 
         return False
 
+    def research_profile(self, message):
+        """Classify a public information request without using an LLM."""
+        normalized = _normalize_text(message)
+        if any(term in normalized for term in self._ACADEMIC_TERMS):
+            return 'academic'
+        if any(term in normalized for term in self._CURRENT_INFO_TERMS):
+            return 'current'
+        return 'general'
+
     def research(self, message, workspace_sources=None, knowledge_gap=False, force_research=False):
         if not self.should_research(
             message,
@@ -164,10 +190,31 @@ class WebResearchService:
         if not query:
             return {'query': '', 'results': [], 'context': ''}
 
+        research_type = self.research_profile(message)
+
         try:
             results = self._search_duckduckgo(query)
             if not results:
                 results = self._search_bing(query)
+            # Academic questions benefit from a second, deliberately scholarly
+            # query.  Merge rather than replace the general results so Bob can
+            # still find definitions and official background sources.
+            if (
+                research_type == 'academic'
+                and getattr(Config, 'WEB_RESEARCH_ACADEMIC_ENABLED', True)
+            ):
+                scholarly_query = f'{query} research paper DOI systematic review'[:240]
+                try:
+                    scholarly_results = self._search_duckduckgo(scholarly_query)
+                    if not scholarly_results:
+                        scholarly_results = self._search_bing(scholarly_query)
+                    results = self._merge_results(results, scholarly_results)
+                except Exception:
+                    logger.info(
+                        "Scholarly query failed; retaining general research results for: %s",
+                        query,
+                        exc_info=True,
+                    )
             if not results:
                 results = self._instant_answer_fallback(query)
         except Exception:
@@ -177,6 +224,7 @@ class WebResearchService:
         if not results:
             return {'query': query, 'results': [], 'context': ''}
 
+        results = self._rank_results(results, query, research_type)
         max_results = max(1, min(int(getattr(Config, 'WEB_RESEARCH_MAX_RESULTS', 3)), 5))
         max_fetch_pages = max(0, min(int(getattr(Config, 'WEB_RESEARCH_FETCH_PAGES', 2)), max_results))
 
@@ -195,8 +243,65 @@ class WebResearchService:
                         item['snippet'] = page['snippet']
             enriched.append(item)
 
-        context = self._format_context(query, enriched)
-        return {'query': query, 'results': enriched, 'context': context}
+        context = self._format_context(query, enriched, research_type=research_type)
+        return {
+            'query': query,
+            'research_type': research_type,
+            'results': enriched,
+            'context': context,
+        }
+
+    @staticmethod
+    def _merge_results(*groups):
+        merged = []
+        seen = set()
+        for group in groups:
+            for result in group or []:
+                url = str(result.get('url') or '').strip()
+                key = url.lower().rstrip('/')
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                merged.append(result)
+        return merged
+
+    def _source_kind(self, url):
+        hostname = (urlparse(str(url or '')).hostname or '').lower()
+        if any(hostname == host or hostname.endswith('.' + host) for host in self._SCHOLARLY_HOSTS):
+            return 'scholarly'
+        if any(hostname.endswith(host) for host in self._PRIMARY_SOURCE_HOSTS):
+            return 'primary'
+        return 'web'
+
+    def _rank_results(self, results, query, research_type):
+        """Prefer query-relevant primary evidence without hiding other views."""
+        query_terms = {
+            term for term in _normalize_text(query).split()
+            if len(term) >= 4
+        }
+
+        def score(item):
+            haystack = _normalize_text(
+                f"{item.get('title', '')} {item.get('snippet', '')}"
+            )
+            overlap = sum(1 for term in query_terms if term in haystack)
+            kind = self._source_kind(item.get('url'))
+            authority = {'scholarly': 7, 'primary': 5, 'web': 0}[kind]
+            if research_type != 'academic' and kind == 'scholarly':
+                authority = 3
+            doi_bonus = 2 if re.search(r'\b10\.\d{4,9}/\S+', haystack, re.I) else 0
+            return authority + doi_bonus + overlap
+
+        ranked = sorted(
+            enumerate(results or []),
+            key=lambda pair: (-score(pair[1]), pair[0]),
+        )
+        output = []
+        for _, item in ranked:
+            enriched = dict(item)
+            enriched['source_kind'] = self._source_kind(item.get('url'))
+            output.append(enriched)
+        return output
 
     def _build_query(self, message):
         text = _normalize_text(message)
@@ -428,15 +533,24 @@ class WebResearchService:
         except Exception:
             return False
 
-    def _format_context(self, query, results):
+    def _format_context(self, query, results, research_type='general'):
         lines = [
             "INTERNET RESEARCH",
             f"Query: {query}",
+            f"Research type: {research_type}",
             f"Retrieved at: {datetime.utcnow().replace(microsecond=0).isoformat()}Z",
             "Use these external sources only for public web facts. Cite titles or URLs when answering.",
         ]
+        if research_type == 'academic':
+            lines.append(
+                "Academic rule: distinguish peer-reviewed/primary evidence from ordinary web pages; "
+                "never invent authors, journals, years, DOIs, findings, or citation details."
+            )
         for index, result in enumerate(results, start=1):
-            lines.append(f"{index}. {result.get('title') or result.get('url')}")
+            source_kind = result.get('source_kind') or self._source_kind(result.get('url'))
+            lines.append(
+                f"{index}. [{source_kind.upper()}] {result.get('title') or result.get('url')}"
+            )
             lines.append(f"   URL: {result.get('url')}")
             snippet = _clean_text(result.get('snippet'), limit=1200)
             if snippet:

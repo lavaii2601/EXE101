@@ -163,18 +163,25 @@ Use these URLs for Google OAuth consent screen, Android APK review, Play Console
 privacy policy, terms of service, and user-facing security/data handling
 references.
 
-## AI provider variables
+## AI limitation on Railway
 
-Set at least one provider key. If none are set, the app starts in Demo Mode.
+Railway does not provide GPU instances, so it is not a practical host for
+`qwen3:8b`/Ollama inference. A Railway Volume can persist model files but does
+not solve CPU/RAM inference cost or latency. In a strict no-hosted-AI setup,
+the Railway deployment therefore runs Bob's deterministic tools, offline
+classifier, and PostgreSQL RAG only. Full free-form generation requires moving
+the backend and Ollama together to a GPU-capable machine where Ollama is
+available on loopback.
 
 ```env
-OPENROUTER_ENABLED=true
-OPENROUTER_API_KEY=
-AI_PRIMARY_PROVIDER=openrouter
-AI_PROVIDER_ORDER=openrouter,openai,mistral,claude,gemini
+OPENROUTER_ENABLED=false
+BOB_LOCAL_ONLY=true
+OLLAMA_ENABLED=false
+WEB_RESEARCH_ENABLED=false
 AI_MAX_CONTEXT_MESSAGES=10
 AI_MAX_INPUT_CHARS=12000
-AI_MAX_SYSTEM_PROMPT_CHARS=8000
+AI_MAX_SYSTEM_PROMPT_CHARS=12000
+AI_AGENT_MAX_TOKENS=700
 ```
 
 The three prompt-budget values keep Bob's current user turn, bilingual/context
@@ -182,34 +189,25 @@ policy, grounding rules, and bounded same-session history in the provider
 payload. Do not restore the former `2800` / `450` limits: those values can cut
 the intent prompt before the current request reaches the model.
 
-Optional provider keys:
+Local knowledge on Railway:
 
 ```env
-OPENAI_API_KEY=
-MISTRAL_API_KEY=
-CLAUDE_API_KEY=
-GEMINI_API_KEY=
-```
-
-Optional web research and AI mentor learning:
-
-```env
-WEB_RESEARCH_ENABLED=true
-WEB_RESEARCH_AUTO_LEARN_ENABLED=true
+WEB_RESEARCH_ENABLED=false
+WEB_RESEARCH_AUTO_LEARN_ENABLED=false
 WEB_RESEARCH_LEARNING_MAX_PER_DAY=6
 
-AI_MENTOR_LEARNING_ENABLED=true
+AI_MENTOR_LEARNING_ENABLED=false
 AI_MENTOR_ALLOW_PRIVATE_CONTEXT=false
-AI_MENTOR_PROVIDERS=openai,gemini,claude,openrouter,mistral,ollama
-AI_MENTOR_MAX_PROVIDERS=2
 AI_MENTOR_LEARNING_MAX_PER_DAY=6
 ```
 
-`AI_MENTOR_ALLOW_PRIVATE_CONTEXT=false` keeps mentor learning away from turns
-grounded in private email, calendar, history, or profile context unless you
-explicitly choose to allow that data flow.
-Web research is always available as live answer context; long-term learning
-stores only curated lessons, not raw search result dumps.
+`WEB_RESEARCH_ENABLED=false` prevents public-web requests. The deploy script
+imports trusted documents into PostgreSQL and the TF-IDF index retrieves them
+without hosted AI APIs. On Railway there is no Ollama synthesis layer.
+
+For full local-model behavior, deploy FlowMate on a GPU-capable host and use the
+local configuration documented in `README.md`; do not point Railway at
+`127.0.0.1:11434`, because that address refers to the Railway container itself.
 
 ## Google OAuth redirect URI
 

@@ -23,6 +23,7 @@ from services.chat_agents import (  # noqa: E402
     LOCAL_TZ,
     _build_agent_system_prompt,
     _direct_current_time_response,
+    _valid_freeform_synthesis,
     _web_research_fallback_response,
 )
 from services.tool_catalog import TOOL_NAMES  # noqa: E402
@@ -168,7 +169,12 @@ class BobWorkflowTests(unittest.TestCase):
 @unittest.skipIf(WebResearchService is None, "web research dependencies are not installed")
 class BobWebResearchIntentTests(unittest.TestCase):
     def setUp(self):
+        self.web_enabled = patch.object(Config, "WEB_RESEARCH_ENABLED", True)
+        self.web_enabled.start()
         self.service = WebResearchService()
+
+    def tearDown(self):
+        self.web_enabled.stop()
 
     def test_natural_search_requests_do_not_require_word_internet(self):
         prompts = (
@@ -185,6 +191,88 @@ class BobWebResearchIntentTests(unittest.TestCase):
             "Nguoi sang lap Facebook la ai?",
             knowledge_gap=True,
         ))
+
+    def test_academic_requests_get_a_scholarly_research_profile(self):
+        prompts = (
+            "Tìm bài báo khoa học và làm literature review về sleep quality",
+            "Find peer-reviewed research papers about retrieval augmented generation",
+            "Phân tích methodology của luận văn này",
+        )
+        for prompt in prompts:
+            self.assertEqual("academic", self.service.research_profile(prompt), prompt)
+
+    def test_academic_ranking_prefers_scholarly_sources(self):
+        results = [
+            {
+                "title": "A blog about sleep",
+                "url": "https://example.com/sleep",
+                "snippet": "sleep study",
+            },
+            {
+                "title": "Sleep systematic review",
+                "url": "https://pubmed.ncbi.nlm.nih.gov/123",
+                "snippet": "sleep study",
+            },
+        ]
+        ranked = self.service._rank_results(results, "sleep study", "academic")
+        self.assertEqual("scholarly", ranked[0]["source_kind"])
+
+    def test_generated_research_answer_must_use_only_collected_urls(self):
+        context = (
+            "INTERNET RESEARCH\n1. [SCHOLARLY] Paper\n"
+            "   URL: https://doi.org/10.1000/example\n   Snippet: Finding."
+        )
+        self.assertTrue(_valid_freeform_synthesis(
+            "Kết quả được báo cáo tại https://doi.org/10.1000/example",
+            context,
+            {"internet"},
+        ))
+        self.assertFalse(_valid_freeform_synthesis(
+            "Nguồn: https://made-up.example/paper",
+            context,
+            {"internet"},
+        ))
+        self.assertFalse(_valid_freeform_synthesis(
+            "Nghiên cứu cho thấy một kết quả.",
+            context,
+            {"internet"},
+        ))
+
+    def test_local_ollama_synthesizes_the_research_deliverable(self):
+        context = (
+            "INTERNET RESEARCH\nQuery: sleep quality\nResearch type: academic\n"
+            "1. [SCHOLARLY] Sleep review\n"
+            "   URL: https://doi.org/10.1000/sleep\n"
+            "   Snippet: The review reports an association."
+        )
+        ctx = ChatContext(
+            user_message="Tổng hợp nghiên cứu về sleep quality",
+            user_id="test-user",
+            db_path="test.db",
+            chat_session_id="00000000-0000-4000-8000-000000000003",
+            mode="student",
+            mode_prompt="Student mode.",
+            task="chat",
+            intent_result={"intent": "chat.freeform", "entities": {}},
+        )
+        answer = (
+            "Bằng chứng hiện có cho thấy một mối liên hệ; cần kiểm tra full text. "
+            "Nguồn: https://doi.org/10.1000/sleep"
+        )
+        with (
+            patch("services.chat_agents.ai_service.configured_providers", ["ollama"]),
+            patch("services.chat_agents.ai_service.last_provider_used", "ollama"),
+            patch("services.chat_agents.ai_service.generate_response", return_value=answer) as generate,
+            patch("services.chat_agents._build_workspace_context", return_value=({"internet"}, context)),
+            patch("services.chat_agents.SessionMemory.list_for_session", return_value=[]),
+        ):
+            result = FreeformChatAgent().handle(ctx)
+
+        generate.assert_called_once()
+        self.assertTrue(result.ai_used)
+        self.assertTrue(result.grounded)
+        self.assertEqual("ollama", result.provider)
+        self.assertEqual(answer, result.response)
 
     def test_freeform_questions_force_web_search_without_keyword(self):
         questions = (
@@ -236,6 +324,7 @@ Use these external sources only for public web facts.
                 "services.chat_agents._build_workspace_context",
                 return_value=({"internet"}, context),
             ),
+            patch("services.chat_agents.ai_service.configured_providers", []),
             patch("services.chat_agents.ai_service.generate_response") as generate,
             patch(
                 "services.chat_agents.SessionMemory.list_for_session",
@@ -261,11 +350,27 @@ Use these external sources only for public web facts.
         )
 
     def test_local_only_blocks_external_provider_even_when_called_directly(self):
-        service = AIService()
+        with (
+            patch.object(Config, "OLLAMA_ENABLED", True),
+            patch.object(Config, "OPENROUTER_ENABLED", True),
+            patch.object(Config, "OPENROUTER_API_KEY", "must-be-ignored"),
+            patch.object(Config, "OPENAI_API_KEY", "must-be-ignored"),
+            patch.object(Config, "GEMINI_API_KEY", "must-be-ignored"),
+        ):
+            service = AIService()
         self.assertTrue(Config.BOB_LOCAL_ONLY)
-        self.assertEqual([], service.configured_providers)
+        self.assertEqual(["ollama"], service.configured_providers)
         with self.assertRaisesRegex(RuntimeError, "BOB_LOCAL_ONLY"):
             service._call_provider("openrouter", [], 10)
+
+    def test_local_only_rejects_a_remote_ollama_endpoint(self):
+        service = AIService()
+        with (
+            patch.object(Config, "OLLAMA_ENABLED", True),
+            patch.object(Config, "OLLAMA_BASE_URL", "https://remote.example"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "máy cục bộ"):
+                service._call_ollama([], 10)
 
     def test_general_questions_that_mention_tools_do_not_trigger_actions(self):
         orchestrator = IntentOrchestrator()

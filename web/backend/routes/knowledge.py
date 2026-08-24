@@ -134,14 +134,12 @@ _SEED_DOCUMENTS = [
         "tu hoc,tri nho,memory,bob,rieng tu",
     ),
     (
-        "Bob tra cuu Internet va tu hoc co nguon",
-        "Bob co the tra cuu Internet cong khai khi prompt yeu cau tim tren mang hoac can thong tin "
-        "moi/cap nhat. Ket qua web duoc dua vao context voi URL nguon va Bob phai neu nguon khi "
-        "dung fact ben ngoai. Bob khong tu crawl nen lien tuc; moi lan research bi gioi han so ket "
-        "qua, thoi gian tai va kich thuoc trang. Neu bat WEB_RESEARCH_AUTO_LEARN_ENABLED, Bob KHONG "
-        "luu raw search result hang loat; Bob chi luu bai hoc web da duoc rut gon/loc trung voi "
-        "source='web' khi query co tinh chat hoc hoi, quy trinh, best practice hoac cai thien agent.",
-        "internet,web,research,tu hoc,nguon,bob",
+        "Bob nghien cuu va tu hoc hoan toan cuc bo",
+        "Bob tra cuu corpus RAG va tai lieu da nhap trong database noi bo, sau do dung Ollama tren "
+        "chinh may chu de tong hop. Prompt va du lieu khong duoc gui toi OpenAI, OpenRouter, Gemini, "
+        "Claude hay Mistral. Khi kho local khong co thong tin moi, Bob noi ro chua the xac minh offline "
+        "va chi ra tai lieu can nap them; khong duoc gia vo da tim web hoac bia citation.",
+        "offline,local,rag,research,tu hoc,nguon,bob,ollama",
     ),
     (
         "Bob hoc quy tac tu nguoi dung",

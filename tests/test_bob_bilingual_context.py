@@ -538,20 +538,31 @@ class BobDeepContextTests(unittest.TestCase):
             "services.chat_agents.SessionMemory.list_for_session",
             return_value=[],
         ), patch(
+            "services.chat_agents.ai_service.configured_providers",
+            ["ollama"],
+        ), patch(
+            "services.chat_agents.ai_service.last_provider_used",
+            "ollama",
+        ), patch(
             "services.chat_agents.ai_service.generate_response",
+            return_value="Project Atlas appears in the supplied workspace context.",
         ) as generate:
             result = FreeformChatAgent().handle(ctx)
 
-        generate.assert_not_called()
+        generate.assert_called_once()
+        packed_messages = generate.call_args.args[0]
+        packed_text = "\n".join(message["content"] for message in packed_messages)
+        self.assertIn("WORKSPACE_SENTINEL", packed_text)
+        self.assertIn("Email của Lan", packed_text)
         self.assertFalse(
             workspace_builder.call_args.kwargs["force_web_research"]
         )
         self.assertFalse(
             workspace_builder.call_args.kwargs["allow_web_research"]
         )
-        self.assertEqual("bob-local", result.provider)
+        self.assertEqual("ollama", result.provider)
         self.assertFalse(result.demo_mode)
-        self.assertFalse(result.ai_used)
+        self.assertTrue(result.ai_used)
 
     def test_english_and_code_switch_workflows_preserve_original_text(self):
         cases = (

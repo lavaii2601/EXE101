@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [switch]$SkipInstall,
+    [switch]$SkipTraining,
     [switch]$NoBrowser
 )
 
@@ -11,6 +12,8 @@ $PythonPath = Join-Path $VenvPath "Scripts\python.exe"
 $RequirementsPath = Join-Path $ProjectRoot "requirements.txt"
 $EnvPath = Join-Path $ProjectRoot "web\.env"
 $AppPath = Join-Path $ProjectRoot "web\backend\app.py"
+$TrainingPath = Join-Path $ProjectRoot "docs\bob-training"
+$TrainingScript = Join-Path $ProjectRoot "scripts\train_bob.py"
 $HealthUrl = "http://127.0.0.1:5000/api/health"
 $AppUrl = "http://127.0.0.1:5000"
 
@@ -62,15 +65,38 @@ SECRET_KEY=development-only-change-me
 SESSION_COOKIE_SECURE=false
 ALLOWED_ORIGINS=http://localhost:5000,http://127.0.0.1:5000
 
-# Dien key neu can dung AI hoac Google:
-OPENROUTER_API_KEY=
-OPENAI_API_KEY=
-MISTRAL_API_KEY=
+# Bob suy luan va hoc hoan toan cuc bo qua Ollama + RAG:
+BOB_LOCAL_ONLY=true
+OPENROUTER_ENABLED=false
+AI_PRIMARY_PROVIDER=ollama
+AI_PROVIDER_ORDER=ollama
+OLLAMA_ENABLED=true
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen3:8b
+WEB_RESEARCH_ENABLED=false
+AI_MENTOR_LEARNING_ENABLED=true
+AI_MENTOR_PROVIDERS=ollama
+
+# Google chi can neu dung Gmail/Calendar:
 GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
 GMAIL_CREDENTIALS_JSON=
 GMAIL_REDIRECT_URI=http://127.0.0.1:5000/api/email/oauth2callback
 "@ | Set-Content -LiteralPath $EnvPath -Encoding UTF8
+}
+
+if (-not $SkipTraining) {
+    Write-Step "Nap corpus local vao kho kien thuc cua Bob"
+    & $PythonPath $TrainingScript $TrainingPath `
+        --tags "noi bo,quy tac,bob,offline" `
+        --source "bob-local-corpus-v1"
+}
+
+$OllamaCommand = Get-Command "ollama" -ErrorAction SilentlyContinue
+if ($OllamaCommand) {
+    Write-Step "Da tim thay Ollama local; Bob se dung model cau hinh trong web/.env"
+} else {
+    Write-Warning "Khong tim thay Ollama. Bob van chay bang RAG/deterministic local; cai Ollama de bat suy luan tu do."
 }
 
 Write-Step "Khoi dong FlowMate tai $AppUrl"

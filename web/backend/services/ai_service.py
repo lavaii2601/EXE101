@@ -15,6 +15,7 @@ from models.cache import Cache
 from models import subscription as subscription_model
 from utils.user_context import get_user_db_path
 import hashlib
+from urllib.parse import urlparse
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -114,7 +115,10 @@ class AIService:
                 self.openrouter_service = None
 
         if Config.BOB_LOCAL_ONLY:
-            logger.info("Bob local-only engine enabled; external model providers are disabled")
+            if 'ollama' in self.configured_providers:
+                logger.info("Bob local-only engine enabled with self-hosted Ollama")
+            else:
+                logger.info("Bob local-only deterministic engine enabled; Ollama is not configured")
         elif not self.configured_providers:
             logger.warning("⚠️  Không có AI provider khả dụng - sử dụng Demo Mode")
     def _is_quota_error(self, error_message, status_code=None):
@@ -179,7 +183,7 @@ class AIService:
     
     def generate_response(self, messages, max_tokens=None, task='chat', user_id=None):
         """Generate AI response using round-robin rotation with intelligent fallback"""
-        if Config.BOB_LOCAL_ONLY:
+        if Config.BOB_LOCAL_ONLY and not self.configured_providers:
             self.last_provider_used = 'bob-local'
             self.provider_usage['bob-local'] += 1
             return self._get_local_response(messages)
@@ -282,6 +286,10 @@ class AIService:
         else:
             print(f"⚠️  Không thể generate response. {healthy_count} providers vẫn healthy nhưng chưa thử")
         
+        if Config.BOB_LOCAL_ONLY:
+            self.last_provider_used = 'bob-local'
+            self.provider_usage['bob-local'] += 1
+            return self._get_local_response(optimized_messages)
         self.last_provider_used = 'demo'
         self.provider_usage['demo'] += 1
         return self._get_demo_response(optimized_messages)
@@ -293,11 +301,11 @@ class AIService:
         "senior" model for process feedback without changing the normal
         round-robin/fallback behavior that serves the user's visible answer.
         """
-        if Config.BOB_LOCAL_ONLY:
-            raise RuntimeError("External model providers are disabled by BOB_LOCAL_ONLY")
         provider = (provider or '').strip().lower()
         if not provider:
             raise ValueError("Provider is required")
+        if Config.BOB_LOCAL_ONLY and provider != 'ollama':
+            raise RuntimeError("External model providers are disabled by BOB_LOCAL_ONLY")
         if provider not in self.configured_providers:
             raise ValueError(f"{provider} chưa được cấu hình")
         if not self._is_provider_healthy(provider):
@@ -336,7 +344,7 @@ class AIService:
 
     def _detect_configured_providers(self):
         if Config.BOB_LOCAL_ONLY:
-            return []
+            return ['ollama'] if Config.OLLAMA_ENABLED else []
         configured = []
 
         # OpenRouter is the primary choice if enabled
@@ -514,7 +522,7 @@ class AIService:
             # for Bob's grounding, confirmation, language, and memory rules
             # even if an old deployment still carries the former 450-char env
             # value.
-            system_budget = max(8000, int(self.max_system_prompt_chars or 0))
+            system_budget = max(12000, int(self.max_system_prompt_chars or 0))
             optimized.append({
                 'role': 'system',
                 'content': self._truncate_text_ends(system_content, system_budget)
@@ -582,7 +590,7 @@ class AIService:
         return optimized
 
     def _call_provider(self, provider, messages, max_tokens):
-        if Config.BOB_LOCAL_ONLY:
+        if Config.BOB_LOCAL_ONLY and provider != 'ollama':
             raise RuntimeError("External model providers are disabled by BOB_LOCAL_ONLY")
         if provider == 'openrouter':
             return self._call_openrouter(messages, max_tokens)
@@ -771,20 +779,31 @@ class AIService:
         if not Config.OLLAMA_ENABLED:
             raise ValueError("Ollama chưa được cấu hình")
 
+        base_url = str(Config.OLLAMA_BASE_URL or '').strip().rstrip('/')
+        hostname = (urlparse(base_url).hostname or '').lower()
+        if Config.BOB_LOCAL_ONLY and hostname not in {'localhost', '127.0.0.1', '::1'}:
+            raise RuntimeError("BOB_LOCAL_ONLY chỉ cho phép Ollama chạy trên máy cục bộ")
+
         try:
             response = requests.post(
-                f"{Config.OLLAMA_BASE_URL}/api/chat",
+                f"{base_url}/api/chat",
                 headers={"Content-Type": "application/json"},
                 json={
                     "model": Config.OLLAMA_MODEL,
                     "messages": messages,
                     "stream": False,
+                    # Qwen3 and other reasoning models otherwise spend the
+                    # response budget on hidden thinking and may return a
+                    # truncated user-visible answer. Bob plans internally but
+                    # only returns the final response.
+                    "think": False,
                     "options": {
                         "temperature": 0.5,
                         "num_predict": max_tokens
                     }
                 },
-                timeout=self.timeout
+                timeout=self.timeout,
+                allow_redirects=False,
             )
 
             if response.status_code in [429, 401, 403, 402]:
@@ -839,25 +858,28 @@ class AIService:
     def get_provider_status(self):
         """Return provider configuration for UI/debug"""
         if Config.BOB_LOCAL_ONLY:
+            local_chain = self.configured_providers or ["bob-local"]
+            health = {
+                provider: {
+                    "healthy": self._is_provider_healthy(provider),
+                    "usage_count": self.provider_usage.get(provider, 0),
+                }
+                for provider in local_chain
+            }
             return {
-                "engine": "bob-local",
+                "engine": "ollama-local" if 'ollama' in local_chain else "bob-local",
                 "local_only": True,
-                "primary_provider": "bob-local",
-                "provider_order": [],
-                "configured_providers": [],
+                "primary_provider": local_chain[0],
+                "provider_order": local_chain,
+                "configured_providers": self.configured_providers,
                 "missing_providers": [],
-                "active_chain": ["bob-local"],
+                "active_chain": local_chain,
                 "task_provider_overrides": {},
                 "task_chains": {
-                    task: ["bob-local"]
+                    task: local_chain
                     for task in ("chat", "summary", "reply", "analyze")
                 },
-                "provider_health": {
-                    "bob-local": {
-                        "healthy": True,
-                        "usage_count": self.provider_usage.get("bob-local", 0),
-                    }
-                },
+                "provider_health": health,
                 "provider_usage": self.provider_usage,
                 "last_provider_used": self.last_provider_used,
                 "rotation_index": 0,

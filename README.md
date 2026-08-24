@@ -76,10 +76,15 @@ SECRET_KEY=development-only-change-me
 SESSION_COOKIE_SECURE=false
 ALLOWED_ORIGINS=http://localhost:5000,http://127.0.0.1:5000
 
-OPENROUTER_API_KEY=
+BOB_LOCAL_ONLY=true
+OLLAMA_ENABLED=true
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen3:8b
+WEB_RESEARCH_ENABLED=false
 AI_MAX_CONTEXT_MESSAGES=10
 AI_MAX_INPUT_CHARS=12000
-AI_MAX_SYSTEM_PROMPT_CHARS=8000
+AI_MAX_SYSTEM_PROMPT_CHARS=12000
+AI_AGENT_MAX_TOKENS=700
 
 GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
@@ -259,10 +264,20 @@ GMAIL_CREDENTIALS_JSON=
 ADMIN_EMAILS=
 ADMIN_TOTP_SECRET=
 
+BOB_LOCAL_ONLY=true
+OLLAMA_ENABLED=false
+WEB_RESEARCH_ENABLED=false
 AI_MAX_CONTEXT_MESSAGES=10
 AI_MAX_INPUT_CHARS=12000
-AI_MAX_SYSTEM_PROMPT_CHARS=8000
+AI_MAX_SYSTEM_PROMPT_CHARS=12000
+AI_AGENT_MAX_TOKENS=700
 ```
+
+Railway has no GPU service for practical `qwen3:8b` inference. The production
+configuration above intentionally runs tool routing, the offline classifier,
+and PostgreSQL RAG without Ollama. To retain full local generation, deploy the
+backend and Ollama together on a GPU-capable machine and use the local
+development configuration from the earlier section.
 
 `railpack.json` tự chạy migration và Gunicorn. Chi tiết đầy đủ nằm trong
 [RAILWAY.md](RAILWAY.md).

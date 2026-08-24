@@ -44,6 +44,8 @@ class Config:
     # model adapters remain in the repository only for backwards-compatible
     # experiments; core chat, tools, RAG, summaries, and learning must never
     # require them.
+    # Bob never sends prompts to hosted AI providers. A self-hosted Ollama
+    # instance may still be used as the local reasoning engine below.
     BOB_LOCAL_ONLY = True
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
     MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
@@ -67,8 +69,9 @@ class Config:
     # classification, even removed the latest user message before it reached
     # the provider.
     AI_MAX_INPUT_CHARS = int(os.getenv("AI_MAX_INPUT_CHARS", 12000))
-    AI_MAX_SYSTEM_PROMPT_CHARS = int(os.getenv("AI_MAX_SYSTEM_PROMPT_CHARS", 8000))
+    AI_MAX_SYSTEM_PROMPT_CHARS = int(os.getenv("AI_MAX_SYSTEM_PROMPT_CHARS", 12000))
     AI_DEFAULT_MAX_TOKENS = int(os.getenv("AI_DEFAULT_MAX_TOKENS", 220))
+    AI_AGENT_MAX_TOKENS = int(os.getenv("AI_AGENT_MAX_TOKENS", 700))
     AI_SUMMARY_MAX_TOKENS = int(os.getenv("AI_SUMMARY_MAX_TOKENS", 180))
     AI_REPLY_MAX_TOKENS = int(os.getenv("AI_REPLY_MAX_TOKENS", 220))
     AI_ANALYZE_MAX_TOKENS = int(os.getenv("AI_ANALYZE_MAX_TOKENS", 180))
@@ -78,16 +81,21 @@ class Config:
     AI_TASK_PROVIDERS_REPLY = os.getenv("AI_TASK_PROVIDERS_REPLY", "")
     AI_TASK_PROVIDERS_ANALYZE = os.getenv("AI_TASK_PROVIDERS_ANALYZE", "")
 
-    WEB_RESEARCH_ENABLED = _bool(os.getenv("WEB_RESEARCH_ENABLED"), default=True)
+    # Offline by default: local RAG remains fully available, while public web
+    # retrieval must be an explicit deployment choice.
+    WEB_RESEARCH_ENABLED = _bool(os.getenv("WEB_RESEARCH_ENABLED"), default=False)
     WEB_RESEARCH_AUTO_LEARN_ENABLED = _bool(os.getenv("WEB_RESEARCH_AUTO_LEARN_ENABLED"), default=False)
     WEB_RESEARCH_MAX_RESULTS = int(os.getenv("WEB_RESEARCH_MAX_RESULTS", 3))
     WEB_RESEARCH_FETCH_PAGES = int(os.getenv("WEB_RESEARCH_FETCH_PAGES", 2))
     WEB_RESEARCH_TIMEOUT = int(os.getenv("WEB_RESEARCH_TIMEOUT", 8))
     WEB_RESEARCH_MAX_BYTES = int(os.getenv("WEB_RESEARCH_MAX_BYTES", 180000))
     WEB_RESEARCH_MAX_CHARS = int(os.getenv("WEB_RESEARCH_MAX_CHARS", 1800))
+    WEB_RESEARCH_ACADEMIC_ENABLED = _bool(
+        os.getenv("WEB_RESEARCH_ACADEMIC_ENABLED"), default=True
+    )
     WEB_RESEARCH_LEARNING_MAX_PER_DAY = int(os.getenv("WEB_RESEARCH_LEARNING_MAX_PER_DAY", 6))
 
-    AI_MENTOR_LEARNING_ENABLED = _bool(os.getenv("AI_MENTOR_LEARNING_ENABLED"), default=False)
+    AI_MENTOR_LEARNING_ENABLED = _bool(os.getenv("AI_MENTOR_LEARNING_ENABLED"), default=True)
     AI_MENTOR_ALLOW_PRIVATE_CONTEXT = _bool(os.getenv("AI_MENTOR_ALLOW_PRIVATE_CONTEXT"), default=False)
     AI_MENTOR_PROVIDERS = os.getenv("AI_MENTOR_PROVIDERS", "openai,gemini,claude,openrouter,mistral,ollama")
     AI_MENTOR_MAX_PROVIDERS = int(os.getenv("AI_MENTOR_MAX_PROVIDERS", 2))
