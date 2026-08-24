@@ -80,31 +80,56 @@ class _MainShellState extends State<MainShell> {
           top: false,
           child: SizedBox(
             height: 64,
-            child: Row(
-              children: List.generate(_tabs.length, (i) {
-                final tab = _tabs[i];
-                final active = tabIndex == i;
-                return Expanded(
-                  child: InkWell(
-                    onTap: () => setState(() => tabIndex = i),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(active ? tab.activeIcon : tab.icon, size: 21, color: active ? colors.primary : colors.textMuted),
-                        const SizedBox(height: 2),
-                        Text(
-                          t(tab.labelVi, tab.labelEn),
-                          style: TextStyle(
-                            color: active ? colors.primary : colors.textMuted,
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w600,
-                          ),
+            child: Stack(
+              children: [
+                // The "liquid" part: a single pill that glides to the active
+                // tab's slot instead of each tab snapping its own color.
+                AnimatedAlign(
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment(-1 + (2 * tabIndex) / (_tabs.length - 1), 0),
+                  child: FractionallySizedBox(
+                    widthFactor: 1 / _tabs.length,
+                    heightFactor: 1,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: colors.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                      ],
+                        child: const SizedBox.expand(),
+                      ),
                     ),
                   ),
-                );
-              }),
+                ),
+                Row(
+                  children: List.generate(_tabs.length, (i) {
+                    final tab = _tabs[i];
+                    final active = tabIndex == i;
+                    return Expanded(
+                      child: InkWell(
+                        onTap: () => setState(() => tabIndex = i),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(active ? tab.activeIcon : tab.icon, size: 21, color: active ? colors.primary : colors.textMuted),
+                            const SizedBox(height: 2),
+                            Text(
+                              t(tab.labelVi, tab.labelEn),
+                              style: TextStyle(
+                                color: active ? colors.primary : colors.textMuted,
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ],
             ),
           ),
         ),
