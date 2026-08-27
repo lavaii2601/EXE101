@@ -554,8 +554,17 @@ class GmailService:
         text = re.sub(r'(?is)<(script|style).*?>.*?</\1>', ' ', value)
         text = re.sub(r'(?i)<br\s*/?>', '\n', text)
         text = re.sub(r'(?i)</p\s*>', '\n\n', text)
+        text = re.sub(r'(?is)<!--.*?-->', ' ', text)
         text = re.sub(r'(?s)<[^>]+>', ' ', text)
         text = html.unescape(text)
+        # Some real-world HTML (Outlook/MSO exports in particular) entity-
+        # escapes its own conditional-comment markup, e.g. "&lt;!--[if
+        # !mso]&gt;&lt;!--&gt;" -- that survives the pass above untouched
+        # (it isn't real markup yet) and only turns into literal "<!--[if
+        # !mso]><!-->" garbage once unescaped, so strip comments/tags once
+        # more after unescaping to catch that second layer.
+        text = re.sub(r'(?is)<!--.*?-->', ' ', text)
+        text = re.sub(r'(?s)<[^>]+>', ' ', text)
         text = re.sub(r'[ \t]+', ' ', text)
         text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
         return text.strip()

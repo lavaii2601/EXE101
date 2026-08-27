@@ -8,6 +8,23 @@ import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
 import '../widgets/app_button.dart';
 
+/// Whether an HTML email body is safe to hand to flutter_html.
+///
+/// flutter_html's text content is fine, but its table layout support is
+/// unreliable for the deeply-nested `<table>` grids real-world templates
+/// (bank receipts especially) use for the *entire* message layout -- it can
+/// silently paint nothing even though the underlying text is there (proven
+/// by the AI summary reading it fine from the same markup). A short-text
+/// check alone doesn't catch this, since the text exists in the markup and
+/// only fails to *paint*, so we also treat heavily-tabled markup as unsafe
+/// and fall back to the plain-text body instead of an empty white card.
+bool _htmlLooksRenderable(String html) {
+  final visibleText = html.replaceAll(RegExp(r'<[^>]*>'), ' ').replaceAll(RegExp(r'&[a-zA-Z#0-9]+;'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (visibleText.length < 40) return false;
+  final tableCount = RegExp(r'<table', caseSensitive: false).allMatches(html).length;
+  return tableCount < 3;
+}
+
 /// Full-content view for a single email, pushed when a row is tapped in
 /// EmailScreen. Fetches the full body on-demand (the list only ever carries
 /// a snippet) and offers an on-demand AI summary via /email/summary/<id>.
@@ -101,6 +118,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
     final email = widget.email;
     final sender = (email['sender'] as String?) ?? (email['from'] as String?) ?? '';
     final subject = (email['subject'] as String?)?.isNotEmpty == true ? email['subject'] as String : t('(Không tiêu đề)', '(No subject)');
+    final htmlHasText = htmlBody.isNotEmpty && _htmlLooksRenderable(htmlBody);
 
     return Scaffold(
       backgroundColor: colors.background,
@@ -176,22 +194,33 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
                     const Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator()))
                   else if (bodyError != null)
                     Text('${t('Không tải được nội dung', 'Could not load content')}: $bodyError', style: TextStyle(color: colors.danger, fontSize: 13))
-                  else if (htmlBody.isNotEmpty)
-                    Html(
-                      data: htmlBody,
-                      onLinkTap: (url, attributes, element) {
-                        if (url != null) launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-                      },
-                      style: {
-                        'body': Style(
-                          margin: Margins.zero,
-                          padding: HtmlPaddings.zero,
-                          color: colors.text,
-                          fontSize: FontSize(14),
-                          lineHeight: const LineHeight(1.6),
-                        ),
-                        'a': Style(color: colors.primary, textDecoration: TextDecoration.underline),
-                      },
+                  else if (htmlHasText)
+                    // HTML emails assume a white reading surface and often set
+                    // their own inline background/text colors (which win over
+                    // our style map, same as a real browser's cascade) --
+                    // fighting that to force dark-mode text is unreliable, so
+                    // this mirrors how Gmail/Outlook render email bodies: a
+                    // fixed white card regardless of the app's theme.
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+                      child: Html(
+                        data: htmlBody,
+                        onLinkTap: (url, attributes, element) {
+                          if (url != null) launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                        },
+                        style: {
+                          'body': Style(
+                            margin: Margins.zero,
+                            padding: HtmlPaddings.zero,
+                            color: const Color(0xFF1A1A1A),
+                            fontSize: FontSize(14),
+                            lineHeight: const LineHeight(1.6),
+                          ),
+                          'a': Style(color: colors.primary, textDecoration: TextDecoration.underline),
+                        },
+                      ),
                     )
                   else
                     SelectableText(
