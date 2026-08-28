@@ -15,10 +15,14 @@ class ApiException implements Exception {
 Future<dynamic> _request(String path, {required String method, Map<String, dynamic>? body}) async {
   final accessToken = getMobileAccessToken();
   final userId = getMobileUserId();
+  final workspaceId = getCurrentWorkspaceId();
   final headers = {
     'Content-Type': 'application/json',
     if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
     if (userId.isNotEmpty) 'X-User-Id': userId,
+    // Forward-compatible plumbing for Phase 3+ routes that will scope
+    // business data by workspace_id; nothing reads this yet.
+    if (workspaceId.isNotEmpty) 'X-Workspace-Id': workspaceId,
   };
   final uri = Uri.parse('$kApiBase$path');
 

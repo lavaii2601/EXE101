@@ -6,8 +6,10 @@ import '../config/user_modes.dart';
 import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
+import '../state/workspace_controller.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_screen.dart';
+import 'workspace_members_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final VoidCallback onChangeMode;
@@ -61,6 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final theme = context.watch<ThemeController>();
     final lang = context.watch<LanguageController>();
     final appState = context.watch<AppState>();
+    final workspace = context.watch<WorkspaceController>();
     final colors = theme.colors;
     final t = lang.t;
     final profile = appState.profile;
@@ -170,6 +173,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ],
             ),
+            if (workspace.isBusiness)
+              _Section(
+                label: t('DOANH NGHIỆP', 'BUSINESS'),
+                children: [
+                  _Row(
+                    icon: Icons.groups_outlined,
+                    iconBg: colors.primarySoft,
+                    iconColor: colors.primary,
+                    title: t('Thành viên', 'Members'),
+                    subtitle: (workspace.current?['name'] as String?) ?? '',
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WorkspaceMembersScreen())),
+                  ),
+                ],
+              ),
             _Section(
               label: t('VỀ ỨNG DỤNG', 'ABOUT'),
               children: [

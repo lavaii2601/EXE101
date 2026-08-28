@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
+import '../state/workspace_controller.dart';
+import '../widgets/org_workspace_bar.dart';
 import '../widgets/profile_header.dart';
 import 'chat_screen.dart';
 import 'email_screen.dart';
@@ -22,6 +24,15 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int tabIndex = 0;
   bool modePickerOpen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // MainShell only ever builds once authenticated, so this is the right
+    // one-time place to load the workspace list (mirrors AppState.bootstrap
+    // being called once at app start, not per-rebuild).
+    context.read<WorkspaceController>().loadWorkspaces();
+  }
 
   static const _tabs = [
     (icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart, labelVi: 'Tổng hợp', labelEn: 'Overview'),
@@ -67,6 +78,7 @@ class _MainShellState extends State<MainShell> {
               onRefresh: appState.refreshShell,
               onChangeMode: () => setState(() => modePickerOpen = true),
             ),
+            const OrgWorkspaceBar(),
             Expanded(child: IndexedStack(index: tabIndex, children: screens)),
           ],
         ),
