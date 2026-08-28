@@ -1,6 +1,6 @@
 import { Alert } from 'react-native';
 import { API_BASE } from './config';
-import { getMobileAccessToken, getMobileUserId } from './session';
+import { getCurrentWorkspaceId, getMobileAccessToken, getMobileUserId } from './session';
 
 let authAlertActive = false;
 let lastAuthAlertAt = 0;
@@ -32,6 +32,7 @@ function handleUnauthorized(data = {}) {
 async function request(path, options = {}) {
   const accessToken = getMobileAccessToken();
   const mobileUserId = getMobileUserId();
+  const workspaceId = getCurrentWorkspaceId();
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
     ...options,
@@ -39,6 +40,7 @@ async function request(path, options = {}) {
       'Content-Type': 'application/json',
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...(mobileUserId ? { 'X-User-Id': mobileUserId } : {}),
+      ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}),
       ...(options.headers || {})
     }
   });

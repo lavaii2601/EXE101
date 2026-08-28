@@ -20,6 +20,7 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import ProfileHeader from './src/components/ProfileHeader';
+import OrgWorkspaceBar from './src/components/OrgWorkspaceBar';
 import RoleSelection from './src/components/RoleSelection';
 import { apiGet, apiPost } from './src/api/client';
 import {
@@ -31,6 +32,7 @@ import {
   loadWorkspaceSyncRevision,
   persistWorkspaceSyncRevision,
 } from './src/state/workspaceSync';
+import { OrgWorkspaceProvider, useOrgWorkspace } from './src/state/OrgWorkspaceContext';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
 
@@ -103,7 +105,9 @@ export default function App() {
   return (
     <ThemeProvider>
       <LanguageProvider>
-        <AppShell />
+        <OrgWorkspaceProvider>
+          <AppShell />
+        </OrgWorkspaceProvider>
       </LanguageProvider>
     </ThemeProvider>
   );
@@ -112,6 +116,7 @@ export default function App() {
 function AppShell() {
   const { colors, isDark } = useTheme();
   const { t } = useLanguage();
+  const orgWorkspace = useOrgWorkspace();
   const [activeTab, setActiveTab] = useState('overview');
   const [profile, setProfile] = useState(null);
   const [status, setStatus] = useState(null);
@@ -179,6 +184,14 @@ function AppShell() {
     // every app restart silently calls the backend as an anonymous user.
     loadPersistedSession().finally(refreshShell);
   }, [refreshShell]);
+
+  const loadOrgWorkspaces = orgWorkspace.loadWorkspaces;
+  useEffect(() => {
+    // orgWorkspace.loadWorkspaces is stable across renders (see
+    // OrgWorkspaceContext.js), so this only fires when auth state actually
+    // changes -- not on every workspace-state update.
+    if (isAuthenticated) loadOrgWorkspaces();
+  }, [isAuthenticated, loadOrgWorkspaces]);
 
   useEffect(() => {
     SecureStore.getItemAsync(ONBOARDING_SEEN_KEY)
@@ -373,10 +386,11 @@ function AppShell() {
     setNewMailNotice(null);
     lastSeenMailId.current = null;
     setActiveTab('overview');
+    orgWorkspace.reset();
     // Drives the render below back to LoginScreen instead of leaving the
     // user stuck inside the authenticated tabs (e.g. still on Settings).
     setIsAuthenticated(false);
-  }, []);
+  }, [orgWorkspace.reset]);
 
   const handleLoggedIn = useCallback(() => {
     setIsAuthenticated(null);
@@ -477,6 +491,7 @@ function AppShell() {
           onRefresh={refreshShell}
           onChangeMode={() => setModePickerOpen(true)}
         />
+        <OrgWorkspaceBar />
         <View style={styles.content}>{renderScreen()}</View>
         {newMailNotice ? (
           <View style={styles.mailNotice} accessibilityRole="alert">

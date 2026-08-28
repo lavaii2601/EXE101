@@ -20,6 +20,8 @@ import { apiGet, apiPost } from '../api/client';
 import { PRIVACY_URL, TERMS_URL } from '../api/config';
 import { connectGoogleAccount } from '../api/googleAuth';
 import PricingModal from '../components/PricingModal';
+import WorkspaceMembersScreen from './WorkspaceMembersScreen';
+import { useOrgWorkspace } from '../state/OrgWorkspaceContext';
 
 const USAGE_LABELS = {
   email_summary: ['Tóm tắt email AI', 'AI email summaries'],
@@ -59,8 +61,10 @@ function formatSubscriptionRemaining(subscription, t) {
 export default function SettingsScreen({ profile, status, userMode, onChangeMode, onRefresh, onLogout, onAgentSync, syncEvent }) {
   const { colors, isDark, accent, toggleTheme, setAccent } = useTheme();
   const { language, setLanguage, t } = useLanguage();
+  const orgWorkspace = useOrgWorkspace();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
+  const [membersVisible, setMembersVisible] = useState(false);
   const [pushNotif,     setPushNotif]     = useState(false);
   const [emailNotif,    setEmailNotif]    = useState(true);
   const [reminderNotif, setReminderNotif] = useState(true);
@@ -312,6 +316,23 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         </View>
       </View>
 
+      {/* ── Business workspace ── */}
+      {orgWorkspace.isBusiness ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>{t('DOANH NGHIỆP', 'BUSINESS')}</Text>
+          <TouchableOpacity style={styles.settingRow} onPress={() => setMembersVisible(true)} activeOpacity={0.75}>
+            <View style={[styles.iconWrap, { backgroundColor: colors.primarySoft }]}>
+              <Ionicons name="people-outline" size={18} color={colors.accentText} />
+            </View>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingTitle}>{t('Thành viên', 'Members')}</Text>
+              <Text style={styles.settingSub}>{orgWorkspace.current?.name || ''}</Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {/* ── Subscription ── */}
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>{t('GÓI DỊCH VỤ', 'PLAN')}</Text>
@@ -561,6 +582,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         onRefresh={onRefresh}
         onClose={() => setPricingVisible(false)}
       />
+      <WorkspaceMembersScreen visible={membersVisible} onClose={() => setMembersVisible(false)} />
     </ScrollView>
   );
 }
