@@ -76,7 +76,7 @@ def execute():
             workspace = workspace_model.ensure_personal_workspace(
                 user_id, name=user.get('name') or 'Personal',
             )
-            created.append({'user_id': user_id, 'workspace_id': workspace['id']})
+            created.append({'user_id': user_id, 'workspace_id': str(workspace['id'])})
             print(f"Created personal workspace {workspace['id']} for {user_id}")
         except Exception as exc:  # noqa: BLE001 -- report and keep going
             errors.append({'user_id': user_id, 'error': str(exc)})

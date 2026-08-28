@@ -1,5 +1,6 @@
 .env
 .venv/
+database/migrations/logs/
 node_modules/
 data/
 *.pickle
