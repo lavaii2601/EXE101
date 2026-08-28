@@ -429,6 +429,86 @@ UPDATE chat_sessions
 SET expires_at = created_at + (retention_days || ' days')::INTERVAL
 WHERE expires_at IS NULL;
 
+-- ============================================================
+-- Multi-tenant workspaces (Worker Business Phase 1 foundation).
+-- See WORKER_BUSINESS_SUBSCRIPTION_DESIGN.md section 9 for the full
+-- design. Distinct from workspace_sync_state above, which is an
+-- unrelated per-user cross-device sync cursor that predates this
+-- feature and keeps its existing name for backward compatibility.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS workspaces (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    slug TEXT,
+    avatar_url TEXT,
+    owner_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'active',
+    settings JSONB NOT NULL DEFAULT '{}'::JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    archived_at TIMESTAMPTZ,
+    CONSTRAINT workspaces_type_check CHECK (type IN ('personal', 'business')),
+    CONSTRAINT workspaces_status_check CHECK (
+        status IN ('active', 'grace', 'read_only', 'suspended', 'archived')
+    )
+);
+
+-- Each user has at most one personal workspace. A CHECK constraint can't
+-- express "at most one row per owner where type = 'personal'", so this is
+-- enforced with a partial unique index instead.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_one_personal_per_owner
+    ON workspaces (owner_user_id)
+    WHERE type = 'personal';
+
+CREATE TABLE IF NOT EXISTS workspace_memberships (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    disabled_at TIMESTAMPTZ,
+    removed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT workspace_memberships_role_check CHECK (role IN ('owner', 'admin', 'worker')),
+    CONSTRAINT workspace_memberships_status_check CHECK (status IN ('active', 'disabled', 'removed')),
+    CONSTRAINT workspace_memberships_unique UNIQUE (workspace_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS workspace_invitations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    email_normalized TEXT NOT NULL,
+    role TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    token_hash TEXT NOT NULL,
+    invited_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    accepted_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Only 'admin'/'worker' are invitable -- a workspace's one 'owner' is set
+    -- at creation time, never granted through an invitation.
+    CONSTRAINT workspace_invitations_role_check CHECK (role IN ('admin', 'worker')),
+    CONSTRAINT workspace_invitations_status_check CHECK (
+        status IN ('pending', 'accepted', 'declined', 'revoked', 'expired', 'capacity_blocked')
+    )
+);
+
+CREATE TABLE IF NOT EXISTS workspace_audit_events (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    actor_user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL,
+    event_type TEXT NOT NULL,
+    target_type TEXT,
+    target_id TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_gmail_email ON users (gmail_email);
 CREATE INDEX IF NOT EXISTS idx_users_mode ON users (user_mode);
 CREATE INDEX IF NOT EXISTS idx_user_identities_user ON user_identities (user_id);
@@ -486,6 +566,14 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_documents_user_created ON knowledge_doc
 
 CREATE INDEX IF NOT EXISTS idx_intent_patterns_created ON intent_patterns (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_intent_patterns_status_created ON intent_patterns (status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces (owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_memberships_user_status ON workspace_memberships (user_id, status);
+CREATE INDEX IF NOT EXISTS idx_workspace_memberships_workspace_status ON workspace_memberships (workspace_id, status);
+CREATE INDEX IF NOT EXISTS idx_workspace_invitations_workspace_status ON workspace_invitations (workspace_id, status);
+CREATE INDEX IF NOT EXISTS idx_workspace_invitations_email_status ON workspace_invitations (email_normalized, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_invitations_token_hash ON workspace_invitations (token_hash);
+CREATE INDEX IF NOT EXISTS idx_workspace_audit_events_workspace_created ON workspace_audit_events (workspace_id, created_at DESC);
 
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
@@ -605,6 +693,21 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 DROP TRIGGER IF EXISTS trg_intent_patterns_updated_at ON intent_patterns;
 CREATE TRIGGER trg_intent_patterns_updated_at
 BEFORE UPDATE ON intent_patterns
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_workspaces_updated_at ON workspaces;
+CREATE TRIGGER trg_workspaces_updated_at
+BEFORE UPDATE ON workspaces
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_workspace_memberships_updated_at ON workspace_memberships;
+CREATE TRIGGER trg_workspace_memberships_updated_at
+BEFORE UPDATE ON workspace_memberships
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_workspace_invitations_updated_at ON workspace_invitations;
+CREATE TRIGGER trg_workspace_invitations_updated_at
+BEFORE UPDATE ON workspace_invitations
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 COMMIT;

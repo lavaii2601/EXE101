@@ -46,6 +46,7 @@ from routes.knowledge import knowledge_bp, _seed_if_empty as seed_knowledge_base
 from routes._background import bg_bp
 from routes.admin import admin_bp, _require_admin, is_current_user_admin
 from routes.course import course_bp
+from routes.workspace import workspace_bp, workspace_invitations_bp
 from utils.security import authenticated_user_id, enforce_rate_limit, valid_request_origin
 
 # Keep application diagnostics without logging OAuth request/response tokens.
@@ -151,6 +152,8 @@ app.register_blueprint(knowledge_bp)
 app.register_blueprint(bg_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(course_bp)
+app.register_blueprint(workspace_bp)
+app.register_blueprint(workspace_invitations_bp)
 
 # Ensure data directory exists
 os.makedirs(os.path.dirname(Config.DATABASE_PATH), exist_ok=True)
