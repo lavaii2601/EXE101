@@ -63,6 +63,14 @@ let workspaceSyncAbortController = null;
 let currentSubscription = null;
 let selectedSubscriptionPlan = 'monthly';
 let selectedSubscriptionPaymentMethod = 'vnpay';
+// Multi-tenant Business workspace state (Worker Business Phase 1). Named
+// "orgWorkspace*" throughout to avoid colliding with the pre-existing
+// workspaceSync*/#workspaceApp vocabulary above, which means something
+// unrelated: the personal single-tenant app shell's own sync/polling cursor.
+let currentOrgWorkspaceId = null;
+let orgWorkspaces = [];
+let orgWorkspaceMembers = [];
+let orgWorkspacePendingInvitations = [];
 // Gmail push should be configured in production for true server-side push.
 // This short watcher is the resilient foreground fallback and feels instant
 // even when Pub/Sub is unavailable or the browser just resumed.
@@ -415,6 +423,390 @@ function modeDescription(mode) {
     return currentLanguage === 'en' ? (mode.descriptionEn || mode.description) : mode.description;
 }
 
+// ---------------------------------------------------------------------
+// Multi-tenant Business workspace switcher (Worker Business Phase 1).
+// See WORKER_BUSINESS_SUBSCRIPTION_DESIGN.md sections 4, 10, 13.
+// Named "orgWorkspace*" to avoid colliding with the pre-existing
+// workspaceSync*/#workspaceApp vocabulary above, which is unrelated: the
+// personal single-tenant app shell's own background sync/polling cursor.
+// ---------------------------------------------------------------------
+
+function orgWorkspaceStorageKey() {
+    const ownerId = (lastAuthStatus && lastAuthStatus.user_id) || 'anon';
+    return `flowmate-org-workspace:${ownerId}`;
+}
+
+function orgRoleLabelVi(role) {
+    if (role === 'owner') return 'Chủ sở hữu';
+    if (role === 'admin') return 'Quản trị';
+    return 'Thành viên';
+}
+
+function orgRoleLabelEn(role) {
+    if (role === 'owner') return 'Owner';
+    if (role === 'admin') return 'Admin';
+    return 'Worker';
+}
+
+function currentOrgWorkspace() {
+    return orgWorkspaces.find((w) => w.id === currentOrgWorkspaceId) || null;
+}
+
+async function loadOrgWorkspaces() {
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspaces`);
+        const data = await resp.json();
+        if (!resp.ok || !data.success) return;
+        orgWorkspaces = data.workspaces || [];
+        const saved = localStorage.getItem(orgWorkspaceStorageKey());
+        const savedStillValid = saved && orgWorkspaces.some((w) => w.id === saved);
+        if (savedStillValid) {
+            currentOrgWorkspaceId = saved;
+        } else {
+            const personal = orgWorkspaces.find((w) => w.type === 'personal');
+            currentOrgWorkspaceId = personal ? personal.id : (orgWorkspaces[0] ? orgWorkspaces[0].id : null);
+        }
+        renderOrgWorkspaceSwitcher();
+    } catch (err) {
+        console.warn('loadOrgWorkspaces failed', err);
+    }
+}
+
+function renderOrgWorkspaceSwitcher() {
+    const nameEl = document.getElementById('orgWorkspaceName');
+    const typeEl = document.getElementById('orgWorkspaceType');
+    const iconEl = document.getElementById('orgWorkspaceIcon');
+    const listEl = document.getElementById('orgWorkspaceList');
+    const membersNavBtn = document.getElementById('orgWorkspaceMembersNavBtn');
+    const active = currentOrgWorkspace();
+
+    if (nameEl) nameEl.textContent = active ? active.name : ui('Cá nhân', 'Personal');
+    if (typeEl) {
+        typeEl.textContent = active && active.type === 'business'
+            ? ui('Không gian doanh nghiệp', 'Business workspace')
+            : ui('Không gian cá nhân', 'Personal workspace');
+    }
+    if (iconEl) iconEl.textContent = active && active.type === 'business' ? '🏢' : '👤';
+    if (membersNavBtn) {
+        membersNavBtn.style.display = active && active.type === 'business' ? '' : 'none';
+    }
+
+    if (listEl) {
+        listEl.innerHTML = orgWorkspaces.map((w) => `
+            <button type="button" class="org-workspace-item${w.id === currentOrgWorkspaceId ? ' active' : ''}" data-workspace-id="${escapeHtml(w.id)}">
+                <span>${w.type === 'business' ? '🏢' : '👤'}</span>
+                <span>
+                    ${escapeHtml(w.name)}
+                    <small>${w.member_role ? escapeHtml(ui(orgRoleLabelVi(w.member_role), orgRoleLabelEn(w.member_role))) : ''}</small>
+                </span>
+            </button>
+        `).join('');
+        listEl.querySelectorAll('[data-workspace-id]').forEach((btn) => {
+            btn.addEventListener('click', () => switchOrgWorkspace(btn.getAttribute('data-workspace-id')));
+        });
+    }
+}
+
+function switchOrgWorkspace(workspaceId) {
+    closeOrgWorkspacePopup();
+    if (!workspaceId || workspaceId === currentOrgWorkspaceId) return;
+    currentOrgWorkspaceId = workspaceId;
+    localStorage.setItem(orgWorkspaceStorageKey(), workspaceId);
+    renderOrgWorkspaceSwitcher();
+    showNotification(ui('Đã chuyển không gian làm việc', 'Switched workspace'), 'success');
+    if (currentPage === 'workspace-members') {
+        loadOrgWorkspaceMembers();
+    }
+}
+
+function toggleOrgWorkspacePopup() {
+    const popup = document.getElementById('orgWorkspacePopup');
+    const btn = document.getElementById('orgWorkspaceSwitcherBtn');
+    if (!popup || !btn) return;
+    const isOpen = popup.classList.toggle('show');
+    btn.setAttribute('aria-expanded', String(isOpen));
+}
+
+function closeOrgWorkspacePopup() {
+    document.getElementById('orgWorkspacePopup')?.classList.remove('show');
+    document.getElementById('orgWorkspaceSwitcherBtn')?.setAttribute('aria-expanded', 'false');
+}
+
+function openCreateOrgWorkspaceModal() {
+    closeOrgWorkspacePopup();
+    const modal = document.getElementById('createOrgWorkspaceModal');
+    const status = document.getElementById('createOrgWorkspaceStatus');
+    const input = document.getElementById('createOrgWorkspaceName');
+    if (status) status.textContent = '';
+    if (input) input.value = '';
+    modal?.classList.add('show');
+    input?.focus();
+}
+
+function closeCreateOrgWorkspaceModal() {
+    document.getElementById('createOrgWorkspaceModal')?.classList.remove('show');
+}
+
+async function submitCreateOrgWorkspace(event) {
+    event.preventDefault();
+    const input = document.getElementById('createOrgWorkspaceName');
+    const status = document.getElementById('createOrgWorkspaceStatus');
+    const name = (input?.value || '').trim();
+    if (!name) return;
+    if (status) status.textContent = ui('Đang tạo...', 'Creating...');
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspaces`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) {
+            throw new Error(data.error || ui('Không tạo được không gian làm việc', 'Could not create workspace'));
+        }
+        await loadOrgWorkspaces();
+        currentOrgWorkspaceId = data.workspace.id;
+        localStorage.setItem(orgWorkspaceStorageKey(), data.workspace.id);
+        renderOrgWorkspaceSwitcher();
+        closeCreateOrgWorkspaceModal();
+        showNotification(ui('Đã tạo không gian doanh nghiệp', 'Business workspace created'), 'success');
+    } catch (err) {
+        if (status) status.textContent = err.message;
+    }
+}
+
+async function loadOrgWorkspaceMembers() {
+    const emptyEl = document.getElementById('orgWorkspaceMembersEmpty');
+    const contentEl = document.getElementById('orgWorkspaceMembersContent');
+    const inviteCard = document.getElementById('orgWorkspaceInviteCard');
+    const active = currentOrgWorkspace();
+    if (!active || active.type !== 'business') {
+        if (emptyEl) emptyEl.hidden = false;
+        if (contentEl) contentEl.hidden = true;
+        return;
+    }
+    if (emptyEl) emptyEl.hidden = true;
+    if (contentEl) contentEl.hidden = false;
+
+    const canManage = active.member_role === 'owner' || active.member_role === 'admin';
+    if (inviteCard) inviteCard.hidden = !canManage;
+
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspaces/${active.id}/members`);
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+            orgWorkspaceMembers = data.members || [];
+        }
+    } catch (err) {
+        console.warn('loadOrgWorkspaceMembers failed', err);
+    }
+    renderOrgWorkspaceMembers();
+
+    if (canManage) {
+        try {
+            const resp = await apiFetch(`${API_BASE}/workspaces/${active.id}/invitations`);
+            const data = await resp.json();
+            if (resp.ok && data.success) {
+                orgWorkspacePendingInvitations = (data.invitations || []).filter((i) => i.status === 'pending');
+            }
+        } catch (err) {
+            console.warn('load invitations failed', err);
+        }
+        renderOrgWorkspacePendingInvitations();
+    }
+}
+
+function renderOrgWorkspaceMembers() {
+    const listEl = document.getElementById('orgWorkspaceMembersList');
+    if (!listEl) return;
+    const active = currentOrgWorkspace();
+    const canManage = active && (active.member_role === 'owner' || active.member_role === 'admin');
+    listEl.innerHTML = orgWorkspaceMembers.map((m) => `
+        <div class="org-workspace-member-row">
+            <div class="org-workspace-member-info">
+                <strong>${escapeHtml(m.name || m.email || m.user_id)}</strong>
+                <small>${escapeHtml(m.email || '')}</small>
+            </div>
+            <span class="org-role-badge">${escapeHtml(ui(orgRoleLabelVi(m.role), orgRoleLabelEn(m.role)))}</span>
+            ${canManage && m.role !== 'owner' ? `
+                <select class="org-role-select" data-user-id="${escapeHtml(m.user_id)}">
+                    <option value="worker" ${m.role === 'worker' ? 'selected' : ''}>Worker</option>
+                    <option value="admin" ${m.role === 'admin' ? 'selected' : ''}>Admin</option>
+                </select>
+                <button type="button" class="btn-secondary org-disable-member-btn" data-user-id="${escapeHtml(m.user_id)}">${ui('Xóa', 'Remove')}</button>
+            ` : ''}
+        </div>
+    `).join('') || `<p>${ui('Chưa có thành viên nào.', 'No members yet.')}</p>`;
+
+    listEl.querySelectorAll('.org-role-select').forEach((select) => {
+        select.addEventListener('change', () => changeOrgMemberRole(select.getAttribute('data-user-id'), select.value));
+    });
+    listEl.querySelectorAll('.org-disable-member-btn').forEach((btn) => {
+        btn.addEventListener('click', () => disableOrgMember(btn.getAttribute('data-user-id')));
+    });
+}
+
+function renderOrgWorkspacePendingInvitations() {
+    const listEl = document.getElementById('orgWorkspacePendingInvitations');
+    if (!listEl) return;
+    if (!orgWorkspacePendingInvitations.length) {
+        listEl.innerHTML = '';
+        return;
+    }
+    listEl.innerHTML = `<p style="margin-top:10px;font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--text-secondary);">${ui('LỜI MỜI ĐANG CHỜ', 'PENDING INVITATIONS')}</p>` +
+        orgWorkspacePendingInvitations.map((inv) => `
+            <div class="org-workspace-invitation-row">
+                <div class="org-workspace-invitation-info">
+                    <strong>${escapeHtml(inv.email_normalized)}</strong>
+                    <span class="org-role-badge">${escapeHtml(ui(orgRoleLabelVi(inv.role), orgRoleLabelEn(inv.role)))}</span>
+                </div>
+                <button type="button" class="btn-secondary org-revoke-invitation-btn" data-invitation-id="${escapeHtml(inv.id)}">${ui('Thu hồi', 'Revoke')}</button>
+            </div>
+        `).join('');
+    listEl.querySelectorAll('.org-revoke-invitation-btn').forEach((btn) => {
+        btn.addEventListener('click', () => revokeOrgInvitation(btn.getAttribute('data-invitation-id')));
+    });
+}
+
+async function changeOrgMemberRole(userId, role) {
+    const active = currentOrgWorkspace();
+    if (!active) return;
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspaces/${active.id}/members/${encodeURIComponent(userId)}/role`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'error');
+        showNotification(ui('Đã đổi vai trò', 'Role updated'), 'success');
+        loadOrgWorkspaceMembers();
+    } catch (err) {
+        showNotification(ui(`Không đổi được vai trò: ${err.message}`, `Could not change role: ${err.message}`), 'error');
+    }
+}
+
+async function disableOrgMember(userId) {
+    const active = currentOrgWorkspace();
+    if (!active) return;
+    if (!confirm(ui('Xóa thành viên này khỏi không gian làm việc?', 'Remove this member from the workspace?'))) return;
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspaces/${active.id}/members/${encodeURIComponent(userId)}/disable`, {
+            method: 'POST',
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'error');
+        showNotification(ui('Đã xóa thành viên', 'Member removed'), 'success');
+        loadOrgWorkspaceMembers();
+    } catch (err) {
+        showNotification(ui(`Không xóa được thành viên: ${err.message}`, `Could not remove member: ${err.message}`), 'error');
+    }
+}
+
+async function submitOrgWorkspaceInvite(event) {
+    event.preventDefault();
+    const active = currentOrgWorkspace();
+    if (!active) return;
+    const emailInput = document.getElementById('orgInviteEmail');
+    const roleSelect = document.getElementById('orgInviteRole');
+    const status = document.getElementById('orgInviteStatus');
+    const email = (emailInput?.value || '').trim();
+    const role = roleSelect?.value || 'worker';
+    if (!email) return;
+    if (status) status.textContent = ui('Đang gửi lời mời...', 'Sending invitation...');
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspaces/${active.id}/invitations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, role }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) {
+            throw new Error(data.error || ui('Không gửi được lời mời', 'Could not send invitation'));
+        }
+        // No email delivery yet (see design doc section 1.1) -- the raw
+        // token only ever appears in this response, so the admin/owner has
+        // to relay this link out-of-band themselves for now.
+        const inviteLink = `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(data.invitation.token)}`;
+        if (status) {
+            status.innerHTML = ui(
+                `Đã tạo lời mời. Gửi link này cho ${escapeHtml(email)}:<br><code>${escapeHtml(inviteLink)}</code>`,
+                `Invitation created. Send this link to ${escapeHtml(email)}:<br><code>${escapeHtml(inviteLink)}</code>`
+            );
+        }
+        if (emailInput) emailInput.value = '';
+        loadOrgWorkspaceMembers();
+    } catch (err) {
+        if (status) status.textContent = err.message;
+    }
+}
+
+async function revokeOrgInvitation(invitationId) {
+    const active = currentOrgWorkspace();
+    if (!active) return;
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspaces/${active.id}/invitations/${encodeURIComponent(invitationId)}`, {
+            method: 'DELETE',
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'error');
+        showNotification(ui('Đã thu hồi lời mời', 'Invitation revoked'), 'success');
+        loadOrgWorkspaceMembers();
+    } catch (err) {
+        showNotification(ui(`Lỗi: ${err.message}`, `Error: ${err.message}`), 'error');
+    }
+}
+
+async function checkPendingOrgInvitationFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('invite');
+    if (!token) return;
+    // Strip the token from the URL immediately so a refresh/share doesn't
+    // re-trigger acceptance or leak the token into browser history.
+    params.delete('invite');
+    const cleanUrl = window.location.pathname + (params.toString() ? `?${params}` : '') + window.location.hash;
+    window.history.replaceState({}, '', cleanUrl);
+
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspace-invitations/${encodeURIComponent(token)}/accept`, {
+            method: 'POST',
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) {
+            throw new Error(data.error || ui('Không chấp nhận được lời mời', 'Could not accept invitation'));
+        }
+        showNotification(ui('Đã tham gia không gian doanh nghiệp!', 'Joined the business workspace!'), 'success');
+        await loadOrgWorkspaces();
+        currentOrgWorkspaceId = data.invitation.workspace_id;
+        localStorage.setItem(orgWorkspaceStorageKey(), data.invitation.workspace_id);
+        renderOrgWorkspaceSwitcher();
+    } catch (err) {
+        showNotification(ui(`Lỗi lời mời: ${err.message}`, `Invitation error: ${err.message}`), 'error');
+    }
+}
+
+function setupOrgWorkspaceUI() {
+    const switcherBtn = document.getElementById('orgWorkspaceSwitcherBtn');
+    const createBtn = document.getElementById('createOrgWorkspaceBtn');
+    const createForm = document.getElementById('createOrgWorkspaceForm');
+    const inviteForm = document.getElementById('orgWorkspaceInviteForm');
+
+    switcherBtn?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        toggleOrgWorkspacePopup();
+    });
+    document.addEventListener('click', () => closeOrgWorkspacePopup());
+    document.getElementById('orgWorkspacePopup')?.addEventListener('click', (event) => event.stopPropagation());
+
+    createBtn?.addEventListener('click', openCreateOrgWorkspaceModal);
+    createForm?.addEventListener('submit', submitCreateOrgWorkspace);
+    document.getElementById('createOrgWorkspaceModal')?.querySelectorAll('[data-modal="createOrgWorkspaceModal"]').forEach((el) => {
+        el.addEventListener('click', closeCreateOrgWorkspaceModal);
+    });
+
+    inviteForm?.addEventListener('submit', submitOrgWorkspaceInvite);
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', initApp);
 
@@ -451,6 +843,7 @@ async function initApp() {
     emailSearchInput = document.getElementById('emailSearchInput');
     setupAuthGate();
     setupWorkspaceShell();
+    setupOrgWorkspaceUI();
     applyLanguage();
     setupDateTimePreviews();
     const savedTheme = localStorage.getItem('flowmate-theme');
@@ -836,6 +1229,8 @@ async function initApp() {
     // the page read but be swallowed by a later first-time baseline.
     await startWorkspaceSyncWatcher();
     await loadUserProfile();
+    await loadOrgWorkspaces();
+    checkPendingOrgInvitationFromUrl();
     if (!userModeRequired) {
         showWorkspace();
         updateChatSessionTitle();
@@ -2987,9 +3382,18 @@ function updateSidebarUserProfile(profile) {
 async function apiFetch(url, options = {}) {
     try {
         const method = String(options.method || 'GET').toUpperCase();
+        // Every /api/ call carries the active Business workspace (if any) so
+        // workspace-scoped routes (Phase 3+) can resolve tenant context
+        // without every call site doing it individually. Routes that don't
+        // scope by workspace yet simply ignore the header.
+        const headers = { ...(options.headers || {}) };
+        if (currentOrgWorkspaceId && String(url).startsWith(API_BASE)) {
+            headers['X-Workspace-Id'] = currentOrgWorkspaceId;
+        }
         const resp = await fetch(url, {
             credentials: 'include',
-            ...options
+            ...options,
+            headers,
         });
 
         if (resp.status === 401) {
@@ -3406,6 +3810,8 @@ async function handlePageChange(btn) {
         loadActivityHistory().catch(err => console.error('History load error:', err));
     } else if (page === 'settings') {
         loadSettingsPage().catch(err => console.error('Settings load error:', err));
+    } else if (page === 'workspace-members') {
+        loadOrgWorkspaceMembers().catch(err => console.error('Workspace members load error:', err));
     }
 }
 

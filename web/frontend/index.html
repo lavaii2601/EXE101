@@ -140,8 +140,25 @@
                         <span class="user-mode-chevron">›</span>
                     </button>
                 </div>
+                <!-- Multi-tenant Business workspace switcher (Worker Business Phase 1).
+                     Distinct from the existing "Không gian làm việc" mode-picker above,
+                     which is a per-user personal preference, not a tenant. -->
+                <div class="org-workspace-switcher">
+                    <button type="button" id="orgWorkspaceSwitcherBtn" class="org-workspace-current" aria-haspopup="true" aria-expanded="false">
+                        <span id="orgWorkspaceIcon" class="org-workspace-icon">👤</span>
+                        <span>
+                            <strong id="orgWorkspaceName">Cá nhân</strong>
+                            <small id="orgWorkspaceType">Không gian cá nhân</small>
+                        </span>
+                        <span class="org-workspace-chevron">›</span>
+                    </button>
+                    <div id="orgWorkspacePopup" class="org-workspace-popup" role="menu">
+                        <div id="orgWorkspaceList" class="org-workspace-list"></div>
+                        <button type="button" id="createOrgWorkspaceBtn" class="org-workspace-create-btn">+ Tạo không gian doanh nghiệp</button>
+                    </div>
+                </div>
             </div>
-            
+
             <nav class="sidebar-nav">
                 <button id="newChatSidebarBtn" class="sidebar-new-chat-btn" type="button">
                     <span class="icon" aria-hidden="true">+</span>
@@ -173,6 +190,10 @@
                 <button class="nav-btn" data-page="settings">
                     <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21h-4v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H3v-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V3h4v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.1v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg></span>
                     <span class="nav-label" data-i18n="nav.settings">Cài đặt</span>
+                </button>
+                <button class="nav-btn" data-page="workspace-members" id="orgWorkspaceMembersNavBtn" style="display:none;">
+                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+                    <span class="nav-label">Thành viên</span>
                 </button>
             </nav>
 
@@ -407,6 +428,42 @@
                     <h2>Lịch sử hoạt động</h2>
                 </div>
                 <div id="historyList" class="history-list"></div>
+            </section>
+
+            <section id="workspace-members-page" class="page">
+                <div class="settings-page-header">
+                    <div>
+                        <span class="settings-kicker">DOANH NGHIỆP</span>
+                        <h2 id="orgWorkspaceMembersTitle">Thành viên</h2>
+                        <p id="orgWorkspaceMembersSubtitle">Quản lý thành viên và lời mời của không gian hiện tại.</p>
+                    </div>
+                </div>
+
+                <div id="orgWorkspaceMembersEmpty" class="settings-card" hidden>
+                    <span class="settings-section-label">KHÔNG GIAN CÁ NHÂN</span>
+                    <p>Bạn đang ở không gian cá nhân, không có thành viên. Chọn hoặc tạo một không gian doanh nghiệp ở góc trên bên trái để mời đồng nghiệp.</p>
+                </div>
+
+                <div id="orgWorkspaceMembersContent" class="settings-grid" hidden>
+                    <article class="settings-card">
+                        <span class="settings-section-label">DANH SÁCH THÀNH VIÊN</span>
+                        <div id="orgWorkspaceMembersList" class="org-workspace-members-list"></div>
+                    </article>
+
+                    <article id="orgWorkspaceInviteCard" class="settings-card" hidden>
+                        <span class="settings-section-label">MỜI THÀNH VIÊN</span>
+                        <form id="orgWorkspaceInviteForm" class="org-workspace-invite-form">
+                            <input type="email" id="orgInviteEmail" placeholder="email@congty.com" required>
+                            <select id="orgInviteRole">
+                                <option value="worker">Worker</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                            <button type="submit" class="btn-primary">Gửi lời mời</button>
+                        </form>
+                        <p id="orgInviteStatus" class="org-workspace-invite-status" aria-live="polite"></p>
+                        <div id="orgWorkspacePendingInvitations" class="org-workspace-invitations-list"></div>
+                    </article>
+                </div>
             </section>
 
             <section id="settings-page" class="page">
@@ -686,6 +743,24 @@
                 <button type="button" id="userModeCancelBtn" class="btn-secondary">Hủy</button>
                 <button type="button" id="userModeConfirmBtn" class="btn-primary" disabled>Xác nhận</button>
             </div>
+        </div>
+    </div>
+
+    <div id="createOrgWorkspaceModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="createOrgWorkspaceTitle">
+        <div class="modal-content">
+            <span class="close" data-modal="createOrgWorkspaceModal">&times;</span>
+            <h2 id="createOrgWorkspaceTitle">Tạo không gian doanh nghiệp</h2>
+            <form id="createOrgWorkspaceForm">
+                <div class="form-group">
+                    <label>Tên doanh nghiệp / nhóm</label>
+                    <input type="text" id="createOrgWorkspaceName" placeholder="Ví dụ: Công ty ABC" required>
+                </div>
+                <p id="createOrgWorkspaceStatus" class="org-workspace-invite-status" aria-live="polite"></p>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Tạo</button>
+                    <button type="button" class="btn-secondary" data-modal="createOrgWorkspaceModal">Hủy</button>
+                </div>
+            </form>
         </div>
     </div>
 

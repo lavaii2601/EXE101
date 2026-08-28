@@ -581,6 +581,237 @@ button {
     font-size: 24px;
 }
 
+/* Multi-tenant Business workspace switcher (Worker Business Phase 1).
+   Sits directly below .user-mode-picker in the sidebar and mirrors its
+   look, but is a distinct concept (tenant, not a personal preference). */
+.org-workspace-switcher {
+    position: relative;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.org-workspace-current {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    width: 100%;
+    padding: 0;
+    background: transparent;
+    color: #f8fafc;
+    text-align: left;
+    cursor: pointer;
+}
+
+.org-workspace-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.12);
+    font-size: 15px;
+}
+
+.org-workspace-current strong,
+.org-workspace-current small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.org-workspace-current strong {
+    font-size: 12.5px;
+}
+
+.org-workspace-current small {
+    margin-top: 2px;
+    color: #cbd5e1;
+    font-size: 10px;
+}
+
+.org-workspace-chevron {
+    color: #94a3b8;
+    font-size: 20px;
+    transition: transform 0.15s ease;
+}
+
+.org-workspace-switcher[aria-expanded="true"] .org-workspace-chevron,
+.org-workspace-current[aria-expanded="true"] .org-workspace-chevron {
+    transform: rotate(90deg);
+}
+
+.org-workspace-popup {
+    position: absolute;
+    z-index: 40;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.org-workspace-popup.show {
+    display: flex;
+}
+
+.org-workspace-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 9px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+    font-size: 12.5px;
+}
+
+.org-workspace-item:hover {
+    background: var(--panel-soft);
+}
+
+.org-workspace-item.active {
+    background: rgba(108, 99, 255, 0.14);
+    font-weight: 700;
+}
+
+.org-workspace-item small {
+    display: block;
+    color: var(--text-secondary);
+    font-weight: 400;
+    font-size: 10.5px;
+}
+
+.org-workspace-create-btn {
+    margin-top: 4px;
+    padding: 9px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--primary);
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 12.5px;
+}
+
+.org-workspace-members-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.org-workspace-member-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel-soft);
+}
+
+.org-workspace-member-row .org-workspace-member-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.org-workspace-member-row strong {
+    display: block;
+    font-size: 13px;
+}
+
+.org-workspace-member-row small {
+    color: var(--text-secondary);
+    font-size: 11.5px;
+}
+
+.org-role-badge {
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(108, 99, 255, 0.14);
+    color: var(--primary);
+    font-size: 10.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.org-workspace-invite-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.org-workspace-invite-form input[type="email"] {
+    flex: 1;
+    min-width: 180px;
+    padding: 9px 11px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+}
+
+.org-workspace-invite-form select {
+    padding: 9px 11px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+}
+
+.org-workspace-invite-status {
+    min-height: 18px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.org-workspace-invitations-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.org-workspace-invitation-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+}
+
+.org-workspace-invitation-row .org-workspace-invitation-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.container.sidebar-collapsed .org-workspace-switcher {
+    padding: 8px;
+}
+
+.container.sidebar-collapsed .org-workspace-current small,
+.container.sidebar-collapsed .org-workspace-current strong {
+    display: none;
+}
+
 .user-mode-modal-content {
     position: relative;
     width: min(840px, 100%);
