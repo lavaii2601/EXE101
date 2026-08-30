@@ -10,6 +10,7 @@ to act on their own invitation, so it isn't nested under /api/workspaces/<id>).
 from flask import Blueprint, jsonify, request, session
 
 from models import workspace as workspace_model
+from models import workspace_subscription
 from models.user import User
 from utils.user_context import get_current_user_id
 
@@ -34,6 +35,12 @@ _ERROR_STATUS = {
     'invitation_not_pending': 409,
     'invitation_expired': 410,
     'invitation_email_mismatch': 403,
+    'capacity_blocked': 409,
+    'seat_request_not_found': 404,
+    'seat_request_not_pending': 409,
+    'workspace_subscription_not_found': 404,
+    'subscription_already_active': 409,
+    'no_active_subscription': 400,
 }
 
 
@@ -188,6 +195,68 @@ def revoke_invitation(workspace_id, invitation_id):
     except workspace_model.WorkspaceError as exc:
         return _error_response(exc)
     return jsonify({'success': True, 'invitation': result})
+
+
+@workspace_bp.route('/<workspace_id>/subscription', methods=['GET'])
+def get_workspace_subscription(workspace_id):
+    user_id = get_current_user_id(request, session=session)
+    membership = workspace_model.get_membership(workspace_id, user_id)
+    try:
+        _require_role(membership, workspace_model.ROLES)
+    except workspace_model.WorkspaceError as exc:
+        return _error_response(exc)
+    subscription = workspace_subscription.get_current(workspace_id)
+    return jsonify({
+        'success': True,
+        'subscription': subscription,
+        'access_state': workspace_subscription.get_access_state(subscription),
+        'seat_capacity': (
+            subscription['seat_capacity'] if subscription
+            else workspace_subscription.DEFAULT_BUSINESS_INCLUDED_SEATS
+        ),
+        'active_seats': workspace_subscription.count_active_seats(workspace_id),
+    })
+
+
+@workspace_bp.route('/<workspace_id>/seat-requests', methods=['GET'])
+def list_seat_requests(workspace_id):
+    user_id = get_current_user_id(request, session=session)
+    membership = workspace_model.get_membership(workspace_id, user_id)
+    try:
+        _require_role(membership, ('owner', 'admin'))
+    except workspace_model.WorkspaceError as exc:
+        return _error_response(exc)
+    return jsonify({
+        'success': True,
+        'seat_requests': workspace_subscription.list_seat_requests(workspace_id),
+    })
+
+
+@workspace_bp.route('/<workspace_id>/seat-requests/<request_id>/approve', methods=['POST'])
+def approve_seat_request(workspace_id, request_id):
+    user_id = get_current_user_id(request, session=session)
+    membership = workspace_model.get_membership(workspace_id, user_id)
+    data = request.get_json(silent=True) or {}
+    try:
+        _require_role(membership, ('owner', 'admin'))
+        result = workspace_subscription.approve_seat_request(
+            request_id, user_id, added_seats=data.get('added_seats'),
+        )
+    except (workspace_model.WorkspaceError, workspace_subscription.WorkspaceSubscriptionError) as exc:
+        return _error_response(exc)
+    return jsonify({'success': True, 'seat_request': result})
+
+
+@workspace_bp.route('/<workspace_id>/seat-requests/<request_id>/reject', methods=['POST'])
+def reject_seat_request(workspace_id, request_id):
+    user_id = get_current_user_id(request, session=session)
+    membership = workspace_model.get_membership(workspace_id, user_id)
+    try:
+        _require_role(membership, ('owner', 'admin'))
+        result = workspace_subscription.reject_seat_request(request_id, user_id)
+    except (workspace_model.WorkspaceError, workspace_subscription.WorkspaceSubscriptionError) as exc:
+        return _error_response(exc)
+    return jsonify({'success': True, 'seat_request': result})
 
 
 @workspace_invitations_bp.route('/<token>/accept', methods=['POST'])

@@ -42,6 +42,15 @@ class _ScriptedConnection:
     def __init__(self, script):
         self.script = list(script)
         self.calls = []
+        self.commits = 0
+
+    def commit(self):
+        # Real code explicitly commits mid-transaction before raising an
+        # error for a mutation that must survive it (see accept_invitation's
+        # invitation_expired/capacity_blocked branches) -- track calls so
+        # tests can assert that actually happened, without needing a real
+        # transaction to verify it.
+        self.commits += 1
 
     def execute(self, statement, params=()):
         sql = " ".join(str(statement).split())
@@ -166,6 +175,9 @@ class WorkspaceModelTests(unittest.TestCase):
         accepted_row = {**invitation_row, "status": "accepted"}
         connection = _ScriptedConnection([
             ("SELECT * FROM workspace_invitations WHERE token_hash", _Result(one=invitation_row)),
+            # Personal workspace -> accept_invitation skips the Business
+            # seat-capacity check (models/workspace_subscription.py) entirely.
+            ("SELECT type FROM workspaces WHERE id", _Result(one={"type": "personal"})),
             ("INSERT INTO workspace_memberships", _Result(rowcount=1)),
             ("UPDATE workspace_invitations", _Result(one=accepted_row)),
             ("INSERT INTO workspace_audit_events", _Result(rowcount=1)),
@@ -174,6 +186,37 @@ class WorkspaceModelTests(unittest.TestCase):
             result = workspace_module.accept_invitation("raw-token", "bob", "bob@example.com")
 
         self.assertEqual("accepted", result["status"])
+
+    def test_accept_invitation_blocks_when_business_workspace_at_capacity(self):
+        expires = datetime.now(timezone.utc) + timedelta(days=7)
+        invitation_row = {
+            "id": "inv-1", "workspace_id": "ws-biz", "role": "worker",
+            "status": "pending", "email_normalized": "bob@example.com",
+            "expires_at": expires,
+        }
+        connection = _ScriptedConnection([
+            ("SELECT * FROM workspace_invitations WHERE token_hash", _Result(one=invitation_row)),
+            ("SELECT type FROM workspaces WHERE id", _Result(one={"type": "business"})),
+            ("SELECT id FROM workspaces WHERE id", _Result(one={"id": "ws-biz"})),
+            ("SELECT included_seats, extra_seats FROM subscriptions",
+             _Result(one={"included_seats": 10, "extra_seats": 0})),
+            ("SELECT COUNT(*) AS n FROM workspace_memberships", _Result(one={"n": 10})),
+            ("UPDATE workspace_invitations SET status = 'capacity_blocked'", _Result(rowcount=1)),
+            ("SELECT * FROM workspace_seat_requests", _Result(one=None)),
+            ("INSERT INTO workspace_seat_requests",
+             _Result(one={"id": "req-1", "workspace_id": "ws-biz", "invitation_id": "inv-1", "status": "pending_owner"})),
+            ("INSERT INTO workspace_audit_events", _Result(rowcount=1)),
+        ])
+        with _patched_pg(connection):
+            with self.assertRaises(workspace_module.WorkspaceError) as raised:
+                workspace_module.accept_invitation("raw-token", "bob", "bob@example.com")
+
+        self.assertEqual("capacity_blocked", raised.exception.code)
+        # pg.connection() rolls back the whole transaction when an exception
+        # escapes it (see models/postgres_db.py) -- without an explicit
+        # commit here, the capacity_blocked status and seat request above
+        # would silently vanish even though this test's scripted SQL ran.
+        self.assertEqual(1, connection.commits)
 
     def test_accept_invitation_rejects_email_mismatch(self):
         invitation_row = {
@@ -205,6 +248,7 @@ class WorkspaceModelTests(unittest.TestCase):
                 workspace_module.accept_invitation("raw-token", "bob", "bob@example.com")
 
         self.assertEqual("invitation_expired", raised.exception.code)
+        self.assertEqual(1, connection.commits)
 
     def test_accept_invitation_rejects_already_accepted(self):
         invitation_row = {

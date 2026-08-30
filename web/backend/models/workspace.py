@@ -16,6 +16,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from models import postgres_db as pg
+from models import workspace_subscription
 
 ROLES = ("owner", "admin", "worker")
 INVITABLE_ROLES = ("admin", "worker")
@@ -352,9 +353,9 @@ def find_invitation_by_token(raw_token):
 def accept_invitation(raw_token, user_id, user_email):
     """Accept an invitation. The invitee's verified login email must match it.
 
-    Capacity checks (design doc section 6.4-6.5) are Phase 2 scope -- this
-    Phase 1 version activates membership unconditionally once the invitation
-    itself is valid.
+    For a Business workspace at seat capacity (design doc section 6.4-6.5),
+    the invitation is instead marked capacity_blocked and a seat request is
+    recorded for the owner/admin to act on.
     """
     _require_pg()
     pg.ensure_user(user_id)
@@ -374,9 +375,42 @@ def accept_invitation(raw_token, user_id, user_email):
                 "UPDATE workspace_invitations SET status = 'expired' WHERE id = %s",
                 (invitation["id"],),
             )
+            # pg.connection()'s context manager rolls back the whole
+            # transaction when an exception propagates out of it (see
+            # models/postgres_db.py) -- an explicit commit here is required
+            # so the 'expired' status actually persists instead of being
+            # undone by that rollback right before we raise to report it.
+            conn.commit()
             raise WorkspaceError("invitation_expired")
         if normalize_email(user_email) != invitation["email_normalized"]:
             raise WorkspaceError("invitation_email_mismatch")
+
+        workspace_row = conn.execute(
+            "SELECT type FROM workspaces WHERE id = %s",
+            (invitation["workspace_id"],),
+        ).fetchone()
+        if workspace_row and workspace_row["type"] == "business":
+            _active, _capacity, has_room = workspace_subscription.check_seat_capacity_locked(
+                conn, invitation["workspace_id"],
+            )
+            if not has_room:
+                conn.execute(
+                    "UPDATE workspace_invitations SET status = 'capacity_blocked' WHERE id = %s",
+                    (invitation["id"],),
+                )
+                workspace_subscription.ensure_seat_request(
+                    conn, invitation["workspace_id"], invitation["id"], user_id,
+                )
+                _record_audit_event(
+                    conn, invitation["workspace_id"], user_id, "invitation_capacity_blocked",
+                    target_type="invitation", target_id=str(invitation["id"]),
+                )
+                # See the invitation_expired branch above: without this
+                # commit, the capacity_blocked status and the seat request
+                # would both be silently rolled back when this raise
+                # propagates out of the `with pg.connection()` block.
+                conn.commit()
+                raise WorkspaceError("capacity_blocked")
 
         conn.execute(
             """

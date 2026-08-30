@@ -18,6 +18,7 @@ from models import postgres_db as pg
 from models.knowledge import KnowledgeDocument
 from models.user import User
 from models import subscription as subscription_model
+from models import workspace_subscription
 from models.workspace_sync import WorkspaceSync
 from utils.security import authenticated_user_id
 from utils.user_context import sanitize_user_id
@@ -800,6 +801,65 @@ def admin_grant_subscription(user_id):
         WorkspaceSync.bump(user_id, ('profile', 'settings', 'overview'))
     except Exception:
         pass
+    return jsonify({
+        'success': True,
+        'admin': admin,
+        'action': row.get('entitlement_action'),
+        'subscription': row,
+    })
+
+
+@admin_bp.route('/workspaces/<workspace_id>/subscription', methods=['POST'])
+def admin_grant_workspace_subscription(workspace_id):
+    """Manually grant/renew a Business workspace subscription (provider=
+    'manual'), for the period before a real payment gateway is wired up.
+    Same subscriptions row shape a future payment-provider webhook would
+    eventually insert -- see routes/workspace.py's models/workspace_subscription
+    module docstring."""
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    if not pg.enabled():
+        return jsonify({'error': 'subscriptions_require_postgres'}), 400
+
+    data = request.get_json(silent=True) or {}
+    action = (data.get('action') or '').strip().lower() or None
+    if action and action not in workspace_subscription.PURCHASE_ACTIONS:
+        return jsonify({'error': 'invalid_subscription_action'}), 400
+    plan_code = (data.get('plan_code') or 'business_monthly').strip()
+    plan_name = (data.get('plan_name') or 'Business').strip()
+    billing_interval = data.get('billing_interval') or 'monthly'
+    if billing_interval not in ('monthly', 'yearly'):
+        return jsonify({'error': 'invalid_billing_interval'}), 400
+    try:
+        unit_amount = int(data.get('unit_amount') or 0)
+        days = int(data.get('days') or (365 if billing_interval == 'yearly' else 30))
+        included_seats = int(
+            data.get('included_seats') or workspace_subscription.DEFAULT_BUSINESS_INCLUDED_SEATS
+        )
+    except (TypeError, ValueError):
+        return jsonify({'error': 'invalid_amount_or_days'}), 400
+
+    try:
+        row = workspace_subscription.grant_manual(
+            workspace_id,
+            plan_code,
+            plan_name=plan_name,
+            billing_interval=billing_interval,
+            unit_amount=unit_amount,
+            currency=data.get('currency') or 'VND',
+            included_seats=included_seats,
+            days=days,
+            action=action,
+            actor_user_id=admin['identity'],
+        )
+    except workspace_subscription.WorkspaceSubscriptionError as exc:
+        return jsonify({
+            'error': exc.code,
+            'allowed_action': exc.extra.get('allowed_action'),
+            'subscription': exc.extra.get('subscription'),
+        }), 409
+
     return jsonify({
         'success': True,
         'admin': admin,
