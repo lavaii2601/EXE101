@@ -71,6 +71,10 @@ let currentOrgWorkspaceId = null;
 let orgWorkspaces = [];
 let orgWorkspaceMembers = [];
 let orgWorkspacePendingInvitations = [];
+// Phase 2 (Subscription/Seat foundation): Business subscription status and
+// pending "need more seats" requests for the active workspace.
+let orgWorkspaceSubscription = null;
+let orgWorkspaceSeatRequests = [];
 // Gmail push should be configured in production for true server-side push.
 // This short watcher is the resilient foreground fallback and feels instant
 // even when Pub/Sub is unavailable or the browser just resumed.
@@ -448,6 +452,13 @@ function orgRoleLabelEn(role) {
     return 'Worker';
 }
 
+function orgAccessStateLabel(state) {
+    if (state === 'active') return ui('Đang hoạt động', 'Active');
+    if (state === 'grace') return ui('Sắp hết hạn (gia hạn ngay)', 'Expiring soon (renew now)');
+    if (state === 'read_only') return ui('Chỉ đọc (đã hết hạn)', 'Read-only (expired)');
+    return ui('Chưa có gói', 'No subscription yet');
+}
+
 function currentOrgWorkspace() {
     return orgWorkspaces.find((w) => w.id === currentOrgWorkspaceId) || null;
 }
@@ -602,6 +613,8 @@ async function loadOrgWorkspaceMembers() {
     }
     renderOrgWorkspaceMembers();
 
+    loadOrgWorkspaceSubscription();
+
     if (canManage) {
         try {
             const resp = await apiFetch(`${API_BASE}/workspaces/${active.id}/invitations`);
@@ -613,6 +626,114 @@ async function loadOrgWorkspaceMembers() {
             console.warn('load invitations failed', err);
         }
         renderOrgWorkspacePendingInvitations();
+        loadOrgWorkspaceSeatRequests();
+    }
+}
+
+async function loadOrgWorkspaceSubscription() {
+    const active = currentOrgWorkspace();
+    if (!active) return;
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspaces/${active.id}/subscription`);
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+            orgWorkspaceSubscription = data;
+        }
+    } catch (err) {
+        console.warn('loadOrgWorkspaceSubscription failed', err);
+    }
+    renderOrgWorkspaceSubscription();
+}
+
+function renderOrgWorkspaceSubscription() {
+    const bodyEl = document.getElementById('orgWorkspaceSubscriptionBody');
+    if (!bodyEl || !orgWorkspaceSubscription) return;
+    const { subscription, access_state: accessState, seat_capacity: seatCapacity, active_seats: activeSeats } = orgWorkspaceSubscription;
+    const stateClass = `org-subscription-state-${accessState}`;
+    bodyEl.innerHTML = `
+        <div class="org-subscription-heading">
+            <strong>${escapeHtml(subscription?.plan_name || ui('Chưa có gói doanh nghiệp', 'No Business plan yet'))}</strong>
+            <span class="org-subscription-badge ${stateClass}">${escapeHtml(orgAccessStateLabel(accessState))}</span>
+        </div>
+        <div class="org-subscription-seats">
+            ${ui('Chỗ đang dùng', 'Seats used')}: <strong>${activeSeats}</strong> / ${seatCapacity}
+        </div>
+        ${subscription?.current_period_end ? `
+            <div class="org-subscription-period">
+                ${ui('Hết hạn', 'Expires')}: ${new Date(subscription.current_period_end).toLocaleDateString(currentLanguage === 'en' ? 'en-US' : 'vi-VN')}
+            </div>
+        ` : ''}
+        ${accessState === 'grace' ? `
+            <p class="org-subscription-notice org-subscription-notice-warn">${ui('Gói đã hết hạn, đang trong 7 ngày gia hạn. Sau đó không gian sẽ chuyển sang chỉ đọc.', 'Your plan has expired and is in the 7-day grace period. After that, this workspace becomes read-only.')}</p>
+        ` : ''}
+        ${accessState === 'read_only' ? `
+            <p class="org-subscription-notice org-subscription-notice-danger">${ui('Không gian đang ở chế độ chỉ đọc do gói đã hết hạn. Gia hạn để tiếp tục chỉnh sửa.', 'This workspace is read-only because its plan expired. Renew to resume editing.')}</p>
+        ` : ''}
+    `;
+}
+
+async function loadOrgWorkspaceSeatRequests() {
+    const active = currentOrgWorkspace();
+    if (!active) return;
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspaces/${active.id}/seat-requests`);
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+            orgWorkspaceSeatRequests = (data.seat_requests || []).filter((r) => r.status === 'pending_owner');
+        }
+    } catch (err) {
+        console.warn('loadOrgWorkspaceSeatRequests failed', err);
+    }
+    renderOrgWorkspaceSeatRequests();
+}
+
+function renderOrgWorkspaceSeatRequests() {
+    const cardEl = document.getElementById('orgWorkspaceSeatRequestsCard');
+    const listEl = document.getElementById('orgWorkspaceSeatRequestsList');
+    if (!cardEl || !listEl) return;
+    if (!orgWorkspaceSeatRequests.length) {
+        cardEl.hidden = true;
+        listEl.innerHTML = '';
+        return;
+    }
+    cardEl.hidden = false;
+    listEl.innerHTML = orgWorkspaceSeatRequests.map((r) => `
+        <div class="org-seat-request-row">
+            <div class="org-seat-request-info">
+                <strong>${ui('Cần thêm', 'Needs')} ${r.requested_seats} ${ui('chỗ', 'seat(s)')}</strong>
+                <small>${escapeHtml(r.requested_by_user_id || '')}</small>
+            </div>
+            <div class="org-seat-request-actions">
+                <button type="button" class="btn-primary org-approve-seat-btn" data-request-id="${escapeHtml(r.id)}">${ui('Duyệt', 'Approve')}</button>
+                <button type="button" class="btn-secondary org-reject-seat-btn" data-request-id="${escapeHtml(r.id)}">${ui('Từ chối', 'Reject')}</button>
+            </div>
+        </div>
+    `).join('');
+    listEl.querySelectorAll('.org-approve-seat-btn').forEach((btn) => {
+        btn.addEventListener('click', () => resolveOrgSeatRequest(btn.getAttribute('data-request-id'), 'approve'));
+    });
+    listEl.querySelectorAll('.org-reject-seat-btn').forEach((btn) => {
+        btn.addEventListener('click', () => resolveOrgSeatRequest(btn.getAttribute('data-request-id'), 'reject'));
+    });
+}
+
+async function resolveOrgSeatRequest(requestId, action) {
+    const active = currentOrgWorkspace();
+    if (!active) return;
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspaces/${active.id}/seat-requests/${encodeURIComponent(requestId)}/${action}`, {
+            method: 'POST',
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'error');
+        showNotification(
+            action === 'approve' ? ui('Đã duyệt yêu cầu thêm chỗ', 'Seat request approved') : ui('Đã từ chối yêu cầu', 'Seat request rejected'),
+            'success'
+        );
+        loadOrgWorkspaceSeatRequests();
+        loadOrgWorkspaceSubscription();
+    } catch (err) {
+        showNotification(ui(`Không xử lý được yêu cầu: ${err.message}`, `Could not process request: ${err.message}`), 'error');
     }
 }
 
@@ -773,6 +894,12 @@ async function checkPendingOrgInvitationFromUrl() {
         });
         const data = await resp.json();
         if (!resp.ok || !data.success) {
+            if (data.error === 'capacity_blocked') {
+                throw new Error(ui(
+                    'Không gian doanh nghiệp đã đầy chỗ. Quản trị viên đã được thông báo để mua thêm chỗ, bạn sẽ nhận lại lời mời khi có chỗ trống.',
+                    'This Business workspace is at full seat capacity. The owner/admin has been notified to add seats -- try this invite again once they do.'
+                ));
+            }
             throw new Error(data.error || ui('Không chấp nhận được lời mời', 'Could not accept invitation'));
         }
         showNotification(ui('Đã tham gia không gian doanh nghiệp!', 'Joined the business workspace!'), 'success');

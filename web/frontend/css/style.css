@@ -803,6 +803,104 @@ button {
     min-width: 0;
 }
 
+.org-subscription-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.org-subscription-badge {
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.org-subscription-state-active {
+    background: rgba(22, 163, 74, 0.14);
+    color: var(--success);
+}
+
+.org-subscription-state-grace {
+    background: rgba(180, 83, 9, 0.14);
+    color: var(--warning);
+}
+
+.org-subscription-state-read_only {
+    background: rgba(220, 38, 38, 0.14);
+    color: var(--danger);
+}
+
+.org-subscription-state-none {
+    background: var(--panel-soft);
+    color: var(--text-secondary);
+}
+
+.org-subscription-seats,
+.org-subscription-period {
+    color: var(--text-secondary);
+    font-size: 12.5px;
+    margin-top: 4px;
+}
+
+.org-subscription-notice {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.org-subscription-notice-warn {
+    background: rgba(180, 83, 9, 0.1);
+    color: var(--warning);
+}
+
+.org-subscription-notice-danger {
+    background: rgba(220, 38, 38, 0.1);
+    color: var(--danger);
+}
+
+.org-seat-requests-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.org-seat-request-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel-soft);
+}
+
+.org-seat-request-row .org-seat-request-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.org-seat-request-row strong {
+    display: block;
+    font-size: 13px;
+}
+
+.org-seat-request-row small {
+    color: var(--text-secondary);
+    font-size: 11.5px;
+}
+
+.org-seat-request-actions {
+    display: flex;
+    gap: 6px;
+}
+
 .container.sidebar-collapsed .org-workspace-switcher {
     padding: 8px;
 }
