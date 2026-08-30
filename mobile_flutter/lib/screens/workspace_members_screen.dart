@@ -22,6 +22,8 @@ class WorkspaceMembersScreen extends StatefulWidget {
 class _WorkspaceMembersScreenState extends State<WorkspaceMembersScreen> {
   List<dynamic> members = [];
   List<dynamic> pendingInvitations = [];
+  Map<String, dynamic>? subscriptionInfo;
+  List<dynamic> seatRequests = [];
   bool loading = false;
   bool inviting = false;
   String? inviteResultLink;
@@ -51,6 +53,14 @@ class _WorkspaceMembersScreenState extends State<WorkspaceMembersScreen> {
       }
     } catch (_) {}
 
+    try {
+      final data = await apiGet('/workspaces/$workspaceId/subscription');
+      if (data is Map && data['success'] == true) {
+        subscriptionInfo = Map<String, dynamic>.from(data);
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
     if (context.read<WorkspaceController>().canManage) {
       try {
         final data = await apiGet('/workspaces/$workspaceId/invitations');
@@ -60,8 +70,40 @@ class _WorkspaceMembersScreenState extends State<WorkspaceMembersScreen> {
               .toList();
         }
       } catch (_) {}
+
+      try {
+        final data = await apiGet('/workspaces/$workspaceId/seat-requests');
+        if (data is Map && data['success'] == true) {
+          seatRequests = ((data['seat_requests'] as List?) ?? [])
+              .where((r) => (r as Map)['status'] == 'pending_owner')
+              .toList();
+        }
+      } catch (_) {}
     }
     if (mounted) setState(() => loading = false);
+  }
+
+  Future<void> _resolveSeatRequest(String requestId, String action) async {
+    final workspaceId = context.read<WorkspaceController>().currentWorkspaceId;
+    if (workspaceId == null) return;
+    try {
+      await apiPost('/workspaces/$workspaceId/seat-requests/$requestId/$action', {});
+      _load();
+    } catch (_) {}
+  }
+
+  String _accessStateLabel(String? state, String Function(String, [String?]) t) {
+    if (state == 'active') return t('Đang hoạt động', 'Active');
+    if (state == 'grace') return t('Sắp hết hạn', 'Expiring soon');
+    if (state == 'read_only') return t('Chỉ đọc (đã hết hạn)', 'Read-only (expired)');
+    return t('Chưa có gói', 'No subscription yet');
+  }
+
+  Color _accessStateColor(String? state, AppColors colors) {
+    if (state == 'active') return colors.success;
+    if (state == 'grace') return colors.warning;
+    if (state == 'read_only') return colors.danger;
+    return colors.textMuted;
   }
 
   Future<void> _submitInvite() async {
@@ -168,6 +210,64 @@ class _WorkspaceMembersScreenState extends State<WorkspaceMembersScreen> {
                     if (loading)
                       const Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator()))
                     else ...[
+                      if (subscriptionInfo != null) ...[
+                        AppCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(t('GÓI DOANH NGHIỆP', 'BUSINESS PLAN'), style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1)),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      (subscriptionInfo!['subscription'] as Map?)?['plan_name'] as String? ?? t('Chưa có gói doanh nghiệp', 'No Business plan yet'),
+                                      style: TextStyle(color: colors.text, fontWeight: FontWeight.w700, fontSize: 14),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: _accessStateColor(subscriptionInfo!['access_state'] as String?, colors).withValues(alpha: 0.14),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      _accessStateLabel(subscriptionInfo!['access_state'] as String?, t),
+                                      style: TextStyle(color: _accessStateColor(subscriptionInfo!['access_state'] as String?, colors), fontWeight: FontWeight.w700, fontSize: 10.5),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '${t('Chỗ đang dùng', 'Seats used')}: ${subscriptionInfo!['active_seats']} / ${subscriptionInfo!['seat_capacity']}',
+                                style: TextStyle(color: colors.textMuted, fontSize: 12.5),
+                              ),
+                              if (subscriptionInfo!['access_state'] == 'grace') ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  t(
+                                    'Gói đã hết hạn, đang trong 7 ngày gia hạn. Sau đó không gian sẽ chuyển sang chỉ đọc.',
+                                    'Your plan has expired and is in the 7-day grace period. After that, this workspace becomes read-only.',
+                                  ),
+                                  style: TextStyle(color: colors.warning, fontSize: 12),
+                                ),
+                              ],
+                              if (subscriptionInfo!['access_state'] == 'read_only') ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  t(
+                                    'Không gian đang ở chế độ chỉ đọc do gói đã hết hạn. Gia hạn để tiếp tục chỉnh sửa.',
+                                    'This workspace is read-only because its plan expired. Renew to resume editing.',
+                                  ),
+                                  style: TextStyle(color: colors.danger, fontSize: 12),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
                       AppCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -277,6 +377,49 @@ class _WorkspaceMembersScreenState extends State<WorkspaceMembersScreen> {
                             ],
                           ),
                         ),
+                        if (seatRequests.isNotEmpty) ...[
+                          const SizedBox(height: 14),
+                          AppCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(t('YÊU CẦU THÊM CHỖ', 'SEAT REQUESTS'), style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1)),
+                                const SizedBox(height: 10),
+                                ...seatRequests.map((raw) {
+                                  final r = Map<String, dynamic>.from(raw as Map);
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 10),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '${t('Cần thêm', 'Needs')} ${r['requested_seats']} ${t('chỗ', 'seat(s)')}',
+                                                style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 13),
+                                              ),
+                                              Text(r['requested_by_user_id'] as String? ?? '', style: TextStyle(color: colors.textMuted, fontSize: 11.5)),
+                                            ],
+                                          ),
+                                        ),
+                                        TextButton(
+                                          onPressed: () => _resolveSeatRequest(r['id'] as String, 'approve'),
+                                          child: Text(t('Duyệt', 'Approve'), style: TextStyle(color: colors.success, fontSize: 12, fontWeight: FontWeight.w700)),
+                                        ),
+                                        TextButton(
+                                          onPressed: () => _resolveSeatRequest(r['id'] as String, 'reject'),
+                                          child: Text(t('Từ chối', 'Reject'), style: TextStyle(color: colors.danger, fontSize: 12)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ],
                   ],
