@@ -442,7 +442,8 @@ class IntentOrchestrator:
         return self._contains_word(text, self._EXPLICIT_WORKSPACE_COMMANDS)
 
     def detect_with_ai(self, message, ai_service, user_id=None, db_path=None,
-                        chat_session_id=None, confidence_threshold=0.6):
+                        chat_session_id=None, confidence_threshold=0.6,
+                        workspace_id=None):
         """Run the deterministic rules first; only ask the AI to read the
         message when the rules aren't confident (i.e. it fell through to
         chat.freeform) AND the message at least hints at a recognizable
@@ -466,7 +467,7 @@ class IntentOrchestrator:
         result = self.detect(message)
         contextual_followup = is_context_dependent_followup(message)
         recent_turns = (
-            self._recent_turns_text(db_path, chat_session_id)
+            self._recent_turns_text(db_path, chat_session_id, workspace_id=workspace_id)
             if contextual_followup else ""
         )
         if result.get("confidence", 0) >= confidence_threshold and not (
@@ -503,6 +504,7 @@ class IntentOrchestrator:
         try:
             ai_result = self._detect_via_ai(
                 message, ai_service, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
+                workspace_id=workspace_id,
             )
         except Exception:
             logger.warning("AI-assisted intent detection failed", exc_info=True)
@@ -541,7 +543,7 @@ class IntentOrchestrator:
     )
 
     def detect_workflow_with_ai(self, message, ai_service, user_id=None, db_path=None,
-                                chat_session_id=None):
+                                chat_session_id=None, workspace_id=None):
         """Detect explicit multi-step requests while preserving safe writes.
 
         Plain ``va/and`` inside a task list is deliberately not a split.  We
@@ -561,14 +563,14 @@ class IntentOrchestrator:
         if len(expanded) < 2:
             return self.detect_with_ai(
                 message, ai_service, user_id=user_id, db_path=db_path,
-                chat_session_id=chat_session_id,
+                chat_session_id=chat_session_id, workspace_id=workspace_id,
             )
 
         steps = []
         for part in expanded[:8]:
             result = self.detect_with_ai(
                 part, ai_service, user_id=user_id, db_path=db_path,
-                chat_session_id=chat_session_id,
+                chat_session_id=chat_session_id, workspace_id=workspace_id,
             )
             steps.append({**result, "message": part})
         actionable_steps = [
@@ -577,7 +579,7 @@ class IntentOrchestrator:
         if len(steps) < 2 or not actionable_steps:
             return self.detect_with_ai(
                 message, ai_service, user_id=user_id, db_path=db_path,
-                chat_session_id=chat_session_id,
+                chat_session_id=chat_session_id, workspace_id=workspace_id,
             )
 
         refresh_targets = sorted({
@@ -701,9 +703,12 @@ class IntentOrchestrator:
         base["cache_assisted"] = True
         return base
 
-    def _detect_via_ai(self, message, ai_service, user_id=None, db_path=None, chat_session_id=None):
+    def _detect_via_ai(self, message, ai_service, user_id=None, db_path=None,
+                       chat_session_id=None, workspace_id=None):
         now = self._local_now()
-        recent_turns = self._recent_turns_text(db_path, chat_session_id)
+        recent_turns = self._recent_turns_text(
+            db_path, chat_session_id, workspace_id=workspace_id
+        )
         system_message = {
             "role": "system",
             "content": (
@@ -751,11 +756,16 @@ class IntentOrchestrator:
         data2 = self._parse_ai_json(raw2)
         return self._coerce_ai_result(data2, message) if data2 else None
 
-    def _recent_turns_text(self, db_path, chat_session_id, limit=5):
+    def _recent_turns_text(self, db_path, chat_session_id, limit=5, workspace_id=None):
         if not db_path or not chat_session_id:
             return ""
         try:
-            records = History.get_recent(limit=limit, db_path=db_path, chat_session_id=chat_session_id)
+            records = History.get_recent(
+                limit=limit,
+                db_path=db_path,
+                chat_session_id=chat_session_id,
+                workspace_id=workspace_id,
+            )
         except Exception:
             return ""
         if not records:
@@ -1092,7 +1102,7 @@ class IntentOrchestrator:
         except (TypeError, ValueError):
             return default
 
-    def execute_direct(self, intent_result, user_id, db_path):
+    def execute_direct(self, intent_result, user_id, db_path, workspace_id=None):
         intent = intent_result.get("intent")
         entities = intent_result.get("entities") or {}
 
@@ -1118,7 +1128,9 @@ class IntentOrchestrator:
 
         if intent == "history.list":
             limit = entities.get("limit") or 8
-            records = History.get_recent(limit=limit, db_path=db_path)
+            records = History.get_recent(
+                limit=limit, db_path=db_path, workspace_id=workspace_id
+            )
             if not records:
                 response = "Chua co lich su hoat dong nao."
             else:

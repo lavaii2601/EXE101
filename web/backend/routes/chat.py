@@ -28,7 +28,12 @@ from models.history import History
 from models.schedule import Schedule
 from models.session_memory import SessionMemory
 from models.user import User
-from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
+from utils.user_context import (
+    get_current_user_id,
+    get_current_workspace_id,
+    get_user_db_path,
+    get_user_token_file,
+)
 from models import subscription as subscription_model
 from models import entitlements
 from utils.quota import enforce_ai_quota
@@ -60,9 +65,10 @@ def _format_user_datetime(value, fallback=None):
     return parsed.strftime('%d/%m/%Y. %H:%M')
 
 
-def _ensure_chat_session(user_id, session_id, mode='worker', title=None):
+def _ensure_chat_session(user_id, session_id, mode='worker', title=None, workspace_id=None):
     return History.ensure_chat_session(
         user_id=user_id,
+        workspace_id=workspace_id,
         session_id=session_id,
         title=title,
         mode=mode,
@@ -170,6 +176,7 @@ def send_message():
     data = request.get_json() or {}
     user_message = data.get('message', '').strip()
     user_id = get_current_user_id(request)
+    workspace_id = get_current_workspace_id(request)
     stored_user = User.get(user_id) or {}
     # The profile is shared by web and mobile, so it is authoritative. A
     # client may have a stale locally cached mode while another client has
@@ -236,7 +243,8 @@ def send_message():
         user_id,
         data.get('session_id') or data.get('chat_session_id'),
         mode=mode,
-        title=user_message[:80]
+        title=user_message[:80],
+        workspace_id=workspace_id,
     )
 
     def save_chat_history(user_text, assistant_text, action_type='chat', related_id=None):
@@ -247,6 +255,7 @@ def send_message():
             related_id=related_id,
             db_path=db_path,
             chat_session_id=chat_session_id if action_type == 'chat' else None,
+            workspace_id=workspace_id,
         )
 
     # Intent routing is fully local: deterministic rules, local cache and the
@@ -254,10 +263,12 @@ def send_message():
     if subscription_model.is_premium(user_id):
         intent_result = intent_orchestrator.detect_workflow_with_ai(
             user_message, None, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
+            workspace_id=workspace_id,
         )
     else:
         intent_result = intent_orchestrator.detect_with_ai(
             user_message, None, user_id=user_id, db_path=db_path, chat_session_id=chat_session_id,
+            workspace_id=workspace_id,
         )
     refresh_targets = list(intent_result.get('refresh_targets') or [])
     resolved_user_message = intent_result.get('resolved_message') or user_message
@@ -266,6 +277,7 @@ def send_message():
         user_message=resolved_user_message,
         original_user_message=user_message,
         user_id=user_id,
+        workspace_id=workspace_id,
         db_path=db_path,
         chat_session_id=chat_session_id,
         mode=mode,
@@ -288,6 +300,7 @@ def send_message():
             limit=8,
             db_path=db_path,
             chat_session_id=chat_session_id,
+            workspace_id=workspace_id,
         )
         fallback_language = latest_user_language(recent_history)
     except Exception:
@@ -368,6 +381,7 @@ def summarize_email():
     email_content = data.get('content', '').strip()
 
     user_id = get_current_user_id(request)
+    workspace_id = get_current_workspace_id(request)
     db_path = get_user_db_path(user_id)
 
     if not email_content:
@@ -376,7 +390,10 @@ def summarize_email():
     summary = ai_service.summarize_email(email_content, user_id=user_id)
 
     # Save to history
-    History.create(f"Tóm tắt email", summary, action_type='email_summary', db_path=db_path)
+    History.create(
+        f"Tóm tắt email", summary, action_type='email_summary',
+        db_path=db_path, workspace_id=workspace_id,
+    )
 
     return jsonify({
         'success': True,
@@ -391,6 +408,7 @@ def summarize_study_material():
     STUDENT_FREE_LIMITS['study_summary_daily'] lượt/ngày, Premium unlimited
     (see entitlements.student_limits_for)."""
     user_id = get_current_user_id(request)
+    workspace_id = get_current_workspace_id(request)
     is_student, _ = entitlements.student_context(user_id)
     if not is_student:
         return jsonify({'error': 'not_found'}), 404
@@ -411,7 +429,14 @@ def summarize_study_material():
     # with no 'study_summary' member -- reuse 'chat' rather than take on an
     # enum migration (ALTER TYPE ... ADD VALUE has transaction-ordering
     # subtleties) for what's just a History-tab label.
-    History.create(f"Tóm tắt tài liệu học tập: {title}" if title else "Tóm tắt tài liệu học tập", summary, action_type='chat', db_path=db_path)
+    History.create(
+        f"Tóm tắt tài liệu học tập: {title}"
+        if title else "Tóm tắt tài liệu học tập",
+        summary,
+        action_type='chat',
+        db_path=db_path,
+        workspace_id=workspace_id,
+    )
 
     return jsonify({
         'success': True,
@@ -427,6 +452,7 @@ def generate_reply():
     choice = data.get('choice', '').strip()
 
     user_id = get_current_user_id(request)
+    workspace_id = get_current_workspace_id(request)
     db_path = get_user_db_path(user_id)
 
     if not context or not choice:
@@ -435,7 +461,10 @@ def generate_reply():
     reply = ai_service.generate_reply(context, choice, user_id=user_id)
 
     # Save to history
-    History.create(f"Tạo email trả lời: {choice}", reply, action_type='email_reply', db_path=db_path)
+    History.create(
+        f"Tạo email trả lời: {choice}", reply, action_type='email_reply',
+        db_path=db_path, workspace_id=workspace_id,
+    )
 
     return jsonify({
         'success': True,
@@ -461,6 +490,7 @@ def send_drafted_reply():
         return jsonify({'error': 'Missing email_id or reply_text'}), 400
 
     user_id = get_current_user_id(request)
+    workspace_id = get_current_workspace_id(request)
     db_path = get_user_db_path(user_id)
     token_file = get_user_token_file(user_id)
     if not token_file or not os.path.exists(token_file):
@@ -493,6 +523,7 @@ def send_drafted_reply():
         reply_text,
         action_type='email_sent',
         db_path=db_path,
+        workspace_id=workspace_id,
     )
     return jsonify({'success': True})
 
@@ -501,18 +532,26 @@ def send_drafted_reply():
 def get_history():
     """Get chat history"""
     user_id = get_current_user_id(request)
+    workspace_id = get_current_workspace_id(request)
     db_path = get_user_db_path(user_id)
     limit = request.args.get('limit', 20, type=int)
     chat_session_id = request.args.get('session_id') or request.args.get('chat_session_id')
     if chat_session_id:
-        if not History.chat_session_available(user_id, chat_session_id, db_path=db_path):
+        if not History.chat_session_available(
+            user_id, chat_session_id, db_path=db_path, workspace_id=workspace_id
+        ):
             return jsonify({
                 'success': True,
                 'session_id': None,
                 'expired': True,
                 'history': []
             })
-    history = History.get_recent(limit=limit, db_path=db_path, chat_session_id=chat_session_id)
+    history = History.get_recent(
+        limit=limit,
+        db_path=db_path,
+        chat_session_id=chat_session_id,
+        workspace_id=workspace_id,
+    )
 
     return jsonify({
         'success': True,
@@ -525,9 +564,12 @@ def get_history():
 def get_chat_sessions():
     """List saved chat sessions that are still within retention."""
     user_id = get_current_user_id(request)
+    workspace_id = get_current_workspace_id(request)
     db_path = get_user_db_path(user_id)
     limit = request.args.get('limit', 30, type=int)
-    sessions = History.list_chat_sessions(user_id=user_id, limit=limit, db_path=db_path)
+    sessions = History.list_chat_sessions(
+        user_id=user_id, limit=limit, db_path=db_path, workspace_id=workspace_id
+    )
     cap = entitlements.limits_for(subscription_model.is_premium(user_id))['chat_retention_days']
     return jsonify({
         'success': True,
@@ -545,6 +587,7 @@ def update_chat_session(session_id):
     """Update chat session metadata such as title or retention period."""
     data = request.get_json(silent=True) or {}
     user_id = get_current_user_id(request)
+    workspace_id = get_current_workspace_id(request)
     db_path = get_user_db_path(user_id)
     updated = History.update_chat_session(
         user_id=user_id,
@@ -552,6 +595,7 @@ def update_chat_session(session_id):
         title=data.get('title') if 'title' in data else None,
         retention_days=data.get('retention_days') if 'retention_days' in data else None,
         db_path=db_path,
+        workspace_id=workspace_id,
     )
     if not updated:
         return jsonify({'success': False, 'error': 'chat_session_not_found'}), 404
@@ -562,15 +606,19 @@ def update_chat_session(session_id):
 def delete_chat_session(session_id):
     """Delete a saved chat session immediately."""
     user_id = get_current_user_id(request)
+    workspace_id = get_current_workspace_id(request)
     db_path = get_user_db_path(user_id)
     deleted = History.delete_chat_session(
         user_id=user_id,
         session_id=session_id,
         db_path=db_path,
+        workspace_id=workspace_id,
     )
     if not deleted:
         return jsonify({'success': False, 'error': 'chat_session_not_found'}), 404
-    SessionMemory.delete_for_session(user_id, session_id, db_path=db_path)
+    SessionMemory.delete_for_session(
+        user_id, session_id, db_path=db_path, workspace_id=workspace_id
+    )
     return jsonify({'success': True})
 
 
@@ -597,10 +645,13 @@ def clear_conversation():
     """Clear conversation history"""
     data = request.get_json(silent=True) or {}
     user_id = get_current_user_id(request)
+    workspace_id = get_current_workspace_id(request)
     db_path = get_user_db_path(user_id)
     chat_session_id = data.get('session_id') or data.get('chat_session_id')
     if chat_session_id:
-        chat_session_id = _ensure_chat_session(user_id, chat_session_id)
+        chat_session_id = _ensure_chat_session(
+            user_id, chat_session_id, workspace_id=workspace_id
+        )
 
     # One transaction prevents erased history from leaving injectable session
     # memory behind if a later delete were to fail.
@@ -609,6 +660,7 @@ def clear_conversation():
         db_path=db_path,
         chat_session_id=chat_session_id,
         clear_all_history=False,
+        workspace_id=workspace_id,
     )
     deleted_count = deleted['history']
     deleted_memory_count = deleted['memory']
@@ -627,12 +679,14 @@ def clear_conversation():
 def clear_all_history():
     """Clear all history including emails and schedules"""
     user_id = get_current_user_id(request)
+    workspace_id = get_current_workspace_id(request)
     db_path = get_user_db_path(user_id)
 
     deleted = History.clear_chat_state(
         user_id,
         db_path=db_path,
         clear_all_history=True,
+        workspace_id=workspace_id,
     )
     deleted_count = deleted['history']
     deleted_memory_count = deleted['memory']

@@ -67,6 +67,7 @@ class ChatContext:
     mode_prompt: str
     task: str
     intent_result: dict
+    workspace_id: str = None
     original_user_message: str = None
     refresh_targets: list = field(default_factory=list)
     client_confirm: bool = False
@@ -717,8 +718,8 @@ def _find_matching_schedules(message, db_path, window_days=14):
     return scored
 
 
-def _format_history_context(db_path):
-    records = History.get_recent(limit=10, db_path=db_path)
+def _format_history_context(db_path, workspace_id=None):
+    records = History.get_recent(limit=10, db_path=db_path, workspace_id=workspace_id)
     if not records:
         return "LỊCH SỬ HOẠT ĐỘNG\nChưa có hoạt động nào."
 
@@ -1155,6 +1156,7 @@ def _build_workspace_context(
     force_web_research=False,
     allow_web_research=True,
     mode=None,
+    workspace_id=None,
 ):
     sources = _intent_sources(message)
     context_parts = []
@@ -1163,7 +1165,7 @@ def _build_workspace_context(
     if 'calendar' in sources:
         context_parts.append(_format_calendar_context(message, user_id, db_path))
     if 'history' in sources:
-        context_parts.append(_format_history_context(db_path))
+        context_parts.append(_format_history_context(db_path, workspace_id=workspace_id))
     if 'profile' in sources:
         context_parts.append(_format_profile_context(user_id))
 
@@ -1859,6 +1861,7 @@ def _remember_email_result_map(ctx, emails):
             ctx.chat_session_id,
             emails,
             db_path=ctx.db_path,
+            workspace_id=ctx.workspace_id,
         )
     except Exception:
         # A failed convenience-memory write must not hide real Gmail results.
@@ -1932,7 +1935,9 @@ class ScheduleCreateAgent:
         # Overrides may edit a pending proposal, but cannot confirm a write.
         if ctx.client_confirm:
             return self._handle_confirmed(ctx)
-        direct_result = intent_orchestrator.execute_direct(ctx.intent_result, ctx.user_id, ctx.db_path)
+        direct_result = intent_orchestrator.execute_direct(
+            ctx.intent_result, ctx.user_id, ctx.db_path, workspace_id=ctx.workspace_id
+        )
         return _wrap_direct_result(direct_result, ctx)
 
     def _handle_confirmed(self, ctx):
@@ -1963,7 +1968,8 @@ class ScheduleCreateAgent:
                     "Lich hen duoc tao tu xac nhan cua nguoi dung",
                     action_type='schedule_created',
                     related_id=schedule_created.get('id'),
-                    db_path=ctx.db_path
+                    db_path=ctx.db_path,
+                    workspace_id=ctx.workspace_id,
                 )
         except Exception as e:
             logger.exception("Failed to create schedule through intent orchestrator")
@@ -2081,6 +2087,7 @@ class ScheduleUpdateAgent:
                 action_type='schedule_updated',
                 related_id=schedule_id,
                 db_path=ctx.db_path,
+                workspace_id=ctx.workspace_id,
             )
             response = f"Đã cập nhật lịch '{updated.get('title')}' sang {_format_user_datetime(updated.get('start_time'))}."
         except Exception as e:
@@ -2154,6 +2161,7 @@ class ScheduleDeleteAgent:
                 action_type='schedule_deleted',
                 related_id=schedule_id,
                 db_path=ctx.db_path,
+                workspace_id=ctx.workspace_id,
             )
             response = f"Đã xóa lịch '{schedule.get('title')}'."
         except Exception as e:
@@ -2317,6 +2325,7 @@ def _email_reference_proposal(ctx, read):
             ctx.user_id,
             ctx.chat_session_id,
             db_path=ctx.db_path,
+            workspace_id=ctx.workspace_id,
         )
     except Exception:
         logger.warning(
@@ -2431,6 +2440,7 @@ def _mark_emails_apply(ctx, read):
             "Đánh dấu qua chat sau xác nhận",
             action_type='chat',
             db_path=ctx.db_path,
+            workspace_id=ctx.workspace_id,
         )
 
     return AgentResult(
@@ -2462,7 +2472,9 @@ class HistoryListAgent:
     """AGENT_CAPABILITIES: roughly 'history.audit'."""
 
     def handle(self, ctx):
-        direct_result = intent_orchestrator.execute_direct(ctx.intent_result, ctx.user_id, ctx.db_path)
+        direct_result = intent_orchestrator.execute_direct(
+            ctx.intent_result, ctx.user_id, ctx.db_path, workspace_id=ctx.workspace_id
+        )
         return _wrap_direct_result(direct_result, ctx)
 
 
@@ -2476,7 +2488,9 @@ class SettingsUpdateModeAgent:
     def handle(self, ctx):
         if ctx.action_confirm and (ctx.action_override or {}).get('mode'):
             return self._handle_confirmed(ctx)
-        direct_result = intent_orchestrator.execute_direct(ctx.intent_result, ctx.user_id, ctx.db_path)
+        direct_result = intent_orchestrator.execute_direct(
+            ctx.intent_result, ctx.user_id, ctx.db_path, workspace_id=ctx.workspace_id
+        )
         return _wrap_direct_result(direct_result, ctx)
 
     def _handle_confirmed(self, ctx):
@@ -2500,6 +2514,7 @@ class SettingsUpdateModeAgent:
             "Che do duoc doi qua xac nhan trong chat",
             action_type='settings_updated',
             db_path=ctx.db_path,
+            workspace_id=ctx.workspace_id,
         )
         return AgentResult(
             response=f"Đã cập nhật chế độ làm việc sang {label}.",
@@ -2655,6 +2670,7 @@ class ChecklistCreateAgent:
             "Them qua xac nhan trong chat",
             action_type='chat',
             db_path=ctx.db_path,
+            workspace_id=ctx.workspace_id,
         )
 
         response = "Mình đã thêm vào checklist hôm nay:\n" + "\n".join(f"- {title}" for title in added)
@@ -2841,6 +2857,7 @@ class FreeformChatAgent:
                 force_web_research=not contextual_turn,
                 allow_web_research=not contextual_turn,
                 mode=ctx.mode,
+                workspace_id=ctx.workspace_id,
             )
         except Exception:
             logger.exception("Failed to build workspace context for user %s", ctx.user_id)
@@ -2855,6 +2872,7 @@ class FreeformChatAgent:
                     limit=8,
                     db_path=ctx.db_path,
                     chat_session_id=ctx.chat_session_id,
+                    workspace_id=ctx.workspace_id,
                 )
             except Exception:
                 logger.exception(
@@ -2903,7 +2921,12 @@ class FreeformChatAgent:
         # recent_history above, this must survive even on turns where
         # workspace_context replaced the raw message window.
         try:
-            remembered_facts = SessionMemory.list_for_session(ctx.user_id, ctx.chat_session_id, db_path=ctx.db_path)
+            remembered_facts = SessionMemory.list_for_session(
+                ctx.user_id,
+                ctx.chat_session_id,
+                db_path=ctx.db_path,
+                workspace_id=ctx.workspace_id,
+            )
         except Exception:
             remembered_facts = []
             logger.exception("Failed to load session memory for session %s", ctx.chat_session_id)
@@ -2972,6 +2995,7 @@ class FreeformChatAgent:
                 SessionMemory.remember(
                     ctx.user_id, ctx.chat_session_id, memory_matches[0],
                     source='auto', db_path=ctx.db_path,
+                    workspace_id=ctx.workspace_id,
                 )
         except Exception:
             logger.exception("Failed to extract session memory for session %s", ctx.chat_session_id)

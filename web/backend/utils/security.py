@@ -49,6 +49,22 @@ def header_user_id():
     return value
 
 
+def header_workspace_id():
+    """The active tenant, sent by every client as X-Workspace-Id once a
+    workspace exists (see web/frontend/js/app.js's apiFetch, mobile/src/api/
+    client.js, mobile_flutter/lib/api/client.dart). Unlike header_user_id
+    this isn't an identity bypass -- it only selects which already-
+    authenticated caller's workspace to operate in -- so it needs no
+    MOBILE_USER_HEADER_ENABLED gate. Membership is still verified downstream
+    by models.workspace.resolve_context; a header naming a workspace the
+    caller doesn't belong to is rejected there, not here.
+    """
+    value = (request.headers.get("X-Workspace-Id") or "").strip()
+    if not value or len(value) > 64:
+        return None
+    return value
+
+
 def authenticated_user_id():
     return bearer_user_id() or session.get("gmail_user_email") or session.get("user_id") or header_user_id()
 

@@ -156,6 +156,7 @@ class EmailResultReferenceTests(unittest.TestCase):
             ctx.chat_session_id,
             emails,
             db_path="alice.db",
+            workspace_id=None,
         )
 
 

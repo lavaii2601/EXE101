@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
 from models import postgres_db as pg
-from utils.security import bearer_user_id, header_user_id
+from utils.security import bearer_user_id, header_user_id, header_workspace_id
 
 
 class IdentityConflictError(RuntimeError):
@@ -217,6 +217,32 @@ def get_current_user_id(request, session=None):
             pass
 
     return user_id
+
+
+def get_current_workspace_id(request):
+    """Resolve which workspace tenant a Bob/chat request is scoped to.
+
+    Postgres-only (returns None without DATABASE_URL, same as every other
+    workspace-aware model) -- the SQLite fallback is single-tenant-per-file
+    and has no Business-workspace concept to isolate.
+
+    Always succeeds when Postgres is enabled: an X-Workspace-Id naming a
+    workspace the caller isn't (or is no longer) a member of falls back to
+    the caller's personal workspace rather than raising, so a stale client-
+    cached header degrades to a safe default instead of breaking chat.
+    """
+    if not pg.enabled():
+        return None
+    from models import workspace as workspace_model
+
+    user_id = get_current_user_id(request)
+    requested = header_workspace_id()
+    try:
+        workspace, _membership = workspace_model.resolve_context(user_id, requested)
+        return workspace['id']
+    except workspace_model.WorkspaceError:
+        workspace, _membership = workspace_model.resolve_context(user_id, None)
+        return workspace['id']
 
 
 def get_user_db_path(user_id):
