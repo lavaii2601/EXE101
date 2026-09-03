@@ -260,6 +260,18 @@ class ChatSessionTenantTests(unittest.TestCase):
         self.assertEqual(supplied, connection.calls[1][1][0])
 
 
+class WorkspaceIsolationSchemaTests(unittest.TestCase):
+    def test_existing_tables_gain_workspace_columns_before_backfill(self):
+        schema = (REPO_ROOT / "database" / "postgres_schema.sql").read_text(
+            encoding="utf-8"
+        )
+        backfill_position = schema.index("UPDATE chat_sessions cs")
+        for table in ("chat_sessions", "history", "session_memory"):
+            alter = f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS workspace_id UUID;"
+            self.assertIn(alter, schema)
+            self.assertLess(schema.index(alter), backfill_position)
+
+
 class ClearRouteSemanticsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

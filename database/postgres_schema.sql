@@ -491,6 +491,13 @@ $$;
 ALTER TABLE history
     ADD COLUMN IF NOT EXISTS chat_session_id UUID REFERENCES chat_sessions(id) ON DELETE SET NULL;
 
+-- CREATE TABLE IF NOT EXISTS does not add these Phase 3 columns to an
+-- existing deployment. Add them before the workspace backfill below; the
+-- foreign keys and NOT NULL constraints are applied after workspaces exists.
+ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS workspace_id UUID;
+ALTER TABLE history ADD COLUMN IF NOT EXISTS workspace_id UUID;
+ALTER TABLE session_memory ADD COLUMN IF NOT EXISTS workspace_id UUID;
+
 ALTER TABLE calendar_events
     ADD COLUMN IF NOT EXISTS etag TEXT,
     ADD COLUMN IF NOT EXISTS google_updated_at TIMESTAMPTZ;
