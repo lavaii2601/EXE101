@@ -1,6 +1,7 @@
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../api/google_auth.dart';
 import '../config/user_modes.dart';
 import '../state/app_state.dart';
@@ -9,6 +10,8 @@ import '../state/theme_controller.dart';
 import '../state/workspace_controller.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_screen.dart';
+import 'status_reports_screen.dart';
+import 'work_hub_screen.dart';
 import 'workspace_members_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -185,12 +188,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     subtitle: (workspace.current?['name'] as String?) ?? '',
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WorkspaceMembersScreen())),
                   ),
+                  _Row(
+                    icon: Icons.dashboard_outlined,
+                    iconBg: colors.primarySoft,
+                    iconColor: colors.primary,
+                    title: t('Công việc', 'Work Hub'),
+                    subtitle: t('Dự án và nhiệm vụ dùng chung', 'Shared projects and tasks'),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WorkHubScreen())),
+                  ),
+                  _Row(
+                    icon: Icons.assignment_outlined,
+                    iconBg: colors.primarySoft,
+                    iconColor: colors.primary,
+                    title: t('Báo cáo trạng thái', 'Status Reports'),
+                    subtitle: t('Done / Doing / Blocked / Next / Risks', 'Done / Doing / Blocked / Next / Risks'),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StatusReportsScreen())),
+                  ),
                 ],
               ),
             _Section(
               label: t('VỀ ỨNG DỤNG', 'ABOUT'),
               children: [
                 _Row(icon: Icons.info_outline, iconBg: colors.secondaryBg, iconColor: colors.secondaryText, title: t('Phiên bản', 'Version'), subtitle: '1.0.0 (Flutter)'),
+              ],
+            ),
+            _Section(
+              label: t('HỖ TRỢ', 'SUPPORT'),
+              children: [
+                _Row(
+                  icon: Icons.call_outlined,
+                  iconBg: colors.secondaryBg,
+                  iconColor: colors.secondaryText,
+                  title: t('Điện thoại', 'Phone'),
+                  subtitle: t('Đội ngũ CSKH FlowMate: +84 945 999 076', 'FlowMate support team: +84 945 999 076'),
+                  onTap: () => launchUrl(Uri.parse('tel:+84945999076')),
+                ),
+                _Row(
+                  icon: Icons.mail_outline,
+                  iconBg: colors.secondaryBg,
+                  iconColor: colors.secondaryText,
+                  title: t('Email', 'Email'),
+                  subtitle: t('Đội ngũ CSKH FlowMate: lecaoduyanh123@gmail.com', 'FlowMate support team: lecaoduyanh123@gmail.com'),
+                  onTap: () => launchUrl(Uri.parse('mailto:lecaoduyanh123@gmail.com')),
+                ),
               ],
             ),
             _Section(
