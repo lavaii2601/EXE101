@@ -54,6 +54,35 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
+  Future<void> _confirmClearAll() async {
+    final t = context.read<LanguageController>().t;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t('Xóa toàn bộ audit log?', 'Clear the entire audit log?')),
+        content: Text(t(
+          'Hành động này sẽ xóa lịch sử chat, email và lịch đã ghi nhận.',
+          'This removes recorded chat, email, and calendar activity.',
+        )),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('Hủy', 'Cancel'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('Xóa', 'Clear'))),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await apiPost('/chat/clear-all');
+      if (mounted) setState(() { history = []; expandedId = null; });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t('Không xóa được nhật ký', 'Could not clear the audit log'))),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.watch<ThemeController>().colors;
@@ -69,6 +98,26 @@ class _HistoryScreenState extends State<HistoryScreen> {
           title: 'AI Audit Log',
           refreshing: loading,
           onRefresh: _load,
+          actions: history.isEmpty
+              ? null
+              : Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(13),
+                    onTap: _confirmClearAll,
+                    child: Container(
+                      width: 42,
+                      height: 42,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: colors.danger.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(13),
+                        border: Border.all(color: colors.danger.withValues(alpha: 0.24)),
+                      ),
+                      child: Icon(Icons.delete_outline, size: 18, color: colors.danger),
+                    ),
+                  ),
+                ),
           children: [
             AppCard(
               child: Row(

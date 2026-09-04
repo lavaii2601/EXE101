@@ -20,8 +20,9 @@ Future<dynamic> _request(String path, {required String method, Map<String, dynam
     'Content-Type': 'application/json',
     if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
     if (userId.isNotEmpty) 'X-User-Id': userId,
-    // Forward-compatible plumbing for Phase 3+ routes that will scope
-    // business data by workspace_id; nothing reads this yet.
+    // Tells the backend which tenant (Personal vs. a Business workspace)
+    // this request belongs to -- routes/chat.py's get_current_workspace_id
+    // resolves it, scoping chat history/sessions and the AI response cache.
     if (workspaceId.isNotEmpty) 'X-Workspace-Id': workspaceId,
   };
   final uri = Uri.parse('$kApiBase$path');
