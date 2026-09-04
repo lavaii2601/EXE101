@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../api/client.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
+import '../state/workspace_controller.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 
@@ -29,6 +30,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final scrollController = ScrollController();
   String sessionId = '';
   bool loading = false;
+  String? _lastWorkspaceId;
 
   @override
   void initState() {
@@ -155,6 +157,19 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final colors = context.watch<ThemeController>().colors;
     final t = context.watch<LanguageController>().t;
+
+    // ChatScreen's State survives tab switches (MainShell keeps it alive in
+    // an IndexedStack) and never reloads history from the server on its
+    // own, so without this it would keep showing one workspace's messages
+    // after the user switches to another -- a context-leak risk even though
+    // the backend itself scopes every request by workspace_id correctly.
+    final workspaceId = context.watch<WorkspaceController>().currentWorkspaceId;
+    if (_lastWorkspaceId != null && _lastWorkspaceId != workspaceId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startNewChat();
+      });
+    }
+    _lastWorkspaceId = workspaceId;
 
     return Scaffold(
       backgroundColor: colors.background,

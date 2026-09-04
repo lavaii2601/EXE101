@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import { getMobileUserId } from '../api/session';
+import { getCurrentWorkspaceId, getMobileUserId } from '../api/session';
 
 const ACTIVE_CHAT_SESSION_KEY = 'flowmate.activeChatSession';
 
@@ -9,8 +9,17 @@ function normalizeSessionId(value) {
   return String(value || '').trim();
 }
 
+// The "owner" key folds in the active workspace, not just the device user:
+// chat_sessions rows are workspace-scoped server-side (see
+// web/backend/models/history.py), so a session id remembered for the
+// Personal workspace must never be adopted while a Business workspace is
+// active, or vice versa. Every async callback in ChatScreen.js already
+// re-checks `expectedOwner === getChatSessionOwner()` before applying a
+// result, so folding workspace into this key also makes those the same
+// guard that protects against a workspace switch racing an in-flight
+// request, not just an account switch.
 function currentOwner() {
-  return getMobileUserId() || 'anonymous';
+  return `${getMobileUserId() || 'anonymous'}::${getCurrentWorkspaceId() || 'personal'}`;
 }
 
 export function getChatSessionOwner() {

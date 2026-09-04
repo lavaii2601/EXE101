@@ -14,6 +14,7 @@ import {
   loadActiveChatSessionId,
   persistActiveChatSessionId,
 } from '../state/chatSession';
+import { useOrgWorkspace } from '../state/OrgWorkspaceContext';
 
 function normalizePlanSuggestion(value) {
   return {
@@ -143,6 +144,7 @@ export default function ChatScreen({
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { currentWorkspaceId } = useOrgWorkspace() || {};
 
   const [messages, setMessages] = useState([]);
   const [sessionId, setSessionId] = useState('');
@@ -213,22 +215,34 @@ export default function ChatScreen({
     await loadHistoryForSession(sessionId);
   }, [loadHistoryForSession, sessionId]);
 
+  // Resolves whichever chat session was last active for `owner` (a
+  // user+workspace pair, see state/chatSession.js) or starts a fresh one.
+  // Shared by the mount effect below and the workspace-switch effect
+  // further down, since switching the active workspace must land the user
+  // on that workspace's own last session, not whatever the previous
+  // workspace happened to be showing.
+  const loadForOwner = useCallback(async (owner, { active = () => true } = {}) => {
+    const storedSessionId = await loadActiveChatSessionId(owner);
+    if (!active()) return;
+    const initialSessionId = adoptSessionId(storedSessionId || createSessionId(), owner);
+    if (!initialSessionId) return;
+    if (storedSessionId) {
+      await loadHistoryForSession(initialSessionId, owner);
+    } else {
+      setMessages([]);
+    }
+    if (!active()) return;
+    setSuggestion(null);
+    setPendingAction(null);
+    setPlanSuggestion(null);
+  }, [adoptSessionId, loadHistoryForSession]);
+
   useEffect(() => {
     let active = true;
     mountedRef.current = true;
     (async () => {
       const owner = getChatSessionOwner();
-      const storedSessionId = await loadActiveChatSessionId(owner);
-      if (!active) return;
-
-      const initialSessionId = adoptSessionId(
-        storedSessionId || createSessionId(),
-        owner,
-      );
-      if (!initialSessionId) return;
-      if (storedSessionId) {
-        await loadHistoryForSession(initialSessionId, owner);
-      }
+      await loadForOwner(owner, { active: () => active });
       if (!active) return;
 
       const notice = takePendingAgentNotice();
@@ -247,7 +261,25 @@ export default function ChatScreen({
       active = false;
       mountedRef.current = false;
     };
-  }, [adoptSessionId, loadHistoryForSession]);
+  }, [loadForOwner]);
+
+  // This screen's state is not remounted when the user switches their
+  // active workspace (Personal <-> a Business workspace) -- without this,
+  // it would keep showing the previous workspace's messages on screen,
+  // even though chat_sessions rows are workspace-scoped server-side.
+  // workspaceMountRef starts equal to the first-render value so this
+  // effect's first run (which fires alongside the mount effect above) is a
+  // no-op; only a later, real switch triggers a reload.
+  const workspaceMountRef = useRef(currentWorkspaceId);
+  useEffect(() => {
+    if (workspaceMountRef.current === currentWorkspaceId) return;
+    workspaceMountRef.current = currentWorkspaceId;
+    let active = true;
+    loadForOwner(getChatSessionOwner(), { active: () => active });
+    return () => {
+      active = false;
+    };
+  }, [currentWorkspaceId, loadForOwner]);
 
   const handleMessagesScroll = useCallback((event) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;

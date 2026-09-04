@@ -528,6 +528,21 @@ function switchOrgWorkspace(workspaceId) {
     if (currentPage === 'workspace-members') {
         loadOrgWorkspaceMembers();
     }
+    // chat_sessions rows are workspace-scoped server-side (see
+    // web/backend/models/history.py); activeChatSessionId is a single
+    // global here, not per-workspace, so without this the chat page would
+    // keep showing (and could keep appending to) the previous workspace's
+    // conversation after the switch.
+    activeChatSessionId = createChatSessionId();
+    activeChatSessionTitle = '';
+    persistChatSessionId();
+    persistChatSessionTitle();
+    if (chatMessages) chatMessages.innerHTML = '';
+    updateChatSessionTitle();
+    if (currentPage === 'chat') {
+        loadChatHistory();
+        loadChatSessions();
+    }
 }
 
 function toggleOrgWorkspacePopup() {
