@@ -195,6 +195,14 @@
                     <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
                     <span class="nav-label">Thành viên</span>
                 </button>
+                <button class="nav-btn" data-page="work-hub" id="orgWorkHubNavBtn" style="display:none;">
+                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></span>
+                    <span class="nav-label">Công việc</span>
+                </button>
+                <button class="nav-btn" data-page="status-reports" id="orgStatusReportsNavBtn" style="display:none;">
+                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 12h6M9 16h6M9 8h1"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg></span>
+                    <span class="nav-label">Báo cáo</span>
+                </button>
             </nav>
 
             <aside class="chat-history-panel sidebar-chat-history" aria-label="Doan chat cu">
@@ -476,6 +484,114 @@
                 </div>
             </section>
 
+            <section id="work-hub-page" class="page">
+                <div class="settings-page-header">
+                    <div>
+                        <span class="settings-kicker">DOANH NGHIỆP</span>
+                        <h2>Công việc</h2>
+                        <p>Dự án và nhiệm vụ dùng chung trong không gian hiện tại.</p>
+                    </div>
+                </div>
+
+                <div id="workHubEmpty" class="settings-card" hidden>
+                    <span class="settings-section-label">KHÔNG GIAN CÁ NHÂN</span>
+                    <p>Bạn đang ở không gian cá nhân, không có dự án chung. Chọn hoặc tạo một không gian doanh nghiệp ở góc trên bên trái.</p>
+                </div>
+
+                <div id="workHubContent" class="settings-grid" hidden>
+                    <article id="workHubNewProjectCard" class="settings-card" hidden>
+                        <span class="settings-section-label">DỰ ÁN MỚI</span>
+                        <form id="workHubNewProjectForm" class="work-hub-form">
+                            <input type="text" id="workHubProjectName" placeholder="Tên dự án" required>
+                            <textarea id="workHubProjectDescription" placeholder="Mô tả (tuỳ chọn)" rows="2"></textarea>
+                            <div class="work-hub-form-row">
+                                <select id="workHubProjectStatus">
+                                    <option value="planning">Lên kế hoạch</option>
+                                    <option value="active">Đang triển khai</option>
+                                    <option value="on_hold">Tạm dừng</option>
+                                    <option value="completed">Hoàn thành</option>
+                                    <option value="archived">Lưu trữ</option>
+                                </select>
+                                <select id="workHubProjectVisibility">
+                                    <option value="workspace">Cả không gian</option>
+                                    <option value="private">Riêng tư</option>
+                                </select>
+                            </div>
+                            <div class="work-hub-form-row">
+                                <input type="date" id="workHubProjectStartDate" title="Ngày bắt đầu">
+                                <input type="date" id="workHubProjectDueDate" title="Hạn chót">
+                            </div>
+                            <button type="submit" class="btn-primary">Tạo dự án</button>
+                        </form>
+                    </article>
+
+                    <article class="settings-card">
+                        <span class="settings-section-label">DỰ ÁN</span>
+                        <div id="workHubProjectsList" class="work-hub-projects-list"></div>
+                    </article>
+
+                    <article id="workHubTasksCard" class="settings-card" hidden>
+                        <span class="settings-section-label" id="workHubTasksLabel">NHIỆM VỤ</span>
+                        <form id="workHubNewTaskForm" class="work-hub-form">
+                            <input type="text" id="workHubTaskTitle" placeholder="Tên nhiệm vụ" required>
+                            <div class="work-hub-form-row">
+                                <select id="workHubTaskPriority">
+                                    <option value="low">Thấp</option>
+                                    <option value="medium" selected>Trung bình</option>
+                                    <option value="high">Cao</option>
+                                    <option value="urgent">Khẩn cấp</option>
+                                </select>
+                                <input type="date" id="workHubTaskDueDate" title="Hạn chót">
+                            </div>
+                            <button type="submit" class="btn-secondary">Thêm nhiệm vụ</button>
+                        </form>
+                        <div id="workHubTasksList" class="work-hub-tasks-list"></div>
+                    </article>
+                </div>
+            </section>
+
+            <section id="status-reports-page" class="page">
+                <div class="settings-page-header">
+                    <div>
+                        <span class="settings-kicker">DOANH NGHIỆP</span>
+                        <h2>Báo cáo trạng thái</h2>
+                        <p>Done / Doing / Blocked / Next / Risks -- chỉ dùng dữ liệu đã có trong không gian này.</p>
+                    </div>
+                </div>
+
+                <div id="statusReportsEmpty" class="settings-card" hidden>
+                    <span class="settings-section-label">KHÔNG GIAN CÁ NHÂN</span>
+                    <p>Bạn đang ở không gian cá nhân, không có báo cáo chung. Chọn hoặc tạo một không gian doanh nghiệp ở góc trên bên trái.</p>
+                </div>
+
+                <div id="statusReportsContent" class="settings-grid" hidden>
+                    <article class="settings-card">
+                        <span class="settings-section-label">BÁO CÁO MỚI</span>
+                        <form id="statusReportNewForm" class="work-hub-form">
+                            <select id="statusReportProject">
+                                <option value="">Không gắn với dự án cụ thể</option>
+                            </select>
+                            <textarea id="statusReportDone" placeholder="Done -- đã hoàn thành" rows="2"></textarea>
+                            <textarea id="statusReportDoing" placeholder="Doing -- đang làm" rows="2"></textarea>
+                            <textarea id="statusReportBlocked" placeholder="Blocked -- đang vướng" rows="2"></textarea>
+                            <textarea id="statusReportNext" placeholder="Next -- sắp tới" rows="2"></textarea>
+                            <textarea id="statusReportRisks" placeholder="Risks -- rủi ro" rows="2"></textarea>
+                            <button type="submit" class="btn-primary">Lưu nháp</button>
+                        </form>
+                    </article>
+
+                    <article class="settings-card">
+                        <span class="settings-section-label">NHÁP CỦA TÔI</span>
+                        <div id="statusReportDraftsList" class="work-hub-reports-list"></div>
+                    </article>
+
+                    <article class="settings-card">
+                        <span class="settings-section-label">ĐÃ CÔNG BỐ</span>
+                        <div id="statusReportPublishedList" class="work-hub-reports-list"></div>
+                    </article>
+                </div>
+            </section>
+
             <section id="settings-page" class="page">
                 <div class="settings-page-header">
                     <div>
@@ -583,6 +699,24 @@
                                 <span>Ngắt quyền truy cập Gmail và Calendar.</span>
                             </div>
                             <button id="settingsLogoutBtn" class="btn-secondary">Đăng xuất</button>
+                        </div>
+                    </article>
+
+                    <article class="settings-card">
+                        <span class="settings-section-label">HỖ TRỢ</span>
+                        <div class="settings-row">
+                            <div>
+                                <strong>Điện thoại</strong>
+                                <span>Đội ngũ CSKH FlowMate</span>
+                            </div>
+                            <a class="btn-secondary" href="tel:+84945999076">+84 945 999 076</a>
+                        </div>
+                        <div class="settings-row">
+                            <div>
+                                <strong>Email</strong>
+                                <span>Đội ngũ CSKH FlowMate</span>
+                            </div>
+                            <a class="btn-secondary" href="mailto:lecaoduyanh123@gmail.com">lecaoduyanh123@gmail.com</a>
                         </div>
                     </article>
                 </div>
