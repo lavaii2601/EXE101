@@ -136,6 +136,24 @@ def get_current(workspace_id):
         return _decorate(row)
 
 
+def assert_writable(workspace):
+    """Raise WorkspaceSubscriptionError('workspace_read_only') if this
+    Business workspace's access state is read_only (section 6.8: "het grace
+    period -> mutation tren task/project/report bi chan"). No-op for
+    personal workspaces (they have no Business subscription/grace concept)
+    and for any non-read_only access state (none/active/grace all still
+    allow writes -- grace is a warning state, not a block).
+
+    Callers: every *mutating* Work Hub route (routes/work_hub.py). Reads
+    stay allowed in every access state, matching section 6.8's "doc...
+    theo quyen hien co" (reads follow existing permissions, unaffected)."""
+    if workspace.get("type") != "business":
+        return
+    subscription = get_current(workspace["id"])
+    if get_access_state(subscription) == ACCESS_READ_ONLY:
+        raise WorkspaceSubscriptionError("workspace_read_only")
+
+
 def _seat_capacity(conn, workspace_id):
     """Read seat capacity using an already-open connection/transaction."""
     row = conn.execute(
