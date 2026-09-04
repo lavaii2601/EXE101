@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Image,
+  Linking,
   ScrollView,
   StyleSheet,
   Switch,
@@ -150,6 +151,22 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
       await WebBrowser.openBrowserAsync(TERMS_URL);
     } catch (error) {
       Alert.alert(t('Không mở được điều khoản', 'Could not open terms'), error.message);
+    }
+  };
+
+  const callSupport = async () => {
+    try {
+      await Linking.openURL('tel:+84945999076');
+    } catch (error) {
+      Alert.alert(t('Không gọi được', 'Could not place call'), error.message);
+    }
+  };
+
+  const emailSupport = async () => {
+    try {
+      await Linking.openURL('mailto:lecaoduyanh123@gmail.com');
+    } catch (error) {
+      Alert.alert(t('Không mở được email', 'Could not open email'), error.message);
     }
   };
 
@@ -562,6 +579,43 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
           <View style={styles.settingInfo}>
             <Text style={styles.settingTitle}>{t('Điều khoản dịch vụ', 'Terms of service')}</Text>
             <Text style={styles.settingSub}>{t('Đọc điều khoản sử dụng FlowMate', 'Read FlowMate usage terms')}</Text>
+          </View>
+          <Text style={styles.chevron}>›</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Support ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>{t('HỖ TRỢ', 'SUPPORT')}</Text>
+
+        <TouchableOpacity
+          style={styles.settingRow}
+          onPress={callSupport}
+          activeOpacity={0.75}
+        >
+          <View style={[styles.iconWrap, { backgroundColor: colors.secondaryBg }]}>
+            <Ionicons name="call-outline" size={18} color={colors.secondaryText} />
+          </View>
+          <View style={styles.settingInfo}>
+            <Text style={styles.settingTitle}>{t('Điện thoại', 'Phone')}</Text>
+            <Text style={styles.settingSub}>{t('Đội ngũ CSKH FlowMate: +84 945 999 076', 'FlowMate support team: +84 945 999 076')}</Text>
+          </View>
+          <Text style={styles.chevron}>›</Text>
+        </TouchableOpacity>
+
+        <View style={styles.divider} />
+
+        <TouchableOpacity
+          style={styles.settingRow}
+          onPress={emailSupport}
+          activeOpacity={0.75}
+        >
+          <View style={[styles.iconWrap, { backgroundColor: colors.secondaryBg }]}>
+            <Ionicons name="mail-outline" size={18} color={colors.secondaryText} />
+          </View>
+          <View style={styles.settingInfo}>
+            <Text style={styles.settingTitle}>{t('Email', 'Email')}</Text>
+            <Text style={styles.settingSub}>{t('Đội ngũ CSKH FlowMate: lecaoduyanh123@gmail.com', 'FlowMate support team: lecaoduyanh123@gmail.com')}</Text>
           </View>
           <Text style={styles.chevron}>›</Text>
         </TouchableOpacity>
