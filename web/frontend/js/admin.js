@@ -1,10 +1,18 @@
 const state = {
   timer: null,
   activeTab: 'overview',
+  overview: null,
   finance: null,
   financeLoaded: false,
   financeLoading: false,
   financeGeneratedAt: null,
+  workspaces: null,
+  workspacesLoaded: false,
+  workspacesLoading: false,
+  workspacesGeneratedAt: null,
+  autoRefresh: true,
+  refreshIntervalSeconds: 30,
+  nextRefreshAt: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -64,6 +72,28 @@ const escapeHtml = (value) => String(value ?? '')
   .replaceAll('>', '&gt;')
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&#039;');
+const normalizedText = (value) => String(value ?? '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase();
+
+function showToast(message, tone = 'success') {
+  const node = $('adminToast');
+  node.textContent = message;
+  node.className = `admin-toast show ${tone}`;
+  window.clearTimeout(showToast.timer);
+  showToast.timer = window.setTimeout(() => {
+    node.className = 'admin-toast';
+  }, 3200);
+}
+
+function markRefreshed(data) {
+  const identity = data?.admin?.identity;
+  if (identity) $('adminIdentity').textContent = identity;
+  const generatedAt = data?.generated_at || new Date().toISOString();
+  $('lastRefreshText').textContent = `Làm mới ${dateTime(generatedAt)}`;
+  state.nextRefreshAt = Date.now() + state.refreshIntervalSeconds * 1000;
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -104,7 +134,7 @@ function showGate(name, message = '') {
 }
 
 function activateTab(name, { focus = false, load = true } = {}) {
-  const next = name === 'finance' ? 'finance' : 'overview';
+  const next = ['finance', 'workspaces'].includes(name) ? name : 'overview';
   state.activeTab = next;
   document.querySelectorAll('[data-dashboard-tab]').forEach((tab) => {
     const active = tab.dataset.dashboardTab === next;
@@ -116,6 +146,7 @@ function activateTab(name, { focus = false, load = true } = {}) {
     panel.hidden = panel.dataset.dashboardPanel !== next;
   });
   if (next === 'finance' && load && !state.financeLoaded) loadFinance();
+  if (next === 'workspaces' && load && !state.workspacesLoaded) loadWorkspaces();
 }
 
 function handleAdminGate(error) {
@@ -181,7 +212,19 @@ function renderBars(target, items, formatValue = number) {
 }
 
 function renderSyncJobs(items) {
-  $('syncJobsBody').innerHTML = items.length ? items.map((job) => (
+  const query = normalizedText($('syncJobSearch').value);
+  const status = $('syncJobStatusFilter').value;
+  const filtered = items.filter((job) => {
+    const haystack = normalizedText([
+      job.user_id,
+      job.job_type,
+      job.status,
+      job.error_message,
+    ].join(' '));
+    return (!query || haystack.includes(query)) && (status === 'all' || job.status === status);
+  });
+  $('syncJobResultCount').textContent = `${number(filtered.length)} / ${number(items.length)} tác vụ`;
+  $('syncJobsBody').innerHTML = filtered.length ? filtered.map((job) => (
     `<tr>
       <td>${escapeHtml(dateTime(job.created_at))}</td>
       <td>${escapeHtml(job.user_id)}</td>
@@ -189,11 +232,23 @@ function renderSyncJobs(items) {
       <td><span class="badge ${escapeHtml(job.status)}">${escapeHtml(job.status)}</span></td>
       <td>${escapeHtml(job.error_message || (job.finished_at ? `Hoàn tất ${dateTime(job.finished_at)}` : 'Đang xử lý'))}</td>
     </tr>`
-  )).join('') : '<tr><td colspan="5" class="muted">Chưa có tác vụ đồng bộ.</td></tr>';
+  )).join('') : '<tr><td colspan="5" class="muted">Không có tác vụ phù hợp bộ lọc.</td></tr>';
 }
 
 function renderUsers(items) {
-  $('usersBody').innerHTML = items.length ? items.map((user) => {
+  const query = normalizedText($('userSearch').value);
+  const plan = $('userPlanFilter').value;
+  const connection = $('userConnectionFilter').value;
+  const filtered = items.filter((user) => {
+    const isPremium = Boolean(user.subscription_plan_name);
+    const haystack = normalizedText([user.name, user.gmail_email, user.email, user.user_id].join(' '));
+    const planMatches = plan === 'all' || (plan === 'premium' ? isPremium : !isPremium);
+    const connectionMatches = connection === 'all'
+      || (connection === 'connected' ? user.gmail_connected : !user.gmail_connected);
+    return (!query || haystack.includes(query)) && planMatches && connectionMatches;
+  });
+  $('userResultCount').textContent = `${number(filtered.length)} / ${number(items.length)} người dùng`;
+  $('usersBody').innerHTML = filtered.length ? filtered.map((user) => {
     const isPremium = Boolean(user.subscription_plan_name);
     const remaining = remainingTime(
       user.subscription_remaining_seconds,
@@ -216,7 +271,7 @@ function renderUsers(items) {
           : `<button type="button" class="btn-link" data-grant-premium="${escapeHtml(user.user_id)}">Cấp Premium</button>`}
       </td>
     </tr>`;
-  }).join('') : '<tr><td colspan="6" class="muted">Chưa có người dùng.</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="muted">Không có người dùng phù hợp bộ lọc.</td></tr>';
 }
 
 async function grantPremium(userId, action = 'purchase') {
@@ -239,7 +294,7 @@ async function grantPremium(userId, action = 'purchase') {
       result.subscription?.remaining_seconds,
       result.subscription?.current_period_end
     );
-    window.alert(`${renewing ? 'Đã gia hạn' : 'Đã cấp'} Premium. Thời gian còn lại: ${remaining}.`);
+    showToast(`${renewing ? 'Đã gia hạn' : 'Đã cấp'} Premium. Còn lại ${remaining}.`);
     state.financeLoaded = false;
     await loadDashboard();
   } catch (error) {
@@ -259,6 +314,7 @@ async function revokePremium(userId) {
   try {
     await api(`/api/admin/users/${encodeURIComponent(userId)}/subscription/revoke`, { method: 'POST', body: '{}' });
     state.financeLoaded = false;
+    showToast(`Đã thu hồi Premium của ${userId}.`, 'warning');
     await loadDashboard();
   } catch (error) {
     if (!handleAdminGate(error)) window.alert(error.message || 'Không thu hồi được Premium.');
@@ -279,10 +335,13 @@ function renderAlerts(summary) {
   if (Number(summary.oauth_access_expired)) alerts.push(['warning', `${number(summary.oauth_access_expired)} access token Google đã hết hạn; refresh token sẽ được thử khi người dùng đồng bộ.`]);
   if (Number(summary.oauth_missing_scopes)) alerts.push(['danger', `${number(summary.oauth_missing_scopes)} tài khoản thiếu scope Gmail hoặc Calendar và cần kết nối lại.`]);
   if (Number(summary.sync_failures_24h)) alerts.push(['danger', `${number(summary.sync_failures_24h)} tác vụ đồng bộ thất bại trong 24 giờ qua.`]);
-  $('alerts').innerHTML = alerts.map(([tone, text]) => `<div class="alert ${tone === 'danger' ? 'danger' : ''}">${escapeHtml(text)}</div>`).join('');
+  $('alerts').innerHTML = alerts.length
+    ? alerts.map(([tone, text]) => `<div class="alert ${tone === 'danger' ? 'danger' : ''}">${escapeHtml(text)}</div>`).join('')
+    : '<div class="alert success">Hệ thống đang ổn định — không có cảnh báo vận hành trong 24 giờ qua.</div>';
 }
 
 function render(data) {
+  state.overview = data;
   const summary = data.summary || {};
   $('usersTotal').textContent = number(summary.users_total);
   $('usersConnected').textContent = `${number(summary.google_connected_users)} đã kết nối Google`;
@@ -304,6 +363,114 @@ function render(data) {
   renderBars('tableSizes', data.table_sizes || [], bytes);
   renderSyncJobs(data.recent_sync_jobs || []);
   renderUsers(data.recent_users || []);
+  markRefreshed(data);
+}
+
+function workspaceAccessLabel(accessState) {
+  return {
+    active: 'Hoạt động',
+    grace: 'Grace period',
+    read_only: 'Chỉ đọc',
+    none: 'Chưa có gói',
+  }[accessState] || accessState || '—';
+}
+
+function renderWorkspaces(data = state.workspaces) {
+  if (!data) return;
+  const summary = data.summary || {};
+  const items = data.workspaces || [];
+  const query = normalizedText($('workspaceSearch').value);
+  const accessState = $('workspaceStateFilter').value;
+  const filtered = items.filter((workspace) => {
+    const haystack = normalizedText([
+      workspace.name,
+      workspace.slug,
+      workspace.owner,
+      workspace.owner_user_id,
+      workspace.workspace_id,
+    ].join(' '));
+    return (!query || haystack.includes(query))
+      && (accessState === 'all' || workspace.access_state === accessState);
+  });
+
+  $('businessWorkspaces').textContent = number(summary.business_workspaces);
+  $('activeBusinessWorkspaces').textContent = `${number(summary.active_workspaces)} đang hoạt động`;
+  $('workspaceSeats').textContent = `${number(summary.active_seats)} / ${number(summary.seat_capacity)}`;
+  $('attentionWorkspaces').textContent = number(summary.attention_workspaces);
+  $('pendingSeatRequests').textContent = number(summary.pending_seat_requests);
+  $('workspacesGeneratedAt').textContent = `Cập nhật ${dateTime(data.generated_at)}`;
+  $('workspaceResultCount').textContent = `${number(filtered.length)} / ${number(items.length)} tổ chức`;
+  $('workspacesBody').innerHTML = filtered.length ? filtered.map((workspace) => {
+    const hasSubscription = Boolean(workspace.subscription_id);
+    const renew = hasSubscription ? 'renew' : 'purchase';
+    const primaryLabel = hasSubscription ? 'Gia hạn 30 ngày' : 'Kích hoạt Business';
+    const plan = workspace.plan_name || workspace.plan_code || 'Chưa kích hoạt';
+    const seatDetail = [
+      Number(workspace.pending_invitations || 0) ? `${number(workspace.pending_invitations)} lời mời chờ` : '',
+      Number(workspace.pending_seat_requests || 0) ? `${number(workspace.pending_seat_requests)} yêu cầu ghế` : '',
+    ].filter(Boolean).join(' · ');
+    return `<tr>
+      <td><strong>${escapeHtml(workspace.name || workspace.workspace_id)}</strong><br><span class="muted">${escapeHtml(workspace.slug || workspace.workspace_id)}</span></td>
+      <td>${escapeHtml(workspace.owner || workspace.owner_user_id || '—')}</td>
+      <td><span class="badge ${escapeHtml(workspace.access_state)}">${escapeHtml(workspaceAccessLabel(workspace.access_state))}</span></td>
+      <td><strong>${number(workspace.active_seats)} / ${number(workspace.seat_capacity)}</strong>${seatDetail ? `<br><span class="muted">${escapeHtml(seatDetail)}</span>` : ''}</td>
+      <td>${escapeHtml(plan)}<br><span class="muted">${escapeHtml(workspace.billing_interval === 'yearly' ? 'Hằng năm' : (hasSubscription ? 'Hằng tháng' : '10 ghế mặc định'))}</span></td>
+      <td>${escapeHtml(dateTime(workspace.current_period_end || workspace.updated_at))}</td>
+      <td class="subscription-actions">
+        <button type="button" class="btn-link" data-${renew === 'renew' ? 'renew' : 'grant'}-business="${escapeHtml(workspace.workspace_id)}">${escapeHtml(primaryLabel)}</button>
+        ${hasSubscription ? `<button type="button" class="btn-link danger" data-revoke-business="${escapeHtml(workspace.workspace_id)}">Thu hồi</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="7" class="muted">Không có tổ chức phù hợp bộ lọc.</td></tr>';
+}
+
+async function grantBusinessSubscription(workspaceId, action = 'purchase') {
+  const renewing = action === 'renew';
+  if (!window.confirm(`${renewing ? 'Gia hạn' : 'Kích hoạt'} Business 30 ngày cho workspace ${workspaceId}?`)) return;
+  try {
+    await api(`/api/admin/workspaces/${encodeURIComponent(workspaceId)}/subscription`, {
+      method: 'POST',
+      body: JSON.stringify({
+        action,
+        plan_code: 'business_monthly',
+        plan_name: 'Business',
+        billing_interval: 'monthly',
+        currency: 'VND',
+        unit_amount: 0,
+        included_seats: 10,
+        days: 30,
+      }),
+    });
+    state.financeLoaded = false;
+    state.workspacesLoaded = false;
+    showToast(`${renewing ? 'Đã gia hạn' : 'Đã kích hoạt'} Business cho workspace.`);
+    await loadWorkspaces();
+  } catch (error) {
+    if (!handleAdminGate(error)) {
+      if (error.data?.allowed_action === 'renew') {
+        showToast('Workspace đã có gói; hãy dùng thao tác gia hạn.', 'warning');
+        await loadWorkspaces();
+      } else {
+        showToast(error.message || 'Không cập nhật được gói Business.', 'error');
+      }
+    }
+  }
+}
+
+async function revokeBusinessSubscription(workspaceId) {
+  if (!window.confirm(`Thu hồi quyền Business của workspace ${workspaceId}?`)) return;
+  try {
+    await api(`/api/admin/workspaces/${encodeURIComponent(workspaceId)}/subscription/revoke`, {
+      method: 'POST',
+      body: '{}',
+    });
+    state.financeLoaded = false;
+    state.workspacesLoaded = false;
+    showToast('Đã thu hồi quyền Business của workspace.', 'warning');
+    await loadWorkspaces();
+  } catch (error) {
+    if (!handleAdminGate(error)) showToast(error.message || 'Không thu hồi được gói Business.', 'error');
+  }
 }
 
 function setMoneyValue(id, value, currency) {
@@ -445,6 +612,14 @@ function renderRecentSubscriptions(finance, currency) {
       subscription.remaining_seconds,
       subscription.current_period_end
     );
+    const workspaceId = subscription.workspace_id;
+    const actions = workspaceId
+      ? `<button type="button" class="btn-link" data-renew-business="${escapeHtml(workspaceId)}">Gia hạn 30 ngày</button>
+         <button type="button" class="btn-link danger" data-revoke-business="${escapeHtml(workspaceId)}">Thu hồi</button>`
+      : (active && subscription.user_id
+        ? `<button type="button" class="btn-link" data-renew-premium="${escapeHtml(subscription.user_id)}">Gia hạn 30 ngày</button>
+           <button type="button" class="btn-link danger" data-revoke-premium="${escapeHtml(subscription.user_id)}">Thu hồi</button>`
+        : '<span class="muted">—</span>');
     return `<tr>
       <td><strong>${escapeHtml(subscription.customer)}</strong><br><span class="muted">${escapeHtml(subscription.provider)}</span></td>
       <td>${escapeHtml(subscription.plan_name || subscription.plan_code)}</td>
@@ -456,10 +631,7 @@ function renderRecentSubscriptions(finance, currency) {
       </td>
       <td><span class="badge ${escapeHtml(subscription.status)}">${escapeHtml(statusLabel(subscription.status))}</span></td>
       <td class="subscription-actions">
-        ${active
-          ? `<button type="button" class="btn-link" data-renew-premium="${escapeHtml(subscription.user_id)}">Gia hạn 30 ngày</button>
-             <button type="button" class="btn-link danger" data-revoke-premium="${escapeHtml(subscription.user_id)}">Thu hồi</button>`
-          : '<span class="muted">—</span>'}
+        ${actions}
       </td>
     </tr>`;
   }).join('') : '<tr><td colspan="7" class="muted">Chưa có subscription cho đơn vị tiền này.</td></tr>';
@@ -468,8 +640,12 @@ function renderRecentSubscriptions(finance, currency) {
 $('recentSubscriptionsBody')?.addEventListener('click', (event) => {
   const renewId = event.target.closest('[data-renew-premium]')?.dataset.renewPremium;
   const revokeId = event.target.closest('[data-revoke-premium]')?.dataset.revokePremium;
+  const renewWorkspaceId = event.target.closest('[data-renew-business]')?.dataset.renewBusiness;
+  const revokeWorkspaceId = event.target.closest('[data-revoke-business]')?.dataset.revokeBusiness;
   if (renewId) grantPremium(renewId, 'renew');
   if (revokeId) revokePremium(revokeId);
+  if (renewWorkspaceId) grantBusinessSubscription(renewWorkspaceId, 'renew');
+  if (revokeWorkspaceId) revokeBusinessSubscription(revokeWorkspaceId);
 });
 
 function renderFinance(data) {
@@ -498,6 +674,7 @@ function renderFinance(data) {
   renderSubscriptionPlans(finance, currency);
   renderRecentPayments(finance, currency);
   renderRecentSubscriptions(finance, currency);
+  markRefreshed(data);
 }
 
 function rerenderFinanceCurrency() {
@@ -528,6 +705,33 @@ async function loadFinance() {
     }
   } finally {
     state.financeLoading = false;
+    $('refreshButton').disabled = false;
+  }
+}
+
+async function loadWorkspaces() {
+  if (state.workspacesLoading) return;
+  state.workspacesLoading = true;
+  $('refreshButton').disabled = true;
+  $('workspacesError').classList.add('hidden');
+  setConnection('waiting', 'Đang tải tổ chức');
+  try {
+    const data = await api('/api/admin/workspaces');
+    state.workspaces = data;
+    state.workspacesLoaded = true;
+    state.workspacesGeneratedAt = data.generated_at;
+    renderWorkspaces(data);
+    markRefreshed(data);
+    setConnection('online', 'Admin đã xác thực');
+  } catch (error) {
+    state.workspacesLoaded = false;
+    if (!handleAdminGate(error)) {
+      $('workspacesError').textContent = `Không tải được danh sách tổ chức: ${error.message}`;
+      $('workspacesError').classList.remove('hidden');
+      setConnection('offline', 'Lỗi dữ liệu tổ chức');
+    }
+  } finally {
+    state.workspacesLoading = false;
     $('refreshButton').disabled = false;
   }
 }
@@ -598,8 +802,108 @@ async function lockDashboard() {
   }
 }
 
+function csvCell(value) {
+  let text = String(value ?? '');
+  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function downloadCsv(filename, rows) {
+  if (!rows.length) {
+    showToast('Chưa có dữ liệu để xuất.', 'warning');
+    return;
+  }
+  const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`;
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast(`Đã xuất ${filename}.`);
+}
+
+function exportCurrentData() {
+  const stamp = new Date().toISOString().slice(0, 10);
+  if (state.activeTab === 'workspaces') {
+    const rows = (state.workspaces?.workspaces || []).map((workspace) => [
+      workspace.workspace_id,
+      workspace.name,
+      workspace.owner,
+      workspace.access_state,
+      workspace.active_seats,
+      workspace.seat_capacity,
+      workspace.pending_invitations,
+      workspace.pending_seat_requests,
+      workspace.plan_name || workspace.plan_code,
+      workspace.current_period_end,
+    ]);
+    downloadCsv(`flowmate-workspaces-${stamp}.csv`, [[
+      'workspace_id', 'name', 'owner', 'access_state', 'active_seats', 'seat_capacity',
+      'pending_invitations', 'pending_seat_requests', 'plan', 'period_end',
+    ], ...rows]);
+    return;
+  }
+  if (state.activeTab === 'finance') {
+    const currency = $('financeCurrency').value;
+    const rows = (state.finance?.recent_payments || [])
+      .filter((payment) => payment.currency === currency)
+      .map((payment) => [
+        payment.id,
+        payment.paid_at || payment.created_at,
+        payment.customer,
+        payment.plan_name,
+        payment.status,
+        payment.currency,
+        payment.gross_amount,
+        payment.fee_amount,
+        payment.refund_amount,
+        payment.net_amount,
+      ]);
+    downloadCsv(`flowmate-finance-${currency}-${stamp}.csv`, [[
+      'payment_id', 'time', 'customer', 'plan', 'status', 'currency',
+      'gross_minor', 'fee_minor', 'refund_minor', 'net_minor',
+    ], ...rows]);
+    return;
+  }
+  const rows = (state.overview?.recent_users || []).map((user) => [
+    user.user_id,
+    user.name,
+    user.gmail_email || user.email,
+    user.gmail_connected ? 'connected' : 'disconnected',
+    user.user_mode,
+    user.subscription_plan_name || 'Free',
+    user.subscription_current_period_end,
+    user.updated_at,
+  ]);
+  downloadCsv(`flowmate-users-${stamp}.csv`, [[
+    'user_id', 'name', 'email', 'google_status', 'mode', 'plan', 'period_end', 'updated_at',
+  ], ...rows]);
+}
+
 function refreshActiveTab() {
-  return state.activeTab === 'finance' ? loadFinance() : loadDashboard();
+  if (state.activeTab === 'finance') return loadFinance();
+  if (state.activeTab === 'workspaces') return loadWorkspaces();
+  return loadDashboard();
+}
+
+function updateRefreshCountdown() {
+  if (!state.autoRefresh) {
+    $('refreshCountdown').textContent = 'Đã tắt';
+    return;
+  }
+  if (!state.nextRefreshAt) {
+    $('refreshCountdown').textContent = `${state.refreshIntervalSeconds} giây`;
+    return;
+  }
+  const seconds = Math.max(0, Math.ceil((state.nextRefreshAt - Date.now()) / 1000));
+  $('refreshCountdown').textContent = `${seconds} giây`;
+  if (seconds === 0 && !document.hidden) {
+    state.nextRefreshAt = Date.now() + state.refreshIntervalSeconds * 1000;
+    refreshActiveTab();
+  }
 }
 
 $('refreshButton').addEventListener('click', refreshActiveTab);
@@ -607,6 +911,35 @@ $('googleLoginButton').addEventListener('click', loginWithGoogle);
 $('totpVerifyButton').addEventListener('click', verifyTotp);
 $('adminLogoutButton').addEventListener('click', lockDashboard);
 $('financeCurrency').addEventListener('change', rerenderFinanceCurrency);
+$('exportCurrentButton').addEventListener('click', exportCurrentData);
+$('autoRefreshToggle').addEventListener('change', (event) => {
+  state.autoRefresh = event.target.checked;
+  state.nextRefreshAt = state.autoRefresh
+    ? Date.now() + state.refreshIntervalSeconds * 1000
+    : null;
+  updateRefreshCountdown();
+});
+['syncJobSearch', 'syncJobStatusFilter'].forEach((id) => {
+  $(id).addEventListener(id === 'syncJobSearch' ? 'input' : 'change', () => {
+    renderSyncJobs(state.overview?.recent_sync_jobs || []);
+  });
+});
+['userSearch', 'userPlanFilter', 'userConnectionFilter'].forEach((id) => {
+  $(id).addEventListener(id === 'userSearch' ? 'input' : 'change', () => {
+    renderUsers(state.overview?.recent_users || []);
+  });
+});
+['workspaceSearch', 'workspaceStateFilter'].forEach((id) => {
+  $(id).addEventListener(id === 'workspaceSearch' ? 'input' : 'change', () => renderWorkspaces());
+});
+$('workspacesBody').addEventListener('click', (event) => {
+  const grantId = event.target.closest('[data-grant-business]')?.dataset.grantBusiness;
+  const renewId = event.target.closest('[data-renew-business]')?.dataset.renewBusiness;
+  const revokeId = event.target.closest('[data-revoke-business]')?.dataset.revokeBusiness;
+  if (grantId) grantBusinessSubscription(grantId, 'purchase');
+  if (renewId) grantBusinessSubscription(renewId, 'renew');
+  if (revokeId) revokeBusinessSubscription(revokeId);
+});
 $('totpInput').addEventListener('input', (event) => {
   event.target.value = event.target.value.replace(/\D/g, '').slice(0, 6);
 });
@@ -630,6 +963,4 @@ document.querySelectorAll('[data-dashboard-tab]').forEach((tab) => {
 });
 
 loadDashboard();
-state.timer = setInterval(() => {
-  if (!document.hidden) refreshActiveTab();
-}, 30000);
+state.timer = setInterval(updateRefreshCountdown, 1000);

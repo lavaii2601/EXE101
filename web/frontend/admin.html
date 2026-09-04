@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
-  <title>FlowMate Server Control</title>
-  <link rel="stylesheet" href="/css/admin.css?v=20260724-premium-controls-01">
+  <title>FlowMate Admin Console · Server Control</title>
+  <link rel="stylesheet" href="/css/admin.css?v=20260905-admin-console-01">
 </head>
 <body>
   <div class="ambient ambient-a"></div>
@@ -15,8 +15,8 @@
     <header class="topbar">
       <div>
         <p class="eyebrow">FLOWMATE OPERATIONS</p>
-        <h1>Server Control</h1>
-        <p class="subtitle">Dữ liệu vận hành, Google sync và sức khỏe PostgreSQL trong một màn hình.</p>
+        <h1>Admin Console</h1>
+        <p class="subtitle">Giám sát vận hành, tài chính và Business workspace của FlowMate trong một màn hình.</p>
       </div>
       <div class="top-actions">
         <span id="liveStatus" class="status waiting"><i></i> Đang kết nối</span>
@@ -86,7 +86,32 @@
           tabindex="-1"
           data-dashboard-tab="finance"
         >Tài chính &amp; Subscription</button>
+        <button
+          id="workspacesTab"
+          class="dashboard-tab"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="workspacesPanel"
+          tabindex="-1"
+          data-dashboard-tab="workspaces"
+        >Tổ chức</button>
       </nav>
+
+      <section class="dashboard-toolbar" aria-label="Điều khiển dashboard">
+        <div class="admin-session-meta">
+          <span class="session-avatar" aria-hidden="true">FM</span>
+          <span><strong id="adminIdentity">Quản trị viên</strong><small id="lastRefreshText">Chưa có dữ liệu</small></span>
+        </div>
+        <div class="toolbar-actions">
+          <label class="auto-refresh-control">
+            <input id="autoRefreshToggle" type="checkbox" checked>
+            <span>Tự làm mới</span>
+            <small id="refreshCountdown">30 giây</small>
+          </label>
+          <button id="exportCurrentButton" class="button ghost" type="button">Xuất CSV</button>
+        </div>
+      </section>
 
       <section
         id="overviewPanel"
@@ -174,6 +199,19 @@
           </div>
           <span id="generatedAt" class="muted">—</span>
         </div>
+        <div class="table-toolbar">
+          <label class="search-control">
+            <span class="sr-only">Tìm tác vụ đồng bộ</span>
+            <input id="syncJobSearch" type="search" placeholder="Tìm người dùng, loại hoặc chi tiết…">
+          </label>
+          <select id="syncJobStatusFilter" aria-label="Lọc trạng thái đồng bộ">
+            <option value="all">Tất cả trạng thái</option>
+            <option value="failed">Thất bại</option>
+            <option value="running">Đang chạy</option>
+            <option value="success">Thành công</option>
+          </select>
+          <span id="syncJobResultCount" class="result-count">0 tác vụ</span>
+        </div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Thời gian</th><th>Người dùng</th><th>Loại</th><th>Trạng thái</th><th>Chi tiết</th></tr></thead>
@@ -190,6 +228,23 @@
           </div>
           <span id="runtimeInfo" class="muted">—</span>
         </div>
+        <div class="table-toolbar">
+          <label class="search-control">
+            <span class="sr-only">Tìm người dùng</span>
+            <input id="userSearch" type="search" placeholder="Tìm tên, email hoặc mã người dùng…">
+          </label>
+          <select id="userPlanFilter" aria-label="Lọc gói người dùng">
+            <option value="all">Tất cả gói</option>
+            <option value="premium">Premium</option>
+            <option value="free">Free</option>
+          </select>
+          <select id="userConnectionFilter" aria-label="Lọc kết nối Google">
+            <option value="all">Mọi kết nối</option>
+            <option value="connected">Đã kết nối Google</option>
+            <option value="disconnected">Chưa kết nối</option>
+          </select>
+          <span id="userResultCount" class="result-count">0 người dùng</span>
+        </div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Tài khoản</th><th>Google</th><th>Chế độ</th><th>Cập nhật</th><th>Gói</th><th>Hành động</th></tr></thead>
@@ -197,6 +252,81 @@
           </table>
         </div>
       </section>
+      </section>
+
+      <section
+        id="workspacesPanel"
+        class="dashboard-panel"
+        role="tabpanel"
+        aria-labelledby="workspacesTab"
+        data-dashboard-panel="workspaces"
+        hidden
+      >
+        <p id="workspacesError" class="finance-message error-text hidden" role="alert"></p>
+
+        <section class="hero-grid workspace-hero" aria-label="Chỉ số Business workspace">
+          <article class="hero-card">
+            <p class="metric-label">Business workspace</p>
+            <strong id="businessWorkspaces">0</strong>
+            <span id="activeBusinessWorkspaces">0 đang hoạt động</span>
+          </article>
+          <article class="hero-card accent-cyan">
+            <p class="metric-label">Ghế đang dùng</p>
+            <strong id="workspaceSeats">0 / 0</strong>
+            <span>Membership đang hoạt động</span>
+          </article>
+          <article class="hero-card accent-amber">
+            <p class="metric-label">Cần xử lý</p>
+            <strong id="attentionWorkspaces">0</strong>
+            <span>Hết hạn, grace hoặc chưa có gói</span>
+          </article>
+          <article class="hero-card accent-violet">
+            <p class="metric-label">Yêu cầu thêm ghế</p>
+            <strong id="pendingSeatRequests">0</strong>
+            <span>Đang chờ owner hoặc thanh toán</span>
+          </article>
+        </section>
+
+        <section class="panel table-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">BUSINESS TENANTS</p>
+              <h2>Quản lý tổ chức</h2>
+            </div>
+            <span id="workspacesGeneratedAt" class="muted">—</span>
+          </div>
+          <div class="table-toolbar">
+            <label class="search-control">
+              <span class="sr-only">Tìm workspace</span>
+              <input id="workspaceSearch" type="search" placeholder="Tìm tổ chức, owner hoặc workspace ID…">
+            </label>
+            <select id="workspaceStateFilter" aria-label="Lọc trạng thái workspace">
+              <option value="all">Tất cả trạng thái</option>
+              <option value="active">Hoạt động</option>
+              <option value="grace">Grace period</option>
+              <option value="read_only">Chỉ đọc</option>
+              <option value="none">Chưa có gói</option>
+            </select>
+            <span id="workspaceResultCount" class="result-count">0 tổ chức</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">Danh sách Business workspace</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Tổ chức</th>
+                  <th scope="col">Owner</th>
+                  <th scope="col">Truy cập</th>
+                  <th scope="col">Ghế</th>
+                  <th scope="col">Subscription</th>
+                  <th scope="col">Cập nhật</th>
+                  <th scope="col">Hành động</th>
+                </tr>
+              </thead>
+              <tbody id="workspacesBody"></tbody>
+            </table>
+          </div>
+        </section>
       </section>
 
       <section
@@ -357,6 +487,7 @@
     </div>
   </main>
 
-  <script src="/js/admin.js?v=20260724-premium-controls-01" defer></script>
+  <div id="adminToast" class="admin-toast" role="status" aria-live="polite"></div>
+  <script src="/js/admin.js?v=20260905-admin-console-01" defer></script>
 </body>
 </html>

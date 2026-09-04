@@ -396,6 +396,116 @@ def _empty_finance():
     }
 
 
+def _empty_workspace_dashboard():
+    return {
+        'summary': {
+            'business_workspaces': 0,
+            'active_workspaces': 0,
+            'attention_workspaces': 0,
+            'active_seats': 0,
+            'seat_capacity': 0,
+            'pending_seat_requests': 0,
+        },
+        'workspaces': [],
+    }
+
+
+def _postgres_workspace_dashboard():
+    """Return one operational row per Business workspace without N+1 reads."""
+    with pg.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                workspace.id::TEXT AS workspace_id,
+                workspace.name,
+                workspace.slug,
+                workspace.status AS workspace_status,
+                workspace.owner_user_id,
+                COALESCE(NULLIF(owner.gmail_email, ''), NULLIF(owner.email, ''), workspace.owner_user_id) AS owner,
+                workspace.created_at,
+                workspace.updated_at,
+                COALESCE(members.active_seats, 0)::BIGINT AS active_seats,
+                COALESCE(invitations.pending_invitations, 0)::BIGINT AS pending_invitations,
+                COALESCE(seat_requests.pending_seat_requests, 0)::BIGINT AS pending_seat_requests,
+                subscription.id AS subscription_id,
+                subscription.plan_code,
+                subscription.plan_name,
+                subscription.status AS subscription_status,
+                subscription.billing_interval,
+                subscription.currency,
+                subscription.unit_amount,
+                subscription.current_period_start,
+                subscription.current_period_end,
+                subscription.grace_period_ends_at,
+                subscription.included_seats,
+                subscription.extra_seats,
+                subscription.cancel_at_period_end
+            FROM workspaces workspace
+            LEFT JOIN users owner ON owner.user_id = workspace.owner_user_id
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS active_seats
+                FROM workspace_memberships
+                WHERE workspace_id = workspace.id AND status = 'active'
+            ) members ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS pending_invitations
+                FROM workspace_invitations
+                WHERE workspace_id = workspace.id
+                  AND status IN ('pending', 'capacity_blocked')
+            ) invitations ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS pending_seat_requests
+                FROM workspace_seat_requests
+                WHERE workspace_id = workspace.id
+                  AND status IN ('pending_owner', 'payment_pending')
+            ) seat_requests ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT * FROM subscriptions
+                WHERE workspace_id = workspace.id
+                ORDER BY created_at DESC
+                LIMIT 1
+            ) subscription ON TRUE
+            WHERE workspace.type = 'business'
+            ORDER BY workspace.updated_at DESC
+            """
+        ).fetchall()
+
+    workspaces = []
+    for raw_row in pg.normalize_rows(rows):
+        row = dict(raw_row)
+        subscription = None
+        if row.get('subscription_id') is not None:
+            subscription = {
+                'status': row.get('subscription_status'),
+                'current_period_end': row.get('current_period_end'),
+                'grace_period_ends_at': row.get('grace_period_ends_at'),
+            }
+        row['access_state'] = workspace_subscription.get_access_state(subscription)
+        row['seat_capacity'] = (
+            int(row.get('included_seats') or 0) + int(row.get('extra_seats') or 0)
+            if subscription
+            else workspace_subscription.DEFAULT_BUSINESS_INCLUDED_SEATS
+        )
+        workspaces.append(row)
+
+    attention_states = {
+        workspace_subscription.ACCESS_GRACE,
+        workspace_subscription.ACCESS_READ_ONLY,
+        workspace_subscription.ACCESS_NONE,
+    }
+    return {
+        'summary': {
+            'business_workspaces': len(workspaces),
+            'active_workspaces': sum(row['access_state'] == workspace_subscription.ACCESS_ACTIVE for row in workspaces),
+            'attention_workspaces': sum(row['access_state'] in attention_states for row in workspaces),
+            'active_seats': sum(int(row.get('active_seats') or 0) for row in workspaces),
+            'seat_capacity': sum(int(row.get('seat_capacity') or 0) for row in workspaces),
+            'pending_seat_requests': sum(int(row.get('pending_seat_requests') or 0) for row in workspaces),
+        },
+        'workspaces': workspaces,
+    }
+
+
 def _postgres_finance():
     """Return provider-neutral finance metrics without combining currencies."""
     with pg.connection() as conn:
@@ -609,6 +719,7 @@ def _postgres_finance():
             SELECT
                 subscription.id,
                 subscription.user_id,
+                subscription.workspace_id::TEXT AS workspace_id,
                 subscription.provider,
                 subscription.plan_code,
                 COALESCE(NULLIF(subscription.plan_name, ''), subscription.plan_code) AS plan_name,
@@ -631,10 +742,13 @@ def _postgres_finance():
                 COALESCE(
                     NULLIF(users.gmail_email, ''),
                     NULLIF(users.email, ''),
-                    subscription.user_id
+                    NULLIF(workspaces.name, ''),
+                    subscription.user_id,
+                    subscription.workspace_id::TEXT
                 ) AS customer
             FROM subscriptions subscription
             LEFT JOIN users ON users.user_id = subscription.user_id
+            LEFT JOIN workspaces ON workspaces.id = subscription.workspace_id
             ORDER BY subscription.updated_at DESC
             LIMIT 30
             """
@@ -753,6 +867,22 @@ def admin_finance():
     })
 
 
+@admin_bp.route('/workspaces', methods=['GET'])
+def admin_workspaces():
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+
+    payload = _postgres_workspace_dashboard() if pg.enabled() else _empty_workspace_dashboard()
+    return jsonify({
+        'success': True,
+        'admin': admin,
+        'backend': 'postgres' if pg.enabled() else 'sqlite',
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        **payload,
+    })
+
+
 @admin_bp.route('/users/<user_id>/subscription', methods=['POST'])
 def admin_grant_subscription(user_id):
     """Manually grant Premium to a user (provider='manual'), for the period
@@ -866,6 +996,23 @@ def admin_grant_workspace_subscription(workspace_id):
         'action': row.get('entitlement_action'),
         'subscription': row,
     })
+
+
+@admin_bp.route('/workspaces/<workspace_id>/subscription/revoke', methods=['POST'])
+def admin_revoke_workspace_subscription(workspace_id):
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    if not pg.enabled():
+        return jsonify({'error': 'subscriptions_require_postgres'}), 400
+
+    revoked = workspace_subscription.revoke(
+        workspace_id,
+        actor_user_id=admin['identity'],
+    )
+    if not revoked:
+        return jsonify({'error': 'no_active_business_subscription'}), 404
+    return jsonify({'success': True, 'admin': admin, 'revoked': True})
 
 
 @admin_bp.route('/users/<user_id>/subscription/revoke', methods=['POST'])

@@ -105,6 +105,18 @@ class AccessStateTests(unittest.TestCase):
         }
         self.assertEqual(wsub.ACCESS_READ_ONLY, wsub.get_access_state(row))
 
+    def test_revoke_suspends_access_immediately(self):
+        connection = _ScriptedConnection([
+            ('UPDATE subscriptions SET status = \'suspended\'', _Result(rowcount=1)),
+            ('INSERT INTO workspace_audit_events', _Result()),
+        ])
+        with _patched_pg(connection):
+            revoked = wsub.revoke('ws-1', actor_user_id='admin-1')
+
+        self.assertTrue(revoked)
+        self.assertIn("status = 'suspended'", connection.calls[0][0])
+        self.assertEqual(('ws-1',), connection.calls[0][1])
+
     def test_within_period_is_active(self):
         row = {"status": "active", "current_period_end": datetime.now(timezone.utc) + timedelta(days=5)}
         self.assertEqual(wsub.ACCESS_ACTIVE, wsub.get_access_state(row))

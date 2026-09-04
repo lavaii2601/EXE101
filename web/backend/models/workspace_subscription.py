@@ -443,13 +443,13 @@ def grant_manual(workspace_id, plan_code, plan_name=None, billing_interval="mont
 
 
 def revoke(workspace_id, actor_user_id=None):
-    """Cancel the workspace's current subscription, if any."""
+    """Immediately revoke Business access by suspending the current plan."""
     _require_pg()
     with pg.connection() as conn:
         cur = conn.execute(
             """
             UPDATE subscriptions
-            SET status = 'canceled', canceled_at = NOW()
+            SET status = 'suspended', canceled_at = NOW(), cancel_at_period_end = FALSE
             WHERE workspace_id = %s AND status IN ('trialing', 'active', 'past_due')
             """,
             (workspace_id,),

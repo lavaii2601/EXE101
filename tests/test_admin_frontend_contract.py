@@ -39,8 +39,12 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('data-dashboard-panel="overview"', self.html)
         self.assertIn('data-dashboard-tab="finance"', self.html)
         self.assertIn('data-dashboard-panel="finance"', self.html)
+        self.assertIn('data-dashboard-tab="workspaces"', self.html)
+        self.assertIn('data-dashboard-panel="workspaces"', self.html)
         self.assertIn('aria-controls="financePanel"', self.html)
         self.assertIn('aria-labelledby="financeTab"', self.html)
+        self.assertIn('aria-controls="workspacesPanel"', self.html)
+        self.assertIn('aria-labelledby="workspacesTab"', self.html)
 
     def test_finance_copy_does_not_claim_bank_settlement(self):
         self.assertIn('Thực thu ước tính', self.html)
@@ -54,6 +58,24 @@ class AdminFrontendContractTests(unittest.TestCase):
         self.assertIn('subscription_remaining_seconds', self.javascript)
         self.assertIn('remainingTime(', self.javascript)
         self.assertIn('recentSubscriptionsBody', self.html)
+
+    def test_dashboard_upgrade_exposes_operations_controls(self):
+        for element_id in (
+            'autoRefreshToggle',
+            'refreshCountdown',
+            'exportCurrentButton',
+            'syncJobSearch',
+            'userSearch',
+            'workspaceSearch',
+            'workspaceStateFilter',
+        ):
+            self.assertIn(f'id="{element_id}"', self.html)
+
+        self.assertIn("api('/api/admin/workspaces')", self.javascript)
+        self.assertIn('data-grant-business', self.javascript)
+        self.assertIn('data-renew-business', self.javascript)
+        self.assertIn('data-revoke-business', self.javascript)
+        self.assertIn('downloadCsv(', self.javascript)
 
 
 if __name__ == '__main__':
