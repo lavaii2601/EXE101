@@ -22,6 +22,8 @@ import { PRIVACY_URL, TERMS_URL } from '../api/config';
 import { connectGoogleAccount } from '../api/googleAuth';
 import PricingModal from '../components/PricingModal';
 import WorkspaceMembersScreen from './WorkspaceMembersScreen';
+import WorkHubScreen from './WorkHubScreen';
+import StatusReportsScreen from './StatusReportsScreen';
 import { useOrgWorkspace } from '../state/OrgWorkspaceContext';
 
 const USAGE_LABELS = {
@@ -66,6 +68,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [membersVisible, setMembersVisible] = useState(false);
+  const [workHubVisible, setWorkHubVisible] = useState(false);
+  const [statusReportsVisible, setStatusReportsVisible] = useState(false);
   const [pushNotif,     setPushNotif]     = useState(false);
   const [emailNotif,    setEmailNotif]    = useState(true);
   const [reminderNotif, setReminderNotif] = useState(true);
@@ -344,6 +348,26 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             <View style={styles.settingInfo}>
               <Text style={styles.settingTitle}>{t('Thành viên', 'Members')}</Text>
               <Text style={styles.settingSub}>{orgWorkspace.current?.name || ''}</Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.settingRow} onPress={() => setWorkHubVisible(true)} activeOpacity={0.75}>
+            <View style={[styles.iconWrap, { backgroundColor: colors.primarySoft }]}>
+              <Ionicons name="grid-outline" size={18} color={colors.accentText} />
+            </View>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingTitle}>{t('Công việc', 'Work Hub')}</Text>
+              <Text style={styles.settingSub}>{t('Dự án và nhiệm vụ dùng chung', 'Shared projects and tasks')}</Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.settingRow} onPress={() => setStatusReportsVisible(true)} activeOpacity={0.75}>
+            <View style={[styles.iconWrap, { backgroundColor: colors.primarySoft }]}>
+              <Ionicons name="document-text-outline" size={18} color={colors.accentText} />
+            </View>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingTitle}>{t('Báo cáo trạng thái', 'Status Reports')}</Text>
+              <Text style={styles.settingSub}>Done / Doing / Blocked / Next / Risks</Text>
             </View>
             <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>
@@ -637,6 +661,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         onClose={() => setPricingVisible(false)}
       />
       <WorkspaceMembersScreen visible={membersVisible} onClose={() => setMembersVisible(false)} />
+      <WorkHubScreen visible={workHubVisible} onClose={() => setWorkHubVisible(false)} />
+      <StatusReportsScreen visible={statusReportsVisible} onClose={() => setStatusReportsVisible(false)} />
     </ScrollView>
   );
 }
