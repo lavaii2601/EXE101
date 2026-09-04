@@ -2969,6 +2969,7 @@ class FreeformChatAgent:
                     ),
                     task='chat',
                     user_id=ctx.user_id,
+                    workspace_id=ctx.workspace_id,
                 )
                 if _valid_freeform_synthesis(
                     candidate,

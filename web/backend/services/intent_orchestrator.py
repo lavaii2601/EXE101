@@ -730,6 +730,7 @@ class IntentOrchestrator:
             max_tokens=320,
             task="intent_classification",
             user_id=user_id,
+            workspace_id=workspace_id,
         )
         data = self._parse_ai_json(raw)
         result = self._coerce_ai_result(data, message) if data else None
@@ -752,6 +753,7 @@ class IntentOrchestrator:
             max_tokens=320,
             task="intent_classification",
             user_id=user_id,
+            workspace_id=workspace_id,
         )
         data2 = self._parse_ai_json(raw2)
         return self._coerce_ai_result(data2, message) if data2 else None

@@ -181,7 +181,7 @@ class AIService:
         
         return provider
     
-    def generate_response(self, messages, max_tokens=None, task='chat', user_id=None):
+    def generate_response(self, messages, max_tokens=None, task='chat', user_id=None, workspace_id=None):
         """Generate AI response using round-robin rotation with intelligent fallback"""
         if Config.BOB_LOCAL_ONLY and not self.configured_providers:
             self.last_provider_used = 'bob-local'
@@ -211,7 +211,11 @@ class AIService:
                 h.update(task.encode('utf-8'))
                 joined = '\n'.join([m.get('role','') + ':' + (m.get('content') or '') for m in optimized_messages])
                 h.update(joined.encode('utf-8'))
-                cache_key = f"ai::{user_id}::{h.hexdigest()}"
+                # workspace_id in the key: the same prompt text asked from
+                # Personal vs. a Business workspace must never share a cached
+                # answer -- the injected workspace_context differs even when
+                # the raw message text happens to match.
+                cache_key = f"ai::{user_id}::{workspace_id}::{h.hexdigest()}"
                 cached = Cache.get(cache_key, db_path=cache_db)
                 if cached:
                     self.last_provider_used = cached.get('provider', self.last_provider_used)
