@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css?v=20260824-responsive-sidebar-05">
+    <link rel="stylesheet" href="/css/style.css?v=20260905-auth-parity-01">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -47,12 +47,51 @@
             </div>
             <h1 id="authGateTitle">FlowMate</h1>
             <div id="authLoginStage">
-                <p>Đăng nhập để truy cập không gian làm việc thông minh của bạn.</p>
+                <h2 id="authFormTitle">Chào mừng trở lại</h2>
+                <p id="authFormSubtitle">Đăng nhập để truy cập không gian làm việc thông minh của bạn.</p>
+                <form id="appAuthForm" class="app-auth-form" novalidate>
+                    <label id="authNameField" class="auth-field" hidden>
+                        <span>Họ và tên</span>
+                        <span class="auth-input-wrap">
+                            <span class="auth-input-icon" aria-hidden="true">👤</span>
+                            <input id="authNameInput" name="name" type="text" maxlength="100"
+                                   autocomplete="name" placeholder="Nhập họ và tên">
+                        </span>
+                    </label>
+                    <label class="auth-field">
+                        <span>Email</span>
+                        <span class="auth-input-wrap">
+                            <span class="auth-input-icon" aria-hidden="true">✉</span>
+                            <input id="authEmailInput" name="email" type="email" maxlength="254"
+                                   autocomplete="email" inputmode="email" placeholder="name@company.com" required>
+                        </span>
+                    </label>
+                    <label class="auth-field">
+                        <span>Mật khẩu</span>
+                        <span class="auth-input-wrap">
+                            <span class="auth-input-icon" aria-hidden="true">●</span>
+                            <input id="authPasswordInput" name="password" type="password" maxlength="128"
+                                   autocomplete="current-password" placeholder="••••••••" required>
+                            <button type="button" id="authPasswordToggle" class="auth-password-toggle"
+                                    aria-label="Hiện mật khẩu" aria-pressed="false">Hiện</button>
+                        </span>
+                        <small id="authPasswordHint" hidden>Mật khẩu phải có ít nhất 8 ký tự.</small>
+                    </label>
+                    <button type="submit" id="authSubmitBtn" class="auth-submit-button">
+                        <span class="auth-submit-label">Đăng nhập</span>
+                        <span class="auth-spinner" aria-hidden="true"></span>
+                    </button>
+                </form>
+                <div class="auth-divider"><span>HOẶC TIẾP TỤC VỚI</span></div>
                 <button type="button" id="authGateLoginBtn" class="auth-google-button">
                     <span class="google-mark" aria-hidden="true">G</span>
                     <span class="auth-button-label">Đăng nhập với Google</span>
                     <span class="auth-spinner" aria-hidden="true"></span>
                 </button>
+                <p class="auth-mode-switch">
+                    <span id="authModePrompt">Chưa có tài khoản?</span>
+                    <button type="button" id="authModeToggle">Đăng ký</button>
+                </p>
             </div>
             <div id="adminAccessChoice" class="admin-access-choice" hidden>
                 <span class="admin-access-badge">TÀI KHOẢN QUẢN TRỊ</span>
@@ -695,8 +734,8 @@
                         </div>
                         <div class="settings-row">
                             <div>
-                                <strong>Đăng xuất Gmail</strong>
-                                <span>Ngắt quyền truy cập Gmail và Calendar.</span>
+                                <strong>Đăng xuất FlowMate</strong>
+                                <span>Kết thúc phiên đăng nhập trên trình duyệt này.</span>
                             </div>
                             <button id="settingsLogoutBtn" class="btn-secondary">Đăng xuất</button>
                         </div>
@@ -1067,6 +1106,6 @@
         </div>
     </div>
     
-    <script src="/js/app.js?v=20260824-responsive-sidebar-05"></script>
+    <script src="/js/app.js?v=20260905-auth-parity-01"></script>
 </body>
 </html>

@@ -66,7 +66,19 @@ def header_workspace_id():
 
 
 def authenticated_user_id():
-    return bearer_user_id() or session.get("gmail_user_email") or session.get("user_id") or header_user_id()
+    # Public auth-status requests may resolve the anonymous fallback as the
+    # literal string ``default``. Never let that sentinel turn into an app
+    # session accepted by the global API guard.
+    for candidate in (
+        bearer_user_id(),
+        session.get("gmail_user_email"),
+        session.get("user_id"),
+        header_user_id(),
+    ):
+        value = str(candidate or "").strip()
+        if value and value.lower() != "default":
+            return value
+    return None
 
 
 def enforce_rate_limit():

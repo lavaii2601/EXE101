@@ -113,3 +113,14 @@ def login():
         'access_token': issue_mobile_token(user_id),
         'message': 'Đăng nhập thành công',
     })
+
+
+@auth_bp.route('/logout', methods=['POST'])
+def logout():
+    """End the browser app session without revoking Google integration.
+
+    Native clients keep app authentication in their local Bearer token and
+    clear it on-device. The browser equivalent is the signed session cookie.
+    """
+    session.clear()
+    return jsonify({'success': True, 'message': 'Đăng xuất thành công'})

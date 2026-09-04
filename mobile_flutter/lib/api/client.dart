@@ -59,7 +59,10 @@ Future<dynamic> _request(String path, {required String method, Map<String, dynam
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
     final map = data is Map<String, dynamic> ? data : <String, dynamic>{};
-    final message = (map['error'] as String?) ?? (map['message'] as String?) ?? 'HTTP ${response.statusCode}';
+    // Login/register endpoints return stable machine codes in `error` and a
+    // user-facing localized explanation in `message`. Match the web and React
+    // Native clients by presenting the explanation when one is available.
+    final message = (map['message'] as String?) ?? (map['error'] as String?) ?? 'HTTP ${response.statusCode}';
     throw ApiException(message, response.statusCode, map);
   }
   return data;

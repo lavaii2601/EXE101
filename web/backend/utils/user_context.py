@@ -210,7 +210,7 @@ def get_current_user_id(request, session=None):
     user_id = sanitize_user_id(user_id)
     # Browser sessions keep a normalized id. Native Bearer identities remain
     # stateless and must never be copied into a browser cookie session.
-    if not mobile_user_id:
+    if not mobile_user_id and user_id != 'default':
         try:
             session['user_id'] = user_id
         except Exception:

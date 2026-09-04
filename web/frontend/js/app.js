@@ -44,6 +44,7 @@ let userModeRequired = false;
 let pendingPageAfterMode = '';
 let isAuthenticated = false;
 let lastAuthStatus = null;
+let authFormMode = 'login';
 let currentLanguage = localStorage.getItem('flowmate-language') === 'en' ? 'en' : 'vi';
 let activeChatSessionId = localStorage.getItem('flowmate-active-chat-session') || createChatSessionId();
 let activeChatSessionTitle = localStorage.getItem('flowmate-active-chat-title') || '';
@@ -251,7 +252,14 @@ const STATIC_ENGLISH_TEXT = {
     'Xóa dữ liệu': 'Delete data',
     'Đăng xuất Gmail': 'Sign out of Gmail',
     'Ngắt quyền truy cập Gmail và Calendar.': 'Revoke access to Gmail and Calendar.',
+    'Đăng xuất FlowMate': 'Sign out of FlowMate',
+    'Kết thúc phiên đăng nhập trên trình duyệt này.': 'End the sign-in session on this browser.',
     'Đăng xuất': 'Sign out',
+    'Họ và tên': 'Full Name',
+    'Mật khẩu': 'Password',
+    'Hiện': 'Show',
+    'Mật khẩu phải có ít nhất 8 ký tự.': 'Password must be at least 8 characters.',
+    'HOẶC TIẾP TỤC VỚI': 'OR CONTINUE WITH',
     'CÁ NHÂN HÓA FLOWMATE': 'PERSONALIZE FLOWMATE',
     'Bạn đang làm việc theo cách nào?': 'How do you work?',
     'Mỗi mode thay đổi ưu tiên email, gợi ý lịch và cách AI phản hồi.': 'Each mode adjusts email priorities, calendar suggestions, and AI responses.',
@@ -292,7 +300,8 @@ const STATIC_ENGLISH_PLACEHOLDERS = {
     'Địa điểm': 'Location',
     'Tiêu đề (ví dụ: Họp phụ huynh)': 'Title (for example: Parent meeting)',
     'Ví dụ: phụ huynh, học sinh, email@example.com': 'Example: parents, students, email@example.com',
-    'Mô tả / Nội dung cuộc hẹn': 'Description / Appointment details'
+    'Mô tả / Nội dung cuộc hẹn': 'Description / Appointment details',
+    'Nhập họ và tên': 'Enter your full name'
 };
 
 // STATIC_ENGLISH_TEXT/PLACEHOLDERS never change at runtime, so their reverse
@@ -336,6 +345,9 @@ function applyLanguage() {
     updateUserModeUI(currentUserMode);
     updateEmailFilterUI();
     updateSidebarTooltips();
+    if (document.getElementById('authLoginStage') && !document.getElementById('authLoginStage').hidden) {
+        setAuthFormMode(authFormMode);
+    }
 }
 
 function updateSidebarTooltips() {
@@ -1689,7 +1701,7 @@ async function initApp() {
         const settingsGoogleBtn = document.getElementById('settingsGoogleBtn');
         if (settingsGoogleBtn) settingsGoogleBtn.addEventListener('click', handleSettingsGoogleAction);
         const settingsLogoutBtn = document.getElementById('settingsLogoutBtn');
-        if (settingsLogoutBtn) settingsLogoutBtn.addEventListener('click', gmailLogout);
+        if (settingsLogoutBtn) settingsLogoutBtn.addEventListener('click', appLogout);
         const settingsClearDataBtn = document.getElementById('settingsClearDataBtn');
         if (settingsClearDataBtn) settingsClearDataBtn.addEventListener('click', clearAllUserHistory);
         document.querySelectorAll('[data-language]').forEach((button) => {
@@ -1830,6 +1842,11 @@ async function initApp() {
 function setupAuthGate() {
     const loginButton = document.getElementById('authGateLoginBtn');
     if (loginButton) loginButton.addEventListener('click', gmailLogin);
+    document.getElementById('appAuthForm')?.addEventListener('submit', submitPasswordAuth);
+    document.getElementById('authModeToggle')?.addEventListener('click', () => {
+        setAuthFormMode(authFormMode === 'login' ? 'signup' : 'login');
+    });
+    document.getElementById('authPasswordToggle')?.addEventListener('click', toggleAuthPasswordVisibility);
     document.getElementById('adminOpenAppBtn')?.addEventListener('click', () => {
         const key = adminDestinationStorageKey();
         if (key) sessionStorage.setItem(key, 'app');
@@ -1838,7 +1855,115 @@ function setupAuthGate() {
     document.getElementById('adminOpenDashboardBtn')?.addEventListener('click', () => {
         window.location.assign('/admin');
     });
+    setAuthFormMode('login');
     showAuthGate(ui('Đang kiểm tra phiên đăng nhập...', 'Checking your sign-in session...'), true);
+}
+
+function setAuthFormMode(mode) {
+    authFormMode = mode === 'signup' ? 'signup' : 'login';
+    const isSignup = authFormMode === 'signup';
+    const nameField = document.getElementById('authNameField');
+    const nameInput = document.getElementById('authNameInput');
+    const passwordInput = document.getElementById('authPasswordInput');
+    const passwordHint = document.getElementById('authPasswordHint');
+    const title = document.getElementById('authFormTitle');
+    const subtitle = document.getElementById('authFormSubtitle');
+    const submitLabel = document.querySelector('#authSubmitBtn .auth-submit-label');
+    const prompt = document.getElementById('authModePrompt');
+    const toggle = document.getElementById('authModeToggle');
+
+    if (nameField) nameField.hidden = !isSignup;
+    if (nameInput) nameInput.required = isSignup;
+    if (passwordInput) passwordInput.autocomplete = isSignup ? 'new-password' : 'current-password';
+    if (passwordHint) passwordHint.hidden = !isSignup;
+    if (title) title.textContent = isSignup
+        ? ui('Tạo tài khoản', 'Create Account')
+        : ui('Chào mừng trở lại', 'Welcome Back');
+    if (subtitle) subtitle.textContent = isSignup
+        ? ui('Tham gia FlowMate ngay hôm nay.', 'Join FlowMate today.')
+        : ui('Đăng nhập để truy cập không gian làm việc thông minh của bạn.', 'Sign in to access your intelligent workspace.');
+    if (submitLabel) submitLabel.textContent = isSignup
+        ? ui('Tạo tài khoản', 'Create Account')
+        : ui('Đăng nhập', 'Sign In');
+    if (prompt) prompt.textContent = isSignup
+        ? ui('Đã có tài khoản?', 'Already have an account?')
+        : ui('Chưa có tài khoản?', "Don't have an account?");
+    if (toggle) toggle.textContent = isSignup
+        ? ui('Đăng nhập', 'Sign In')
+        : ui('Đăng ký', 'Sign up');
+
+    const status = document.getElementById('authGateStatus');
+    if (status) status.textContent = '';
+}
+
+function toggleAuthPasswordVisibility() {
+    const input = document.getElementById('authPasswordInput');
+    const button = document.getElementById('authPasswordToggle');
+    if (!input || !button) return;
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    button.textContent = show ? ui('Ẩn', 'Hide') : ui('Hiện', 'Show');
+    button.setAttribute('aria-label', show ? ui('Ẩn mật khẩu', 'Hide password') : ui('Hiện mật khẩu', 'Show password'));
+    button.setAttribute('aria-pressed', String(show));
+}
+
+function setPasswordAuthLoading(loading) {
+    const form = document.getElementById('appAuthForm');
+    const submit = document.getElementById('authSubmitBtn');
+    form?.querySelectorAll('input, button').forEach((control) => {
+        control.disabled = loading;
+    });
+    submit?.classList.toggle('is-loading', loading);
+    document.getElementById('authGateLoginBtn')?.toggleAttribute('disabled', loading);
+    document.getElementById('authModeToggle')?.toggleAttribute('disabled', loading);
+}
+
+async function submitPasswordAuth(event) {
+    event.preventDefault();
+    const name = document.getElementById('authNameInput')?.value.trim() || '';
+    const email = document.getElementById('authEmailInput')?.value.trim() || '';
+    const password = document.getElementById('authPasswordInput')?.value || '';
+    const status = document.getElementById('authGateStatus');
+    const isSignup = authFormMode === 'signup';
+
+    if (isSignup && !name) {
+        if (status) status.textContent = ui('Vui lòng nhập họ và tên.', 'Please enter your full name.');
+        document.getElementById('authNameInput')?.focus();
+        return;
+    }
+    if (!email || !password) {
+        if (status) status.textContent = ui('Vui lòng nhập email và mật khẩu.', 'Please enter your email and password.');
+        return;
+    }
+    if (isSignup && password.length < 8) {
+        if (status) status.textContent = ui('Mật khẩu phải có ít nhất 8 ký tự.', 'Password must be at least 8 characters.');
+        document.getElementById('authPasswordInput')?.focus();
+        return;
+    }
+
+    setPasswordAuthLoading(true);
+    if (status) status.textContent = isSignup
+        ? ui('Đang tạo tài khoản...', 'Creating your account...')
+        : ui('Đang đăng nhập...', 'Signing in...');
+
+    try {
+        const response = await fetch(`${API_BASE}/auth/${isSignup ? 'register' : 'login'}`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify(isSignup ? { name, email, password } : { email, password })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || data.error || ui('Không thể đăng nhập.', 'Unable to sign in.'));
+        }
+
+        if (status) status.textContent = ui('Đăng nhập thành công. Đang mở ứng dụng...', 'Signed in. Opening your workspace...');
+        window.location.replace('/app');
+    } catch (error) {
+        if (status) status.textContent = error.message || ui('Không thể đăng nhập. Vui lòng thử lại.', 'Unable to sign in. Please try again.');
+        setPasswordAuthLoading(false);
+    }
 }
 
 function showAuthGate(message = '', loading = false) {
@@ -1857,6 +1982,11 @@ function showAuthGate(message = '', loading = false) {
     if (adminChoice) adminChoice.hidden = true;
     if (status) status.textContent = message;
     if (button) button.disabled = loading;
+    document.getElementById('appAuthForm')?.querySelectorAll('input, button').forEach((control) => {
+        control.disabled = loading;
+    });
+    const modeToggle = document.getElementById('authModeToggle');
+    if (modeToggle) modeToggle.disabled = loading;
     if (label) {
         label.textContent = loading
             ? ui('Đang xác thực...', 'Authenticating...')
@@ -1919,18 +2049,37 @@ function showModeSelectionStage() {
 }
 
 async function resolveInitialAuthState() {
+    let profileData = null;
+    try {
+        const profileResponse = await fetch(`${API_BASE}/user/profile`, {
+            credentials: 'include',
+            headers: { Accept: 'application/json' }
+        });
+        profileData = await profileResponse.json().catch(() => null);
+        isAuthenticated = !!(profileResponse.ok && profileData?.success && profileData?.user);
+    } catch (error) {
+        console.error('Initial auth check failed:', error);
+        isAuthenticated = false;
+    }
+
     try {
         const response = await fetch(`${API_BASE}/email/auth-status`, {
             credentials: 'include',
             headers: { Accept: 'application/json' }
         });
-        const data = await response.json();
-        lastAuthStatus = data;
-        isAuthenticated = !!(response.ok && data.authenticated);
+        const googleStatus = await response.json();
+        lastAuthStatus = {
+            ...googleStatus,
+            app_authenticated: isAuthenticated,
+            user_id: profileData?.user?.user_id || googleStatus.user_id,
+        };
     } catch (error) {
-        console.error('Initial auth check failed:', error);
-        lastAuthStatus = null;
-        isAuthenticated = false;
+        console.warn('Google auth status check failed:', error);
+        lastAuthStatus = {
+            authenticated: false,
+            app_authenticated: isAuthenticated,
+            user_id: profileData?.user?.user_id || '',
+        };
     }
 
     if (!isAuthenticated) {
@@ -4266,7 +4415,7 @@ async function refreshAuthButtons() {
 }
 
 async function gmailLogout() {
-    if (!confirm(ui('Bạn có chắc muốn đăng xuất Gmail?', 'Are you sure you want to sign out of Gmail?'))) return;
+    if (!confirm(ui('Bạn có chắc muốn ngắt kết nối Gmail?', 'Are you sure you want to disconnect Gmail?'))) return;
 
     try {
         const response = await apiFetch(`${API_BASE}/email/logout`, {
@@ -4276,18 +4425,38 @@ async function gmailLogout() {
         const data = await response.json();
 
         if (data.success) {
-            showNotification(ui('✅ Đã đăng xuất Gmail', '✅ Signed out of Gmail'), 'success');
-            isAuthenticated = false;
-            lastAuthStatus = null;
-            Object.keys(sessionStorage)
-                .filter((key) => key.startsWith('flowmate-admin-destination:'))
-                .forEach((key) => sessionStorage.removeItem(key));
-            stopWorkspaceSyncWatcher();
-            userModeRequired = false;
-            pendingPageAfterMode = '';
-            userModeModal?.classList.remove('show', 'is-required');
-            window.location.replace('/');
+            showNotification(ui('✅ Đã ngắt kết nối Gmail', '✅ Gmail disconnected'), 'success');
+            if (lastAuthStatus) lastAuthStatus.authenticated = false;
+            await refreshAuthButtons();
         }
+    } catch (err) {
+        alert(ui('Lỗi: ', 'Error: ') + err.message);
+    }
+}
+
+async function appLogout() {
+    if (!confirm(ui('Bạn có chắc muốn đăng xuất FlowMate?', 'Are you sure you want to sign out of FlowMate?'))) return;
+
+    try {
+        const response = await apiFetch(`${API_BASE}/auth/logout`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || data.error || ui('Không thể đăng xuất', 'Unable to sign out'));
+        }
+
+        isAuthenticated = false;
+        lastAuthStatus = null;
+        Object.keys(sessionStorage)
+            .filter((key) => key.startsWith('flowmate-admin-destination:'))
+            .forEach((key) => sessionStorage.removeItem(key));
+        stopWorkspaceSyncWatcher();
+        userModeRequired = false;
+        pendingPageAfterMode = '';
+        userModeModal?.classList.remove('show', 'is-required');
+        window.location.replace('/');
     } catch (err) {
         alert(ui('Lỗi: ', 'Error: ') + err.message);
     }
@@ -5650,6 +5819,7 @@ async function loadUserProfile() {
         
         if (data.success && data.user) {
             const user = data.user;
+            isAuthenticated = true;
             renderSubscriptionUI(user.subscription);
             const storedMode = user.user_mode && USER_MODES[user.user_mode] ? user.user_mode : '';
             updateUserModeUI(storedMode || 'worker');
@@ -5671,13 +5841,11 @@ async function loadUserProfile() {
             if (userAvatar) {
                 userAvatar.title = gmailConnected ? ui('Đã kết nối Gmail', 'Gmail connected') : ui('Đăng nhập Gmail', 'Sign in to Gmail');
             }
-            if (gmailConnected && (user.mode_required || !storedMode)) {
-                isAuthenticated = true;
+            if (user.mode_required || !storedMode) {
                 showModeSelectionStage();
                 openUserModeModal(true);
             } else {
                 userModeRequired = false;
-                isAuthenticated = gmailConnected;
             }
             return user;
         }
