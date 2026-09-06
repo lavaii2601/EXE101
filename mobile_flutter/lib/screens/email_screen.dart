@@ -432,7 +432,13 @@ class _EmailScreenState extends State<EmailScreen> {
   Widget build(BuildContext context) {
     final colors = context.watch<ThemeController>().colors;
     final t = context.watch<LanguageController>().t;
-    final hasBusinessWorkspace = context.watch<WorkspaceController>().workspaces.any((w) => w['type'] == 'business');
+    final userMode = context.watch<AppState>().userMode;
+    // Business-workspace collaboration ("Chia sẻ" into a Business workspace)
+    // is scoped to the "worker" and "business" user modes, matching
+    // settings_screen.dart's canShowBusinessFeatures -- see its comment for why.
+    final canShowBusinessFeatures = userMode == 'worker' || userMode == 'business';
+    final hasBusinessWorkspace = canShowBusinessFeatures &&
+        context.watch<WorkspaceController>().workspaces.any((w) => w['type'] == 'business');
 
     return Scaffold(
       backgroundColor: colors.background,

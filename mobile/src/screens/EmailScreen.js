@@ -56,7 +56,11 @@ const modes = [
   { label: 'Soạn thư', value: 'compose' },
 ];
 
-export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, syncEvent }) {
+export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNavigate, syncEvent }) {
+  // Business-workspace collaboration ("Chia sẻ" into a Business workspace)
+  // is scoped to the "worker" and "business" user modes, matching
+  // SettingsScreen.js's canShowBusinessFeatures -- see its comment for why.
+  const canShowBusinessFeatures = userMode === 'worker' || userMode === 'business';
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const orgWorkspace = useOrgWorkspace();
@@ -600,7 +604,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
                   variant="secondary"
                   onPress={() => toggleReadStatus(email)}
                 />
-                {orgWorkspace?.workspaces?.some((w) => w.type === 'business') ? (
+                {canShowBusinessFeatures && orgWorkspace?.workspaces?.some((w) => w.type === 'business') ? (
                   <Button title="Chia sẻ" variant="secondary" onPress={() => openShareModal(email)} />
                 ) : null}
               </View>

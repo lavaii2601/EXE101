@@ -72,6 +72,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final t = lang.t;
     final profile = appState.profile;
     final mode = getUserMode(profile?['user_mode'] as String?);
+    // Business-workspace collaboration (Thành viên/Công việc/Báo cáo/Chia
+    // sẻ) is scoped to the "worker" and "business" user modes -- switching
+    // to another mode (student, freelancer, mentor, teacher, creator)
+    // hides these even if the account is still an active Business
+    // workspace member, since the whole Worker Business Subscription
+    // feature set is framed around the worker persona, not a
+    // general-purpose feature for every mode.
+    final canShowBusinessFeatures = mode.value == 'worker' || mode.value == 'business';
     final gmailReady = profile?['gmail_connected'] == true;
 
     return Scaffold(
@@ -177,7 +185,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ],
             ),
-            if (workspace.isBusiness)
+            if (workspace.isBusiness && canShowBusinessFeatures)
               _Section(
                 label: t('DOANH NGHIỆP', 'BUSINESS'),
                 children: [
@@ -211,7 +219,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // workspace the caller belongs to), so gated on membership in
             // ANY Business workspace rather than workspace.isBusiness
             // (which only reflects the currently active one).
-            if (workspace.workspaces.any((w) => w['type'] == 'business'))
+            if (workspace.workspaces.any((w) => w['type'] == 'business') && canShowBusinessFeatures)
               _Section(
                 label: t('RIÊNG TƯ', 'PRIVACY'),
                 children: [

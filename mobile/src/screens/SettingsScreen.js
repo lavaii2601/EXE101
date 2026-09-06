@@ -67,6 +67,13 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const { language, setLanguage, t } = useLanguage();
   const orgWorkspace = useOrgWorkspace();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  // Business-workspace collaboration (Thành viên/Công việc/Báo cáo/Chia sẻ)
+  // is scoped to the "worker" and "business" user modes -- switching to
+  // another mode (student, freelancer, mentor, teacher, creator) hides
+  // these even if the account is still an active Business workspace
+  // member, since the whole Worker Business Subscription feature set is
+  // framed around the worker persona, not a general-purpose feature.
+  const canShowBusinessFeatures = userMode === 'worker' || userMode === 'business';
 
   const [membersVisible, setMembersVisible] = useState(false);
   const [workHubVisible, setWorkHubVisible] = useState(false);
@@ -340,7 +347,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
       </View>
 
       {/* ── Business workspace ── */}
-      {orgWorkspace.isBusiness ? (
+      {orgWorkspace.isBusiness && canShowBusinessFeatures ? (
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>{t('DOANH NGHIỆP', 'BUSINESS')}</Text>
           <TouchableOpacity style={styles.settingRow} onPress={() => setMembersVisible(true)} activeOpacity={0.75}>
@@ -379,7 +386,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
       {/* ── Sharing Center: not workspace-scoped, so gated on membership in
           ANY Business workspace rather than orgWorkspace.isBusiness (which
           only reflects the currently active one). ── */}
-      {orgWorkspace.workspaces?.some((w) => w.type === 'business') ? (
+      {orgWorkspace.workspaces?.some((w) => w.type === 'business') && canShowBusinessFeatures ? (
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>{t('RIÊNG TƯ', 'PRIVACY')}</Text>
           <TouchableOpacity style={styles.settingRow} onPress={() => setSharingCenterVisible(true)} activeOpacity={0.75}>

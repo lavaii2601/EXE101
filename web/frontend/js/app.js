@@ -510,6 +510,17 @@ async function loadOrgWorkspaces() {
     }
 }
 
+// Business-workspace collaboration (Thành viên/Công việc/Báo cáo/Chia sẻ) is
+// scoped to the "worker" and "business" user modes -- switching to another
+// mode (student, freelancer, mentor, teacher, creator) hides these even if
+// the account is still an active Business workspace member, since the
+// whole Worker Business Subscription feature set is framed around the
+// worker persona (design doc's approved Worker Free/Premium/Business
+// tiering), not a general-purpose feature for every mode.
+function canShowBusinessFeatures() {
+    return currentUserMode === 'worker' || currentUserMode === 'business';
+}
+
 function renderOrgWorkspaceSwitcher() {
     const nameEl = document.getElementById('orgWorkspaceName');
     const typeEl = document.getElementById('orgWorkspaceType');
@@ -528,20 +539,21 @@ function renderOrgWorkspaceSwitcher() {
             : ui('Không gian cá nhân', 'Personal workspace');
     }
     if (iconEl) iconEl.textContent = active && active.type === 'business' ? '🏢' : '👤';
+    const showBusinessNav = active && active.type === 'business' && canShowBusinessFeatures();
     if (membersNavBtn) {
-        membersNavBtn.style.display = active && active.type === 'business' ? '' : 'none';
+        membersNavBtn.style.display = showBusinessNav ? '' : 'none';
     }
     if (workHubNavBtn) {
-        workHubNavBtn.style.display = active && active.type === 'business' ? '' : 'none';
+        workHubNavBtn.style.display = showBusinessNav ? '' : 'none';
     }
     if (statusReportsNavBtn) {
-        statusReportsNavBtn.style.display = active && active.type === 'business' ? '' : 'none';
+        statusReportsNavBtn.style.display = showBusinessNav ? '' : 'none';
     }
     if (sharingCenterNavBtn) {
         // Not workspace-scoped (GET /api/user/sharing spans every workspace the
         // caller belongs to), so this stays visible as long as they're in ANY
         // Business workspace, not just whichever one is currently active.
-        sharingCenterNavBtn.style.display = orgWorkspaces.some((w) => w.type === 'business') ? '' : 'none';
+        sharingCenterNavBtn.style.display = orgWorkspaces.some((w) => w.type === 'business') && canShowBusinessFeatures() ? '' : 'none';
     }
 
     if (listEl) {
@@ -5934,6 +5946,10 @@ async function saveUserMode(mode, closeAfterSave = false) {
         if (closeAfterSave) {
             setTimeout(() => userModeModal?.classList.remove('show'), 200);
         }
+        // Business-workspace nav items (Thành viên/Công việc/Báo cáo/Chia sẻ)
+        // are gated on mode too now (canShowBusinessFeatures) -- re-render so
+        // switching mode hides/reveals them without needing a page reload.
+        renderOrgWorkspaceSwitcher();
         showWorkspace();
         await resumeWorkspaceAfterModeSelection();
     } catch (error) {
@@ -6695,7 +6711,7 @@ function renderEnhancedEmailItem(email, container) {
             <button class="email-view-detail-btn btn-secondary">${ui('Xem chi tiết', 'View details')}</button>
             <button class="email-summary-btn">${email.summary ? ui('Xem tóm tắt AI', 'View AI summary') : ui('Tóm tắt bằng AI', 'Summarize with AI')}</button>
             <button class="email-read-toggle-btn btn-secondary">${email.is_unread ? ui('Đánh dấu đã đọc', 'Mark as read') : ui('Đánh dấu chưa đọc', 'Mark as unread')}</button>
-            <button class="email-share-btn btn-secondary">${ui('Chia sẻ', 'Share')}</button>
+            ${orgWorkspaces.some((w) => w.type === 'business') && canShowBusinessFeatures() ? `<button class="email-share-btn btn-secondary">${ui('Chia sẻ', 'Share')}</button>` : ''}
         </div>
     `;
 
@@ -6715,7 +6731,7 @@ function renderEnhancedEmailItem(email, container) {
         event.stopPropagation();
         await toggleEnhancedEmailReadStatus(email, emailDiv);
     });
-    emailDiv.querySelector('.email-share-btn').addEventListener('click', (event) => {
+    emailDiv.querySelector('.email-share-btn')?.addEventListener('click', (event) => {
         event.stopPropagation();
         openShareArtifactModal(email);
     });
