@@ -1,0 +1,370 @@
+﻿NOTE – CÁC ĐIỂM CẦN CHỈNH TRONG KẾ HOẠCH 6 GIAI ĐOẠN
+
+TỔNG QUAN
+
+Kế hoạch 6 giai đoạn hiện tại nhìn chung là hợp lý:
+- Xây nền móng trước.
+- Làm các tính năng đơn giản trước.
+- Để phần nhạy cảm như chia sẻ dữ liệu cá nhân về sau.
+- Để phần phức tạp như thanh toán tự động ở giai đoạn cuối.
+
+Đây là hướng triển khai an toàn.
+
+Những điểm cần sửa chủ yếu liên quan đến:
+- Thứ tự giữa các phase chưa hoàn toàn khớp.
+- Một số thành phần kỹ thuật chưa được chỉ rõ ai/cái gì chịu trách nhiệm.
+- Một số rủi ro về quyền truy cập, dữ liệu và billing cần có cơ chế bảo vệ sớm hơn.
+
+
+1. STATUS REPORT ĐANG PHỤ THUỘC VÀO TÍNH NĂNG Ở PHASE SAU
+
+Hiện tại:
+- Status Report (Done / Doing / Blocked) được đặt ở Phase 3.
+- Nhưng để Bob lấy thông tin cá nhân (ví dụ email) rồi yêu cầu user xác nhận trước khi đưa vào workspace chung, cần cơ chế "xác nhận rồi mới chia sẻ".
+- Cơ chế này lại nằm ở Phase 4.
+
+Vấn đề:
+Phase 3 đang phụ thuộc vào một thành phần chưa được xây cho tới Phase 4.
+
+Ví dụ dễ hiểu:
+Giống như lên kế hoạch làm món tráng miệng ở Phase 3 nhưng chiếc lò nướng cần thiết lại tới Phase 4 mới mua.
+
+Cách sửa đề xuất:
+
+Phương án A:
+- Đưa một phần tối thiểu của cơ chế "confirm before sharing" từ Phase 4 lên Phase 3.
+
+Phương án B:
+- Phase 3 chỉ cho Status Report sử dụng dữ liệu đã tồn tại trong workspace.
+- Chưa cho Bob kéo dữ liệu cá nhân vào.
+- Phần lấy dữ liệu cá nhân + xác nhận chia sẻ để Phase 4.
+
+
+2. CẦN JOB CHẠY NỀN CHO EXPIRY / GRACE PERIOD
+
+Hiện tại:
+- Khi subscription hết hạn có 7 ngày grace period.
+- Owner sẽ thấy banner đếm số ngày còn lại.
+
+Vấn đề:
+Để banner và cảnh báo xuất hiện đúng thời điểm, hệ thống cần một tác vụ chạy nền để kiểm tra trạng thái subscription.
+
+Nếu không có job chạy nền:
+- Hệ thống chỉ biết subscription hết hạn khi user mở app hoặc gửi request.
+- Không thể chủ động gửi cảnh báo trước hoặc cập nhật trạng thái đúng giờ.
+
+Cần bổ sung:
+- Scheduled/background job chạy định kỳ.
+- Kiểm tra subscription sắp hết hạn.
+- Kiểm tra subscription đã hết hạn.
+- Tính grace period.
+- Cập nhật trạng thái nếu cần.
+- Gửi notification/email/banner trigger.
+- Ghi log các lần xử lý.
+
+Ví dụ:
+Một job chạy mỗi giờ hoặc mỗi ngày tùy yêu cầu hệ thống.
+
+
+3. WORKSPACE MEMORY ISOLATION PHẢI ĐƯỢC ĐƯA LÊN SỚM
+
+Rủi ro:
+Bob có thể đang nhớ hội thoại hoặc context của Workspace A, sau đó user chuyển sang Workspace B.
+
+Nếu memory/context không được reset hoặc scope đúng workspace:
+- Bob có thể sử dụng thông tin của Workspace A trong Workspace B.
+- Đây là rủi ro cross-workspace data leakage.
+- Có thể làm lộ dữ liệu giữa các công ty khác nhau.
+
+Hiện tại:
+- Việc xử lý vấn đề này được đặt ở Phase 5.
+- Nhưng Bob đã hoạt động trong nhiều workspace từ Phase 3.
+
+Đề xuất:
+Chuyển workspace memory isolation lên chậm nhất Phase 3.
+
+Yêu cầu:
+- Memory phải có workspace_id.
+- Conversation/context phải được scope theo workspace.
+- Khi đổi workspace phải reset hoặc reload context đúng workspace.
+- Không được reuse context từ workspace cũ.
+- Có test tự động cho cross-workspace leakage.
+
+
+4. MIGRATION SANG ENTITLEMENT SYSTEM MỚI CẦN LƯỚI AN TOÀN
+
+Hiện tại:
+Hệ thống dự kiến thay các check kiểu:
+"isPremium(user)"
+
+bằng một entitlement system tập trung.
+
+Rủi ro:
+Nếu entitlement engine mới tính sai:
+- User đã trả tiền có thể bị mất quyền.
+- User chưa trả tiền có thể được dùng tính năng premium.
+- Billing và quyền sử dụng có thể không khớp.
+- Có thể gây lỗi lớn khi rollout.
+
+Đề xuất rollout:
+
+Giai đoạn 1 – Shadow Mode
+- Hệ thống cũ vẫn quyết định quyền.
+- Hệ thống mới chạy song song.
+- Hệ thống mới chỉ tính kết quả và ghi log.
+
+Giai đoạn 2 – Compare
+- So sánh kết quả old entitlement và new entitlement.
+- Nếu khác nhau thì tạo alert/log để kiểm tra.
+
+Giai đoạn 3 – Limited Rollout
+- Bật entitlement mới cho một nhóm nhỏ user/workspace.
+
+Giai đoạn 4 – Full Migration
+- Khi số lượng mismatch đủ thấp hoặc bằng 0 thì mới chuyển toàn bộ.
+
+Nên có:
+- Feature flag.
+- Rollback plan.
+- Audit log.
+- Metrics theo dõi entitlement mismatch.
+
+
+5. MỘT SỐ TBD PHẢI ĐƯỢC CHỐT TRƯỚC KHI CODE
+
+Không phải mọi TBD đều giống nhau.
+
+Có hai loại:
+
+A. Technical blockers
+Phải chốt sớm vì ảnh hưởng kiến trúc.
+
+B. Business TBD
+Có thể để sau vì không ảnh hưởng nhiều tới kiến trúc ban đầu.
+
+
+TECHNICAL BLOCKER 1 – CÓ LÀM FLUTTER HAY KHÔNG
+
+Ảnh hưởng:
+- Thiết kế API.
+- Authentication flow.
+- Session/token strategy.
+- File upload/download.
+- Notification.
+- API versioning.
+- Mobile-specific constraints.
+
+Đề xuất:
+Chốt trước hoặc trong Phase 1.
+
+
+TECHNICAL BLOCKER 2 – AI LIMIT TÍNH THEO WORKSPACE HAY THEO SEAT
+
+Ảnh hưởng:
+- Subscription schema.
+- Usage tracking.
+- Quota calculation.
+- Billing.
+- Entitlement.
+- Seat management.
+
+Đề xuất:
+Chốt trước Phase 2.
+
+
+BUSINESS TBD
+
+Ví dụ:
+- Giá từng plan.
+- Discount.
+- Marketing price.
+
+Các TBD dạng này có thể chốt sau nếu schema đã hỗ trợ cấu hình linh hoạt.
+
+
+6. MỖI PHASE CẦN CÓ DEFINITION OF DONE RIÊNG
+
+Hiện tại:
+Có một bộ acceptance criteria chung cho toàn bộ dự án.
+
+Điều này tốt nhưng chưa đủ.
+
+Rủi ro:
+Một phase có thể bị đánh dấu "Done" dù một số chức năng quan trọng của phase đó vẫn chưa được test hoàn chỉnh.
+
+Đề xuất:
+Mỗi phase phải có Definition of Done riêng.
+
+
+Ví dụ Phase 2 – Subscription / Seat
+
+Chỉ được coi là hoàn thành khi:
+- Seat limit hoạt động đúng.
+- Add/remove seat hoạt động đúng.
+- Không vượt seat ngoài ý muốn.
+- Owner/admin permission đúng.
+- Subscription status đúng.
+- Grace period logic đúng.
+- Tests cho seat đầy đủ.
+- Billing/entitlement test pass.
+- Audit log có đủ sự kiện quan trọng.
+
+
+Ví dụ Phase 3 – Bob / Workspace AI
+
+Chỉ được coi là hoàn thành khi:
+- Bob chỉ truy cập dữ liệu workspace hiện tại.
+- Memory được isolate theo workspace.
+- Đổi workspace không leak context.
+- Status Report dùng đúng nguồn dữ liệu được phép.
+- Permission check được áp dụng.
+- Cross-workspace security tests pass.
+
+
+Ví dụ Phase 4 – Privacy / Personal Data Sharing
+
+Chỉ được coi là hoàn thành khi:
+- Bob không tự ý đưa dữ liệu cá nhân vào workspace.
+- User phải xác nhận trước khi share.
+- Có audit trail.
+- Có permission kiểm soát người xem.
+- Có test cho privacy flow.
+- Có test chống accidental sharing.
+
+
+7. CẦN RUNTIME MONITORING CHO CROSS-WORKSPACE ACCESS
+
+Hiện tại:
+Đã có ý định test để ngăn Workspace A xem dữ liệu Workspace B.
+
+Đây là bước cần thiết nhưng chỉ bảo vệ trước khi release.
+
+Sau khi hệ thống chạy thật vẫn cần monitoring.
+
+Ví dụ:
+Giống như đã khóa cửa nhưng vẫn cần camera để phát hiện nếu có người cố mở nhầm hoặc hệ thống khóa bị lỗi.
+
+Đề xuất bổ sung:
+
+Runtime detection:
+- Log workspace_id của user/session.
+- Log workspace_id của resource được truy cập.
+- Nếu hai workspace_id không khớp mà request vẫn được xử lý → tạo security alert.
+
+Theo dõi:
+- Cross-workspace access attempt.
+- Permission denied tăng bất thường.
+- Entitlement mismatch.
+- Access tới resource không thuộc workspace.
+- Bob/tool truy cập sai workspace context.
+
+Có thể bổ sung:
+- Security dashboard.
+- Alert qua email/Slack.
+- Correlation ID cho request.
+- Audit log.
+- Rate-based alert để tránh spam.
+
+
+TÓM TẮT CÁC THAY ĐỔI ƯU TIÊN
+
+Ưu tiên cao – nên sửa roadmap trước khi code:
+1. Chốt Flutter hay không trước/ở Phase 1.
+2. Chốt AI quota theo workspace hay seat trước Phase 2.
+3. Đưa workspace memory isolation lên Phase 3 hoặc sớm hơn.
+4. Giải quyết dependency giữa Status Report Phase 3 và Confirm-before-sharing Phase 4.
+5. Thêm background/scheduled job cho expiry + grace period.
+6. Thiết kế shadow mode khi migrate sang entitlement system mới.
+7. Viết Definition of Done riêng cho từng phase.
+8. Thêm runtime monitoring cho cross-workspace access.
+
+
+ROADMAP ĐỀ XUẤT SAU KHI CHỈNH
+
+PHASE 1 – FOUNDATION
+- Workspace model.
+- User/workspace membership.
+- Authentication.
+- API architecture.
+- Chốt Flutter/mobile requirement.
+- Tenant/workspace isolation foundation.
+- Audit logging foundation.
+
+
+PHASE 2 – SUBSCRIPTION / SEAT / ENTITLEMENT FOUNDATION
+- Subscription model.
+- Seat management.
+- Chốt AI usage tính theo workspace hay seat.
+- Grace period rules.
+- Scheduled expiry job.
+- Entitlement engine bản đầu.
+- Shadow comparison với logic cũ.
+- Billing/audit events.
+
+
+PHASE 3 – BOB CORE + STATUS REPORT
+- Bob hoạt động trong workspace.
+- Workspace-scoped memory/context.
+- Reset/reload context khi đổi workspace.
+- Status Report Done/Doing/Blocked.
+- Status Report chỉ dùng workspace data trong phiên bản đầu.
+- Cross-workspace automated tests.
+
+
+PHASE 4 – PERSONAL DATA / PRIVACY SHARING
+- Bob có thể lấy dữ liệu cá nhân khi cần.
+- Confirm-before-sharing.
+- User chọn dữ liệu nào được đưa vào workspace.
+- Audit trail.
+- Privacy permission.
+- Sensitive data handling.
+
+
+PHASE 5 – ADVANCED WORKSPACE / AI FEATURES
+- Các workflow phức tạp hơn.
+- Policy nâng cao.
+- Context/memory nâng cao.
+- Security monitoring mở rộng.
+- Admin/security dashboard.
+
+
+PHASE 6 – BILLING AUTOMATION / PRODUCTION HARDENING
+- Payment automation.
+- Renewal.
+- Failed payment handling.
+- Subscription state automation.
+- Entitlement cutover hoàn toàn nếu shadow mode ổn định.
+- Monitoring.
+- Alerting.
+- Rollback.
+- Production hardening.
+
+
+CHECKLIST NGẮN TRƯỚC KHI BẮT ĐẦU CODE
+
+[ ] Chốt có Flutter/mobile hay không.
+[ ] Chốt AI quota theo workspace hay seat.
+[ ] Chốt tenant/workspace isolation model.
+[ ] Thiết kế workspace-scoped Bob memory.
+[ ] Xác định Status Report Phase 3 có được dùng personal data hay chưa.
+[ ] Thiết kế scheduled expiry/grace-period job.
+[ ] Thiết kế entitlement shadow mode.
+[ ] Viết Definition of Done cho từng phase.
+[ ] Thiết kế audit log.
+[ ] Thiết kế runtime cross-workspace monitoring.
+[ ] Có rollback/feature flag cho entitlement migration.
+
+
+KẾT LUẬN
+
+Kế hoạch hiện tại không sai hướng.
+
+Điểm cần chỉnh chủ yếu là:
+- Một vài dependency đang bị đặt ngược phase.
+- Một số security control cần được đưa lên sớm hơn.
+- Subscription/entitlement cần thêm cơ chế rollout an toàn.
+- Background job và monitoring cần được ghi rõ trong roadmap.
+- Các technical TBD cần được chốt trước khi triển khai.
+- Mỗi phase cần có Definition of Done riêng.
+
+Sau khi chỉnh các điểm trên, roadmap sẽ rõ ràng hơn, an toàn hơn và giảm đáng kể khả năng phải sửa kiến trúc lớn ở giai đoạn sau.
