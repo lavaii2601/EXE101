@@ -24,6 +24,7 @@ import PricingModal from '../components/PricingModal';
 import WorkspaceMembersScreen from './WorkspaceMembersScreen';
 import WorkHubScreen from './WorkHubScreen';
 import StatusReportsScreen from './StatusReportsScreen';
+import SharingCenterScreen from './SharingCenterScreen';
 import { useOrgWorkspace } from '../state/OrgWorkspaceContext';
 
 const USAGE_LABELS = {
@@ -70,6 +71,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const [membersVisible, setMembersVisible] = useState(false);
   const [workHubVisible, setWorkHubVisible] = useState(false);
   const [statusReportsVisible, setStatusReportsVisible] = useState(false);
+  const [sharingCenterVisible, setSharingCenterVisible] = useState(false);
   const [pushNotif,     setPushNotif]     = useState(false);
   const [emailNotif,    setEmailNotif]    = useState(true);
   const [reminderNotif, setReminderNotif] = useState(true);
@@ -374,6 +376,25 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         </View>
       ) : null}
 
+      {/* ── Sharing Center: not workspace-scoped, so gated on membership in
+          ANY Business workspace rather than orgWorkspace.isBusiness (which
+          only reflects the currently active one). ── */}
+      {orgWorkspace.workspaces?.some((w) => w.type === 'business') ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>{t('RIÊNG TƯ', 'PRIVACY')}</Text>
+          <TouchableOpacity style={styles.settingRow} onPress={() => setSharingCenterVisible(true)} activeOpacity={0.75}>
+            <View style={[styles.iconWrap, { backgroundColor: colors.primarySoft }]}>
+              <Ionicons name="share-social-outline" size={18} color={colors.accentText} />
+            </View>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingTitle}>{t('Trung tâm chia sẻ', 'Sharing Center')}</Text>
+              <Text style={styles.settingSub}>{t('Nội dung cá nhân bạn đã chia sẻ', 'Personal content you have shared')}</Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {/* ── Subscription ── */}
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>{t('GÓI DỊCH VỤ', 'PLAN')}</Text>
@@ -663,6 +684,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
       <WorkspaceMembersScreen visible={membersVisible} onClose={() => setMembersVisible(false)} />
       <WorkHubScreen visible={workHubVisible} onClose={() => setWorkHubVisible(false)} />
       <StatusReportsScreen visible={statusReportsVisible} onClose={() => setStatusReportsVisible(false)} />
+      <SharingCenterScreen visible={sharingCenterVisible} onClose={() => setSharingCenterVisible(false)} />
     </ScrollView>
   );
 }

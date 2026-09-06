@@ -13,6 +13,7 @@ import { apiGet, apiPost } from '../api/client';
 import { API_BASE } from '../api/config';
 import { getMobileAccessToken } from '../api/session';
 import { connectGoogleAccount } from '../api/googleAuth';
+import { useOrgWorkspace } from '../state/OrgWorkspaceContext';
 import { radius, useTheme } from '../theme/ThemeContext';
 
 const filters = [
@@ -25,6 +26,23 @@ const filters = [
   { label: 'Cá nhân',    value: 'personal' },
   { label: 'Khác',       value: 'other' },
 ];
+
+// Smart Inbox (Phase 4): an additional, independent filter dimension
+// alongside `filters` above -- not a replacement for it.
+const smartBuckets = [
+  { label: 'Tất cả',        value: '' },
+  { label: 'Cần xử lý',     value: 'action_required' },
+  { label: 'Đang chờ',      value: 'waiting' },
+  { label: 'Tham khảo',     value: 'fyi' },
+  { label: 'Ít quan trọng', value: 'low_priority' },
+];
+
+const smartBucketLabels = {
+  action_required: 'Cần xử lý',
+  waiting: 'Đang chờ',
+  fyi: 'Tham khảo',
+  low_priority: 'Ít quan trọng',
+};
 
 const sourceFilters = [
   { label: 'Tất cả', value: 'all' },
@@ -41,10 +59,15 @@ const modes = [
 export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, syncEvent }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const orgWorkspace = useOrgWorkspace();
 
   const [mode, setMode] = useState('inbox');
   const [source, setSource] = useState('all');
   const [filter, setFilter] = useState('all');
+  const [smartBucket, setSmartBucket] = useState('');
+  const [shareEmail, setShareEmail] = useState(null);
+  const [shareWorkspaceId, setShareWorkspaceId] = useState('');
+  const [sharing, setSharing] = useState(false);
   const [includeRead, setIncludeRead] = useState(true);
   const [emails, setEmails] = useState([]);
   const [auth, setAuth] = useState(null);
@@ -106,6 +129,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
         include_read: String(includeRead),
         search: searchKeyword,
       });
+      if (smartBucket) params.set('smart_bucket', smartBucket);
       params.set(options.fresh ? 'fresh' : 'cache_only', 'true');
 
       const authPromise = options.silent ? Promise.resolve() : loadAuth();
@@ -146,7 +170,7 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
       if (options.append) setLoadingMore(false);
       else if (!options.silent) setLoading(false);
     }
-  }, [filter, includeRead, loadAuth, searchKeyword, source]);
+  }, [filter, includeRead, loadAuth, searchKeyword, smartBucket, source]);
 
   const loadMoreEmails = useCallback(() => {
     if (loading || loadingMore) return;
@@ -350,6 +374,52 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
     }
   };
 
+  const openShareModal = (email) => {
+    const businessWorkspaces = orgWorkspace?.workspaces?.filter((w) => w.type === 'business') || [];
+    if (!businessWorkspaces.length) return;
+    setShareEmail(email);
+    setShareWorkspaceId(businessWorkspaces[0].id);
+  };
+
+  const closeShareModal = () => {
+    setShareEmail(null);
+    setShareWorkspaceId('');
+  };
+
+  const submitShare = () => {
+    if (!shareEmail || !shareWorkspaceId) return;
+    Alert.alert(
+      'Xác nhận chia sẻ',
+      'Chủ sở hữu/quản trị không gian đã chọn sẽ thấy được nội dung này. Tiếp tục?',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Chia sẻ',
+          onPress: async () => {
+            setSharing(true);
+            try {
+              await apiPost(`/workspaces/${shareWorkspaceId}/shared-artifacts`, {
+                source_type: 'email_summary',
+                title: shareEmail.subject || 'Email đã chia sẻ',
+                content: {
+                  subject: shareEmail.subject || '',
+                  sender: shareEmail.sender || shareEmail.from || '',
+                  summary: shareEmail.summary || shareEmail.snippet || '',
+                  date: shareEmail.date || '',
+                },
+              });
+              closeShareModal();
+            } catch (error) {
+              Alert.alert('Không chia sẻ được', error.message);
+            } finally {
+              setSharing(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const sendEmail = async () => {
     if (!compose.to || !compose.subject || !compose.body) {
       Alert.alert('Thiếu thông tin', 'Vui lòng điền người nhận, tiêu đề và nội dung.');
@@ -434,6 +504,11 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
           {source !== 'all' ? <View style={styles.filterDot} /> : null}
         </TouchableOpacity>
       </View>
+      <View style={styles.categoryRow}>
+        <View style={styles.categoryScroll}>
+          <SegmentedControl options={smartBuckets} value={smartBucket} onChange={setSmartBucket} />
+        </View>
+      </View>
       <Card>
         <View style={styles.switchRow}>
           <Text style={styles.cardTitle}>Giữ email đã đọc trong hộp thư</Text>
@@ -494,6 +569,11 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
                           {email.provider_label || providerLabel(email.provider)}
                         </Text>
                         <Text style={styles.tag}>{email.tag || 'email'}</Text>
+                        {email.smart_bucket ? (
+                          <Text style={[styles.smartBadge, styles[`smartBadge_${email.smart_bucket}`]]}>
+                            {smartBucketLabels[email.smart_bucket] || email.smart_bucket}
+                          </Text>
+                        ) : null}
                       </View>
                     </View>
                     <Text style={styles.subject} numberOfLines={2}>{email.subject || '(Không tiêu đề)'}</Text>
@@ -520,6 +600,9 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
                   variant="secondary"
                   onPress={() => toggleReadStatus(email)}
                 />
+                {orgWorkspace?.workspaces?.some((w) => w.type === 'business') ? (
+                  <Button title="Chia sẻ" variant="secondary" onPress={() => openShareModal(email)} />
+                ) : null}
               </View>
             </Card>
           </SwipeableEmailRow>
@@ -678,6 +761,43 @@ export default function EmailScreen({ onAuthChanged, onAgentSync, onNavigate, sy
             <Text style={styles.filterSectionLabel}>Nguồn email</Text>
             <SegmentedControl options={sourceFilters} value={source} onChange={setSource} />
             <Button title="Xong" onPress={() => setFilterModalVisible(false)} style={styles.filterModalDone} />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+      <Modal
+        visible={!!shareEmail}
+        animationType="slide"
+        transparent
+        onRequestClose={closeShareModal}
+      >
+        <TouchableOpacity style={styles.filterModalOverlay} activeOpacity={1} onPress={closeShareModal}>
+          <TouchableOpacity style={styles.filterModalSheet} activeOpacity={1} onPress={() => {}}>
+            <View style={styles.filterModalHeader}>
+              <Text style={styles.filterModalTitle}>Chia sẻ vào không gian doanh nghiệp</Text>
+              <TouchableOpacity onPress={closeShareModal} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={22} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            {shareEmail ? (
+              <>
+                <Text style={styles.muted}>
+                  Chủ sở hữu/quản trị không gian sẽ thấy được nội dung này sau khi xác nhận.
+                </Text>
+                <View style={styles.shareSummaryCard}>
+                  <Text style={styles.sender} numberOfLines={1}>{shareEmail.subject || '(Không tiêu đề)'}</Text>
+                  <Text style={styles.preview} numberOfLines={3}>{shareEmail.summary || shareEmail.snippet || ''}</Text>
+                </View>
+                <Text style={styles.filterSectionLabel}>Không gian doanh nghiệp</Text>
+                <SegmentedControl
+                  options={(orgWorkspace?.workspaces || [])
+                    .filter((w) => w.type === 'business')
+                    .map((w) => ({ label: w.name, value: w.id }))}
+                  value={shareWorkspaceId}
+                  onChange={setShareWorkspaceId}
+                />
+                <Button title="Xác nhận chia sẻ" onPress={submitShare} loading={sharing} style={styles.filterModalDone} />
+              </>
+            ) : null}
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -965,6 +1085,26 @@ function makeStyles(colors) {
     emailHeadBody: { flex: 1, minWidth: 0 },
     subject:  { marginTop: 3, color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 15, lineHeight: 21 },
     tag:      { color: colors.primary, fontSize: 12, fontFamily: 'Poppins_700Bold' },
+    smartBadge: {
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 999,
+      fontSize: 9,
+      fontFamily: 'Poppins_700Bold',
+      overflow: 'hidden',
+      textTransform: 'uppercase',
+    },
+    smartBadge_action_required: { color: colors.danger, backgroundColor: `${colors.danger}18` },
+    smartBadge_waiting: { color: '#b45309', backgroundColor: 'rgba(180,83,9,0.14)' },
+    smartBadge_fyi: { color: colors.primary, backgroundColor: `${colors.primary}18` },
+    smartBadge_low_priority: { color: colors.textMuted, backgroundColor: colors.secondaryBg },
+    shareSummaryCard: {
+      backgroundColor: colors.secondaryBg,
+      borderRadius: radius.card,
+      padding: 12,
+      marginVertical: 10,
+      gap: 4,
+    },
     sender:   { flex: 1, color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
     preview:  { marginTop: 8, color: colors.textMuted, fontFamily: 'Poppins_400Regular', lineHeight: 20 },
     aiSummary: {
