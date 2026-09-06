@@ -9,6 +9,7 @@ import '../config/app_icons.dart';
 import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
+import '../state/workspace_controller.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_screen.dart';
@@ -24,6 +25,23 @@ const List<(String value, String vi, String en)> _kFilters = [
   ('personal', 'Cá nhân', 'Personal'),
   ('other', 'Khác', 'Other'),
 ];
+
+// Smart Inbox (Phase 4): an additional, independent filter dimension
+// alongside _kFilters above -- not a replacement for it.
+const List<(String value, String vi, String en)> _kSmartBuckets = [
+  ('', 'Tất cả', 'All'),
+  ('action_required', 'Cần xử lý', 'Action required'),
+  ('waiting', 'Đang chờ', 'Waiting'),
+  ('fyi', 'Tham khảo', 'FYI'),
+  ('low_priority', 'Ít quan trọng', 'Low priority'),
+];
+
+const Map<String, (String vi, String en)> _kSmartBucketLabels = {
+  'action_required': ('Cần xử lý', 'Action required'),
+  'waiting': ('Đang chờ', 'Waiting'),
+  'fyi': ('Tham khảo', 'FYI'),
+  'low_priority': ('Ít quan trọng', 'Low priority'),
+};
 
 class EmailScreen extends StatefulWidget {
   const EmailScreen({super.key});
@@ -46,6 +64,8 @@ class _EmailScreenState extends State<EmailScreen> {
   Timer? _searchDebounce;
 
   bool includeRead = true;
+  String smartBucket = '';
+  bool sharing = false;
 
   @override
   void initState() {
@@ -68,7 +88,8 @@ class _EmailScreenState extends State<EmailScreen> {
       final isAuthed = auth is Map && auth['authenticated'] == true;
       setState(() => authenticated = isAuthed);
       if (isAuthed) {
-        final query = 'max_results=20&include_read=$includeRead&filter=$filter&search=${Uri.encodeQueryComponent(searchKeyword)}';
+        final smartBucketParam = smartBucket.isNotEmpty ? '&smart_bucket=$smartBucket' : '';
+        final query = 'max_results=20&include_read=$includeRead&filter=$filter&search=${Uri.encodeQueryComponent(searchKeyword)}$smartBucketParam';
         var data = await apiGet('/email/get-unread?$query&cache_only=true');
         var items = (data is Map) ? ((data['emails'] as List?) ?? (data['items'] as List?) ?? []) : [];
         // Freshly-connected accounts have nothing cached yet -- fall back to a
@@ -203,6 +224,127 @@ class _EmailScreenState extends State<EmailScreen> {
     );
   }
 
+  void _openShareSheet(Map<String, dynamic> email) {
+    final colors = context.read<ThemeController>().colors;
+    final t = context.read<LanguageController>().t;
+    final businessWorkspaces = context.read<WorkspaceController>().workspaces.where((w) => w['type'] == 'business').toList();
+    if (businessWorkspaces.isEmpty) return;
+    String selectedWorkspaceId = businessWorkspaces.first['id'] as String;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: colors.panel,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            Future<void> confirmAndShare() async {
+              final confirmed = await showDialog<bool>(
+                context: sheetContext,
+                builder: (dialogContext) => AlertDialog(
+                  title: Text(t('Xác nhận chia sẻ', 'Confirm sharing')),
+                  content: Text(t(
+                    'Chủ sở hữu/quản trị không gian đã chọn sẽ thấy được nội dung này. Tiếp tục?',
+                    "The selected workspace's owner/admin will be able to see this content. Continue?",
+                  )),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(t('Hủy', 'Cancel'))),
+                    TextButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text(t('Chia sẻ', 'Share'))),
+                  ],
+                ),
+              );
+              if (confirmed != true) return;
+              setSheetState(() => sharing = true);
+              try {
+                await apiPost('/workspaces/$selectedWorkspaceId/shared-artifacts', {
+                  'source_type': 'email_summary',
+                  'title': email['subject'] as String? ?? t('Email đã chia sẻ', 'Shared email'),
+                  'content': {
+                    'subject': email['subject'] as String? ?? '',
+                    'sender': email['sender'] as String? ?? '',
+                    'summary': (email['summary'] as String?) ?? (email['snippet'] as String?) ?? '',
+                    'date': email['date'] as String? ?? '',
+                  },
+                });
+                if (sheetContext.mounted) Navigator.pop(sheetContext);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('Đã chia sẻ vào không gian doanh nghiệp', 'Shared to the workspace'))));
+                }
+              } catch (e) {
+                setSheetState(() => sharing = false);
+                if (sheetContext.mounted) {
+                  ScaffoldMessenger.of(sheetContext).showSnackBar(SnackBar(content: Text('${t('Không chia sẻ được', 'Could not share')}: $e')));
+                }
+              }
+            }
+
+            return Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(t('Chia sẻ vào không gian doanh nghiệp', 'Share to a Business workspace'),
+                      style: TextStyle(color: colors.text, fontWeight: FontWeight.w700, fontSize: 17)),
+                  const SizedBox(height: 10),
+                  Text(
+                    t(
+                      'Chủ sở hữu/quản trị không gian sẽ thấy được nội dung này sau khi xác nhận.',
+                      "The workspace's owner/admin will see this content once confirmed.",
+                    ),
+                    style: TextStyle(color: colors.textMuted, fontSize: 12.5),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: colors.panelSoft, borderRadius: BorderRadius.circular(12), border: Border.all(color: colors.border)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(email['subject'] as String? ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 13)),
+                        const SizedBox(height: 4),
+                        Text((email['summary'] as String?) ?? (email['snippet'] as String?) ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(color: colors.textMuted, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(t('Không gian doanh nghiệp', 'Business workspace'), style: TextStyle(color: colors.textMuted, fontWeight: FontWeight.w600, fontSize: 12)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: businessWorkspaces.map((w) {
+                      final id = w['id'] as String;
+                      final active = id == selectedWorkspaceId;
+                      return GestureDetector(
+                        onTap: () => setSheetState(() => selectedWorkspaceId = id),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                          decoration: BoxDecoration(
+                            color: active ? colors.primary : colors.panelSoft,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: active ? colors.primary : colors.border),
+                          ),
+                          child: Text(w['name'] as String? ?? '', style: TextStyle(color: active ? Colors.white : colors.text, fontWeight: FontWeight.w600, fontSize: 12.5)),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 18),
+                  AppButton(title: t('Xác nhận chia sẻ', 'Confirm sharing'), onPressed: confirmAndShare, loading: sharing),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      if (mounted) setState(() => sharing = false);
+    });
+  }
+
   void _openComposeSheet() {
     final toController = TextEditingController();
     final subjectController = TextEditingController();
@@ -290,6 +432,7 @@ class _EmailScreenState extends State<EmailScreen> {
   Widget build(BuildContext context) {
     final colors = context.watch<ThemeController>().colors;
     final t = context.watch<LanguageController>().t;
+    final hasBusinessWorkspace = context.watch<WorkspaceController>().workspaces.any((w) => w['type'] == 'business');
 
     return Scaffold(
       backgroundColor: colors.background,
@@ -359,6 +502,39 @@ class _EmailScreenState extends State<EmailScreen> {
                   onTap: _openFilterSheet,
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 36,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: _kSmartBuckets
+                    .map((b) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() => smartBucket = b.$1);
+                              _load();
+                            },
+                            child: Container(
+                              alignment: Alignment.center,
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                              decoration: BoxDecoration(
+                                color: smartBucket == b.$1 ? colors.primary : colors.panel,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: smartBucket == b.$1 ? colors.primary : colors.border),
+                              ),
+                              child: Text(t(b.$2, b.$3),
+                                  style: TextStyle(
+                                    color: smartBucket == b.$1 ? Colors.white : colors.textMuted,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 11.5,
+                                  )),
+                            ),
+                          ),
+                        ))
+                    .toList(),
+              ),
             ),
             if (showSearch) ...[
               const SizedBox(height: 10),
@@ -536,6 +712,35 @@ class _EmailScreenState extends State<EmailScreen> {
                                   Text(email['snippet'] as String,
                                       maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: colors.textMuted, fontSize: 12.5, height: 1.4)),
                                 ],
+                                if (email['smart_bucket'] != null || hasBusinessWorkspace) ...[
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      if (email['smart_bucket'] != null) ...[
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: _smartBadgeColor(email['smart_bucket'] as String, colors).withValues(alpha: 0.14),
+                                            borderRadius: BorderRadius.circular(999),
+                                          ),
+                                          child: Text(
+                                            _smartBucketLabel(email['smart_bucket'] as String, t),
+                                            style: TextStyle(color: _smartBadgeColor(email['smart_bucket'] as String, colors), fontWeight: FontWeight.w700, fontSize: 9.5),
+                                          ),
+                                        ),
+                                        const Spacer(),
+                                      ] else
+                                        const Spacer(),
+                                      if (hasBusinessWorkspace)
+                                        TextButton.icon(
+                                          onPressed: () => _openShareSheet(email),
+                                          icon: Icon(Icons.share_outlined, size: 15, color: colors.primary),
+                                          label: Text(t('Chia sẻ', 'Share'), style: TextStyle(color: colors.primary, fontSize: 11.5, fontWeight: FontWeight.w600)),
+                                          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                                        ),
+                                    ],
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -577,6 +782,18 @@ class _IconTrigger extends StatelessWidget {
       ),
     );
   }
+}
+
+String _smartBucketLabel(String bucket, String Function(String, [String?]) t) {
+  final pair = _kSmartBucketLabels[bucket];
+  return pair == null ? bucket : t(pair.$1, pair.$2);
+}
+
+Color _smartBadgeColor(String bucket, AppColors colors) {
+  if (bucket == 'action_required') return colors.danger;
+  if (bucket == 'waiting') return const Color(0xFFB45309);
+  if (bucket == 'low_priority') return colors.textMuted;
+  return colors.primary;
 }
 
 String _formatEmailTime(String raw) {

@@ -10,6 +10,7 @@ import '../state/theme_controller.dart';
 import '../state/workspace_controller.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_screen.dart';
+import 'sharing_center_screen.dart';
 import 'status_reports_screen.dart';
 import 'work_hub_screen.dart';
 import 'workspace_members_screen.dart';
@@ -203,6 +204,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: t('Báo cáo trạng thái', 'Status Reports'),
                     subtitle: t('Done / Doing / Blocked / Next / Risks', 'Done / Doing / Blocked / Next / Risks'),
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StatusReportsScreen())),
+                  ),
+                ],
+              ),
+            // Not workspace-scoped (GET /api/user/sharing spans every
+            // workspace the caller belongs to), so gated on membership in
+            // ANY Business workspace rather than workspace.isBusiness
+            // (which only reflects the currently active one).
+            if (workspace.workspaces.any((w) => w['type'] == 'business'))
+              _Section(
+                label: t('RIÊNG TƯ', 'PRIVACY'),
+                children: [
+                  _Row(
+                    icon: Icons.share_outlined,
+                    iconBg: colors.primarySoft,
+                    iconColor: colors.primary,
+                    title: t('Trung tâm chia sẻ', 'Sharing Center'),
+                    subtitle: t('Nội dung cá nhân bạn đã chia sẻ', 'Personal content you have shared'),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SharingCenterScreen())),
                   ),
                 ],
               ),
