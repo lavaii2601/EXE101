@@ -263,7 +263,7 @@ class BobWebResearchIntentTests(unittest.TestCase):
             patch("services.chat_agents.ai_service.configured_providers", ["ollama"]),
             patch("services.chat_agents.ai_service.last_provider_used", "ollama"),
             patch("services.chat_agents.ai_service.generate_response", return_value=answer) as generate,
-            patch("services.chat_agents._build_workspace_context", return_value=({"internet"}, context)),
+            patch("services.chat_agents.freeform_agent._build_workspace_context", return_value=({"internet"}, context)),
             patch("services.chat_agents.SessionMemory.list_for_session", return_value=[]),
         ):
             result = FreeformChatAgent().handle(ctx)
@@ -321,7 +321,7 @@ Use these external sources only for public web facts.
 
         with (
             patch(
-                "services.chat_agents._build_workspace_context",
+                "services.chat_agents.freeform_agent._build_workspace_context",
                 return_value=({"internet"}, context),
             ),
             patch("services.chat_agents.ai_service.configured_providers", []),

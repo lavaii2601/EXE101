@@ -59,13 +59,13 @@ class EmailResultReferenceTests(unittest.TestCase):
         ]
         with (
             tempfile.NamedTemporaryFile() as token,
-            patch.object(chat_agents, "get_user_token_file", return_value=token.name),
+            patch.object(chat_agents.email_agents, "get_user_token_file", return_value=token.name),
             patch.object(
                 chat_agents.SessionMemory,
                 "get_email_results",
                 return_value=remembered,
             ),
-            patch.object(chat_agents, "get_cached_gmail_service") as gmail_service,
+            patch.object(chat_agents.email_agents, "get_cached_gmail_service") as gmail_service,
         ):
             for prompt in (
                 "mark the second one unread",
@@ -94,13 +94,13 @@ class EmailResultReferenceTests(unittest.TestCase):
     def test_reference_without_same_session_map_never_falls_back_to_first_three(self):
         with (
             tempfile.NamedTemporaryFile() as token,
-            patch.object(chat_agents, "get_user_token_file", return_value=token.name),
+            patch.object(chat_agents.email_agents, "get_user_token_file", return_value=token.name),
             patch.object(
                 chat_agents.SessionMemory,
                 "get_email_results",
                 return_value=[],
             ),
-            patch.object(chat_agents, "get_cached_gmail_service") as gmail_service,
+            patch.object(chat_agents.email_agents, "get_cached_gmail_service") as gmail_service,
         ):
             result = _mark_emails_propose(
                 _context("mark the second one unread"),
@@ -114,7 +114,7 @@ class EmailResultReferenceTests(unittest.TestCase):
     def test_out_of_range_reference_is_not_proposed(self):
         with (
             tempfile.NamedTemporaryFile() as token,
-            patch.object(chat_agents, "get_user_token_file", return_value=token.name),
+            patch.object(chat_agents.email_agents, "get_user_token_file", return_value=token.name),
             patch.object(
                 chat_agents.SessionMemory,
                 "get_email_results",
@@ -139,7 +139,7 @@ class EmailResultReferenceTests(unittest.TestCase):
 
         with (
             patch.object(
-                chat_agents,
+                chat_agents.email_agents,
                 "_direct_email_search_response",
                 return_value=("EMAIL TÌM THẤY", emails),
             ),
