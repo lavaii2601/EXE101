@@ -242,6 +242,10 @@
                     <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 12h6M9 16h6M9 8h1"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg></span>
                     <span class="nav-label">Báo cáo</span>
                 </button>
+                <button class="nav-btn" data-page="sharing-center" id="sharingCenterNavBtn" style="display:none;">
+                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg></span>
+                    <span class="nav-label">Chia sẻ</span>
+                </button>
             </nav>
 
             <aside class="chat-history-panel sidebar-chat-history" aria-label="Doan chat cu">
@@ -388,6 +392,13 @@
                             </div>
                         </div>
                         <button id="clearEmailSearchBtn" type="button" class="btn-secondary" data-i18n="common.clear">Xóa</button>
+                    </div>
+                    <div id="smartInboxBar" class="smart-inbox-bar" role="group" aria-label="Smart Inbox">
+                        <button type="button" class="smart-inbox-chip active" data-smart-bucket="">Tất cả</button>
+                        <button type="button" class="smart-inbox-chip" data-smart-bucket="action_required">Cần xử lý</button>
+                        <button type="button" class="smart-inbox-chip" data-smart-bucket="waiting">Đang chờ</button>
+                        <button type="button" class="smart-inbox-chip" data-smart-bucket="fyi">Tham khảo</button>
+                        <button type="button" class="smart-inbox-chip" data-smart-bucket="low_priority">Ít quan trọng</button>
                     </div>
                     <div id="emailsList" class="emails-list"></div>
                 </div>
@@ -627,6 +638,22 @@
                     <article class="settings-card">
                         <span class="settings-section-label">ĐÃ CÔNG BỐ</span>
                         <div id="statusReportPublishedList" class="work-hub-reports-list"></div>
+                    </article>
+                </div>
+            </section>
+
+            <section id="sharing-center-page" class="page">
+                <div class="settings-page-header">
+                    <div>
+                        <span class="settings-kicker">RIÊNG TƯ</span>
+                        <h2>Trung tâm chia sẻ</h2>
+                        <p>Mọi nội dung cá nhân bạn đã chia sẻ vào các không gian doanh nghiệp -- thu hồi bất cứ lúc nào.</p>
+                    </div>
+                </div>
+                <div class="settings-grid">
+                    <article class="settings-card">
+                        <span class="settings-section-label">ĐÃ CHIA SẺ</span>
+                        <div id="sharingCenterList" class="work-hub-projects-list"></div>
                     </article>
                 </div>
             </section>
@@ -955,6 +982,25 @@
                 <button id="summarizeBtn" class="btn-secondary">Tóm tắt</button>
                 <button id="replyBtn" class="btn-primary">Trả lời tự động</button>
             </div>
+        </div>
+    </div>
+
+    <div id="shareArtifactModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="shareArtifactTitle">
+        <div class="modal-content">
+            <span class="close" data-modal="shareArtifactModal">&times;</span>
+            <h2 id="shareArtifactTitle">Chia sẻ vào không gian doanh nghiệp</h2>
+            <p class="org-workspace-invite-status">Xem lại nội dung sẽ được chia sẻ trước khi xác nhận. Chủ sở hữu/quản trị không gian sẽ thấy được nội dung này.</p>
+            <div id="shareArtifactPreview" class="work-hub-report-body"></div>
+            <form id="shareArtifactForm">
+                <div class="form-group">
+                    <label>Không gian doanh nghiệp</label>
+                    <select id="shareArtifactWorkspace" required></select>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Xác nhận chia sẻ</button>
+                    <button type="button" class="btn-secondary" data-modal="shareArtifactModal">Hủy</button>
+                </div>
+            </form>
         </div>
     </div>
     

@@ -36,6 +36,10 @@ let emailLoadController;
 // State
 let currentPage = 'overview';
 let currentEmailPage = 1;
+// Smart Inbox (Phase 4): a second, independent filter dimension alongside
+// the existing category filter (emailFilterSelect) -- '' means no bucket
+// filter applied (show every bucket).
+let currentSmartBucketFilter = '';
 let currentWeekStart = getMonday(new Date());
 let currentDetailEmail = null;
 let currentUserMode = 'worker';
@@ -83,6 +87,10 @@ let workHubTasks = [];
 let workHubSelectedProjectId = null;
 let statusReportDrafts = [];
 let statusReportPublished = [];
+// Phase 4 ("Smart Inbox + privacy-first sharing"): the email currently
+// staged in the share-confirmation modal, or null when the modal is closed.
+let shareArtifactSourceEmail = null;
+let sharingCenterArtifacts = [];
 // Gmail push should be configured in production for true server-side push.
 // This short watcher is the resilient foreground fallback and feels instant
 // even when Pub/Sub is unavailable or the browser just resumed.
@@ -510,6 +518,7 @@ function renderOrgWorkspaceSwitcher() {
     const membersNavBtn = document.getElementById('orgWorkspaceMembersNavBtn');
     const workHubNavBtn = document.getElementById('orgWorkHubNavBtn');
     const statusReportsNavBtn = document.getElementById('orgStatusReportsNavBtn');
+    const sharingCenterNavBtn = document.getElementById('sharingCenterNavBtn');
     const active = currentOrgWorkspace();
 
     if (nameEl) nameEl.textContent = active ? active.name : ui('Cá nhân', 'Personal');
@@ -527,6 +536,12 @@ function renderOrgWorkspaceSwitcher() {
     }
     if (statusReportsNavBtn) {
         statusReportsNavBtn.style.display = active && active.type === 'business' ? '' : 'none';
+    }
+    if (sharingCenterNavBtn) {
+        // Not workspace-scoped (GET /api/user/sharing spans every workspace the
+        // caller belongs to), so this stays visible as long as they're in ANY
+        // Business workspace, not just whichever one is currently active.
+        sharingCenterNavBtn.style.display = orgWorkspaces.some((w) => w.type === 'business') ? '' : 'none';
     }
 
     if (listEl) {
@@ -1384,6 +1399,134 @@ async function deleteStatusReport(reportId) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Privacy-first sharing (Phase 4): confirm-before-sharing an email into a
+// Business workspace, and the "Trung tâm chia sẻ" (Sharing Center) page.
+// ---------------------------------------------------------------------------
+
+function openShareArtifactModal(email) {
+    const modal = document.getElementById('shareArtifactModal');
+    const preview = document.getElementById('shareArtifactPreview');
+    const select = document.getElementById('shareArtifactWorkspace');
+    if (!modal || !preview || !select) return;
+
+    const businessWorkspaces = orgWorkspaces.filter((w) => w.type === 'business');
+    if (!businessWorkspaces.length) {
+        showNotification(ui(
+            'Bạn chưa tham gia không gian doanh nghiệp nào để chia sẻ.',
+            "You aren't a member of any Business workspace to share into."
+        ), 'error');
+        return;
+    }
+
+    shareArtifactSourceEmail = email;
+    preview.innerHTML = `
+        <p><strong>${ui('Tiêu đề', 'Subject')}:</strong> ${escapeHtml(email.subject || '')}</p>
+        <p><strong>${ui('Từ', 'From')}:</strong> ${escapeHtml(email.sender || '')}</p>
+        <p><strong>${ui('Nội dung', 'Content')}:</strong> ${escapeHtml(email.summary || email.snippet || '')}</p>
+    `;
+    select.innerHTML = businessWorkspaces.map((w) => `<option value="${escapeHtml(w.id)}">${escapeHtml(w.name)}</option>`).join('');
+    modal.classList.add('show');
+    document.body.classList.add('modal-open');
+}
+
+function closeShareArtifactModal() {
+    document.getElementById('shareArtifactModal')?.classList.remove('show');
+    document.body.classList.remove('modal-open');
+    shareArtifactSourceEmail = null;
+}
+
+async function submitShareArtifact(event) {
+    event.preventDefault();
+    const email = shareArtifactSourceEmail;
+    const workspaceId = document.getElementById('shareArtifactWorkspace')?.value;
+    if (!email || !workspaceId) return;
+    if (!confirm(ui(
+        'Xác nhận chia sẻ email này vào không gian đã chọn? Chủ sở hữu/quản trị sẽ thấy được nội dung.',
+        'Confirm sharing this email into the selected workspace? The owner/admin will be able to see this content.'
+    ))) return;
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspaces/${workspaceId}/shared-artifacts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                source_type: 'email_summary',
+                title: email.subject || ui('Email đã chia sẻ', 'Shared email'),
+                content: {
+                    subject: email.subject || '',
+                    sender: email.sender || '',
+                    summary: email.summary || email.snippet || '',
+                    date: email.date || '',
+                },
+            }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'share_failed');
+        showNotification(ui('Đã chia sẻ vào không gian doanh nghiệp', 'Shared to the workspace'), 'success');
+        closeShareArtifactModal();
+    } catch (err) {
+        showNotification(ui('Không chia sẻ được', 'Could not share'), 'error');
+    }
+}
+
+async function loadSharingCenter() {
+    const listEl = document.getElementById('sharingCenterList');
+    if (!listEl) return;
+    try {
+        const resp = await apiFetch(`${API_BASE}/user/sharing`);
+        const data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'load_failed');
+        sharingCenterArtifacts = data.artifacts || [];
+        renderSharingCenter(sharingCenterArtifacts);
+    } catch (err) {
+        console.warn('loadSharingCenter failed', err);
+    }
+}
+
+function renderSharingCenter(artifacts) {
+    const listEl = document.getElementById('sharingCenterList');
+    if (!listEl) return;
+    if (!artifacts.length) {
+        listEl.innerHTML = `<div class="chat-session-empty">${ui('Bạn chưa chia sẻ nội dung nào.', "You haven't shared anything yet.")}</div>`;
+        return;
+    }
+    listEl.innerHTML = artifacts.map((artifact) => `
+        <div class="work-hub-item-row" data-artifact-id="${escapeHtml(artifact.id)}">
+            <div class="work-hub-item-info">
+                <strong>${escapeHtml(artifact.title)}</strong>
+                <small>${escapeHtml(artifact.workspace_name || '')} · ${escapeHtml(artifact.source_type)}</small>
+            </div>
+            <div class="work-hub-item-actions">
+                <button type="button" class="btn-secondary" data-revoke-artifact="${escapeHtml(artifact.id)}">${ui('Thu hồi', 'Revoke')}</button>
+            </div>
+        </div>
+    `).join('');
+    listEl.querySelectorAll('[data-revoke-artifact]').forEach((btn) => {
+        btn.addEventListener('click', () => revokeSharedArtifact(btn.getAttribute('data-revoke-artifact')));
+    });
+}
+
+async function revokeSharedArtifact(artifactId) {
+    if (!confirm(ui('Thu hồi chia sẻ này? Không gian sẽ không còn thấy nội dung này nữa.', 'Revoke this share? The workspace will no longer see this content.'))) return;
+    const workspaceId = sharingCenterArtifacts.find((a) => a.id === artifactId)?.workspace_id;
+    if (!workspaceId) return;
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspaces/${workspaceId}/shared-artifacts/${artifactId}`, { method: 'DELETE' });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'revoke_failed');
+        await loadSharingCenter();
+    } catch (err) {
+        showNotification(ui('Không thu hồi được', 'Could not revoke'), 'error');
+    }
+}
+
+function setupSharingUI() {
+    document.getElementById('shareArtifactForm')?.addEventListener('submit', submitShareArtifact);
+    document.getElementById('shareArtifactModal')?.querySelectorAll('[data-modal="shareArtifactModal"]').forEach((el) => {
+        el.addEventListener('click', closeShareArtifactModal);
+    });
+}
+
 function setupWorkHubUI() {
     document.getElementById('workHubNewProjectForm')?.addEventListener('submit', submitWorkHubNewProject);
     document.getElementById('workHubNewTaskForm')?.addEventListener('submit', submitWorkHubNewTask);
@@ -1428,6 +1571,7 @@ async function initApp() {
     setupWorkspaceShell();
     setupOrgWorkspaceUI();
     setupWorkHubUI();
+    setupSharingUI();
     applyLanguage();
     setupDateTimePreviews();
     const savedTheme = localStorage.getItem('flowmate-theme');
@@ -1628,6 +1772,16 @@ async function initApp() {
                 }
             });
         }
+        document.querySelectorAll('#smartInboxBar [data-smart-bucket]').forEach((chip) => {
+            chip.addEventListener('click', () => {
+                currentSmartBucketFilter = chip.dataset.smartBucket;
+                document.querySelectorAll('#smartInboxBar [data-smart-bucket]').forEach((el) => {
+                    el.classList.toggle('active', el === chip);
+                });
+                currentEmailPage = 1;
+                loadEmails(1, { cacheOnly: true, silent: true });
+            });
+        });
         if (emailSearchInput) {
             emailSearchInput.addEventListener('input', () => {
                 clearTimeout(emailSearchTimer);
@@ -4557,6 +4711,8 @@ async function handlePageChange(btn) {
         loadWorkHubPage().catch(err => console.error('Work Hub load error:', err));
     } else if (page === 'status-reports') {
         loadStatusReportsPage().catch(err => console.error('Status reports load error:', err));
+    } else if (page === 'sharing-center') {
+        loadSharingCenter().catch(err => console.error('Sharing center load error:', err));
     }
 }
 
@@ -6224,6 +6380,7 @@ async function loadEmails(page = 1, options = {}) {
             include_read: String(includeRead),
             search
         });
+        if (currentSmartBucketFilter) params.set('smart_bucket', currentSmartBucketFilter);
         if (options.fresh) params.set('fresh', 'true');
         if (options.cacheOnly) params.set('cache_only', 'true');
         const url = `${API_BASE}/email/get-unread?${params.toString()}`;
@@ -6503,6 +6660,15 @@ function renderEnhancedEmailItem(email, container) {
     const tagHTML = email.tag
         ? `<span style="display:inline-block;background:${tagColor};color:white;padding:2px 8px;border-radius:12px;font-size:11px;margin-right:6px;font-weight:bold;">${escapeHtml(email.tag)}</span>`
         : '';
+    const smartBucketLabels = {
+        action_required: ui('Cần xử lý', 'Action required'),
+        waiting: ui('Đang chờ', 'Waiting'),
+        fyi: ui('Tham khảo', 'FYI'),
+        low_priority: ui('Ít quan trọng', 'Low priority'),
+    };
+    const smartBucketHTML = email.smart_bucket
+        ? `<span class="email-smart-badge email-smart-badge-${escapeHtml(email.smart_bucket)}">${escapeHtml(smartBucketLabels[email.smart_bucket] || email.smart_bucket)}</span>`
+        : '';
     const normalizedSummary = String(email.summary || '').replace(/\s+/g, ' ').trim();
     const normalizedSnippet = String(email.snippet || '').replace(/\s+/g, ' ').trim();
     const summaryHTML = normalizedSummary
@@ -6518,7 +6684,7 @@ function renderEnhancedEmailItem(email, container) {
         <div class="email-item-header">
             <span class="email-item-subject">
                 <span class="email-read-state">${email.is_unread ? ui('Chưa đọc', 'Unread') : ui('Đã đọc', 'Read')}</span>
-                ${tagHTML}${escapeHtml(email.subject || ui('(Không có tiêu đề)', '(No subject)'))}
+                ${tagHTML}${smartBucketHTML}${escapeHtml(email.subject || ui('(Không có tiêu đề)', '(No subject)'))}
             </span>
             ${dateHTML}
         </div>
@@ -6529,6 +6695,7 @@ function renderEnhancedEmailItem(email, container) {
             <button class="email-view-detail-btn btn-secondary">${ui('Xem chi tiết', 'View details')}</button>
             <button class="email-summary-btn">${email.summary ? ui('Xem tóm tắt AI', 'View AI summary') : ui('Tóm tắt bằng AI', 'Summarize with AI')}</button>
             <button class="email-read-toggle-btn btn-secondary">${email.is_unread ? ui('Đánh dấu đã đọc', 'Mark as read') : ui('Đánh dấu chưa đọc', 'Mark as unread')}</button>
+            <button class="email-share-btn btn-secondary">${ui('Chia sẻ', 'Share')}</button>
         </div>
     `;
 
@@ -6547,6 +6714,10 @@ function renderEnhancedEmailItem(email, container) {
     emailDiv.querySelector('.email-read-toggle-btn').addEventListener('click', async (event) => {
         event.stopPropagation();
         await toggleEnhancedEmailReadStatus(email, emailDiv);
+    });
+    emailDiv.querySelector('.email-share-btn').addEventListener('click', (event) => {
+        event.stopPropagation();
+        openShareArtifactModal(email);
     });
     emailDiv.addEventListener('click', (event) => {
         if (!event.target.closest('button')) showFormattedEmailDetail(email);

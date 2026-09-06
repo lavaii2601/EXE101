@@ -1043,6 +1043,61 @@ button {
     gap: 6px;
 }
 
+.smart-inbox-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 10px 0;
+}
+
+.smart-inbox-chip {
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.smart-inbox-chip.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #ffffff;
+}
+
+.email-smart-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.email-smart-badge-action_required {
+    background: rgba(220, 38, 38, 0.14);
+    color: var(--danger);
+}
+
+.email-smart-badge-waiting {
+    background: rgba(180, 83, 9, 0.14);
+    color: #b45309;
+}
+
+.email-smart-badge-fyi {
+    background: rgba(108, 99, 255, 0.14);
+    color: var(--primary);
+}
+
+.email-smart-badge-low_priority {
+    background: rgba(102, 112, 133, 0.14);
+    color: var(--text-secondary);
+}
+
 .work-hub-form {
     display: flex;
     flex-direction: column;
