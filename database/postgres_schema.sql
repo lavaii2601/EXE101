@@ -750,6 +750,53 @@ CREATE INDEX IF NOT EXISTS idx_status_reports_workspace_status
 CREATE INDEX IF NOT EXISTS idx_status_reports_author
     ON status_reports (author_user_id, report_date DESC) WHERE deleted_at IS NULL;
 
+-- Phase 4 ("Personal data va privacy-first sharing", design doc section 9.7):
+-- a user explicitly shares one piece of their own personal data (an email
+-- summary, calendar event, etc.) into a Business workspace. Postgres-only,
+-- same justification as projects/status_reports -- inherently cross-user
+-- once shared.
+--
+-- Privacy model: nothing reaches this table without the sharer's own
+-- explicit confirm-before-sharing step on the client (see routes/sharing.py
+-- and models/shared_artifact.py). Once a row exists, it is workspace
+-- content like any other -- owner/admin see it the same as project/report
+-- content (matches models/project.py / models/status_report.py's
+-- visibility precedent). What stays private is everything upstream: Bob
+-- never auto-shares, and owner/admin can never query the source
+-- mailbox/calendar directly (routes/email.py and routes/calendar.py have no
+-- workspace_id concept at all, by construction).
+--
+-- revoked_at (a timestamp, not a status enum) is the only lifecycle
+-- transition -- content is immutable after creation, like a published
+-- status report. Revoke is sharer-only (models/shared_artifact.py enforces
+-- this, not a DB constraint): unlike workspace-authored content, this is
+-- someone's personal data, so only the person who shared it can un-share
+-- it, not workspace owner/admin. retention_until is stored for a future
+-- cleanup job -- no purge job in this slice.
+CREATE TABLE IF NOT EXISTS shared_artifacts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    source_type TEXT NOT NULL,
+    source_owner_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    created_by_user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    content JSONB NOT NULL,
+    visibility TEXT NOT NULL DEFAULT 'workspace',
+    revoked_at TIMESTAMPTZ,
+    retention_until TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT shared_artifacts_source_type_check CHECK (
+        source_type IN ('email_summary', 'calendar_event', 'note', 'document_reference')
+    ),
+    CONSTRAINT shared_artifacts_visibility_check CHECK (visibility IN ('workspace', 'private'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_shared_artifacts_workspace
+    ON shared_artifacts (workspace_id) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_shared_artifacts_owner
+    ON shared_artifacts (source_owner_user_id) WHERE revoked_at IS NULL;
+
 -- Phase 3 ("Bob Core") tenant isolation: chat_sessions/history/session_memory
 -- gained a bare workspace_id column above (for fresh installs) but on an
 -- already-existing deployment those rows all predate this feature and have
@@ -1055,6 +1102,11 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 DROP TRIGGER IF EXISTS trg_status_reports_updated_at ON status_reports;
 CREATE TRIGGER trg_status_reports_updated_at
 BEFORE UPDATE ON status_reports
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_shared_artifacts_updated_at ON shared_artifacts;
+CREATE TRIGGER trg_shared_artifacts_updated_at
+BEFORE UPDATE ON shared_artifacts
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 COMMIT;

@@ -48,6 +48,7 @@ from routes.admin import admin_bp, _require_admin, is_current_user_admin
 from routes.course import course_bp
 from routes.workspace import workspace_bp, workspace_invitations_bp
 from routes.work_hub import work_hub_bp
+from routes.sharing import sharing_bp
 from utils.security import authenticated_user_id, enforce_rate_limit, valid_request_origin
 
 # Keep application diagnostics without logging OAuth request/response tokens.
@@ -156,6 +157,7 @@ app.register_blueprint(course_bp)
 app.register_blueprint(workspace_bp)
 app.register_blueprint(workspace_invitations_bp)
 app.register_blueprint(work_hub_bp)
+app.register_blueprint(sharing_bp)
 
 # Ensure data directory exists
 os.makedirs(os.path.dirname(Config.DATABASE_PATH), exist_ok=True)
