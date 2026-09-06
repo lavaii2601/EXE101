@@ -85,10 +85,10 @@ Ban phat hanh Play Store dung profile `production` va tao Android App Bundle (`.
 npx eas-cli build --platform android --profile production
 ```
 
-Mac dinh mobile dung backend Railway:
+Mac dinh mobile dung backend FlowMate:
 
 ```text
-https://exe101.up.railway.app/api
+https://flowmate.pro/api
 ```
 
 Khi can test backend local, dat `EXPO_PUBLIC_API_BASE_URL` truoc khi chay Expo:
@@ -154,8 +154,8 @@ build được đưa lên GitHub, còn APK local dùng để cài thử trực t
 APK trỏ người dùng đến chính sách bảo mật và điều khoản public của bản Railway:
 
 ```text
-https://exe101.up.railway.app/privacy
-https://exe101.up.railway.app/terms
+https://flowmate.pro/privacy
+https://flowmate.pro/terms
 ```
 
 Các URL này dùng cho Google OAuth consent screen, Play Console privacy policy

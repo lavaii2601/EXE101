@@ -203,6 +203,18 @@ def serve_terms_of_service():
     return response
 
 
+@app.route('/googlede47bc0acbbbc565.html')
+def serve_google_site_verification():
+    """Serve Google's static Search Console ownership verification file."""
+    response = send_from_directory(
+        '../frontend',
+        'googlede47bc0acbbbc565.html',
+        mimetype='text/html',
+    )
+    response.headers['Cache-Control'] = 'public, max-age=3600'
+    return response
+
+
 def _serve_admin_shell():
     """Serve the dashboard shell with strict no-cache headers.
 

@@ -353,5 +353,5 @@ node --check web/frontend/js/app.js
 
 Chính sách công khai:
 
-- [Privacy Policy](https://exe101.up.railway.app/privacy)
-- [Terms of Service](https://exe101.up.railway.app/terms)
+- [Privacy Policy](https://flowmate.pro/privacy)
+- [Terms of Service](https://flowmate.pro/terms)

@@ -1,5 +1,5 @@
-const DEPLOYED_API = 'https://exe101.up.railway.app/api';
-const DEPLOYED_WEB = 'https://exe101.up.railway.app';
+const DEPLOYED_API = 'https://flowmate.pro/api';
+const DEPLOYED_WEB = 'https://flowmate.pro';
 
 const ENV_API = process.env.EXPO_PUBLIC_API_BASE_URL;
 

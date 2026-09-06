@@ -155,8 +155,8 @@ the ledger, the finance tab displays a clear empty state with zero totals.
 FlowMate serves public privacy and terms pages from the same Railway deployment:
 
 ```text
-https://exe101.up.railway.app/privacy
-https://exe101.up.railway.app/terms
+https://flowmate.pro/privacy
+https://flowmate.pro/terms
 ```
 
 Use these URLs for Google OAuth consent screen, Android APK review, Play Console
