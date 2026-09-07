@@ -29,10 +29,19 @@ class AppState extends ChangeNotifier {
     } on ApiException catch (e) {
       if (e.status == 401) {
         isAuthenticated = false;
+      } else {
+        // Same "don't hang forever on first launch" reasoning as the
+        // catch-all below -- a non-401 API error (e.g. a 500) shouldn't
+        // leave isAuthenticated stuck at null either.
+        isAuthenticated ??= false;
       }
     } catch (_) {
-      // Network hiccup: leave isAuthenticated as-is rather than bouncing
-      // the user to the login screen for a transient error.
+      // Network hiccup: leave isAuthenticated as-is rather than bouncing an
+      // already-signed-in user to the login screen for a transient error.
+      // But on the very first check (still null -- nothing to protect yet),
+      // that would leave _RootFlow's `isAuthenticated == null` blank screen
+      // showing forever with no way out. Fail open to the login flow instead.
+      isAuthenticated ??= false;
     }
     try {
       final s = await apiGet('/status');

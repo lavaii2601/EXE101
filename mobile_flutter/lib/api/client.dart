@@ -1,7 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'config.dart';
 import 'session.dart';
+
+// The http package applies no timeout on its own -- a silently-dropped
+// connection (e.g. DNS/network trouble reaching kApiBase) would otherwise
+// hang a request forever instead of throwing something callers can react to.
+const _kRequestTimeout = Duration(seconds: 15);
 
 class ApiException implements Exception {
   final String message;
@@ -30,19 +36,25 @@ Future<dynamic> _request(String path, {required String method, Map<String, dynam
   http.Response response;
   switch (method) {
     case 'GET':
-      response = await http.get(uri, headers: headers);
+      response = await http.get(uri, headers: headers).timeout(_kRequestTimeout);
       break;
     case 'POST':
-      response = await http.post(uri, headers: headers, body: body != null ? jsonEncode(body) : null);
+      response = await http
+          .post(uri, headers: headers, body: body != null ? jsonEncode(body) : null)
+          .timeout(_kRequestTimeout);
       break;
     case 'PUT':
-      response = await http.put(uri, headers: headers, body: body != null ? jsonEncode(body) : null);
+      response = await http
+          .put(uri, headers: headers, body: body != null ? jsonEncode(body) : null)
+          .timeout(_kRequestTimeout);
       break;
     case 'PATCH':
-      response = await http.patch(uri, headers: headers, body: body != null ? jsonEncode(body) : null);
+      response = await http
+          .patch(uri, headers: headers, body: body != null ? jsonEncode(body) : null)
+          .timeout(_kRequestTimeout);
       break;
     case 'DELETE':
-      response = await http.delete(uri, headers: headers);
+      response = await http.delete(uri, headers: headers).timeout(_kRequestTimeout);
       break;
     default:
       throw ArgumentError('Unsupported method $method');
