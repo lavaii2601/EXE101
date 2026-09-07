@@ -12,6 +12,7 @@ from flask import Blueprint, jsonify, request, session
 from models import workspace as workspace_model
 from models import workspace_subscription
 from models.user import User
+from utils.security import WORKSPACE_ACCESS_DENIED_CODES, log_workspace_access_denied
 from utils.user_context import get_current_user_id
 
 workspace_bp = Blueprint('workspace', __name__, url_prefix='/api/workspaces')
@@ -46,6 +47,13 @@ _ERROR_STATUS = {
 
 def _error_response(exc):
     status = _ERROR_STATUS.get(exc.code, 400)
+    if exc.code in WORKSPACE_ACCESS_DENIED_CODES:
+        # No X-Workspace-Id header convention here -- every route below
+        # takes workspace_id as a URL path segment instead.
+        log_workspace_access_denied(
+            exc.code, get_current_user_id(request, session=session),
+            (request.view_args or {}).get('workspace_id'),
+        )
     body = {'error': exc.code}
     body.update(exc.extra)
     return jsonify(body), status

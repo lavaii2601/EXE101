@@ -28,6 +28,7 @@ from services.conversation_context import (  # noqa: E402
     is_context_dependent_followup,
     latest_user_language,
 )
+from services import tool_catalog  # noqa: E402
 from services.intent_orchestrator import IntentOrchestrator  # noqa: E402
 from services.knowledge_service import KnowledgeService  # noqa: E402
 from services import tool_catalog  # noqa: E402
@@ -467,6 +468,122 @@ class BobDeepContextTests(unittest.TestCase):
             seen[0].user_message,
         )
         self.assertEqual("move it to 3pm", seen[0].original_user_message)
+
+    def test_only_the_confirmed_write_tool_is_dispatched(self):
+        # Phase 5 workflow-permission verification (design doc section 15's
+        # "workflow nhieu buoc kiem tra entitlement/permission o tung tool
+        # action"): a multi-step workflow must never let one client_confirm
+        # click silently execute MULTIPLE write tools. Only the step whose
+        # intent matches action_override['tool'] may reach its agent's
+        # handle() with action_confirm=True; every other write step must be
+        # queued and never dispatched at all.
+        dispatched = []
+
+        class _RecordingAgent:
+            def handle(self, subctx):
+                dispatched.append(subctx.intent_result['intent'])
+                return AgentResult(response=f"did {subctx.intent_result['intent']}")
+
+        ctx = ChatContext(
+            user_message="tao lich hop va doi che do sang worker",
+            original_user_message="tao lich hop va doi che do sang worker",
+            user_id="user-1",
+            db_path="test.db",
+            chat_session_id="session-1",
+            mode="worker",
+            mode_prompt="Worker mode.",
+            task="chat",
+            action_confirm=True,
+            action_override={"tool": "settings.update_mode", "mode": "worker"},
+            intent_result={
+                "intent": "workflow.multi",
+                "steps": [
+                    {"intent": "schedule.create", "message": "tao lich hop"},
+                    {"intent": "settings.update_mode", "message": "doi che do sang worker"},
+                ],
+            },
+        )
+        with patch("services.chat_agents.get_agent", return_value=_RecordingAgent()):
+            result = MultiIntentWorkflowAgent().handle(ctx)
+
+        self.assertEqual(["settings.update_mode"], dispatched)
+        self.assertIn(tool_catalog.CATALOG["schedule.create"].user_label, result.response)
+
+    def test_second_write_in_the_same_workflow_call_is_also_queued(self):
+        # Even when a write step's intent DOES match the confirmed tool, a
+        # workflow call may execute at most one write per turn -- a second
+        # step with the same intent must still be queued, not double-fired.
+        dispatched = []
+
+        class _RecordingAgent:
+            def handle(self, subctx):
+                dispatched.append(subctx.intent_result['intent'])
+                return AgentResult(response="created")
+
+        ctx = ChatContext(
+            user_message="tao hai lich lien tiep",
+            original_user_message="tao hai lich lien tiep",
+            user_id="user-1",
+            db_path="test.db",
+            chat_session_id="session-1",
+            mode="worker",
+            mode_prompt="Worker mode.",
+            task="chat",
+            client_confirm=True,
+            schedule_override={"action": "create"},
+            intent_result={
+                "intent": "workflow.multi",
+                "steps": [
+                    {"intent": "schedule.create", "message": "lich mot"},
+                    {"intent": "schedule.create", "message": "lich hai"},
+                ],
+            },
+        )
+        with patch("services.chat_agents.get_agent", return_value=_RecordingAgent()):
+            MultiIntentWorkflowAgent().handle(ctx)
+
+        self.assertEqual(["schedule.create"], dispatched)
+
+    def test_unconfirmed_write_step_is_dispatched_without_confirm_flags(self):
+        # With NO confirmation info anywhere on ctx, the workflow dispatcher
+        # itself doesn't block a write step (that's ScheduleCreateAgent's own
+        # job -- ctx.client_confirm=False makes it propose instead of write,
+        # per its own handle()). What the dispatcher MUST get right is never
+        # leaking a stale/unrelated confirm flag onto a step it doesn't
+        # belong to: both steps run, but the write step's subctx carries
+        # client_confirm=False/action_confirm=False, same as the read step.
+        seen = []
+
+        class _RecordingAgent:
+            def handle(self, subctx):
+                seen.append(subctx)
+                return AgentResult(response=f"did {subctx.intent_result['intent']}")
+
+        ctx = ChatContext(
+            user_message="xem lich roi tao lich hop",
+            original_user_message="xem lich roi tao lich hop",
+            user_id="user-1",
+            db_path="test.db",
+            chat_session_id="session-1",
+            mode="worker",
+            mode_prompt="Worker mode.",
+            task="chat",
+            intent_result={
+                "intent": "workflow.multi",
+                "steps": [
+                    {"intent": "schedule.list", "message": "xem lich"},
+                    {"intent": "schedule.create", "message": "tao lich hop"},
+                ],
+            },
+        )
+        with patch("services.chat_agents.get_agent", return_value=_RecordingAgent()):
+            MultiIntentWorkflowAgent().handle(ctx)
+
+        dispatched = [subctx.intent_result['intent'] for subctx in seen]
+        self.assertEqual(["schedule.list", "schedule.create"], dispatched)
+        write_subctx = seen[1]
+        self.assertFalse(write_subctx.client_confirm)
+        self.assertFalse(write_subctx.action_confirm)
 
     def test_contextual_followup_uses_history_and_is_not_cached_training(self):
         recent = [

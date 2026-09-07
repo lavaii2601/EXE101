@@ -436,6 +436,8 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (
     tags TEXT NOT NULL DEFAULT '',
     source TEXT NOT NULL DEFAULT 'manual',
     user_id TEXT DEFAULT NULL,
+    workspace_id UUID,
+    created_by_user_id TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -882,6 +884,35 @@ $$;
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_workspace ON chat_sessions (workspace_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_history_workspace ON history (workspace_id);
 CREATE INDEX IF NOT EXISTS idx_session_memory_workspace ON session_memory (workspace_id);
+
+-- Phase 5 (design doc section 8.7): a third knowledge_documents tier -- global
+-- (user_id IS NULL) and personal (user_id set) already existed; this adds
+-- workspace-curated docs. Nullable on purpose, no backfill -- every existing
+-- row keeps meaning exactly what it means today.
+ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS workspace_id UUID;
+ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS created_by_user_id TEXT;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'knowledge_documents_workspace_fkey') THEN
+        ALTER TABLE knowledge_documents
+            ADD CONSTRAINT knowledge_documents_workspace_fkey
+            FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE;
+    END IF;
+END;
+$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'knowledge_documents_created_by_fkey') THEN
+        ALTER TABLE knowledge_documents
+            ADD CONSTRAINT knowledge_documents_created_by_fkey
+            FOREIGN KEY (created_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL;
+    END IF;
+END;
+$$;
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_documents_workspace ON knowledge_documents (workspace_id);
 
 CREATE INDEX IF NOT EXISTS idx_users_gmail_email ON users (gmail_email);
 CREATE INDEX IF NOT EXISTS idx_users_mode ON users (user_mode);

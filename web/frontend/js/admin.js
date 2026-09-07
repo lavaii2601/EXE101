@@ -13,6 +13,10 @@ const state = {
   autoRefresh: true,
   refreshIntervalSeconds: 30,
   nextRefreshAt: null,
+  auditWorkspaceId: null,
+  auditEvents: [],
+  auditNextBefore: null,
+  auditLoading: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -419,6 +423,7 @@ function renderWorkspaces(data = state.workspaces) {
       <td class="subscription-actions">
         <button type="button" class="btn-link" data-${renew === 'renew' ? 'renew' : 'grant'}-business="${escapeHtml(workspace.workspace_id)}">${escapeHtml(primaryLabel)}</button>
         ${hasSubscription ? `<button type="button" class="btn-link danger" data-revoke-business="${escapeHtml(workspace.workspace_id)}">Thu hồi</button>` : ''}
+        <button type="button" class="btn-link" data-view-audit="${escapeHtml(workspace.workspace_id)}" data-view-audit-name="${escapeHtml(workspace.name || workspace.workspace_id)}">Nhật ký</button>
       </td>
     </tr>`;
   }).join('') : '<tr><td colspan="7" class="muted">Không có tổ chức phù hợp bộ lọc.</td></tr>';
@@ -471,6 +476,64 @@ async function revokeBusinessSubscription(workspaceId) {
   } catch (error) {
     if (!handleAdminGate(error)) showToast(error.message || 'Không thu hồi được gói Business.', 'error');
   }
+}
+
+// Phase 5 ("Advanced workspace and AI"): surface workspace_audit_events,
+// written on every business-data mutation (see routes/work_hub.py,
+// sharing.py, workspace_subscription.py) but never displayed before this.
+function openWorkspaceAudit(workspaceId, workspaceName) {
+  state.auditWorkspaceId = workspaceId;
+  state.auditEvents = [];
+  state.auditNextBefore = null;
+  $('workspaceAuditTitle').textContent = `Nhật ký · ${workspaceName || workspaceId}`;
+  $('auditEventTypeFilter').value = '';
+  $('workspaceAuditPanel').hidden = false;
+  $('workspaceAuditPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  loadWorkspaceAudit({ reset: true });
+}
+
+function closeWorkspaceAudit() {
+  state.auditWorkspaceId = null;
+  $('workspaceAuditPanel').hidden = true;
+}
+
+async function loadWorkspaceAudit({ reset = false } = {}) {
+  if (!state.auditWorkspaceId || state.auditLoading) return;
+  state.auditLoading = true;
+  const params = new URLSearchParams({ limit: '50' });
+  const eventType = $('auditEventTypeFilter').value;
+  if (eventType) params.set('event_type', eventType);
+  if (!reset && state.auditNextBefore) params.set('before', state.auditNextBefore);
+  try {
+    const data = await api(`/api/admin/workspaces/${encodeURIComponent(state.auditWorkspaceId)}/audit?${params}`);
+    state.auditEvents = reset ? (data.events || []) : [...state.auditEvents, ...(data.events || [])];
+    state.auditNextBefore = data.has_more ? data.next_before : null;
+    renderWorkspaceAudit();
+  } catch (error) {
+    if (!handleAdminGate(error)) showToast(error.message || 'Không tải được nhật ký hoạt động.', 'error');
+  } finally {
+    state.auditLoading = false;
+  }
+}
+
+function renderWorkspaceAudit() {
+  const filterSelect = $('auditEventTypeFilter');
+  const knownTypes = new Set(Array.from(filterSelect.options).map((option) => option.value).filter(Boolean));
+  state.auditEvents.forEach((event) => {
+    if (event.event_type && !knownTypes.has(event.event_type)) {
+      knownTypes.add(event.event_type);
+      filterSelect.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(event.event_type)}">${escapeHtml(event.event_type)}</option>`);
+    }
+  });
+  $('workspaceAuditBody').innerHTML = state.auditEvents.length
+    ? state.auditEvents.map((event) => `<tr>
+        <td>${escapeHtml(dateTime(event.created_at))}</td>
+        <td><span class="badge">${escapeHtml(event.event_type || '—')}</span></td>
+        <td>${escapeHtml(event.actor_user_id || '—')}</td>
+        <td>${escapeHtml([event.target_type, event.target_id].filter(Boolean).join(' · ') || '—')}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="4" class="muted">Chưa có sự kiện nào.</td></tr>';
+  $('loadMoreAuditButton').hidden = !state.auditNextBefore;
 }
 
 function setMoneyValue(id, value, currency) {
@@ -936,10 +999,15 @@ $('workspacesBody').addEventListener('click', (event) => {
   const grantId = event.target.closest('[data-grant-business]')?.dataset.grantBusiness;
   const renewId = event.target.closest('[data-renew-business]')?.dataset.renewBusiness;
   const revokeId = event.target.closest('[data-revoke-business]')?.dataset.revokeBusiness;
+  const auditButton = event.target.closest('[data-view-audit]');
   if (grantId) grantBusinessSubscription(grantId, 'purchase');
   if (renewId) grantBusinessSubscription(renewId, 'renew');
   if (revokeId) revokeBusinessSubscription(revokeId);
+  if (auditButton) openWorkspaceAudit(auditButton.dataset.viewAudit, auditButton.dataset.viewAuditName);
 });
+$('closeWorkspaceAuditButton').addEventListener('click', closeWorkspaceAudit);
+$('auditEventTypeFilter').addEventListener('change', () => loadWorkspaceAudit({ reset: true }));
+$('loadMoreAuditButton').addEventListener('click', () => loadWorkspaceAudit({ reset: false }));
 $('totpInput').addEventListener('input', (event) => {
   event.target.value = event.target.value.replace(/\D/g, '').slice(0, 6);
 });

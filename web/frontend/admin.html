@@ -327,6 +327,38 @@
             </table>
           </div>
         </section>
+
+        <section id="workspaceAuditPanel" class="panel table-panel" hidden>
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">NHẬT KÝ HOẠT ĐỘNG</p>
+              <h2 id="workspaceAuditTitle">Audit log</h2>
+            </div>
+            <button type="button" class="btn-link" id="closeWorkspaceAuditButton">Đóng</button>
+          </div>
+          <div class="table-toolbar">
+            <select id="auditEventTypeFilter" aria-label="Lọc theo loại sự kiện">
+              <option value="">Tất cả loại sự kiện</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">Nhật ký hoạt động của workspace</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Thời gian</th>
+                  <th scope="col">Sự kiện</th>
+                  <th scope="col">Người thực hiện</th>
+                  <th scope="col">Đối tượng</th>
+                </tr>
+              </thead>
+              <tbody id="workspaceAuditBody"></tbody>
+            </table>
+          </div>
+          <div class="table-toolbar">
+            <button type="button" class="button ghost" id="loadMoreAuditButton" hidden>Tải thêm</button>
+          </div>
+        </section>
       </section>
 
       <section

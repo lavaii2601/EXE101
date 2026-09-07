@@ -1,8 +1,10 @@
-from flask import Flask, send_from_directory, jsonify, redirect, session as flask_session, request
+from flask import Flask, send_from_directory, jsonify, redirect, session as flask_session, request, g
 from flask_cors import CORS
 from flask_compress import Compress
 from werkzeug.middleware.proxy_fix import ProxyFix
 import os
+import re
+import uuid
 import sys
 import logging
 
@@ -49,6 +51,8 @@ from routes.course import course_bp
 from routes.workspace import workspace_bp, workspace_invitations_bp
 from routes.work_hub import work_hub_bp
 from routes.sharing import sharing_bp
+from routes.workspace_knowledge import workspace_knowledge_bp
+from routes.payments import payments_bp
 from utils.security import authenticated_user_id, enforce_rate_limit, valid_request_origin
 
 # Keep application diagnostics without logging OAuth request/response tokens.
@@ -69,16 +73,39 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=86400,  # 24 hours
     SESSION_REFRESH_EACH_REQUEST=True,  # Extend session lifetime on each request
 )
+if Config.SESSION_COOKIE_DOMAIN:
+    # Host-only cookies don't survive an OAuth round trip that starts on the
+    # apex domain but is redirected back to "www." (or vice versa) -- see
+    # SESSION_COOKIE_DOMAIN's derivation in config.py.
+    app.config.update(SESSION_COOKIE_DOMAIN=Config.SESSION_COOKIE_DOMAIN)
 
 # Set permanent session to persist across server restarts
 @app.before_request
 def make_session_permanent():
+    # Correlation ID for this request -- reuse an inbound X-Request-Id if a
+    # proxy/client already set one (useful for tracing a single request
+    # across services), otherwise mint one. Read by the structured
+    # "cross-workspace denied" security logging in routes/work_hub.py,
+    # sharing.py, and workspace.py, and echoed back in add_security_headers
+    # below so a client/support request can be correlated to server logs.
+    inbound_request_id = (request.headers.get('X-Request-Id') or '').strip()[:100]
+    g.correlation_id = (
+        inbound_request_id if re.fullmatch(r'[A-Za-z0-9._-]+', inbound_request_id or '')
+        else uuid.uuid4().hex
+    )
     if request.path not in {'/privacy', '/terms'}:
         flask_session.permanent = True
     limited = enforce_rate_limit()
     if limited:
         return jsonify(limited[0]), limited[1]
-    if request.path.startswith('/api/') and not valid_request_origin():
+    # SEPay's server-to-server IPN has no browser Origin header. It is instead
+    # authenticated by X-Secret-Key inside the route itself.
+    origin_exempt_api_paths = {'/api/payments/sepay/ipn'}
+    if (
+        request.path.startswith('/api/')
+        and request.path not in origin_exempt_api_paths
+        and not valid_request_origin()
+    ):
         return jsonify({'error': 'invalid_request_origin'}), 403
     public_api_paths = {
         '/api/health',
@@ -91,10 +118,13 @@ def make_session_permanent():
         '/api/email/google-auth',
         '/api/auth/register',
         '/api/auth/login',
+        '/api/payments/sepay/ipn',
     }
     if (
         request.path.startswith('/api/')
         and request.path not in public_api_paths
+        and not request.path.startswith('/api/payments/sepay/start/')
+        and not request.path.startswith('/api/payments/sepay/result/')
         and not request.path.startswith('/api/admin/')
         and not authenticated_user_id()
     ):
@@ -126,6 +156,9 @@ def add_security_headers(response):
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
     response.headers['Cross-Origin-Opener-Policy'] = 'same-origin-allow-popups'
+    correlation_id = getattr(g, 'correlation_id', None)
+    if correlation_id:
+        response.headers['X-Request-Id'] = correlation_id
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
         "img-src 'self' data: https://*.googleusercontent.com; "
@@ -133,7 +166,8 @@ def add_security_headers(response):
         "font-src 'self' https://fonts.gstatic.com; "
         "script-src 'self' 'unsafe-inline'; "
         "connect-src 'self'; "
-        "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        "frame-ancestors 'none'; base-uri 'self'; "
+        "form-action 'self' https://pay.sepay.vn https://pay-sandbox.sepay.vn"
     )
     if request.path.startswith('/api/'):
         response.headers['Cache-Control'] = 'no-store'
@@ -158,6 +192,8 @@ app.register_blueprint(workspace_bp)
 app.register_blueprint(workspace_invitations_bp)
 app.register_blueprint(work_hub_bp)
 app.register_blueprint(sharing_bp)
+app.register_blueprint(workspace_knowledge_bp)
+app.register_blueprint(payments_bp)
 
 # Ensure data directory exists
 os.makedirs(os.path.dirname(Config.DATABASE_PATH), exist_ok=True)

@@ -34,6 +34,24 @@ class Config:
     GMAIL_REDIRECT_URI = os.getenv("GMAIL_REDIRECT_URI", "")
     MOBILE_OAUTH_REDIRECT_URL = os.getenv("MOBILE_OAUTH_REDIRECT_URL", "flowmateai://oauth-callback")
 
+    # SEPay Payment Gateway. The signing secret is backend-only and must
+    # never be exposed in a web/mobile response. Sandbox is the safe default;
+    # set SEPAY_ENV=production explicitly when the production merchant is
+    # ready to receive real payments.
+    SEPAY_ENV = os.getenv("SEPAY_ENV", "sandbox").strip().lower()
+    SEPAY_MERCHANT_ID = os.getenv("SEPAY_MERCHANT_ID", "").strip()
+    SEPAY_SECRET_KEY = os.getenv("SEPAY_SECRET_KEY", "").strip()
+    SEPAY_IPN_SECRET_KEY = (
+        os.getenv("SEPAY_IPN_SECRET_KEY", "").strip()
+        or os.getenv("SEPAY_IPN_SECRET", "").strip()
+        or SEPAY_SECRET_KEY
+    )
+    SEPAY_CHECKOUT_URL = os.getenv("SEPAY_CHECKOUT_URL", "").strip() or (
+        "https://pay.sepay.vn/v1/checkout/init"
+        if SEPAY_ENV == "production"
+        else "https://pay-sandbox.sepay.vn/v1/checkout/init"
+    )
+
     GMAIL_CLIENT_ID_KEYS = ["GMAIL_CLIENT_ID", "GMAIL_CLIENT_ID_ALT"]
     GMAIL_CLIENT_SECRET_KEYS = ["GMAIL_CLIENT_SECRET"]
     GMAIL_CREDENTIALS_JSON_KEYS = ["GMAIL_CREDENTIALS_JSON"]
@@ -104,6 +122,16 @@ class Config:
     AI_MENTOR_LEARNING_MAX_PER_DAY = int(os.getenv("AI_MENTOR_LEARNING_MAX_PER_DAY", 6))
 
     SESSION_COOKIE_SECURE = _bool(os.getenv("SESSION_COOKIE_SECURE"), default=False)
+    # Explicit override; otherwise derived from RAILWAY_PUBLIC_DOMAIN below so
+    # the session cookie (holding oauth_state/oauth_code_verifier) is shared
+    # between the apex domain and its "www." host -- the OAuth flow can start
+    # on either one, but Google always redirects back to whichever exact
+    # redirect_uri is registered in Cloud Console, which may be the other.
+    SESSION_COOKIE_DOMAIN = os.getenv("SESSION_COOKIE_DOMAIN", "")
+    if not SESSION_COOKIE_DOMAIN:
+        _public_domain = (os.getenv("RAILWAY_PUBLIC_DOMAIN", "") or "").strip().lower()
+        if _public_domain and "." in _public_domain:
+            SESSION_COOKIE_DOMAIN = "." + _public_domain.removeprefix("www.")
     MOBILE_TOKEN_MAX_AGE = int(os.getenv("MOBILE_TOKEN_MAX_AGE", 30 * 24 * 3600))
     MOBILE_USER_HEADER_ENABLED = _bool(os.getenv("MOBILE_USER_HEADER_ENABLED"), default=DEBUG)
     ADMIN_EMAILS = {

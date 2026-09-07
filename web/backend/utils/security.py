@@ -1,12 +1,36 @@
+import logging
 import time
 from collections import defaultdict, deque
 from urllib.parse import urlparse
 
-from flask import current_app, request, session
+from flask import current_app, g, request, session
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 
 _request_buckets = defaultdict(deque)
+_security_logger = logging.getLogger('flowmate.security')
+
+# The WorkspaceError codes that mean "this request was denied access to a
+# tenant/role it wasn't entitled to" -- Phase 5 runtime security monitoring
+# (WORKER_BUSINESS_SUBSCRIPTION_DESIGN.md section 15). Not every WorkspaceError
+# is security-relevant (e.g. 'project_name_required' is just a validation
+# error), so callers pass only these three codes through this path.
+WORKSPACE_ACCESS_DENIED_CODES = frozenset({
+    'membership_required', 'insufficient_role', 'workspace_not_found',
+})
+
+
+def log_workspace_access_denied(code, actor_user_id, requested_workspace_id):
+    """One structured log line per denied cross-tenant/role attempt, so an
+    operator can grep/alert on repeated attempts from one actor against a
+    workspace they don't belong to. No new DB table this pass -- see
+    routes/admin.py's audit-log endpoint for the separate, already-written
+    workspace_audit_events trail of *successful* business-data mutations."""
+    _security_logger.warning(
+        "workspace_access_denied code=%s actor=%s workspace=%s endpoint=%s method=%s correlation_id=%s",
+        code, actor_user_id, requested_workspace_id or '-', request.endpoint,
+        request.method, getattr(g, 'correlation_id', '-'),
+    )
 
 
 def _serializer():

@@ -1,7 +1,9 @@
-"""Work Hub API: shared projects, tasks, and manual Status Reports.
+"""Work Hub API: shared projects, tasks, manual Status Reports, and a
+read-only team dashboard summarizing them.
 
 Phase 3 ("Bob Core va Status Report") of WORKER_BUSINESS_SUBSCRIPTION_DESIGN.md,
-sections 8.4-8.5. Mirrors routes/workspace.py's shape (WorkspaceError-style
+sections 8.4-8.5; the dashboard endpoint is Phase 5 ("Advanced workspace and
+AI", section 15). Mirrors routes/workspace.py's shape (WorkspaceError-style
 exceptions mapped to stable HTTP status codes, membership/role checks
 resolved once per request).
 
@@ -13,6 +15,8 @@ so a stale/invalid X-Workspace-Id header should fail loudly rather than
 silently falling back to the caller's personal workspace.
 """
 
+from datetime import datetime
+
 from flask import Blueprint, jsonify, request, session
 
 from models import project as project_model
@@ -20,7 +24,8 @@ from models import status_report as status_report_model
 from models import task as task_model
 from models import workspace as workspace_model
 from models import workspace_subscription
-from utils.security import header_workspace_id
+from models.schedule import LOCAL_TZ
+from utils.security import WORKSPACE_ACCESS_DENIED_CODES, header_workspace_id, log_workspace_access_denied
 from utils.user_context import get_current_user_id
 
 work_hub_bp = Blueprint('work_hub', __name__, url_prefix='/api')
@@ -49,6 +54,10 @@ _MANAGE_ROLES = ('owner', 'admin')
 
 def _error_response(exc):
     status = _ERROR_STATUS.get(exc.code, 400)
+    if exc.code in WORKSPACE_ACCESS_DENIED_CODES:
+        log_workspace_access_denied(
+            exc.code, get_current_user_id(request, session=session), header_workspace_id(),
+        )
     body = {'error': exc.code}
     body.update(exc.extra)
     return jsonify(body), status
@@ -70,6 +79,63 @@ def _resolve():
 def _require_manage_role(membership):
     if membership.get('role') not in _MANAGE_ROLES:
         raise workspace_model.WorkspaceError('insufficient_role')
+
+
+# ---------------------------------------------------------------------------
+# Team dashboard (Phase 5) -- read-only rollup over the same visibility-
+# filtered lists list_projects/list_tasks/list_status_reports already
+# return, so a worker's dashboard counts never include an item they
+# couldn't individually see. Small-medium workspace scale (per Phase 5's
+# own Definition of Done), so Python-side aggregation over these lists is
+# the deliberately simple choice here -- no new SQL to maintain twice.
+# ---------------------------------------------------------------------------
+
+@work_hub_bp.route('/work-hub/dashboard', methods=['GET'])
+def get_work_hub_dashboard():
+    try:
+        user_id, workspace, membership = _resolve()
+    except workspace_model.WorkspaceError as exc:
+        return _error_response(exc)
+
+    projects = project_model.list_projects(workspace['id'], user_id, membership['role'])
+    tasks = task_model.list_tasks(workspace['id'], user_id, membership['role'])
+    reports = status_report_model.list_reports(workspace['id'], user_id, membership['role'])
+    members = workspace_model.list_members(workspace['id'])
+
+    project_counts = {status: 0 for status in project_model.STATUSES}
+    for project in projects:
+        project_counts[project['status']] = project_counts.get(project['status'], 0) + 1
+
+    task_counts = {status: 0 for status in task_model.STATUSES}
+    today = datetime.now(LOCAL_TZ).date().isoformat()
+    overdue_tasks = 0
+    for task in tasks:
+        task_counts[task['status']] = task_counts.get(task['status'], 0) + 1
+        due_date = task.get('due_date')
+        if due_date and task['status'] not in ('done', 'cancelled') and due_date < today:
+            overdue_tasks += 1
+
+    # list_reports is already ordered report_date DESC, created_at DESC, so
+    # the first row seen per project_id (None included, for reports not
+    # tied to any project) is that bucket's latest report.
+    latest_report_by_project = {}
+    for report in reports:
+        key = report.get('project_id')
+        if key not in latest_report_by_project:
+            latest_report_by_project[key] = report
+
+    return jsonify({
+        'success': True,
+        'dashboard': {
+            'project_counts': project_counts,
+            'total_projects': len(projects),
+            'task_counts': task_counts,
+            'total_tasks': len(tasks),
+            'overdue_tasks': overdue_tasks,
+            'active_members': len(members),
+            'latest_reports': list(latest_report_by_project.values()),
+        },
+    })
 
 
 # ---------------------------------------------------------------------------

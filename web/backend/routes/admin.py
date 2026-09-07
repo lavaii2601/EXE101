@@ -18,6 +18,7 @@ from models import postgres_db as pg
 from models.knowledge import KnowledgeDocument
 from models.user import User
 from models import subscription as subscription_model
+from models import workspace as workspace_model
 from models import workspace_subscription
 from models.workspace_sync import WorkspaceSync
 from utils.security import authenticated_user_id
@@ -880,6 +881,44 @@ def admin_workspaces():
         'backend': 'postgres' if pg.enabled() else 'sqlite',
         'generated_at': datetime.now(timezone.utc).isoformat(),
         **payload,
+    })
+
+
+@admin_bp.route('/workspaces/<workspace_id>/audit', methods=['GET'])
+def admin_workspace_audit(workspace_id):
+    """Surface workspace_audit_events (Phase 5 runtime security monitoring).
+
+    Every business-data mutation already writes one of these rows via
+    models.workspace.record_audit_event (see models/project.py, task.py,
+    status_report.py, shared_artifact.py, workspace_subscription.py) --
+    nothing read them back before this endpoint existed."""
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    if not pg.enabled():
+        return jsonify({'success': True, 'admin': admin, 'backend': 'sqlite', 'events': [], 'has_more': False})
+
+    try:
+        limit = min(max(int(request.args.get('limit', 50)), 1), 200)
+    except (TypeError, ValueError):
+        limit = 50
+    event_type = (request.args.get('event_type') or '').strip() or None
+    before = (request.args.get('before') or '').strip() or None
+
+    # Fetch one extra row to know whether there's a next page without a
+    # separate COUNT(*) query.
+    events = workspace_model.list_audit_events(
+        workspace_id, limit=limit + 1, event_type=event_type, before=before,
+    )
+    has_more = len(events) > limit
+    events = events[:limit]
+    return jsonify({
+        'success': True,
+        'admin': admin,
+        'backend': 'postgres',
+        'events': events,
+        'has_more': has_more,
+        'next_before': events[-1]['created_at'] if has_more and events else None,
     })
 
 

@@ -527,18 +527,24 @@ def record_audit_event(workspace_id, actor_user_id, event_type,
                              target_type, target_id, metadata)
 
 
-def list_audit_events(workspace_id, limit=100):
+def list_audit_events(workspace_id, limit=100, event_type=None, before=None):
+    """`before` is an ISO timestamp cursor (pass the last row's `created_at`
+    from the previous page) -- events are append-only and ordered newest
+    first, so this is enough for paging without an offset that shifts
+    under concurrent inserts."""
     _require_pg()
+    query = "SELECT * FROM workspace_audit_events WHERE workspace_id = %s"
+    params = [workspace_id]
+    if event_type:
+        query += " AND event_type = %s"
+        params.append(event_type)
+    if before:
+        query += " AND created_at < %s"
+        params.append(before)
+    query += " ORDER BY created_at DESC LIMIT %s"
+    params.append(limit)
     with pg.connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT * FROM workspace_audit_events
-            WHERE workspace_id = %s
-            ORDER BY created_at DESC
-            LIMIT %s
-            """,
-            (workspace_id, limit),
-        ).fetchall()
+        rows = conn.execute(query, tuple(params)).fetchall()
         return pg.normalize_rows(rows)
 
 

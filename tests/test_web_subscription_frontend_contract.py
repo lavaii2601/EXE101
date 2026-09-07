@@ -21,7 +21,7 @@ class WebSubscriptionFrontendContractTests(unittest.TestCase):
         self.assertIn("Gia hạn Premium", self.javascript)
 
     def test_web_uses_server_entitlement_guard(self):
-        self.assertIn("/user/subscription/intent", self.javascript)
+        self.assertIn("/payments/sepay/checkout", self.javascript)
         self.assertIn("const action = isPremium ? 'renew' : 'purchase'", self.javascript)
         self.assertIn("data.allowed_action === 'renew'", self.javascript)
         self.assertIn("data.allowed_action === 'purchase'", self.javascript)
@@ -35,8 +35,8 @@ class WebSubscriptionFrontendContractTests(unittest.TestCase):
     def test_web_pricing_matches_mobile_and_admin(self):
         self.assertIn("49.000đ", self.html)
         self.assertIn("520.000đ", self.html)
-        self.assertIn("VNPay", self.html)
-        self.assertIn("MoMo", self.html)
+        self.assertIn("SEPay", self.html)
+        self.assertIn('data-payment-method="BANK_TRANSFER"', self.html)
 
     def test_upgrade_modal_compares_current_freemium_with_two_paid_plans(self):
         self.assertNotIn('data-subscription-plan="free"', self.html)

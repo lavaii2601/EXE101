@@ -70,13 +70,21 @@ def _intent_sources(message):
     return sources
 
 
-def _format_knowledge_context(message, user_id=None, mode=None):
+_KNOWLEDGE_SCOPE_LABELS = {
+    'business': 'Doanh nghiệp',
+    'personal': 'Cá nhân',
+    'global': 'Chung',
+}
+
+
+def _format_knowledge_context(message, user_id=None, mode=None, workspace_id=None):
     try:
         results = knowledge_service.search(
             message,
             top_k=3,
             user_id=user_id,
             mode=mode,
+            workspace_id=workspace_id,
         )
     except Exception:
         logger.warning("Knowledge base search failed", exc_info=True)
@@ -85,7 +93,8 @@ def _format_knowledge_context(message, user_id=None, mode=None):
         return ''
     lines = ["KIẾN THỨC THAM KHẢO (FlowMate/Bob)"]
     for index, doc in enumerate(results, start=1):
-        lines.append(f"{index}. {doc.get('title')}: {doc.get('content')}")
+        scope_label = _KNOWLEDGE_SCOPE_LABELS.get(doc.get('scope'), 'Chung')
+        lines.append(f"{index}. [{scope_label}] {doc.get('title')}: {doc.get('content')}")
     return "\n".join(lines)
 
 
@@ -268,6 +277,7 @@ def _build_workspace_context(
         message,
         user_id=user_id,
         mode=mode,
+        workspace_id=workspace_id,
     )
     if knowledge_context:
         context_parts.append(knowledge_context)

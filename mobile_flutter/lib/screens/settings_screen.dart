@@ -2,6 +2,7 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../api/client.dart';
 import '../api/google_auth.dart';
 import '../config/user_modes.dart';
 import '../state/app_state.dart';
@@ -23,8 +24,129 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObserver {
   bool connectingGmail = false;
+  bool startingPayment = false;
+  bool waitingForPaymentReturn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !waitingForPaymentReturn) return;
+    waitingForPaymentReturn = false;
+    context.read<AppState>().refreshShell().then((_) {
+      if (!mounted) return;
+      final t = context.read<LanguageController>().t;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(t(
+          'Đã làm mới trạng thái Premium sau khi quay lại từ SEPay.',
+          'Premium status refreshed after returning from SEPay.',
+        )),
+      ));
+    });
+  }
+
+  Future<void> _startSepayCheckout(String planCode) async {
+    final t = context.read<LanguageController>().t;
+    final profile = context.read<AppState>().profile;
+    final subscription = profile?['subscription'] is Map
+        ? Map<String, dynamic>.from(profile!['subscription'] as Map)
+        : <String, dynamic>{};
+    final isPremium = subscription['is_premium'] == true || subscription['tier'] == 'premium';
+    setState(() => startingPayment = true);
+    try {
+      final data = await apiPost('/payments/sepay/checkout', {
+        'action': isPremium ? 'renew' : 'purchase',
+        'plan_code': planCode,
+        'payment_method': 'BANK_TRANSFER',
+      });
+      final checkoutUrl = data is Map ? data['checkout_url'] as String? : null;
+      final checkoutUri = checkoutUrl == null ? null : Uri.tryParse(checkoutUrl);
+      if (checkoutUri == null) {
+        throw const FormatException('SEPay checkout URL is missing');
+      }
+      waitingForPaymentReturn = true;
+      final launched = await launchUrl(checkoutUri, mode: LaunchMode.externalApplication);
+      if (!launched) throw Exception('Could not open SEPay');
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${t('Không thể tạo đơn SEPay', 'Could not create SEPay checkout')}: ${error.message}'),
+        ));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${t('Không thể mở SEPay', 'Could not open SEPay')}: $error'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => startingPayment = false);
+    }
+  }
+
+  Future<void> _showPremiumPlans() async {
+    final t = context.read<LanguageController>().t;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(t('FlowMate Premium', 'FlowMate Premium')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.calendar_month_outlined),
+              title: Text(t('Premium tháng', 'Monthly Premium')),
+              subtitle: Text(t('49.000đ · 30 ngày', '49,000 VND · 30 days')),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.pop(dialogContext);
+                _startSepayCheckout('premium_monthly');
+              },
+            ),
+            const Divider(),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.workspace_premium_outlined),
+              title: Text(t('Premium năm', 'Annual Premium')),
+              subtitle: Text(t('520.000đ · 365 ngày', '520,000 VND · 365 days')),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.pop(dialogContext);
+                _startSepayCheckout('premium_yearly');
+              },
+            ),
+            const SizedBox(height: 8),
+            Text(
+              t(
+                'Thanh toán một lần qua SEPay. Gói được kích hoạt sau khi IPN xác nhận.',
+                'One-time payment via SEPay. The plan activates after IPN confirmation.',
+              ),
+              style: Theme.of(dialogContext).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(t('Đóng', 'Close')),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _connectGmail() async {
     final t = context.read<LanguageController>().t;
@@ -81,6 +203,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // general-purpose feature for every mode.
     final canShowBusinessFeatures = mode.value == 'worker' || mode.value == 'business';
     final gmailReady = profile?['gmail_connected'] == true;
+    final subscription = profile?['subscription'] is Map
+        ? Map<String, dynamic>.from(profile!['subscription'] as Map)
+        : <String, dynamic>{};
+    final isPremium = subscription['is_premium'] == true || subscription['tier'] == 'premium';
+    final remainingDays = subscription['remaining_days'] as num? ?? 0;
 
     return Scaffold(
       backgroundColor: colors.background,
@@ -156,6 +283,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(width: 8),
                     _LangChip(label: 'English', selected: lang.language == 'en', onTap: () => lang.setLanguage('en')),
                   ],
+                ),
+              ],
+            ),
+            _Section(
+              label: 'PREMIUM',
+              children: [
+                _Row(
+                  icon: Icons.workspace_premium_outlined,
+                  iconBg: const Color(0xFFFFF3CD),
+                  iconColor: const Color(0xFFD97706),
+                  title: isPremium
+                      ? t('FlowMate Premium', 'FlowMate Premium')
+                      : t('Nâng cấp Premium', 'Upgrade to Premium'),
+                  subtitle: isPremium
+                      ? t('Còn $remainingDays ngày · Chạm để gia hạn', '$remainingDays days left · Tap to renew')
+                      : t('Từ 49.000đ/tháng · Thanh toán qua SEPay', 'From 49,000 VND/month · Pay with SEPay'),
+                  onTap: startingPayment ? null : _showPremiumPlans,
+                  trailing: startingPayment
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : null,
                 ),
               ],
             ),

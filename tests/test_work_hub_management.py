@@ -231,5 +231,98 @@ class WorkspaceReadOnlyEnforcementTests(unittest.TestCase):
         self.assertEqual("insufficient_role", response.get_json()["error"])
 
 
+class WorkHubDashboardTests(unittest.TestCase):
+    """Phase 5's team dashboard: a pure Python rollup over whatever
+    list_projects/list_tasks/list_reports already returned for this caller,
+    so these tests only need to fake those lists, not real SQL."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = Flask(__name__)
+        cls.app.config.update(TESTING=True, SECRET_KEY="test")
+        cls.app.register_blueprint(work_hub_route.work_hub_bp)
+
+    def _resolve_as(self, role, workspace_type="business"):
+        workspace = {"id": WORKSPACE_A, "type": workspace_type}
+        membership = {"role": role, "status": "active"}
+        return (
+            patch.object(work_hub_route, "get_current_user_id", return_value="alice"),
+            patch.object(
+                work_hub_route.workspace_model, "resolve_context",
+                return_value=(workspace, membership),
+            ),
+        )
+
+    def test_rollup_counts_match_the_underlying_lists(self):
+        projects = [
+            {"id": "p1", "status": "active"},
+            {"id": "p2", "status": "active"},
+            {"id": "p3", "status": "completed"},
+        ]
+        tasks = [
+            {"id": "t1", "status": "todo", "due_date": "2020-01-01"},  # overdue
+            {"id": "t2", "status": "done", "due_date": "2020-01-01"},  # not overdue, done
+            {"id": "t3", "status": "in_progress", "due_date": None},
+        ]
+        reports = [
+            {"id": "r2", "project_id": "p1", "report_date": "2026-09-05"},
+            {"id": "r1", "project_id": "p1", "report_date": "2026-09-01"},
+            {"id": "r3", "project_id": None, "report_date": "2026-09-03"},
+        ]
+        p1, p2 = self._resolve_as("owner")
+        with (
+            p1, p2,
+            patch.object(project_module, "list_projects", return_value=projects),
+            patch.object(task_module, "list_tasks", return_value=tasks),
+            patch.object(status_report_module, "list_reports", return_value=reports),
+            patch.object(workspace_module, "list_members", return_value=[{"user_id": "alice"}, {"user_id": "bob"}]),
+        ):
+            response = self.app.test_client().get("/api/work-hub/dashboard")
+        self.assertEqual(200, response.status_code)
+        dashboard = response.get_json()["dashboard"]
+        self.assertEqual(2, dashboard["project_counts"]["active"])
+        self.assertEqual(1, dashboard["project_counts"]["completed"])
+        self.assertEqual(3, dashboard["total_projects"])
+        self.assertEqual(3, dashboard["total_tasks"])
+        self.assertEqual(1, dashboard["overdue_tasks"])
+        self.assertEqual(2, dashboard["active_members"])
+        # Latest report per project: r2 (newer than r1) for p1, r3 for the
+        # no-project bucket.
+        latest_ids = {r["id"] for r in dashboard["latest_reports"]}
+        self.assertEqual({"r2", "r3"}, latest_ids)
+
+    def test_worker_dashboard_only_sees_what_list_calls_already_scoped(self):
+        # The route never applies its own visibility filter -- it trusts
+        # list_projects/list_tasks/list_reports to have already scoped the
+        # results to this caller. This test just confirms the role/user
+        # actually reaches those calls, matching the real scoping tested
+        # directly in ProjectVisibilitySqlTests/TaskVisibilitySqlTests above.
+        p1, p2 = self._resolve_as("worker")
+        with (
+            p1, p2,
+            patch.object(project_module, "list_projects", return_value=[]) as list_projects,
+            patch.object(task_module, "list_tasks", return_value=[]) as list_tasks,
+            patch.object(status_report_module, "list_reports", return_value=[]) as list_reports,
+            patch.object(workspace_module, "list_members", return_value=[]),
+        ):
+            response = self.app.test_client().get("/api/work-hub/dashboard")
+        self.assertEqual(200, response.status_code)
+        list_projects.assert_called_once_with(WORKSPACE_A, "alice", "worker")
+        list_tasks.assert_called_once_with(WORKSPACE_A, "alice", "worker")
+        list_reports.assert_called_once_with(WORKSPACE_A, "alice", "worker")
+
+    def test_membership_required_before_reading_dashboard(self):
+        with (
+            patch.object(work_hub_route, "get_current_user_id", return_value="mallory"),
+            patch.object(
+                work_hub_route.workspace_model, "resolve_context",
+                side_effect=work_hub_route.workspace_model.WorkspaceError("membership_required"),
+            ),
+        ):
+            response = self.app.test_client().get("/api/work-hub/dashboard")
+        self.assertEqual(403, response.status_code)
+        self.assertEqual("membership_required", response.get_json()["error"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -28,6 +28,16 @@ def _tokenize(value):
     return [token for token in tokens if len(token) >= 2 and token not in _STOPWORDS]
 
 
+def _document_scope(doc):
+    """'business' | 'personal' | 'global' -- so Bob can say which kind of
+    source it's citing (design doc section 8.7)."""
+    if doc.get('workspace_id'):
+        return 'business'
+    if doc.get('user_id'):
+        return 'personal'
+    return 'global'
+
+
 class KnowledgeService:
     """Retrieval-augmented lookup over KnowledgeDocument rows."""
 
@@ -85,11 +95,18 @@ class KnowledgeService:
             vector[term] = tf * idf
         return vector
 
-    def search(self, query, top_k=3, min_score=0.08, user_id=None, mode=None):
+    def search(self, query, top_k=3, min_score=0.08, user_id=None, mode=None, workspace_id=None):
         """user_id=None searches the whole library (admin/manual UI use).
         Pass the requesting user's id from chat so per-user auto-learned
         memories from OTHER users are excluded from candidates -- the
-        shared global docs (user_id IS NULL) are always visible to everyone.
+        shared global docs (user_id IS NULL AND workspace_id IS NULL) are
+        always visible to everyone.
+
+        Pass the caller's current workspace_id to also include that
+        workspace's curated Business Knowledge docs. A doc scoped to a
+        DIFFERENT workspace is never returned, even if the caller happens
+        to know its content some other way -- same absolute tenant filter
+        as every other workspace-scoped lookup in this codebase.
 
         When ``mode`` is supplied, a document explicitly tagged for another
         FlowMate mode is excluded. Untagged/shared rules and per-user memories
@@ -118,10 +135,17 @@ class KnowledgeService:
         for doc_id, doc_vector in self._doc_vectors.items():
             document = self._documents_by_id.get(doc_id, {})
             doc_owner = document.get('user_id')
+            doc_workspace = document.get('workspace_id')
             if user_id is not None:
-                if doc_owner and doc_owner != user_id:
+                if doc_workspace:
+                    # Workspace-curated doc: visible only to that exact
+                    # workspace, regardless of who is asking -- never falls
+                    # back to a personal/global match.
+                    if doc_workspace != workspace_id:
+                        continue
+                elif doc_owner and doc_owner != user_id:
                     continue
-            if requested_mode and not doc_owner:
+            if requested_mode and not doc_owner and not doc_workspace:
                 tags = {
                     tag.strip().lower()
                     for tag in str(document.get("tags") or "").split(",")
@@ -143,11 +167,14 @@ class KnowledgeService:
         for score, doc_id in scored[:top_k]:
             doc = self._documents_by_id.get(doc_id)
             if doc:
-                results.append({**doc, 'relevance': round(score, 4)})
+                results.append({**doc, 'relevance': round(score, 4), 'scope': _document_scope(doc)})
         return results
 
-    def add_document(self, title, content, tags='', source='manual', user_id=None):
-        document = KnowledgeDocument.create(title, content, tags=tags, source=source, user_id=user_id)
+    def add_document(self, title, content, tags='', source='manual', user_id=None, workspace_id=None, created_by_user_id=None):
+        document = KnowledgeDocument.create(
+            title, content, tags=tags, source=source, user_id=user_id,
+            workspace_id=workspace_id, created_by_user_id=created_by_user_id,
+        )
         self._built = False
         return document
 
@@ -162,3 +189,15 @@ class KnowledgeService:
         if deleted:
             self._built = False
         return deleted
+
+    def list_for_workspace(self, workspace_id):
+        """The Business Knowledge management list for one workspace -- an
+        exact-match SQL filter, not the broad in-memory RAG index."""
+        return KnowledgeDocument.get_all(workspace_id=workspace_id)
+
+    def get_workspace_document(self, workspace_id, doc_id):
+        """A single doc, but only if it actually belongs to workspace_id --
+        callers use this before update/delete so an owner/admin of workspace
+        A can never touch a doc that turns out to belong to workspace B by
+        guessing its id."""
+        return KnowledgeDocument.get_by_id_and_workspace(doc_id, workspace_id)

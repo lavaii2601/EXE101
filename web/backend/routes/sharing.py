@@ -12,7 +12,7 @@ from flask import Blueprint, jsonify, request, session
 from models import shared_artifact as artifact_model
 from models import workspace as workspace_model
 from models import workspace_subscription
-from utils.security import header_workspace_id
+from utils.security import WORKSPACE_ACCESS_DENIED_CODES, header_workspace_id, log_workspace_access_denied
 from utils.user_context import get_current_user_id
 
 sharing_bp = Blueprint('sharing', __name__, url_prefix='/api')
@@ -31,6 +31,10 @@ _ERROR_STATUS = {
 
 def _error_response(exc):
     status = _ERROR_STATUS.get(exc.code, 400)
+    if exc.code in WORKSPACE_ACCESS_DENIED_CODES:
+        log_workspace_access_denied(
+            exc.code, get_current_user_id(request, session=session), header_workspace_id(),
+        )
     body = {'error': exc.code}
     body.update(exc.extra)
     return jsonify(body), status

@@ -67,7 +67,7 @@ let workspaceSyncGeneration = 0;
 let workspaceSyncAbortController = null;
 let currentSubscription = null;
 let selectedSubscriptionPlan = 'monthly';
-let selectedSubscriptionPaymentMethod = 'vnpay';
+let selectedSubscriptionPaymentMethod = 'BANK_TRANSFER';
 // Multi-tenant Business workspace state (Worker Business Phase 1). Named
 // "orgWorkspace*" throughout to avoid colliding with the pre-existing
 // workspaceSync*/#workspaceApp vocabulary above, which means something
@@ -87,6 +87,9 @@ let workHubTasks = [];
 let workHubSelectedProjectId = null;
 let statusReportDrafts = [];
 let statusReportPublished = [];
+// Phase 5 ("Advanced workspace and AI"): workspace-curated policy/template/
+// FAQ docs Bob's RAG also searches. See routes/workspace_knowledge.py.
+let workspaceKnowledgeDocs = [];
 // Phase 4 ("Smart Inbox + privacy-first sharing"): the email currently
 // staged in the share-confirmation modal, or null when the modal is closed.
 let shareArtifactSourceEmail = null;
@@ -227,7 +230,7 @@ function ui(vietnamese, english) {
 }
 
 const STATIC_ENGLISH_TEXT = {
-    'Không gian làm việc': 'Workspace',
+    'Chế độ làm việc': 'Work mode',
     'Xóa lịch sử': 'Clear history',
     'Gửi': 'Send',
     'Người nhận': 'Recipient',
@@ -530,6 +533,7 @@ function renderOrgWorkspaceSwitcher() {
     const workHubNavBtn = document.getElementById('orgWorkHubNavBtn');
     const statusReportsNavBtn = document.getElementById('orgStatusReportsNavBtn');
     const sharingCenterNavBtn = document.getElementById('sharingCenterNavBtn');
+    const workspaceKnowledgeNavBtn = document.getElementById('orgWorkspaceKnowledgeNavBtn');
     const active = currentOrgWorkspace();
 
     if (nameEl) nameEl.textContent = active ? active.name : ui('Cá nhân', 'Personal');
@@ -548,6 +552,9 @@ function renderOrgWorkspaceSwitcher() {
     }
     if (statusReportsNavBtn) {
         statusReportsNavBtn.style.display = showBusinessNav ? '' : 'none';
+    }
+    if (workspaceKnowledgeNavBtn) {
+        workspaceKnowledgeNavBtn.style.display = showBusinessNav ? '' : 'none';
     }
     if (sharingCenterNavBtn) {
         // Not workspace-scoped (GET /api/user/sharing spans every workspace the
@@ -1038,19 +1045,54 @@ function currentOrgCanManage() {
     return !!active && (active.member_role === 'owner' || active.member_role === 'admin');
 }
 
+async function loadWorkHubDashboard() {
+    const dashboardEl = document.getElementById('workHubDashboard');
+    if (!dashboardEl) return;
+    let dashboard;
+    try {
+        const resp = await apiFetch(`${API_BASE}/work-hub/dashboard`);
+        const data = await resp.json();
+        if (!resp.ok || !data.success) return;
+        dashboard = data.dashboard;
+    } catch (err) {
+        console.warn('loadWorkHubDashboard failed', err);
+        return;
+    }
+    const activeProjects = (dashboard.project_counts?.active || 0) + (dashboard.project_counts?.planning || 0);
+    const openTasks = (dashboard.task_counts?.todo || 0) + (dashboard.task_counts?.in_progress || 0);
+    const tiles = [
+        { value: dashboard.total_projects, label: ui('Dự án', 'Projects') },
+        { value: activeProjects, label: ui('Đang triển khai', 'Active') },
+        { value: openTasks, label: ui('Nhiệm vụ cần làm', 'Open tasks') },
+        { value: dashboard.overdue_tasks, label: ui('Quá hạn', 'Overdue'), warning: dashboard.overdue_tasks > 0 },
+        { value: dashboard.active_members, label: ui('Thành viên', 'Members') },
+    ];
+    dashboardEl.hidden = false;
+    dashboardEl.innerHTML = tiles.map((tile) => `
+        <div class="work-hub-stat-tile${tile.warning ? ' work-hub-stat-warning' : ''}">
+            <strong>${escapeHtml(String(tile.value ?? 0))}</strong>
+            <small>${escapeHtml(tile.label)}</small>
+        </div>
+    `).join('');
+}
+
 async function loadWorkHubPage() {
     const emptyEl = document.getElementById('workHubEmpty');
     const contentEl = document.getElementById('workHubContent');
+    const dashboardEl = document.getElementById('workHubDashboard');
     const newProjectCard = document.getElementById('workHubNewProjectCard');
     const active = currentOrgWorkspace();
     if (!active || active.type !== 'business') {
         if (emptyEl) emptyEl.hidden = false;
         if (contentEl) contentEl.hidden = true;
+        if (dashboardEl) dashboardEl.hidden = true;
         return;
     }
     if (emptyEl) emptyEl.hidden = true;
     if (contentEl) contentEl.hidden = false;
     if (newProjectCard) newProjectCard.hidden = !currentOrgCanManage();
+
+    loadWorkHubDashboard().catch((err) => console.warn('loadWorkHubDashboard failed', err));
 
     try {
         const resp = await apiFetch(`${API_BASE}/projects`);
@@ -1252,6 +1294,96 @@ async function submitWorkHubNewTask(event) {
         await loadWorkHubTasks(workHubSelectedProjectId);
     } catch (err) {
         showNotification(ui('Không tạo được nhiệm vụ', 'Could not create task'), 'error');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Business Knowledge (Phase 5, design doc 8.7) -- workspace-curated docs
+// Bob's RAG also searches. See routes/workspace_knowledge.py.
+// ---------------------------------------------------------------------------
+
+async function loadWorkspaceKnowledgePage() {
+    const emptyEl = document.getElementById('workspaceKnowledgeEmpty');
+    const contentEl = document.getElementById('workspaceKnowledgeContent');
+    const newCard = document.getElementById('workspaceKnowledgeNewCard');
+    const active = currentOrgWorkspace();
+    if (!active || active.type !== 'business') {
+        if (emptyEl) emptyEl.hidden = false;
+        if (contentEl) contentEl.hidden = true;
+        return;
+    }
+    if (emptyEl) emptyEl.hidden = true;
+    if (contentEl) contentEl.hidden = false;
+    if (newCard) newCard.hidden = !currentOrgCanManage();
+
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspace-knowledge`);
+        const data = await resp.json();
+        if (resp.ok && data.success) workspaceKnowledgeDocs = data.documents || [];
+    } catch (err) {
+        console.warn('loadWorkspaceKnowledgePage failed', err);
+    }
+    renderWorkspaceKnowledgeList();
+}
+
+function renderWorkspaceKnowledgeList() {
+    const listEl = document.getElementById('workspaceKnowledgeList');
+    if (!listEl) return;
+    if (!workspaceKnowledgeDocs.length) {
+        listEl.innerHTML = `<div class="chat-session-empty">${ui('Chưa có tài liệu nào.', 'No documents yet.')}</div>`;
+        return;
+    }
+    const canManage = currentOrgCanManage();
+    listEl.innerHTML = workspaceKnowledgeDocs.map((doc) => `
+        <div class="work-hub-item-row" data-doc-id="${escapeHtml(doc.id)}">
+            <div class="work-hub-item-info">
+                <strong>${escapeHtml(doc.title)}</strong>
+                <small>${escapeHtml((doc.content || '').slice(0, 140))}${(doc.content || '').length > 140 ? '…' : ''}</small>
+            </div>
+            ${canManage ? `<div class="work-hub-item-actions"><button type="button" class="btn-secondary" data-delete-knowledge-doc="${escapeHtml(doc.id)}">${ui('Xoá', 'Delete')}</button></div>` : ''}
+        </div>
+    `).join('');
+    listEl.querySelectorAll('[data-delete-knowledge-doc]').forEach((btn) => {
+        btn.addEventListener('click', () => deleteWorkspaceKnowledgeDoc(btn.getAttribute('data-delete-knowledge-doc')));
+    });
+}
+
+async function submitWorkspaceKnowledgeNew(event) {
+    event.preventDefault();
+    const title = document.getElementById('workspaceKnowledgeTitle')?.value.trim();
+    const content = document.getElementById('workspaceKnowledgeContentInput')?.value.trim();
+    if (!title || !content) return;
+    const payload = {
+        title,
+        content,
+        tags: document.getElementById('workspaceKnowledgeTags')?.value.trim() || undefined,
+    };
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspace-knowledge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'create_failed');
+        document.getElementById('workspaceKnowledgeNewForm')?.reset();
+        showNotification(ui('Đã lưu tài liệu', 'Document saved'), 'success');
+        await loadWorkspaceKnowledgePage();
+    } catch (err) {
+        showNotification(ui('Không lưu được tài liệu', 'Could not save document'), 'error');
+    }
+}
+
+async function deleteWorkspaceKnowledgeDoc(docId) {
+    if (!confirm(ui('Xoá tài liệu này khỏi kiến thức doanh nghiệp?', 'Delete this document from Business Knowledge?'))) return;
+    try {
+        const resp = await apiFetch(`${API_BASE}/workspace-knowledge/${docId}`, { method: 'DELETE' });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'delete_failed');
+        workspaceKnowledgeDocs = workspaceKnowledgeDocs.filter((d) => String(d.id) !== String(docId));
+        renderWorkspaceKnowledgeList();
+    } catch (err) {
+        showNotification(ui('Không xoá được tài liệu', 'Could not delete document'), 'error');
     }
 }
 
@@ -1541,6 +1673,7 @@ function setupSharingUI() {
 
 function setupWorkHubUI() {
     document.getElementById('workHubNewProjectForm')?.addEventListener('submit', submitWorkHubNewProject);
+    document.getElementById('workspaceKnowledgeNewForm')?.addEventListener('submit', submitWorkspaceKnowledgeNew);
     document.getElementById('workHubNewTaskForm')?.addEventListener('submit', submitWorkHubNewTask);
     document.getElementById('statusReportNewForm')?.addEventListener('submit', submitStatusReportDraft);
 }
@@ -1979,6 +2112,7 @@ async function initApp() {
     // the page read but be swallowed by a later first-time baseline.
     await startWorkspaceSyncWatcher();
     await loadUserProfile();
+    showSepayReturnNotice();
     await loadOrgWorkspaces();
     checkPendingOrgInvitationFromUrl();
     if (!userModeRequired) {
@@ -4723,6 +4857,8 @@ async function handlePageChange(btn) {
         loadWorkHubPage().catch(err => console.error('Work Hub load error:', err));
     } else if (page === 'status-reports') {
         loadStatusReportsPage().catch(err => console.error('Status reports load error:', err));
+    } else if (page === 'workspace-knowledge') {
+        loadWorkspaceKnowledgePage().catch(err => console.error('Workspace knowledge load error:', err));
     } else if (page === 'sharing-center') {
         loadSharingCenter().catch(err => console.error('Sharing center load error:', err));
     }
@@ -5537,7 +5673,7 @@ function selectSubscriptionPlan(plan) {
 }
 
 function selectSubscriptionPaymentMethod(method) {
-    selectedSubscriptionPaymentMethod = method === 'momo' ? 'momo' : 'vnpay';
+    selectedSubscriptionPaymentMethod = method === 'CARD' ? 'CARD' : 'BANK_TRANSFER';
     document.querySelectorAll('[data-payment-method]').forEach((button) => {
         button.classList.toggle(
             'active',
@@ -5604,8 +5740,8 @@ function showSubscriptionPaymentStep() {
     const submit = document.getElementById('subscriptionSubmitBtn');
     if (submit) {
         submit.textContent = isPremium
-            ? ui('Gửi yêu cầu gia hạn', 'Send renewal request')
-            : ui('Gửi yêu cầu thanh toán', 'Send payment request');
+            ? ui('Thanh toán gia hạn qua SEPay', 'Renew with SEPay')
+            : ui('Thanh toán qua SEPay', 'Pay with SEPay');
     }
 }
 
@@ -5725,14 +5861,20 @@ async function submitSubscriptionIntent() {
     const action = isPremium ? 'renew' : 'purchase';
     if (button) {
         button.disabled = true;
-        button.textContent = ui('Đang kiểm tra tài khoản...', 'Checking account...');
+        button.textContent = ui('Đang tạo đơn SEPay...', 'Creating SEPay checkout...');
     }
 
     try {
-        const response = await apiFetch(`${API_BASE}/user/subscription/intent`, {
+        const response = await apiFetch(`${API_BASE}/payments/sepay/checkout`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action })
+            body: JSON.stringify({
+                action,
+                plan_code: selectedSubscriptionPlan === 'yearly'
+                    ? 'premium_yearly'
+                    : 'premium_monthly',
+                payment_method: selectedSubscriptionPaymentMethod,
+            })
         });
         const data = await response.json();
         if (!response.ok || !data.success) {
@@ -5752,20 +5894,10 @@ async function submitSubscriptionIntent() {
             throw new Error(data.message || data.error || ui('Không thể kiểm tra gói', 'Unable to check plan'));
         }
 
-        currentSubscription = {
-            ...currentSubscription,
-            ...data.subscription
-        };
-        const plan = subscriptionPlanDetails().contact;
-        const method = selectedSubscriptionPaymentMethod === 'momo' ? 'MoMo' : 'VNPay';
-        const actionLabel = action === 'renew' ? 'gia hạn' : 'nâng cấp';
-        const subjectText = action === 'renew' ? 'Gia hạn FlowMate Premium' : 'Nâng cấp FlowMate Premium';
-        const bodyText = `Tôi muốn ${actionLabel} gói: ${plan}.\nPhương thức thanh toán mong muốn: ${method}.`;
-        showSubscriptionRequestPanel({
-            to: 'lecaoduyanh123@gmail.com',
-            subject: subjectText,
-            body: bodyText,
-        });
+        if (!data.checkout_url) {
+            throw new Error(ui('SEPay không trả về trang thanh toán.', 'SEPay checkout URL was not returned.'));
+        }
+        window.location.assign(data.checkout_url);
     } catch (error) {
         showNotification(error.message || ui('Không thể xử lý yêu cầu Premium', 'Unable to process Premium request'), 'error');
         renderSubscriptionUI(currentSubscription);
@@ -5779,11 +5911,30 @@ async function submitSubscriptionIntent() {
             );
             if (button) {
                 button.textContent = isPremiumNow
-                    ? ui('Gửi yêu cầu gia hạn', 'Send renewal request')
-                    : ui('Gửi yêu cầu thanh toán', 'Send payment request');
+                    ? ui('Thanh toán gia hạn qua SEPay', 'Renew with SEPay')
+                    : ui('Thanh toán qua SEPay', 'Pay with SEPay');
             }
         }
     }
+}
+
+function showSepayReturnNotice() {
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get('payment');
+    if (!['success', 'error', 'cancel'].includes(outcome)) return;
+    const message = outcome === 'success'
+        ? ui(
+            'SEPay đã nhận giao dịch. Trạng thái Premium sẽ cập nhật ngay khi IPN được xác nhận.',
+            'SEPay received the payment. Premium will update as soon as the IPN is confirmed.'
+        )
+        : outcome === 'cancel'
+            ? ui('Bạn đã hủy thanh toán SEPay.', 'SEPay payment was cancelled.')
+            : ui('Thanh toán SEPay chưa hoàn tất.', 'SEPay payment was not completed.');
+    showNotification(message, outcome === 'success' ? 'success' : 'error');
+    params.delete('payment');
+    params.delete('invoice');
+    const query = params.toString();
+    window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
 }
 
 function setSettingsState(message, isError = false) {

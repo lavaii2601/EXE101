@@ -1192,6 +1192,39 @@ button {
     color: var(--success);
 }
 
+.work-hub-dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.work-hub-stat-tile {
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+}
+
+.work-hub-stat-tile strong {
+    display: block;
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.work-hub-stat-tile small {
+    display: block;
+    margin-top: 2px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.work-hub-stat-tile.work-hub-stat-warning strong {
+    color: var(--danger);
+}
+
 .work-hub-report-body {
     display: flex;
     flex-direction: column;

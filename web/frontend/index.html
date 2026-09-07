@@ -160,7 +160,7 @@
                     </div>
                 </div>
                 <div class="user-mode-picker">
-                    <label>Không gian làm việc</label>
+                    <label>Chế độ làm việc</label>
                     <select id="userModeSelect" class="visually-hidden" tabindex="-1" aria-hidden="true">
                         <option value="student">Sinh viên</option>
                         <option value="worker">Nhân viên văn phòng</option>
@@ -180,8 +180,11 @@
                     </button>
                 </div>
                 <!-- Multi-tenant Business workspace switcher (Worker Business Phase 1).
-                     Distinct from the existing "Không gian làm việc" mode-picker above,
-                     which is a per-user personal preference, not a tenant. -->
+                     Distinct from the "Chế độ làm việc" mode-picker above, which is a
+                     per-user persona/personalization preference, not a tenant -- it used
+                     to be labeled "Không gian làm việc" (Workspace), which collided with
+                     this actual workspace concept sitting right next to it. Renamed to
+                     stop implying they're the same thing. -->
                 <div class="org-workspace-switcher">
                     <button type="button" id="orgWorkspaceSwitcherBtn" class="org-workspace-current" aria-haspopup="true" aria-expanded="false">
                         <span id="orgWorkspaceIcon" class="org-workspace-icon">👤</span>
@@ -241,6 +244,10 @@
                 <button class="nav-btn" data-page="status-reports" id="orgStatusReportsNavBtn" style="display:none;">
                     <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 12h6M9 16h6M9 8h1"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg></span>
                     <span class="nav-label">Báo cáo</span>
+                </button>
+                <button class="nav-btn" data-page="workspace-knowledge" id="orgWorkspaceKnowledgeNavBtn" style="display:none;">
+                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg></span>
+                    <span class="nav-label">Kiến thức</span>
                 </button>
                 <button class="nav-btn" data-page="sharing-center" id="sharingCenterNavBtn" style="display:none;">
                     <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg></span>
@@ -543,6 +550,8 @@
                     </div>
                 </div>
 
+                <div id="workHubDashboard" class="work-hub-dashboard" hidden></div>
+
                 <div id="workHubEmpty" class="settings-card" hidden>
                     <span class="settings-section-label">KHÔNG GIAN CÁ NHÂN</span>
                     <p>Bạn đang ở không gian cá nhân, không có dự án chung. Chọn hoặc tạo một không gian doanh nghiệp ở góc trên bên trái.</p>
@@ -638,6 +647,38 @@
                     <article class="settings-card">
                         <span class="settings-section-label">ĐÃ CÔNG BỐ</span>
                         <div id="statusReportPublishedList" class="work-hub-reports-list"></div>
+                    </article>
+                </div>
+            </section>
+
+            <section id="workspace-knowledge-page" class="page">
+                <div class="settings-page-header">
+                    <div>
+                        <span class="settings-kicker">DOANH NGHIỆP</span>
+                        <h2>Kiến thức doanh nghiệp</h2>
+                        <p>Policy, template, quy trình, FAQ -- Bob dùng để trả lời, luôn ghi rõ nguồn là doanh nghiệp.</p>
+                    </div>
+                </div>
+
+                <div id="workspaceKnowledgeEmpty" class="settings-card" hidden>
+                    <span class="settings-section-label">KHÔNG GIAN CÁ NHÂN</span>
+                    <p>Bạn đang ở không gian cá nhân, không có kiến thức doanh nghiệp. Chọn hoặc tạo một không gian doanh nghiệp ở góc trên bên trái.</p>
+                </div>
+
+                <div id="workspaceKnowledgeContent" class="settings-grid" hidden>
+                    <article id="workspaceKnowledgeNewCard" class="settings-card" hidden>
+                        <span class="settings-section-label">THÊM TÀI LIỆU</span>
+                        <form id="workspaceKnowledgeNewForm" class="work-hub-form">
+                            <input type="text" id="workspaceKnowledgeTitle" placeholder="Tiêu đề" required>
+                            <textarea id="workspaceKnowledgeContentInput" placeholder="Nội dung" rows="4" required></textarea>
+                            <input type="text" id="workspaceKnowledgeTags" placeholder="Nhãn, phân tách bằng dấu phẩy (tuỳ chọn)">
+                            <button type="submit" class="btn-primary">Lưu tài liệu</button>
+                        </form>
+                    </article>
+
+                    <article class="settings-card">
+                        <span class="settings-section-label">TÀI LIỆU CỦA DOANH NGHIỆP</span>
+                        <div id="workspaceKnowledgeList" class="work-hub-projects-list"></div>
                     </article>
                 </div>
             </section>
@@ -905,21 +946,21 @@
                 <div class="subscription-payment-methods" aria-label="Phương thức thanh toán">
                     <span>Chọn phương thức thanh toán</span>
                     <div>
-                        <button type="button" class="subscription-payment-option active" data-payment-method="vnpay">
-                            <b>V</b> VNPay <small>Sắp có</small>
+                        <button type="button" class="subscription-payment-option active" data-payment-method="BANK_TRANSFER">
+                            <b>S</b> SEPay <small>QR ngân hàng</small>
                         </button>
-                        <button type="button" class="subscription-payment-option" data-payment-method="momo">
-                            <b>M</b> MoMo <small>Sắp có</small>
+                        <button type="button" class="subscription-payment-option" data-payment-method="CARD">
+                            <b>C</b> Thẻ <small>Visa / Mastercard</small>
                         </button>
                     </div>
                 </div>
 
                 <div id="subscriptionPaymentControls" class="subscription-payment-actions">
                     <button type="button" id="subscriptionBackBtn" class="btn-secondary">← Quay lại</button>
-                    <button type="button" id="subscriptionSubmitBtn" class="btn-primary">Gửi yêu cầu thanh toán</button>
+                    <button type="button" id="subscriptionSubmitBtn" class="btn-primary">Thanh toán qua SEPay</button>
                 </div>
                 <p id="subscriptionContactNote" class="subscription-contact-note">
-                    Cổng thanh toán đang được tích hợp. Hiện tại yêu cầu sẽ được gửi đến FlowMate để xử lý thủ công.
+                    Bạn sẽ được chuyển sang cổng SEPay. Premium chỉ được kích hoạt sau khi backend nhận IPN xác nhận thanh toán.
                 </p>
 
                 <div id="subscriptionRequestPanel" class="subscription-request-panel" hidden>
