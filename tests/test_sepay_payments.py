@@ -266,6 +266,33 @@ class SepayRouteTests(unittest.TestCase):
         self.assertEqual(401, response.status_code)
         self.assertEqual("invalid_ipn_secret", response.get_json()["error"])
 
+    def test_ipn_accepts_sepay_authorization_apikey_header(self):
+        # SePay's actual "API Key" webhook auth (confirmed against its
+        # dashboard: Khong xac thuc / API Key / HMAC-SHA256 / OAuth 2.0 --
+        # there is no separate "secret key" scheme) sends the key via
+        # `Authorization: Apikey <key>`, not a custom header.
+        result = {"duplicate": False, "user_id": "alice", "subscription_id": 7}
+        with (
+            patch.object(payment_routes.sepay_payment, "process_order_paid", return_value=result),
+            patch.object(payment_routes.WorkspaceSync, "bump") as bump,
+        ):
+            response = self.client.post(
+                "/api/payments/sepay/ipn",
+                headers={"Authorization": "Apikey ipn-secret"},
+                json={"timestamp": 1757058220, "notification_type": "ORDER_PAID"},
+            )
+        self.assertEqual(200, response.status_code)
+        bump.assert_called_once_with("alice", ("profile", "settings", "overview"))
+
+    def test_ipn_rejects_wrong_apikey_in_authorization_header(self):
+        response = self.client.post(
+            "/api/payments/sepay/ipn",
+            headers={"Authorization": "Apikey wrong"},
+            json={"notification_type": "ORDER_PAID"},
+        )
+        self.assertEqual(401, response.status_code)
+        self.assertEqual("invalid_ipn_secret", response.get_json()["error"])
+
     def test_paid_ipn_is_processed_and_profile_sync_is_bumped(self):
         result = {"duplicate": False, "user_id": "alice", "subscription_id": 7}
         with (

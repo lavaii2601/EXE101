@@ -127,10 +127,22 @@ def start_sepay_checkout(token):
     return Response(page, mimetype="text/html")
 
 
+def _sepay_ipn_provided_secret(req):
+    """SePay's "API Key" webhook auth (its only simple shared-secret option
+    -- the other choices are "Khong xac thuc", this, HMAC-SHA256, or OAuth
+    2.0) sends `Authorization: Apikey <key>`, not a custom header. Fall back
+    to X-Secret-Key for any caller still using that shape."""
+    auth_header = (req.headers.get("Authorization") or "").strip()
+    scheme, _, value = auth_header.partition(" ")
+    if scheme.lower() == "apikey" and value:
+        return value.strip()
+    return req.headers.get("X-Secret-Key", "")
+
+
 @payments_bp.post("/sepay/ipn")
 def sepay_ipn():
     expected_secret = current_app.config.get("SEPAY_IPN_SECRET_KEY", "")
-    provided_secret = request.headers.get("X-Secret-Key", "")
+    provided_secret = _sepay_ipn_provided_secret(request)
     if not expected_secret:
         return jsonify({"success": False, "error": "sepay_ipn_not_configured"}), 503
     if not hmac.compare_digest(provided_secret, expected_secret):
