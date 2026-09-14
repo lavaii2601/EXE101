@@ -127,6 +127,14 @@ def _process_workspace_subscriptions():
         workspace_id = row.get("workspace_id")
         if not owner_id or not workspace_id:
             continue
+        if row.get("status") == "suspended":
+            # An admin's explicit revoke, not a billing-timer event -- also
+            # reads ACCESS_READ_ONLY from get_access_state(), but "renew to
+            # restore access" is the wrong message here (mark_expired()
+            # deliberately never touches a suspended row, so renewing
+            # wouldn't lift the suspension either). Leave it to whatever
+            # out-of-band channel the admin action already used.
+            continue
         state = row.get("access_state")
         period_end = _period_end_date(row.get("current_period_end"))
 

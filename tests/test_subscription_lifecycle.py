@@ -266,6 +266,28 @@ class LifecycleSchedulerOrchestrationTests(unittest.TestCase):
         self.assertEqual("critical", kwargs["severity"])
         mark_expired.assert_called_once_with([8])
 
+    def test_workspace_suspended_by_admin_is_not_notified_or_touched(self):
+        # status='suspended' also reads back ACCESS_READ_ONLY from
+        # get_access_state() (see SubscriptionLifecycleQueryTests above), but
+        # it's an admin's explicit revoke, not a billing-timer lapse -- the
+        # "renew to restore access" copy used for the ordinary read_only
+        # case would be actively wrong here, and mark_expired() already
+        # refuses to touch a suspended row, so there's nothing to expire.
+        row = {
+            "id": 12, "workspace_id": "ws-6", "workspace_owner_user_id": "owner-6",
+            "status": "suspended",
+            "access_state": workspace_subscription_model.ACCESS_READ_ONLY,
+            "current_period_end": "2026-08-01T00:00:00+00:00",
+        }
+        with (
+            patch.object(workspace_subscription_model, "list_all_with_owner", return_value=[row]),
+            patch.object(notification_model, "create") as create,
+            patch.object(workspace_subscription_model, "mark_expired") as mark_expired,
+        ):
+            scheduler._process_workspace_subscriptions()
+        create.assert_not_called()
+        mark_expired.assert_not_called()
+
     def test_workspace_active_far_from_expiry_notifies_nobody(self):
         far_future = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
         row = {
