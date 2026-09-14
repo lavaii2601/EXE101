@@ -130,6 +130,57 @@ body.workspace-ready .workspace-app {
     pointer-events: none;
 }
 
+.auth-topbar {
+    position: absolute;
+    z-index: 2;
+    top: 24px;
+    left: 24px;
+    right: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.auth-gate.is-mode-stage .auth-topbar {
+    opacity: .24;
+    filter: blur(3px);
+    pointer-events: none;
+}
+
+.auth-ssl-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 14px;
+    border: 1px solid rgba(190, 194, 238, .22);
+    border-radius: 999px;
+    background: rgba(25, 29, 68, .55);
+    backdrop-filter: blur(12px);
+    color: #d3d5ef;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.auth-help-btn {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid rgba(190, 194, 238, .22);
+    border-radius: 50%;
+    background: rgba(25, 29, 68, .55);
+    backdrop-filter: blur(12px);
+    color: #d3d5ef;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.auth-help-btn:hover {
+    border-color: rgba(190, 194, 238, .5);
+    color: #f7f7ff;
+}
+
 .auth-card {
     position: relative;
     z-index: 1;
@@ -146,17 +197,17 @@ body.workspace-ready .workspace-app {
 .auth-logo {
     display: grid;
     place-items: center;
-    width: 90px;
-    height: 90px;
-    margin: 0 auto 30px;
+    width: 112px;
+    height: 112px;
+    margin: 0 auto 24px;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
 }
 
-.auth-logo svg {
-    width: 90px;
-    height: 90px;
+.auth-logo-img {
+    width: 112px;
+    height: 112px;
     filter: drop-shadow(0 10px 28px rgba(90, 84, 251, .50));
 }
 
@@ -241,7 +292,6 @@ body.workspace-ready .workspace-app {
     color: #858aad;
 }
 
-.auth-password-toggle,
 .auth-mode-switch button {
     padding: 5px;
     background: transparent;
@@ -249,6 +299,39 @@ body.workspace-ready .workspace-app {
     cursor: pointer;
     font-size: 12px;
     font-weight: 700;
+    text-decoration: underline;
+}
+
+.auth-field-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.auth-forgot-link {
+    background: transparent;
+    color: #9fa8e8;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    text-decoration: underline;
+}
+
+.auth-password-toggle {
+    display: grid;
+    place-items: center;
+    padding: 6px;
+    background: transparent;
+    color: #aeb2d7;
+    cursor: pointer;
+}
+
+.auth-password-toggle:hover {
+    color: #f7f7ff;
+}
+
+.auth-eye-icon.is-visible {
+    color: #b9c7ff;
 }
 
 .auth-submit-button {
@@ -294,21 +377,21 @@ body.workspace-ready .workspace-app {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 14px;
+    gap: 12px;
     width: 100%;
-    min-height: 74px;
+    min-height: 56px;
+    margin-top: 22px;
     padding: 14px 20px;
-    border: 1px solid rgba(190, 194, 238, .22);
-    border-radius: 15px;
-    background: rgba(78, 84, 135, .3);
-    color: #f8f8ff;
+    border: 1px solid rgba(255, 255, 255, .9);
+    border-radius: 13px;
+    background: #fff;
+    color: #1f2233;
     cursor: pointer;
     font-weight: 700;
 }
 
 .auth-google-button:hover {
-    border-color: rgba(190, 194, 238, .5);
-    background: rgba(92, 98, 157, .42);
+    background: #f3f4fb;
 }
 
 .auth-google-button:disabled {
@@ -319,12 +402,36 @@ body.workspace-ready .workspace-app {
 .google-mark {
     display: grid;
     place-items: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: #fff;
-    color: #4285f4;
-    font: 800 16px Arial, sans-serif;
+    width: 18px;
+    height: 18px;
+}
+
+.auth-apple-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 56px;
+    margin-top: 12px;
+    padding: 14px 20px;
+    border: 1px solid rgba(255, 255, 255, .12);
+    border-radius: 13px;
+    background: #0b0b0f;
+    color: #fff;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.auth-apple-button:hover {
+    background: #1a1a20;
+}
+
+.apple-mark {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
 }
 
 .auth-spinner {
@@ -461,10 +568,17 @@ body.workspace-ready .workspace-app {
 }
 
 .auth-links {
-    display: grid;
-    gap: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
     padding-top: 22px;
     border-top: 1px solid rgba(190, 194, 238, .14);
+}
+
+.auth-links-sep {
+    color: #5c6086;
+    font-size: 11px;
 }
 
 .auth-card a {
@@ -472,9 +586,12 @@ body.workspace-ready .workspace-app {
     justify-content: center;
     color: #c7c9e5;
     font-size: 12px;
-    letter-spacing: .08em;
     text-decoration: none;
-    text-transform: uppercase;
+}
+
+.auth-card a:hover {
+    color: #f7f7ff;
+    text-decoration: underline;
 }
 
 .auth-orb {
@@ -528,7 +645,7 @@ body.workspace-ready .workspace-app {
     }
 
     .auth-logo,
-    .auth-logo svg {
+    .auth-logo-img {
         width: 68px;
         height: 68px;
     }
@@ -539,6 +656,17 @@ body.workspace-ready .workspace-app {
 
     .admin-access-actions {
         grid-template-columns: 1fr;
+    }
+
+    .auth-topbar {
+        top: 16px;
+        left: 16px;
+        right: 16px;
+    }
+
+    .auth-ssl-badge {
+        padding: 7px 11px;
+        font-size: 11px;
     }
 }
 
@@ -7796,7 +7924,7 @@ body.dark-theme .week-table td.is-today {
     }
 
     .auth-logo,
-    .auth-logo svg {
+    .auth-logo-img {
         width: 74px;
         height: 74px;
     }

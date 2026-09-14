@@ -2147,6 +2147,14 @@ function setupAuthGate() {
         setAuthFormMode(authFormMode === 'login' ? 'signup' : 'login');
     });
     document.getElementById('authPasswordToggle')?.addEventListener('click', toggleAuthPasswordVisibility);
+    document.getElementById('authAppleLoginBtn')?.addEventListener('click', () => {
+        const status = document.getElementById('authGateStatus');
+        if (status) status.textContent = ui('Đăng nhập với Apple sẽ sớm ra mắt.', 'Sign in with Apple is coming soon.');
+    });
+    document.getElementById('authForgotPasswordBtn')?.addEventListener('click', () => {
+        const status = document.getElementById('authGateStatus');
+        if (status) status.textContent = ui('Tính năng khôi phục mật khẩu sẽ sớm ra mắt.', 'Password recovery is coming soon.');
+    });
     document.getElementById('adminOpenAppBtn')?.addEventListener('click', () => {
         const key = adminDestinationStorageKey();
         if (key) sessionStorage.setItem(key, 'app');
@@ -2181,16 +2189,16 @@ function setAuthFormMode(mode) {
         : ui('Chào mừng trở lại', 'Welcome Back');
     if (subtitle) subtitle.textContent = isSignup
         ? ui('Tham gia FlowMate ngay hôm nay.', 'Join FlowMate today.')
-        : ui('Đăng nhập để truy cập không gian làm việc thông minh của bạn.', 'Sign in to access your intelligent workspace.');
+        : ui('Đăng nhập để tiếp tục không gian làm việc của bạn.', 'Sign in to continue to your workspace.');
     if (submitLabel) submitLabel.textContent = isSignup
-        ? ui('Tạo tài khoản', 'Create Account')
-        : ui('Đăng nhập', 'Sign In');
+        ? ui('Tạo tài khoản →', 'Create Account →')
+        : ui('Vào không gian làm việc →', 'Enter Workspace →');
     if (prompt) prompt.textContent = isSignup
         ? ui('Đã có tài khoản?', 'Already have an account?')
         : ui('Chưa có tài khoản?', "Don't have an account?");
     if (toggle) toggle.textContent = isSignup
-        ? ui('Đăng nhập', 'Sign In')
-        : ui('Đăng ký', 'Sign up');
+        ? ui('Đăng nhập ngay', 'Sign in now')
+        : ui('Đăng ký ngay', 'Sign up now');
 
     const status = document.getElementById('authGateStatus');
     if (status) status.textContent = '';
@@ -2199,10 +2207,11 @@ function setAuthFormMode(mode) {
 function toggleAuthPasswordVisibility() {
     const input = document.getElementById('authPasswordInput');
     const button = document.getElementById('authPasswordToggle');
+    const icon = button?.querySelector('.auth-eye-icon');
     if (!input || !button) return;
     const show = input.type === 'password';
     input.type = show ? 'text' : 'password';
-    button.textContent = show ? ui('Ẩn', 'Hide') : ui('Hiện', 'Show');
+    icon?.classList.toggle('is-visible', show);
     button.setAttribute('aria-label', show ? ui('Ẩn mật khẩu', 'Hide password') : ui('Hiện mật khẩu', 'Show password'));
     button.setAttribute('aria-pressed', String(show));
 }
