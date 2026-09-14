@@ -124,13 +124,11 @@ class _Illustration extends StatelessWidget {
             width: 140,
             height: 140,
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: kOrbGradient),
               boxShadow: [
                 BoxShadow(color: const Color(0xFF5A54FB).withValues(alpha: 0.5), blurRadius: 22, offset: const Offset(0, 10)),
               ],
             ),
-            child: const Icon(Icons.auto_awesome, color: Colors.white, size: 52),
+            child: Image.asset('assets/images/logo.png', width: 140, height: 140, fit: BoxFit.contain),
           ),
           Positioned(top: 8, right: 4, child: _FloatChip(icon: Icons.mail, color: colors.primary, colors: colors)),
           Positioned(bottom: 18, left: -2, child: _FloatChip(icon: Icons.calendar_today, color: colors.primary, colors: colors)),

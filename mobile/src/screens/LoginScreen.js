@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Button from '../components/Button';
 import { radius, useTheme } from '../theme/ThemeContext';
@@ -100,14 +99,7 @@ export default function LoginScreen({ onLoggedIn }) {
       <Text style={styles.brand}>FlowMate AI</Text>
 
       <View style={styles.card}>
-        <LinearGradient
-          colors={['#55BEFE', '#5A54FB', '#8171FD', '#D65EFC']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.orb}
-        >
-          <Ionicons name="sparkles" size={26} color="#ffffff" />
-        </LinearGradient>
+        <Image source={require('../../assets/logo.png')} style={styles.orb} resizeMode="contain" />
 
         <Text style={styles.title}>
           {isSignup ? t('Tạo tài khoản', 'Create Account') : t('Chào mừng trở lại', 'Welcome Back')}
@@ -230,9 +222,6 @@ function makeStyles(colors) {
     orb: {
       width: 64,
       height: 64,
-      borderRadius: radius.control,
-      alignItems: 'center',
-      justifyContent: 'center',
       shadowColor: '#5A54FB',
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.4,

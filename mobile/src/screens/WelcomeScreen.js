@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import Button from '../components/Button';
@@ -41,14 +40,7 @@ export default function WelcomeScreen({ onGetStarted, onLogIn }) {
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.body}>
       <View style={styles.illustrationRing}>
-        <LinearGradient
-          colors={['#55BEFE', '#5A54FB', '#8171FD', '#D65EFC']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.illustrationOrb}
-        >
-          <Ionicons name="sparkles" size={52} color="#ffffff" />
-        </LinearGradient>
+        <Image source={require('../../assets/logo.png')} style={styles.illustrationOrb} resizeMode="contain" />
         <View style={[styles.floatChip, styles.floatChipMail]}>
           <Ionicons name="mail" size={18} color={colors.primary} />
         </View>
@@ -138,9 +130,6 @@ function makeStyles(colors) {
     illustrationOrb: {
       width: 140,
       height: 140,
-      borderRadius: 70,
-      alignItems: 'center',
-      justifyContent: 'center',
       shadowColor: '#5A54FB',
       shadowOffset: { width: 0, height: 10 },
       shadowOpacity: 0.5,
