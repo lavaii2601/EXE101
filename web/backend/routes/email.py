@@ -816,6 +816,30 @@ def _meeting_suggestion_exists_in_schedule(suggestion, schedule_index):
     return False
 
 
+def _is_meeting_suggestion_stale(suggestion):
+    """True once the suggested meeting time is fully in the past.
+
+    _extract_meeting_suggestion resolves relative phrases ("ngay mai",
+    "tuan sau", weekday names) against the *email's own send date*
+    (_parse_email_base_date), which is the correct reading of what the
+    email meant when it arrived. But an old inbox email scanned today can
+    still resolve to a date that has since passed -- without this check
+    that suggestion would sit at the top of the pending list forever
+    (MeetingSuggestion.get_pending sorts start_time ascending), making the
+    feature look "stuck" re-surfacing old mail instead of upcoming ones.
+    """
+    reference = suggestion.get('end_time') or suggestion.get('start_time')
+    if not reference:
+        return False
+    try:
+        reference_dt = datetime.fromisoformat(str(reference))
+    except (TypeError, ValueError):
+        return False
+    if reference_dt.tzinfo is not None:
+        reference_dt = reference_dt.replace(tzinfo=None)
+    return reference_dt < datetime.now()
+
+
 def _store_meeting_suggestions(emails, db_path):
     detected = []
     schedule_index = None
@@ -826,6 +850,9 @@ def _store_meeting_suggestions(emails, db_path):
                 continue
             suggestion = _extract_meeting_suggestion(email)
             if not suggestion:
+                continue
+            if _is_meeting_suggestion_stale(suggestion):
+                MeetingSuggestion.dismiss_email(email_id, db_path=db_path)
                 continue
             if _is_google_calendar_notification(email) or _is_google_calendar_notification(suggestion):
                 MeetingSuggestion.dismiss_email(email_id, db_path=db_path)
@@ -850,19 +877,21 @@ def _store_meeting_suggestions(emails, db_path):
 def _prune_existing_meeting_suggestions(db_path):
     schedule_index = _load_schedule_match_index(db_path)
     pending = MeetingSuggestion.get_pending(db_path=db_path)
-    if not schedule_index:
-        # With no existing schedules there is nothing to de-duplicate against.
-        # Returning [] here used to hide every valid email suggestion from a
-        # brand-new user or an empty calendar.
-        return pending
     visible = []
     for suggestion in pending:
-        if _meeting_suggestion_exists_in_schedule(suggestion, schedule_index):
-            email_id = suggestion.get('email_id')
+        email_id = suggestion.get('email_id')
+        if _is_meeting_suggestion_stale(suggestion):
             if email_id:
                 MeetingSuggestion.dismiss_email(email_id, db_path=db_path)
-        else:
-            visible.append(suggestion)
+            continue
+        # With no existing schedules there is nothing to de-duplicate
+        # against -- skipping the match check here used to hide every valid
+        # email suggestion from a brand-new user or an empty calendar.
+        if schedule_index and _meeting_suggestion_exists_in_schedule(suggestion, schedule_index):
+            if email_id:
+                MeetingSuggestion.dismiss_email(email_id, db_path=db_path)
+            continue
+        visible.append(suggestion)
     return visible
 
 
