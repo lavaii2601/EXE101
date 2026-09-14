@@ -19,14 +19,14 @@ from models.subscription import ACTIVE_STATUSES, _decorate
 PLANS = {
     "premium_monthly": {
         "plan_code": "premium_monthly",
-        "plan_name": "FlowMate Premium thang",
+        "plan_name": "FlowMate Premium tháng",
         "billing_interval": "monthly",
         "amount": 49_000,
         "days": 30,
     },
     "premium_yearly": {
         "plan_code": "premium_yearly",
-        "plan_name": "FlowMate Premium nam",
+        "plan_name": "FlowMate Premium năm",
         "billing_interval": "yearly",
         "amount": 520_000,
         "days": 365,
@@ -219,6 +219,8 @@ def process_order_paid(payload):
         raise SepayPaymentError("order_not_captured")
     if str(transaction.get("transaction_status") or "").upper() != "APPROVED":
         raise SepayPaymentError("transaction_not_approved")
+    if str(transaction.get("transaction_type") or "").upper() != "PAYMENT":
+        raise SepayPaymentError("invalid_transaction_type")
 
     with pg.connection() as conn:
         payment = conn.execute(

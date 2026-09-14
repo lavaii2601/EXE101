@@ -339,6 +339,12 @@ function renderAlerts(summary) {
   if (Number(summary.oauth_access_expired)) alerts.push(['warning', `${number(summary.oauth_access_expired)} access token Google đã hết hạn; refresh token sẽ được thử khi người dùng đồng bộ.`]);
   if (Number(summary.oauth_missing_scopes)) alerts.push(['danger', `${number(summary.oauth_missing_scopes)} tài khoản thiếu scope Gmail hoặc Calendar và cần kết nối lại.`]);
   if (Number(summary.sync_failures_24h)) alerts.push(['danger', `${number(summary.sync_failures_24h)} tác vụ đồng bộ thất bại trong 24 giờ qua.`]);
+  // Phase 6 ("Billing automation and production hardening"): operational
+  // alerts for the subscription lifecycle -- live-queried, not a separate
+  // alert-delivery system (see services/subscription_lifecycle_scheduler.py).
+  if (Number(summary.workspaces_in_grace)) alerts.push(['warning', `${number(summary.workspaces_in_grace)} workspace doanh nghiệp đang trong 7 ngày gia hạn.`]);
+  if (Number(summary.workspaces_read_only)) alerts.push(['danger', `${number(summary.workspaces_read_only)} workspace doanh nghiệp đã chuyển sang chỉ đọc do hết hạn.`]);
+  if (Number(summary.failed_payments_24h)) alerts.push(['warning', `${number(summary.failed_payments_24h)} giao dịch thanh toán thất bại trong 24 giờ qua.`]);
   $('alerts').innerHTML = alerts.length
     ? alerts.map(([tone, text]) => `<div class="alert ${tone === 'danger' ? 'danger' : ''}">${escapeHtml(text)}</div>`).join('')
     : '<div class="alert success">Hệ thống đang ổn định — không có cảnh báo vận hành trong 24 giờ qua.</div>';

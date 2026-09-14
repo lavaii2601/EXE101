@@ -799,6 +799,30 @@ CREATE INDEX IF NOT EXISTS idx_shared_artifacts_workspace
 CREATE INDEX IF NOT EXISTS idx_shared_artifacts_owner
     ON shared_artifacts (source_owner_user_id) WHERE revoked_at IS NULL;
 
+-- Phase 6 (design doc section 9.9): in-app notifications for the
+-- subscription lifecycle scheduler. UNIQUE(recipient_user_id, dedupe_key)
+-- is the idempotency mechanism -- the scheduler always INSERTs with
+-- ON CONFLICT DO NOTHING, so overlapping runs can never double-notify.
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    recipient_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'info',
+    title TEXT NOT NULL,
+    body TEXT,
+    action_url TEXT,
+    dedupe_key TEXT NOT NULL,
+    read_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT notifications_severity_check CHECK (severity IN ('info', 'warning', 'critical')),
+    CONSTRAINT notifications_recipient_dedupe_unique UNIQUE (recipient_user_id, dedupe_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient_unread
+    ON notifications (recipient_user_id, created_at DESC) WHERE read_at IS NULL;
+
 -- Phase 3 ("Bob Core") tenant isolation: chat_sessions/history/session_memory
 -- gained a bare workspace_id column above (for fresh installs) but on an
 -- already-existing deployment those rows all predate this feature and have

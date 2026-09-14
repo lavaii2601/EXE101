@@ -457,3 +457,60 @@ def revoke(workspace_id, actor_user_id=None):
         if cur.rowcount > 0:
             _record_audit_event(conn, workspace_id, actor_user_id, "subscription_canceled")
         return cur.rowcount > 0
+
+
+def mark_expired(subscription_ids):
+    """Flip status to 'expired' for the given ids -- status-column hygiene
+    only (get_access_state already treats a past-grace row as read_only
+    regardless of its status value). Idempotent.
+
+    Must exclude 'suspended': that status is an admin's explicit revoke()
+    (see below), and get_access_state() treats it as an unconditional
+    ACCESS_READ_ONLY regardless of current_period_end. Flipping it to
+    'expired' would remove that special case -- the row falls through to
+    the ordinary period_end comparison and can come back ACCESS_ACTIVE,
+    silently undoing the admin's revoke the next time this job runs."""
+    if not pg.enabled() or not subscription_ids:
+        return 0
+    with pg.connection() as conn:
+        cur = conn.execute(
+            "UPDATE subscriptions SET status = 'expired' "
+            "WHERE id = ANY(%s) AND status NOT IN ('expired', 'canceled', 'suspended')",
+            (list(subscription_ids),),
+        )
+        return cur.rowcount
+
+
+def list_all_with_owner(limit=1000, conn=None):
+    """Every not-yet-terminal Business subscription, decorated (so
+    access_state is already computed) and carrying its workspace's
+    owner_user_id -- who lifecycle notifications go to. Used by
+    services/subscription_lifecycle_scheduler.py, which classifies each row
+    itself via this module's own get_access_state rather than a second,
+    independently-written SQL threshold -- the two can never disagree.
+
+    Pass an already-open `conn` (e.g. routes/admin.py's dashboard query,
+    which runs several other queries in the same connection/transaction) to
+    reuse it instead of opening a second round trip; omit it to open one
+    here, for standalone callers like the scheduler."""
+    if not pg.enabled():
+        return []
+    if conn is not None:
+        return _list_all_with_owner(conn, limit)
+    with pg.connection() as new_conn:
+        return _list_all_with_owner(new_conn, limit)
+
+
+def _list_all_with_owner(conn, limit):
+    rows = conn.execute(
+        """
+        SELECT s.*, w.owner_user_id AS workspace_owner_user_id
+        FROM subscriptions s
+        JOIN workspaces w ON w.id = s.workspace_id
+        WHERE s.workspace_id IS NOT NULL
+          AND s.status NOT IN ('expired', 'canceled')
+        LIMIT %s
+        """,
+        (limit,),
+    ).fetchall()
+    return [_decorate(row) for row in pg.normalize_rows(rows)]

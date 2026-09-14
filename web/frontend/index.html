@@ -290,6 +290,20 @@
                     </div>
                 </div>
                 <div class="workspace-actions">
+                    <div class="notification-bell-wrap">
+                        <button type="button" id="notificationBellBtn" class="notification-bell-btn" aria-haspopup="true" aria-expanded="false" title="Thông báo">
+                            <span aria-hidden="true">🔔</span>
+                            <span id="notificationBadge" class="notification-badge" hidden>0</span>
+                        </button>
+                        <div id="notificationPopup" class="notification-popup" role="menu">
+                            <div class="notification-popup-header">
+                                <strong>Thông báo</strong>
+                            </div>
+                            <div id="notificationList" class="notification-list">
+                                <div class="notification-empty">Chưa có thông báo nào.</div>
+                            </div>
+                        </div>
+                    </div>
                     <button type="button" id="subscriptionHeaderBtn" class="subscription-header-btn">
                         <span id="subscriptionHeaderIcon" aria-hidden="true">★</span>
                         <span id="subscriptionHeaderLabel">Nâng cấp Premium</span>
@@ -955,9 +969,6 @@
                         <button type="button" class="subscription-payment-option active" data-payment-method="BANK_TRANSFER">
                             <b>S</b> SEPay <small>QR ngân hàng</small>
                         </button>
-                        <button type="button" class="subscription-payment-option" data-payment-method="CARD">
-                            <b>C</b> Thẻ <small>Visa / Mastercard</small>
-                        </button>
                     </div>
                 </div>
 
@@ -968,20 +979,6 @@
                 <p id="subscriptionContactNote" class="subscription-contact-note">
                     Bạn sẽ được chuyển sang cổng SEPay. Premium chỉ được kích hoạt sau khi backend nhận IPN xác nhận thanh toán.
                 </p>
-
-                <div id="subscriptionRequestPanel" class="subscription-request-panel" hidden>
-                    <p>Yêu cầu của bạn đã được soạn sẵn bên dưới. Bấm "Mở ứng dụng email" để gửi, hoặc sao chép nội dung nếu máy bạn không có sẵn ứng dụng email.</p>
-                    <div class="subscription-request-preview">
-                        <div><span>Đến</span><strong id="subscriptionRequestTo"></strong></div>
-                        <div><span>Tiêu đề</span><strong id="subscriptionRequestSubject"></strong></div>
-                        <div><span>Nội dung</span><p id="subscriptionRequestBody"></p></div>
-                    </div>
-                    <div class="subscription-request-actions">
-                        <a id="subscriptionRequestMailLink" class="btn-secondary" href="#" target="_blank" rel="noopener">Mở ứng dụng email</a>
-                        <button type="button" id="subscriptionRequestCopyBtn" class="btn-primary">Sao chép nội dung yêu cầu</button>
-                    </div>
-                    <button type="button" id="subscriptionRequestDoneBtn" class="subscription-request-done">Đóng</button>
-                </div>
             </section>
         </div>
     </div>

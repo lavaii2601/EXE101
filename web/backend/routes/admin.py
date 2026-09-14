@@ -200,6 +200,31 @@ def _clear_totp_attempts(user_id):
         _totp_attempts.pop(key, None)
 
 
+def _workspace_access_alert_counts(conn=None):
+    """Phase 6 operational alerts: access_state has no pure-SQL equivalent
+    (it's computed live by workspace_subscription.get_access_state), so
+    reuse the exact same decorated rows Stage A's lifecycle scheduler reads
+    from -- this can never silently disagree with what the scheduler /
+    assert_writable actually enforce. Extracted as its own function so it's
+    testable without scripting every unrelated query _postgres_dashboard
+    also runs.
+
+    Pass the connection _postgres_dashboard already has open so this reuses
+    that round trip instead of opening a second one."""
+    workspaces_in_grace = 0
+    workspaces_read_only = 0
+    for row in workspace_subscription.list_all_with_owner(conn=conn):
+        state = row.get('access_state')
+        if state == workspace_subscription.ACCESS_GRACE:
+            workspaces_in_grace += 1
+        elif state == workspace_subscription.ACCESS_READ_ONLY:
+            workspaces_read_only += 1
+    return {
+        'workspaces_in_grace': workspaces_in_grace,
+        'workspaces_read_only': workspaces_read_only,
+    }
+
+
 def _postgres_dashboard():
     with pg.connection() as conn:
         summary = conn.execute(
@@ -230,7 +255,9 @@ def _postgres_dashboard():
                 (SELECT COUNT(*) FROM knowledge_documents) AS knowledge_documents,
                 (SELECT COUNT(*) FROM sync_jobs WHERE status = 'failed'
                     AND created_at >= NOW() - INTERVAL '24 hours') AS sync_failures_24h,
-                (SELECT COUNT(*) FROM cache WHERE expires_at >= NOW()) AS cache_entries_active
+                (SELECT COUNT(*) FROM cache WHERE expires_at >= NOW()) AS cache_entries_active,
+                (SELECT COUNT(*) FROM payment_transactions WHERE status = 'failed'
+                    AND created_at >= NOW() - INTERVAL '24 hours') AS failed_payments_24h
             """
         ).fetchone()
         modes = conn.execute(
@@ -317,9 +344,13 @@ def _postgres_dashboard():
                    NOW() AS server_time
             """
         ).fetchone()
+        alert_counts = _workspace_access_alert_counts(conn=conn)
+
+    summary_row = pg.normalize_row(summary)
+    summary_row.update(alert_counts)
 
     return {
-        'summary': pg.normalize_row(summary),
+        'summary': summary_row,
         'users_by_mode': pg.normalize_rows(modes),
         'activity_14d': pg.normalize_rows(activity),
         'recent_sync_jobs': pg.normalize_rows(sync_jobs),

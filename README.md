@@ -91,6 +91,12 @@ GMAIL_CLIENT_SECRET=
 GMAIL_CREDENTIALS_JSON=
 GMAIL_REDIRECT_URI=http://127.0.0.1:5000/api/email/oauth2callback
 
+# Cổng thanh toán SEPay (dùng bộ credential Sandbox khi chạy local).
+SEPAY_ENV=sandbox
+SEPAY_MERCHANT_ID=
+SEPAY_SECRET_KEY=
+SEPAY_IPN_SECRET_KEY=
+
 # Chỉ cần khi kiểm tra admin dashboard local.
 ADMIN_EMAILS=admin@example.com
 ADMIN_TOTP_SECRET=
@@ -213,9 +219,9 @@ Hai bảng nguồn là:
 - `subscriptions`
 - `payment_transactions`
 
-Dashboard không tạo số liệu giả. Cần tích hợp webhook hoặc một billing process
-đáng tin cậy từ Stripe, MoMo, VNPay hoặc nhà cung cấp khác để ghi dữ liệu vào
-hai bảng này.
+Dashboard không tạo số liệu giả. IPN SEPay ghi giao dịch đã xác nhận và gói
+Premium vào hai bảng này; các provider khác vẫn cần webhook hoặc billing
+process đáng tin cậy tương đương.
 
 ## PostgreSQL và migration
 
@@ -261,6 +267,11 @@ GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
 GMAIL_CREDENTIALS_JSON=
 
+SEPAY_ENV=production
+SEPAY_MERCHANT_ID=<production-merchant-id>
+SEPAY_SECRET_KEY=<production-secret-key>
+SEPAY_IPN_SECRET_KEY=<secret-khop-voi-cau-hinh-ipn>
+
 ADMIN_EMAILS=
 ADMIN_TOTP_SECRET=
 
@@ -272,6 +283,18 @@ AI_MAX_INPUT_CHARS=12000
 AI_MAX_SYSTEM_PROMPT_CHARS=12000
 AI_AGENT_MAX_TOKENS=700
 ```
+
+Trong trang quản lý merchant SEPay, cấu hình IPN dùng kiểu xác thực
+`SECRET_KEY`, đặt secret trùng với `SEPAY_IPN_SECRET_KEY`, và dùng URL công
+khai sau:
+
+```text
+https://flowmate.pro/api/payments/sepay/ipn
+```
+
+`SEPAY_SECRET_KEY` chỉ tồn tại ở backend. Web và Flutter chỉ nhận URL checkout
+tạm thời; Premium được kích hoạt bởi IPN `ORDER_PAID`, không dựa vào URL người
+dùng được chuyển về sau thanh toán.
 
 Railway has no GPU service for practical `qwen3:8b` inference. The production
 configuration above intentionally runs tool routing, the offline classifier,

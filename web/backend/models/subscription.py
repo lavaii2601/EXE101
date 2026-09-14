@@ -112,6 +112,61 @@ def validate_action(user_id, requested_action):
     }
 
 
+def list_lapsed(limit=500):
+    """Personal subscriptions past current_period_end that still show an
+    ACTIVE_STATUSES status -- functionally inert already (get_active's own
+    current_period_end > NOW() filter excludes them), this is status-column
+    hygiene only. Used by services/subscription_lifecycle_scheduler.py."""
+    if not pg.enabled():
+        return []
+    with pg.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM subscriptions
+            WHERE user_id IS NOT NULL AND status = ANY(%s)
+              AND current_period_end IS NOT NULL AND current_period_end < NOW()
+            LIMIT %s
+            """,
+            (list(ACTIVE_STATUSES), limit),
+        ).fetchall()
+        return pg.normalize_rows(rows)
+
+
+def mark_expired(subscription_ids):
+    """Flip status to 'expired' for the given ids -- status-column hygiene
+    only (get_active's own current_period_end > NOW() filter already treats
+    a lapsed row as inactive regardless of its status value). Idempotent:
+    re-running with the same ids after they're already 'expired' matches
+    zero rows and is a no-op."""
+    if not pg.enabled() or not subscription_ids:
+        return 0
+    with pg.connection() as conn:
+        cur = conn.execute(
+            "UPDATE subscriptions SET status = 'expired' WHERE id = ANY(%s) AND status = ANY(%s)",
+            (list(subscription_ids), list(ACTIVE_STATUSES)),
+        )
+        return cur.rowcount
+
+
+def list_expiring_soon(days=3, limit=500):
+    """Personal subscriptions whose current_period_end falls within the next
+    `days` days -- candidates for a renewal reminder."""
+    if not pg.enabled():
+        return []
+    with pg.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM subscriptions
+            WHERE user_id IS NOT NULL AND status = ANY(%s)
+              AND current_period_end IS NOT NULL
+              AND current_period_end BETWEEN NOW() AND NOW() + (%s || ' days')::INTERVAL
+            LIMIT %s
+            """,
+            (list(ACTIVE_STATUSES), days, limit),
+        ).fetchall()
+        return pg.normalize_rows(rows)
+
+
 def grant_manual(user_id, plan_code, plan_name=None, billing_interval="monthly",
                   unit_amount=0, currency="VND", days=30, action=None):
     """Purchase or renew an admin-managed Premium entitlement atomically.

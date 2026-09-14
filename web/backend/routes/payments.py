@@ -18,6 +18,26 @@ def _error_response(error):
     return jsonify({"success": False, "error": error.code}), error.status
 
 
+def _configuration_error():
+    environment = str(current_app.config.get("SEPAY_ENV", "sandbox")).lower()
+    if environment not in {"sandbox", "production"}:
+        return "invalid_sepay_environment"
+    expected_url = (
+        "https://pay.sepay.vn/v1/checkout/init"
+        if environment == "production"
+        else "https://pay-sandbox.sepay.vn/v1/checkout/init"
+    )
+    configured_url = str(current_app.config.get("SEPAY_CHECKOUT_URL", "")).rstrip("/")
+    if configured_url != expected_url:
+        return "sepay_environment_mismatch"
+    required_config = (
+        current_app.config.get("SEPAY_MERCHANT_ID"),
+        current_app.config.get("SEPAY_SECRET_KEY"),
+        current_app.config.get("SEPAY_IPN_SECRET_KEY"),
+    )
+    return None if all(required_config) else "sepay_not_configured"
+
+
 @payments_bp.post("/sepay/checkout")
 def create_sepay_checkout():
     user_id = get_current_user_id(request)
@@ -25,6 +45,9 @@ def create_sepay_checkout():
         return jsonify({"error": "not_authenticated", "auth_scope": "app"}), 401
     data = request.get_json(silent=True) or {}
     action = str(data.get("action") or "").strip().lower()
+    configuration_error = _configuration_error()
+    if configuration_error:
+        return jsonify({"success": False, "error": configuration_error}), 503
     try:
         state = subscription_model.validate_action(user_id, action)
         if not state["eligible"]:
@@ -61,6 +84,9 @@ def create_sepay_checkout():
 
 @payments_bp.get("/sepay/start/<token>")
 def start_sepay_checkout(token):
+    configuration_error = _configuration_error()
+    if configuration_error:
+        return Response(configuration_error, status=503, mimetype="text/plain")
     payment = sepay_payment.get_checkout_by_token(token)
     if not payment:
         return Response("Checkout not found.", status=404, mimetype="text/plain")
@@ -113,6 +139,12 @@ def sepay_ipn():
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"success": False, "error": "invalid_ipn_payload"}), 400
+    try:
+        timestamp = int(payload.get("timestamp"))
+    except (TypeError, ValueError):
+        timestamp = 0
+    if timestamp <= 0:
+        return jsonify({"success": False, "error": "invalid_ipn_timestamp"}), 400
     notification_type = str(payload.get("notification_type") or "").upper()
     try:
         if notification_type == "ORDER_PAID":
