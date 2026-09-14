@@ -36,7 +36,6 @@ from models.knowledge import KnowledgeDocument
 from models.workspace_sync import WorkspaceSync
 from models import postgres_db as pg
 from services.overview_scheduler import start_overview_scheduler
-from services.subscription_lifecycle_scheduler import start_subscription_lifecycle_scheduler
 from routes.auth import auth_bp
 from routes.chat import chat_bp
 from routes.email import email_bp
@@ -53,7 +52,6 @@ from routes.workspace import workspace_bp, workspace_invitations_bp
 from routes.work_hub import work_hub_bp
 from routes.sharing import sharing_bp
 from routes.workspace_knowledge import workspace_knowledge_bp
-from routes.notifications import notifications_bp
 from routes.payments import payments_bp
 from utils.security import authenticated_user_id, enforce_rate_limit, valid_request_origin
 
@@ -142,11 +140,7 @@ install_workspace_sync_hooks(app)
 
 @app.after_request
 def add_security_headers(response):
-    if (
-        response.status_code == 401
-        and request.path.startswith('/api/')
-        and request.path != '/api/payments/sepay/ipn'
-    ):
+    if response.status_code == 401 and request.path.startswith('/api/'):
         payload = response.get_json(silent=True)
         if isinstance(payload, dict) and not payload.get('auth_scope'):
             if request.path.startswith('/api/admin/'):
@@ -199,7 +193,6 @@ app.register_blueprint(workspace_invitations_bp)
 app.register_blueprint(work_hub_bp)
 app.register_blueprint(sharing_bp)
 app.register_blueprint(workspace_knowledge_bp)
-app.register_blueprint(notifications_bp)
 app.register_blueprint(payments_bp)
 
 # Ensure data directory exists
@@ -215,7 +208,6 @@ KnowledgeDocument.init_db()
 WorkspaceSync.init_db()
 seed_knowledge_base()
 start_overview_scheduler()
-start_subscription_lifecycle_scheduler()
 
 # Serve frontend
 @app.route('/')
