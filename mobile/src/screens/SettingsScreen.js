@@ -25,6 +25,7 @@ import WorkspaceMembersScreen from './WorkspaceMembersScreen';
 import WorkHubScreen from './WorkHubScreen';
 import StatusReportsScreen from './StatusReportsScreen';
 import SharingCenterScreen from './SharingCenterScreen';
+import WorkspaceKnowledgeScreen from './WorkspaceKnowledgeScreen';
 import { useOrgWorkspace } from '../state/OrgWorkspaceContext';
 
 const USAGE_LABELS = {
@@ -77,6 +78,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const [membersVisible, setMembersVisible] = useState(false);
   const [workHubVisible, setWorkHubVisible] = useState(false);
   const [statusReportsVisible, setStatusReportsVisible] = useState(false);
+  const [workspaceKnowledgeVisible, setWorkspaceKnowledgeVisible] = useState(false);
   const [sharingCenterVisible, setSharingCenterVisible] = useState(false);
   const [pushNotif,     setPushNotif]     = useState(false);
   const [emailNotif,    setEmailNotif]    = useState(true);
@@ -376,6 +378,16 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             <View style={styles.settingInfo}>
               <Text style={styles.settingTitle}>{t('Báo cáo trạng thái', 'Status Reports')}</Text>
               <Text style={styles.settingSub}>Done / Doing / Blocked / Next / Risks</Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.settingRow} onPress={() => setWorkspaceKnowledgeVisible(true)} activeOpacity={0.75}>
+            <View style={[styles.iconWrap, { backgroundColor: colors.secondaryBg }]}>
+              <Ionicons name="library-outline" size={18} color={colors.secondaryText} />
+            </View>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingTitle}>{t('Kiến thức doanh nghiệp', 'Workspace Knowledge')}</Text>
+              <Text style={styles.settingSub}>{t('Policy, quy trình, template và FAQ', 'Policies, processes, templates, and FAQs')}</Text>
             </View>
             <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>
@@ -687,10 +699,11 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         onRefresh={onRefresh}
         onClose={() => setPricingVisible(false)}
       />
-      <WorkspaceMembersScreen visible={membersVisible} onClose={() => setMembersVisible(false)} />
-      <WorkHubScreen visible={workHubVisible} onClose={() => setWorkHubVisible(false)} />
-      <StatusReportsScreen visible={statusReportsVisible} onClose={() => setStatusReportsVisible(false)} />
-      <SharingCenterScreen visible={sharingCenterVisible} onClose={() => setSharingCenterVisible(false)} />
+      <WorkspaceMembersScreen visible={membersVisible} onClose={() => setMembersVisible(false)} syncEvent={syncEvent} />
+      <WorkHubScreen visible={workHubVisible} onClose={() => setWorkHubVisible(false)} syncEvent={syncEvent} />
+      <StatusReportsScreen visible={statusReportsVisible} onClose={() => setStatusReportsVisible(false)} syncEvent={syncEvent} />
+      <WorkspaceKnowledgeScreen visible={workspaceKnowledgeVisible} onClose={() => setWorkspaceKnowledgeVisible(false)} syncEvent={syncEvent} />
+      <SharingCenterScreen visible={sharingCenterVisible} onClose={() => setSharingCenterVisible(false)} syncEvent={syncEvent} />
     </ScrollView>
   );
 }

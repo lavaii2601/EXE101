@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Platform, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { radius, useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -21,7 +21,7 @@ const FIELDS = [
 // /api/status-reports endpoints. No Bob-AI-drafting in this slice --
 // every report is filled in and reviewed by hand before publishing, and
 // publishing is one-way (content becomes immutable).
-export default function StatusReportsScreen({ visible, onClose }) {
+export default function StatusReportsScreen({ visible, onClose, syncEvent }) {
   const { colors } = useTheme();
   const { t } = useLanguage();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -55,6 +55,11 @@ export default function StatusReportsScreen({ visible, onClose }) {
   useEffect(() => {
     if (visible) load();
   }, [visible, load]);
+
+  useEffect(() => {
+    if (!visible || !syncEvent?.id) return;
+    if (hasSyncTarget(syncEvent, ['status_reports'])) load();
+  }, [visible, syncEvent, load]);
 
   const projectName = (projectId) => projects.find((p) => p.id === projectId)?.name || null;
 
@@ -217,7 +222,11 @@ export default function StatusReportsScreen({ visible, onClose }) {
 
 function makeStyles(colors) {
   return StyleSheet.create({
-    root: { flex: 1, backgroundColor: colors.background },
+    root: {
+      flex: 1,
+      backgroundColor: colors.background,
+      paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0,
+    },
     header: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 12 },
     headerTitle: { color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 17 },
     body: { paddingHorizontal: 16, paddingBottom: 32, gap: 14 },
@@ -281,4 +290,9 @@ function makeStyles(colors) {
     reportFieldLabel: { color: colors.primary, fontFamily: 'Poppins_700Bold' },
     emptyText: { color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 13 },
   });
+}
+
+function hasSyncTarget(syncEvent, targets) {
+  const currentTargets = Array.isArray(syncEvent?.targets) ? syncEvent.targets : [];
+  return targets.some((target) => currentTargets.includes(target));
 }

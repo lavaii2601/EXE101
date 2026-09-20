@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Platform, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { radius, useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -53,7 +53,7 @@ function toDateOnly(isoLocal) {
 // Hub"), reached from Settings. Mirrors the web client's "Công việc" page
 // and the Flutter client's WorkHubScreen, both built on top of
 // routes/work_hub.py's /api/projects, /api/tasks endpoints.
-export default function WorkHubScreen({ visible, onClose }) {
+export default function WorkHubScreen({ visible, onClose, syncEvent }) {
   const { colors } = useTheme();
   const { t } = useLanguage();
   const workspace = useOrgWorkspace();
@@ -70,6 +70,7 @@ export default function WorkHubScreen({ visible, onClose }) {
   const [projectDescription, setProjectDescription] = useState('');
   const [projectStatus, setProjectStatus] = useState('planning');
   const [projectVisibility, setProjectVisibility] = useState('workspace');
+  const [projectStartDate, setProjectStartDate] = useState('');
   const [projectDueDate, setProjectDueDate] = useState('');
   const [creatingProject, setCreatingProject] = useState(false);
 
@@ -113,6 +114,11 @@ export default function WorkHubScreen({ visible, onClose }) {
     if (visible) load();
   }, [visible, load]);
 
+  useEffect(() => {
+    if (!visible || !syncEvent?.id) return;
+    if (hasSyncTarget(syncEvent, ['work_hub'])) load();
+  }, [visible, syncEvent, load]);
+
   const selectProject = (projectId) => {
     setSelectedProjectId(projectId);
     loadTasks(projectId);
@@ -127,12 +133,14 @@ export default function WorkHubScreen({ visible, onClose }) {
         description: projectDescription.trim() || undefined,
         status: projectStatus,
         visibility: projectVisibility,
+        start_date: toDateOnly(projectStartDate),
         due_date: toDateOnly(projectDueDate),
       });
       setProjectName('');
       setProjectDescription('');
       setProjectStatus('planning');
       setProjectVisibility('workspace');
+      setProjectStartDate('');
       setProjectDueDate('');
       await load();
     } catch (error) {
@@ -263,6 +271,7 @@ export default function WorkHubScreen({ visible, onClose }) {
                       </TouchableOpacity>
                     ))}
                   </View>
+                  <DateTimeField label={t('Ngày bắt đầu', 'Start date')} value={projectStartDate} onChange={setProjectStartDate} />
                   <DateTimeField label={t('Hạn chót', 'Due date')} value={projectDueDate} onChange={setProjectDueDate} />
                   <Button title={t('Tạo dự án', 'Create project')} onPress={createProject} loading={creatingProject} />
                 </View>
@@ -363,7 +372,11 @@ export default function WorkHubScreen({ visible, onClose }) {
 
 function makeStyles(colors) {
   return StyleSheet.create({
-    root: { flex: 1, backgroundColor: colors.background },
+    root: {
+      flex: 1,
+      backgroundColor: colors.background,
+      paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0,
+    },
     header: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 12 },
     headerTitle: { color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 17 },
     body: { paddingHorizontal: 16, paddingBottom: 32, gap: 14 },
@@ -428,4 +441,9 @@ function makeStyles(colors) {
     badgeText: { fontFamily: 'Poppins_700Bold', fontSize: 10 },
     emptyText: { color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 13 },
   });
+}
+
+function hasSyncTarget(syncEvent, targets) {
+  const currentTargets = Array.isArray(syncEvent?.targets) ? syncEvent.targets : [];
+  return targets.some((target) => currentTargets.includes(target));
 }

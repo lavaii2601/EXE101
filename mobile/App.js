@@ -19,6 +19,7 @@ import HistoryScreen from './src/screens/HistoryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import WelcomeScreen from './src/screens/WelcomeScreen';
+import WorkerModeScreen from './src/screens/WorkerModeScreen';
 import ProfileHeader from './src/components/ProfileHeader';
 import OrgWorkspaceBar from './src/components/OrgWorkspaceBar';
 import RoleSelection from './src/components/RoleSelection';
@@ -38,6 +39,7 @@ import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
 
 const tabs = [
   { key: 'overview', icon: 'stats-chart-outline', label: ['Tổng hợp', 'Overview'] },
+  { key: 'work',     icon: 'briefcase-outline',   label: ['Công việc', 'Work'], workerOnly: true },
   { key: 'chat',     icon: 'chatbubble-outline',  label: ['Chat', 'Chat'] },
   { key: 'emails',   icon: 'mail-outline',        label: ['Email', 'Email'] },
   { key: 'schedule', icon: 'calendar-outline',    label: ['Lịch', 'Calendar'] },
@@ -422,8 +424,19 @@ function AppShell() {
     }
   }, [profile]);
 
+  const workerModeEnabled = userMode === 'worker' || userMode === 'business';
+  const visibleTabs = useMemo(
+    () => tabs.filter((tab) => !tab.workerOnly || workerModeEnabled),
+    [workerModeEnabled],
+  );
+
+  useEffect(() => {
+    if (activeTab === 'work' && !workerModeEnabled) setActiveTab('overview');
+  }, [activeTab, workerModeEnabled]);
+
   const renderScreen = () => {
     if (activeTab === 'overview') return <OverviewScreen onAgentSync={handleAgentSync} syncEvent={syncEvent} onNavigate={setActiveTab} userMode={userMode || 'worker'} subscription={profile?.subscription} userName={profile?.name} gmailConnected={!!profile?.gmail_connected} />;
+    if (activeTab === 'work')     return <WorkerModeScreen syncEvent={syncEvent} />;
     if (activeTab === 'emails')   return <EmailScreen userMode={userMode || 'worker'} onAuthChanged={refreshShell} onAgentSync={handleAgentSync} onNavigate={setActiveTab} syncEvent={syncEvent} />;
     if (activeTab === 'schedule') return <ScheduleScreen onAgentSync={handleAgentSync} syncEvent={syncEvent} />;
     if (activeTab === 'history')  return <HistoryScreen syncEvent={syncEvent} />;
@@ -534,7 +547,7 @@ function AppShell() {
           </View>
         ) : null}
         <View style={styles.tabBar}>
-          {tabs.map((tab) => {
+          {visibleTabs.map((tab) => {
             const active = activeTab === tab.key;
             const showMailBadge = tab.key === 'emails' && unseenMailCount > 0;
             return (

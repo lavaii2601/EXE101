@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Platform, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { radius, useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -30,7 +30,7 @@ function accessStateColor(state, colors) {
 // Member/invitation management for the active Business workspace, reached
 // from Settings. Mirrors the web client's "Thành viên" page and the Flutter
 // client's WorkspaceMembersScreen.
-export default function WorkspaceMembersScreen({ visible, onClose }) {
+export default function WorkspaceMembersScreen({ visible, onClose, syncEvent }) {
   const { colors } = useTheme();
   const { t } = useLanguage();
   const workspace = useOrgWorkspace();
@@ -91,6 +91,11 @@ export default function WorkspaceMembersScreen({ visible, onClose }) {
   useEffect(() => {
     if (visible) load();
   }, [visible, load]);
+
+  useEffect(() => {
+    if (!visible || !syncEvent?.id) return;
+    if (hasSyncTarget(syncEvent, ['workspace_members'])) load();
+  }, [visible, syncEvent, load]);
 
   const submitInvite = async () => {
     const workspaceId = workspace?.currentWorkspaceId;
@@ -322,7 +327,11 @@ export default function WorkspaceMembersScreen({ visible, onClose }) {
 
 function makeStyles(colors) {
   return StyleSheet.create({
-    root: { flex: 1, backgroundColor: colors.background },
+    root: {
+      flex: 1,
+      backgroundColor: colors.background,
+      paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0,
+    },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -401,4 +410,9 @@ function makeStyles(colors) {
     inviteEmail: { flex: 1, color: colors.text, fontFamily: 'Poppins_500Medium', fontSize: 12.5 },
     revokeText: { color: colors.danger, fontFamily: 'Poppins_600SemiBold', fontSize: 12 },
   });
+}
+
+function hasSyncTarget(syncEvent, targets) {
+  const currentTargets = Array.isArray(syncEvent?.targets) ? syncEvent.targets : [];
+  return targets.some((target) => currentTargets.includes(target));
 }
