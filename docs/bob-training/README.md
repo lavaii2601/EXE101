@@ -8,6 +8,10 @@ In addition, `services/bob_training_cases.py` generates exactly 750 labelled
 phrases for every executable tool intent (currently 12 intents / 9,000 cases).
 Unlike the passive RAG documents, this corpus trains Bob's built-in offline
 classifier and is also imported in compact 50-case batches during deployment.
+Those labelled batches remain searchable in training/admin flows, but runtime
+chat deliberately excludes their `bob-intent-500-v1` source from answer RAG:
+intent examples select actions and must never be treated as factual evidence
+or override the meaning of the user's current turn.
 The 750 phrases per intent are deterministic combinations of reviewed semantic
 cores, prefixes, and suffixes; they should not be interpreted as 750 unrelated
 human conversations. The cores now include Vietnamese, English, and real

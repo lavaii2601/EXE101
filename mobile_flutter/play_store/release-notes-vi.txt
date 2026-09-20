@@ -1,0 +1,6 @@
+Phiên bản đầu tiên của FlowMate AI trên Android.
+
+- Quản lý email, lịch, checklist và công việc trong một ứng dụng.
+- Trợ lý Bob hỗ trợ nghiên cứu, tóm tắt và lập kế hoạch.
+- Đồng bộ dữ liệu với phiên bản web.
+- Hỗ trợ xóa tài khoản và dữ liệu cá nhân ngay trong ứng dụng.

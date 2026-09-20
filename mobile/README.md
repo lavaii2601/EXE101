@@ -88,7 +88,7 @@ npx eas-cli build --platform android --profile production
 Mac dinh mobile dung backend FlowMate:
 
 ```text
-https://flowmate.pro/api
+https://www.flowmate.pro/api
 ```
 
 Khi can test backend local, dat `EXPO_PUBLIC_API_BASE_URL` truoc khi chay Expo:
@@ -154,8 +154,8 @@ build được đưa lên GitHub, còn APK local dùng để cài thử trực t
 APK trỏ người dùng đến chính sách bảo mật và điều khoản public của bản Railway:
 
 ```text
-https://flowmate.pro/privacy
-https://flowmate.pro/terms
+https://www.flowmate.pro/privacy
+https://www.flowmate.pro/terms
 ```
 
 Các URL này dùng cho Google OAuth consent screen, Play Console privacy policy

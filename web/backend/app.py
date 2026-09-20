@@ -55,7 +55,12 @@ from routes.sharing import sharing_bp
 from routes.workspace_knowledge import workspace_knowledge_bp
 from routes.notifications import notifications_bp
 from routes.payments import payments_bp
-from utils.security import authenticated_user_id, enforce_rate_limit, valid_request_origin
+from utils.security import (
+    active_authenticated_user_id,
+    authenticated_user_id,
+    enforce_rate_limit,
+    valid_request_origin,
+)
 
 # Keep application diagnostics without logging OAuth request/response tokens.
 logging.basicConfig(level=logging.INFO)
@@ -148,7 +153,7 @@ def make_session_permanent():
         and not request.path.startswith('/api/payments/sepay/start/')
         and not request.path.startswith('/api/payments/sepay/result/')
         and not request.path.startswith('/api/admin/')
-        and not authenticated_user_id()
+        and not active_authenticated_user_id()
     ):
         return jsonify({'error': 'not_authenticated', 'auth_scope': 'app'}), 401
 
@@ -173,7 +178,7 @@ def add_security_headers(response):
                 payload['auth_scope'] = 'admin'
             else:
                 payload['auth_scope'] = (
-                    'google' if authenticated_user_id() else 'app'
+                    'google' if active_authenticated_user_id() else 'app'
                 )
             response.set_data(app.json.dumps(payload))
             response.content_type = 'application/json'
@@ -263,6 +268,14 @@ def serve_privacy_policy():
 def serve_terms_of_service():
     """Public terms of service for Railway, Google OAuth, and Android APK."""
     response = send_from_directory('../frontend', 'terms.html')
+    response.headers['Cache-Control'] = 'public, max-age=3600'
+    return response
+
+
+@app.route('/account-deletion')
+def serve_account_deletion():
+    """Public account-deletion instructions required by Google Play."""
+    response = send_from_directory('../frontend', 'account-deletion.html')
     response.headers['Cache-Control'] = 'public, max-age=3600'
     return response
 

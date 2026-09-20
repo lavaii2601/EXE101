@@ -9,6 +9,7 @@ from models.user import User
 from models import subscription as subscription_model
 from models import entitlements
 from models.ai_usage import get_usage_snapshot
+from services.account_deletion_service import AccountDeletionError, delete_account
 from utils.user_context import get_current_user_id
 
 user_bp = Blueprint('user', __name__, url_prefix='/api/user')
@@ -206,4 +207,40 @@ def get_gmail_info():
         'gmail_name': user.get('gmail_name'),
         'gmail_picture': user.get('gmail_picture'),
         'gmail_connected_at': user.get('gmail_connected_at')
+    })
+
+
+@user_bp.route('/account/delete', methods=['POST'])
+def delete_current_account():
+    """Permanently delete the signed-in account and its personal data."""
+    user_id = get_current_user_id(request)
+    if not user_id or user_id == 'default':
+        return jsonify({
+            'success': False,
+            'error': 'not_authenticated',
+            'auth_scope': 'app',
+        }), 401
+
+    data = request.get_json(silent=True) or {}
+    if data.get('confirmation') != 'DELETE':
+        return jsonify({
+            'success': False,
+            'error': 'account_deletion_confirmation_required',
+            'message': 'Type DELETE to confirm permanent account deletion.',
+        }), 400
+
+    try:
+        result = delete_account(user_id)
+    except AccountDeletionError as exc:
+        return jsonify({
+            'success': False,
+            'error': 'account_deletion_failed',
+            'message': str(exc),
+        }), 409
+
+    session.clear()
+    return jsonify({
+        'success': True,
+        'message': 'Account and personal data permanently deleted.',
+        **result,
     })

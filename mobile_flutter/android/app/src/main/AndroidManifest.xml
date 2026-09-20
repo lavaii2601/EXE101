@@ -1,8 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required by release builds for every FlowMate API request. Debug and
+         profile manifests declare this for tooling, but they are not merged
+         into a release APK. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="flowmate_ai"
+        android:label="FlowMate AI"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -32,7 +41,15 @@
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="flowmateai"/>
+                <data android:scheme="flowmateai" android:host="oauth-callback"/>
+            </intent-filter>
+            <!-- Direct/internal builds can return from the external SEPay app.
+                 The Play build never exposes that checkout entry point. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="flowmateai" android:host="payment-result"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

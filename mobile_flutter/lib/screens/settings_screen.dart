@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../api/client.dart';
+import '../api/config.dart';
 import '../api/google_auth.dart';
 import '../config/user_modes.dart';
 import '../state/app_state.dart';
@@ -28,6 +29,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   bool connectingGmail = false;
   bool startingPayment = false;
   bool waitingForPaymentReturn = false;
+  bool deletingAccount = false;
 
   @override
   void initState() {
@@ -146,6 +148,62 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
         ],
       ),
     );
+  }
+
+  Future<void> _confirmDeleteAccount() async {
+    final t = context.read<LanguageController>().t;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(t('Xóa tài khoản FlowMate?', 'Delete your FlowMate account?')),
+        content: Text(t(
+          'Thao tác này xóa vĩnh viễn hồ sơ, lịch, chat, dữ liệu cá nhân, kết nối Google và gói cá nhân. '
+              'Workspace doanh nghiệp chỉ có bạn sẽ bị xóa; workspace còn thành viên sẽ được chuyển cho một thành viên đang hoạt động. Không thể hoàn tác.',
+          'This permanently deletes your profile, schedules, chats, personal data, Google connection, and personal plan. '
+              'Business workspaces with no other member are deleted; workspaces with active members are transferred to one of them. This cannot be undone.',
+        )),
+        actions: [
+          TextButton(
+            onPressed: () => launchUrl(
+              Uri.parse(kAccountDeletionUrl),
+              mode: LaunchMode.externalApplication,
+            ),
+            child: Text(t('Xem chính sách', 'View policy')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(t('Hủy', 'Cancel')),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(t('Xóa vĩnh viễn', 'Delete permanently')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final appState = context.read<AppState>();
+    setState(() => deletingAccount = true);
+    try {
+      await apiPost('/user/account/delete', const {'confirmation': 'DELETE'});
+      await appState.logout();
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${t('Không thể xóa tài khoản', 'Could not delete account')}: ${error.message}'),
+        ));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${t('Không thể xóa tài khoản', 'Could not delete account')}: $error'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => deletingAccount = false);
+    }
   }
 
   Future<void> _connectGmail() async {
@@ -295,12 +353,18 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   iconColor: const Color(0xFFD97706),
                   title: isPremium
                       ? t('FlowMate Premium', 'FlowMate Premium')
-                      : t('Nâng cấp Premium', 'Upgrade to Premium'),
-                  subtitle: isPremium
-                      ? t('Còn $remainingDays ngày · Chạm để gia hạn', '$remainingDays days left · Tap to renew')
-                      : t('Từ 49.000đ/tháng · Thanh toán qua SEPay', 'From 49,000 VND/month · Pay with SEPay'),
-                  onTap: startingPayment ? null : _showPremiumPlans,
-                  trailing: startingPayment
+                      : (kExternalPaymentsEnabled
+                          ? t('Nâng cấp Premium', 'Upgrade to Premium')
+                          : t('FlowMate Premium', 'FlowMate Premium')),
+                  subtitle: kExternalPaymentsEnabled
+                      ? (isPremium
+                          ? t('Còn $remainingDays ngày · Chạm để gia hạn', '$remainingDays days left · Tap to renew')
+                          : t('Từ 49.000đ/tháng · Thanh toán qua SEPay', 'From 49,000 VND/month · Pay with SEPay'))
+                      : (isPremium
+                          ? t('Còn $remainingDays ngày', '$remainingDays days remaining')
+                          : t('Không bán gói số trong bản Google Play.', 'Digital plans are not sold in the Google Play edition.')),
+                  onTap: kExternalPaymentsEnabled && !startingPayment ? _showPremiumPlans : null,
+                  trailing: kExternalPaymentsEnabled && startingPayment
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                       : null,
                 ),
@@ -413,6 +477,13 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                 AppButton(title: t('Làm mới trạng thái', 'Refresh status'), variant: AppButtonVariant.secondary, onPressed: appState.refreshShell),
                 const SizedBox(height: 10),
                 AppButton(title: t('Đăng xuất', 'Sign out'), variant: AppButtonVariant.danger, onPressed: () => _confirmLogout(context)),
+                const SizedBox(height: 10),
+                AppButton(
+                  title: t('Xóa tài khoản vĩnh viễn', 'Delete account permanently'),
+                  variant: AppButtonVariant.danger,
+                  onPressed: _confirmDeleteAccount,
+                  loading: deletingAccount,
+                ),
               ],
             ),
           ],

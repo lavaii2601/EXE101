@@ -54,10 +54,13 @@ class WebResearchService:
     )
 
     _EXPLICIT_WEB_TERMS = (
+        'tim kiem tren internet', 'tim tren internet', 'tra cuu internet',
+        'kiem tren internet', 'search the web', 'browse the web',
         'internet', 'tren mang', 'len mang', 'web', 'website', 'google',
         'tim tren mang', 'tim kiem tren mang', 'tim kiem web', 'tra cuu web',
         'search web', 'web search', 'browse', 'research online', 'online',
-        'nguon tren mang', 'link tham khao', 'nguon tham khao',
+        'nguon tren mang', 'nguon public', 'public sources',
+        'link tham khao', 'nguon tham khao',
     )
     _CURRENT_INFO_TERMS = (
         'moi nhat', 'gan day', 'cap nhat', 'hien nay', 'bay gio', 'hom nay',
@@ -225,6 +228,26 @@ class WebResearchService:
             return {'query': query, 'results': [], 'context': ''}
 
         results = self._rank_results(results, query, research_type)
+        results = [result for result in results if self._is_relevant_result(query, result)]
+        if not results:
+            try:
+                results = self._rank_results(
+                    self._instant_answer_fallback(query), query, research_type
+                )
+                results = [
+                    result for result in results
+                    if self._is_relevant_result(query, result)
+                ]
+            except Exception:
+                logger.info(
+                    "Relevant-result fallback failed for query: %s",
+                    query,
+                    exc_info=True,
+                )
+                results = []
+        if not results:
+            return {'query': query, 'research_type': research_type, 'results': [], 'context': ''}
+
         max_results = max(1, min(int(getattr(Config, 'WEB_RESEARCH_MAX_RESULTS', 3)), 5))
         max_fetch_pages = max(0, min(int(getattr(Config, 'WEB_RESEARCH_FETCH_PAGES', 2)), max_results))
 
@@ -303,20 +326,64 @@ class WebResearchService:
             output.append(enriched)
         return output
 
+    @staticmethod
+    def _is_relevant_result(query, result):
+        """Reject search-engine noise before it reaches Bob's prompt.
+
+        Search HTML endpoints occasionally return dictionary/navigation pages
+        based on one short token. Require at least two meaningful shared terms
+        for a longer query, while still allowing one-term and two-term lookups.
+        """
+        noise_terms = {
+            'about', 'cho', 'con', 'for', 'gi', 'what', 'when', 'where',
+            'which', 'who', 'why', 'with', 'the',
+        }
+
+        def tokens(value):
+            return {
+                token for token in re.findall(r'[a-z0-9]+', _normalize_text(value))
+                if len(token) >= 2 and token not in noise_terms
+            }
+
+        query_tokens = tokens(query)
+        if not query_tokens:
+            return False
+        result_tokens = tokens(
+            f"{result.get('title') or ''} {result.get('snippet') or ''} {result.get('url') or ''}"
+        )
+        required_overlap = 1 if len(query_tokens) <= 2 else 2
+        return len(query_tokens & result_tokens) >= required_overlap
+
     def _build_query(self, message):
-        text = _normalize_text(message)
+        # Preserve the user's original spelling/diacritics in the outbound
+        # query. Accent-stripping is useful for intent matching, but it can
+        # seriously damage Vietnamese search relevance (for example, "con"
+        # is interpreted as an English word instead of part of "con khủng
+        # long"). Normalized text is used only to locate instruction phrases;
+        # the corresponding characters are blanked in the original string.
+        text = str(message or '')
         removable_phrases = sorted(
             self._EXPLICIT_WEB_TERMS + self._SEARCH_COMMAND_TERMS,
             key=len,
             reverse=True,
         )
         for phrase in removable_phrases:
-            text = text.replace(phrase, ' ')
+            while True:
+                normalized_text = _normalize_text(text)
+                match = re.search(rf'\b{re.escape(phrase)}\b', normalized_text)
+                if not match:
+                    break
+                text = text[:match.start()] + (' ' * (match.end() - match.start())) + text[match.end():]
         text = re.sub(r'[\w.+-]+@[\w.-]+\.\w+', ' ', text)
         text = re.sub(r'\b(?:\+?\d[\d\s().-]{7,}\d)\b', ' ', text)
         text = re.sub(r'\s+', ' ', text).strip(' ?!.,;:')
+        # Removing an instruction such as "search the web" can leave its
+        # connector at the front ("for dinosaur colours" / "ve khung long").
+        # Drop only one leading connector; a meaningful subject such as
+        # "for loops" remains intact in "search the web for for loops".
+        text = re.sub(r'^(?:for|v[eề]|about)\s+', '', text, flags=re.IGNORECASE).strip()
         if len(text) < 3:
-            text = _normalize_text(message).strip(' ?!.,;:')
+            text = str(message or '').strip(' ?!.,;:')
         return text[:180]
 
     def _search_duckduckgo(self, query):

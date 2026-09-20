@@ -145,6 +145,27 @@ def mutation_domains_for_response(response):
         domains.add("knowledge")
     elif path.startswith("/api/_background/"):
         domains.update(("schedule", "calendar", "overview"))
+    elif path == "/api/projects" or path.startswith("/api/projects/"):
+        domains.add("work_hub")
+    elif path == "/api/tasks" or path.startswith("/api/tasks/"):
+        domains.add("work_hub")
+    elif path == "/api/status-reports" or path.startswith("/api/status-reports/"):
+        domains.add("status_reports")
+    elif path == "/api/workspace-knowledge" or path.startswith("/api/workspace-knowledge/"):
+        domains.add("workspace_knowledge")
+    elif path.startswith("/api/workspaces/") and "/shared-artifacts" in path:
+        domains.add("sharing")
+    elif path == "/api/workspaces" or path.startswith("/api/workspaces/"):
+        # Covers workspace create/rename, member disable/role, invitations,
+        # and seat-request approve/reject -- everything else this route
+        # group can mutate. Only reached for POST/PUT/PATCH/DELETE (see the
+        # _MUTATION_METHODS guard above), so the shared-artifacts branch
+        # above -- checked first since it's also under /api/workspaces/ --
+        # already carved out the one sub-path that belongs to "sharing"
+        # instead.
+        domains.add("workspace_members")
+    elif path.startswith("/api/workspace-invitations/"):
+        domains.add("workspace_members")
 
     return _ordered_domains(domains)
 

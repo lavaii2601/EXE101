@@ -97,6 +97,30 @@ class KnowledgeWorkspaceIsolationTests(unittest.TestCase):
         self.assertEqual("global", scopes.get("Global doc"))
         self.assertEqual("business", scopes.get("Biz doc"))
 
+    def test_answer_search_can_exclude_labelled_intent_training_documents(self):
+        self.service.add_document(
+            "Bob intent 750 - email.latest_summary - phan 15",
+            "khung long mau gi intent email.latest_summary",
+            tags="bob,training,intent,email.latest_summary,750-cases",
+            source="bob-intent-500-v1",
+        )
+        self.service.add_document(
+            "Dinosaur colours",
+            "Bang chung hoa thach giup nghien cuu mau cua khung long",
+            source="manual",
+        )
+
+        results = self.service.search(
+            "khung long mau gi",
+            top_k=10,
+            min_score=0.0,
+            user_id="alice",
+            excluded_sources={"bob-intent-500-v1"},
+        )
+        titles = {result["title"] for result in results}
+        self.assertIn("Dinosaur colours", titles)
+        self.assertNotIn("Bob intent 750 - email.latest_summary - phan 15", titles)
+
     def test_list_for_workspace_returns_only_that_workspaces_docs(self):
         self.service.add_document("A doc", "content", workspace_id=WORKSPACE_A, created_by_user_id="owner-a")
         self.service.add_document("B doc", "content", workspace_id=WORKSPACE_B, created_by_user_id="owner-b")

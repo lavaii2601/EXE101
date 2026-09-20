@@ -29,7 +29,7 @@ thiết bị thật đang kết nối).
 Mặc định app trỏ thẳng tới backend FlowMate đã deploy trên Railway:
 
 ```text
-https://flowmate.pro/api
+https://www.flowmate.pro/api
 ```
 
 Giá trị này được hardcode trong `lib/api/config.dart` (`kApiBase`) — **khác
@@ -66,10 +66,28 @@ APK được tạo tại:
 mobile_flutter/build/app/outputs/flutter-apk/app-release.apk
 ```
 
-Bản release local hiện dùng debug keystore mặc định của Flutter, chỉ phù hợp
-cài thử nghiệm/nội bộ — chia sẻ file `.apk` này cho người khác là đủ để họ
-cài và dùng thử, không cần họ cài Flutter SDK. Muốn phát hành Play Store cần
-cấu hình production keystore riêng, không dùng debug keystore.
+Bản release không còn dùng debug keystore. Trước khi build release, sao chép
+`android/key.properties.example` thành `android/key.properties`, điền upload
+keystore riêng và giữ cả hai ngoài Git. Hướng dẫn cùng checklist phát hành nằm
+trong `play_store/README.md` và `play_store/release-checklist.md`.
+
+Google Play dùng Android App Bundle thay vì APK:
+
+```powershell
+cd mobile_flutter
+flutter build appbundle --release
+```
+
+File tạo ra: `build/app/outputs/bundle/release/app-release.aab`.
+
+Package ID chính thức của bản Flutter là `pro.flowmate.app`. Bản Play mặc định
+không mở checkout SEPay cho gói số. Chỉ bản APK phân phối trực tiếp/nội bộ mới
+được bật lại bằng `--dart-define=ENABLE_EXTERNAL_PAYMENTS=true`.
+
+Bản Android chặn cleartext HTTP và sao lưu dữ liệu ứng dụng của hệ điều hành.
+Poppins được đóng gói offline, startup luôn có nhận diện FlowMate trong lúc
+Secure Storage khởi tạo, và callback Google OAuth được khôi phục khi Android
+cold-start ứng dụng.
 
 ## iOS
 
@@ -87,6 +105,6 @@ lịch/checklist.
 ## Chính sách bảo mật và điều khoản
 
 ```text
-https://flowmate.pro/privacy
-https://flowmate.pro/terms
+https://www.flowmate.pro/privacy
+https://www.flowmate.pro/terms
 ```

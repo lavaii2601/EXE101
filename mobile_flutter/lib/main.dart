@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'api/nav_key.dart';
+import 'api/google_auth.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_shell.dart';
@@ -32,6 +36,7 @@ class FlowMateApp extends StatelessWidget {
       child: Consumer<ThemeController>(
         builder: (context, theme, _) {
           return MaterialApp(
+            navigatorKey: navigatorKey,
             title: 'FlowMate AI',
             debugShowCheckedModeBanner: false,
             theme: buildAppTheme(theme.colors),
@@ -52,11 +57,35 @@ class _RootFlow extends StatefulWidget {
 
 class _RootFlowState extends State<_RootFlow> with WidgetsBindingObserver {
   bool showWelcome = true;
+  bool _initialLinkChecked = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialLinkChecked) return;
+    _initialLinkChecked = true;
+    unawaited(_restoreGoogleSessionFromInitialLink());
+  }
+
+  Future<void> _restoreGoogleSessionFromInitialLink() async {
+    try {
+      final appState = context.read<AppState>();
+      final initialLink = await context.read<AppLinks>().getInitialLink();
+      if (initialLink == null || !isGoogleAuthCallback(initialLink)) return;
+      // Secure-storage bootstrap may still be reading the old session. Wait
+      // before persisting the callback so it cannot overwrite the new token.
+      await appState.bootstrapCompleted;
+      if (!await consumeGoogleAuthCallback(initialLink) || !mounted) return;
+      await appState.onLoggedIn();
+    } catch (_) {
+      // A malformed/stale link must never stop the normal login screen.
+    }
   }
 
   @override
@@ -70,7 +99,9 @@ class _RootFlowState extends State<_RootFlow> with WidgetsBindingObserver {
     // Pause cross-device sync polling while backgrounded and immediately
     // re-check on foreground, instead of waking up to a stale delayed
     // timer -- mirrors mobile/App.js's AppState.addEventListener('change').
-    context.read<AppState>().setSyncForeground(state == AppLifecycleState.resumed);
+    context
+        .read<AppState>()
+        .setSyncForeground(state == AppLifecycleState.resumed);
   }
 
   @override
@@ -88,7 +119,41 @@ class _RootFlowState extends State<_RootFlow> with WidgetsBindingObserver {
     }
 
     if (appState.isAuthenticated == null) {
-      return Scaffold(backgroundColor: colors.background, body: const SizedBox.shrink());
+      return Scaffold(
+        backgroundColor: colors.background,
+        body: SafeArea(
+          child: Center(
+            child: Semantics(
+              label: 'FlowMate AI is starting',
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset('assets/images/logo.png',
+                      width: 112, height: 112),
+                  const SizedBox(height: 18),
+                  Text(
+                    'FlowMate AI',
+                    style: TextStyle(
+                      color: colors.text,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: colors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
     }
 
     if (appState.isAuthenticated == false) {

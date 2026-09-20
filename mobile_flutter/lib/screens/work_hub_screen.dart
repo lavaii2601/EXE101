@@ -2,14 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/client.dart';
 import '../config/app_icons.dart';
+import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
 import '../state/workspace_controller.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 
-const List<String> _kProjectStatuses = ['planning', 'active', 'on_hold', 'completed', 'archived'];
-const List<String> _kTaskStatusCycle = ['todo', 'in_progress', 'blocked', 'done'];
+const List<String> _kProjectStatuses = [
+  'planning',
+  'active',
+  'on_hold',
+  'completed',
+  'archived'
+];
+const List<String> _kTaskStatusCycle = [
+  'todo',
+  'in_progress',
+  'blocked',
+  'done'
+];
 const List<String> _kTaskPriorities = ['low', 'medium', 'high', 'urgent'];
 
 String _statusLabel(String value, String Function(String, [String?]) t) {
@@ -65,6 +77,9 @@ class _WorkHubScreenState extends State<WorkHubScreen> {
   DateTime? taskDueDate;
   bool creatingTask = false;
 
+  AppState? _appState;
+  int _lastHandledSyncRevision = 0;
+
   @override
   void initState() {
     super.initState();
@@ -72,7 +87,34 @@ class _WorkHubScreenState extends State<WorkHubScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Cross-device sync: another device/the web app changed a project or
+    // task while this screen was open -- see schedule_screen.dart for the
+    // same pattern.
+    final appState = context.read<AppState>();
+    if (_appState != appState) {
+      _appState?.removeListener(_handleWorkspaceSync);
+      _appState = appState;
+      _lastHandledSyncRevision = appState.syncRevision;
+      appState.addListener(_handleWorkspaceSync);
+    }
+  }
+
+  void _handleWorkspaceSync() {
+    final appState = _appState;
+    if (appState == null || appState.syncRevision == _lastHandledSyncRevision) {
+      return;
+    }
+    _lastHandledSyncRevision = appState.syncRevision;
+    if (appState.lastSyncTargets.contains('work_hub')) {
+      _load();
+    }
+  }
+
+  @override
   void dispose() {
+    _appState?.removeListener(_handleWorkspaceSync);
     projectNameController.dispose();
     projectDescriptionController.dispose();
     taskTitleController.dispose();
@@ -85,12 +127,14 @@ class _WorkHubScreenState extends State<WorkHubScreen> {
       final data = await apiGet('/projects');
       if (data is Map && data['success'] == true) {
         projects = List<Map<String, dynamic>>.from(
-          ((data['projects'] as List?) ?? []).map((p) => Map<String, dynamic>.from(p as Map)),
+          ((data['projects'] as List?) ?? [])
+              .map((p) => Map<String, dynamic>.from(p as Map)),
         );
       }
     } catch (_) {}
     if (mounted) setState(() => loading = false);
-    if (selectedProjectId != null && projects.any((p) => p['id'] == selectedProjectId)) {
+    if (selectedProjectId != null &&
+        projects.any((p) => p['id'] == selectedProjectId)) {
       await _loadTasks(selectedProjectId!);
     } else if (selectedProjectId != null && mounted) {
       // The previously selected project no longer exists (deleted elsewhere) --
@@ -111,7 +155,8 @@ class _WorkHubScreenState extends State<WorkHubScreen> {
       final data = await apiGet('/tasks?project_id=$projectId');
       if (data is Map && data['success'] == true) {
         tasks = List<Map<String, dynamic>>.from(
-          ((data['tasks'] as List?) ?? []).map((t) => Map<String, dynamic>.from(t as Map)),
+          ((data['tasks'] as List?) ?? [])
+              .map((t) => Map<String, dynamic>.from(t as Map)),
         );
       }
     } catch (_) {}
@@ -145,7 +190,9 @@ class _WorkHubScreenState extends State<WorkHubScreen> {
       if (mounted) {
         final t = context.read<LanguageController>().t;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t('Không tạo được dự án', 'Could not create project'))),
+          SnackBar(
+              content:
+                  Text(t('Không tạo được dự án', 'Could not create project'))),
         );
       }
     } finally {
@@ -164,8 +211,12 @@ class _WorkHubScreenState extends State<WorkHubScreen> {
           'All of its tasks will be deleted too.',
         )),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('Hủy', 'Cancel'))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('Xoá', 'Delete'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(t('Hủy', 'Cancel'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t('Xoá', 'Delete'))),
         ],
       ),
     );
@@ -180,7 +231,9 @@ class _WorkHubScreenState extends State<WorkHubScreen> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t('Không xoá được dự án', 'Could not delete project'))),
+          SnackBar(
+              content:
+                  Text(t('Không xoá được dự án', 'Could not delete project'))),
         );
       }
     }
@@ -208,7 +261,9 @@ class _WorkHubScreenState extends State<WorkHubScreen> {
       if (mounted) {
         final t = context.read<LanguageController>().t;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t('Không tạo được nhiệm vụ', 'Could not create task'))),
+          SnackBar(
+              content:
+                  Text(t('Không tạo được nhiệm vụ', 'Could not create task'))),
         );
       }
     } finally {
@@ -218,10 +273,12 @@ class _WorkHubScreenState extends State<WorkHubScreen> {
 
   Future<void> _cycleTaskStatus(Map<String, dynamic> task) async {
     final current = task['status'] as String? ?? 'todo';
-    final nextIndex = (_kTaskStatusCycle.indexOf(current) + 1) % _kTaskStatusCycle.length;
+    final nextIndex =
+        (_kTaskStatusCycle.indexOf(current) + 1) % _kTaskStatusCycle.length;
     final nextStatus = _kTaskStatusCycle[nextIndex];
     try {
-      final data = await apiPatch('/tasks/${task['id']}', {'status': nextStatus});
+      final data =
+          await apiPatch('/tasks/${task['id']}', {'status': nextStatus});
       if (data is Map && data['success'] == true) {
         setState(() => task['status'] = (data['task'] as Map)['status']);
       }
@@ -270,9 +327,15 @@ class _WorkHubScreenState extends State<WorkHubScreen> {
               padding: const EdgeInsets.fromLTRB(4, 6, 20, 6),
               child: Row(
                 children: [
-                  IconButton(icon: Icon(AppIcons.emailBack, color: colors.text), onPressed: () => Navigator.pop(context)),
+                  IconButton(
+                      icon: Icon(AppIcons.emailBack, color: colors.text),
+                      onPressed: () => Navigator.pop(context)),
                   Expanded(
-                    child: Text(t('Công việc', 'Work Hub'), style: TextStyle(color: colors.text, fontWeight: FontWeight.w700, fontSize: 17)),
+                    child: Text(t('Công việc', 'Work Hub'),
+                        style: TextStyle(
+                            color: colors.text,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 17)),
                   ),
                 ],
               ),
@@ -284,37 +347,70 @@ class _WorkHubScreenState extends State<WorkHubScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                   children: [
                     if (loading)
-                      const Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator()))
+                      const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 40),
+                          child: Center(child: CircularProgressIndicator()))
                     else ...[
                       if (canManage) ...[
                         AppCard(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(t('DỰ ÁN MỚI', 'NEW PROJECT'), style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1)),
+                              Text(t('DỰ ÁN MỚI', 'NEW PROJECT'),
+                                  style: TextStyle(
+                                      color: colors.primary,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 10,
+                                      letterSpacing: 1)),
                               const SizedBox(height: 10),
-                              AppField(label: t('Tên dự án', 'Project name'), controller: projectNameController),
-                              AppField(label: t('Mô tả', 'Description'), controller: projectDescriptionController, multiline: true),
+                              AppField(
+                                  label: t('Tên dự án', 'Project name'),
+                                  controller: projectNameController),
+                              AppField(
+                                  label: t('Mô tả', 'Description'),
+                                  controller: projectDescriptionController,
+                                  multiline: true),
                               Row(
                                 children: [
                                   Expanded(
                                     child: DropdownButtonFormField<String>(
-                                      value: projectStatus,
+                                      initialValue: projectStatus,
                                       items: _kProjectStatuses
-                                          .map((s) => DropdownMenuItem(value: s, child: Text(_statusLabel(s, t), style: TextStyle(color: colors.text, fontSize: 12.5))))
+                                          .map((s) => DropdownMenuItem(
+                                              value: s,
+                                              child: Text(_statusLabel(s, t),
+                                                  style: TextStyle(
+                                                      color: colors.text,
+                                                      fontSize: 12.5))))
                                           .toList(),
-                                      onChanged: (v) => setState(() => projectStatus = v ?? projectStatus),
+                                      onChanged: (v) => setState(() =>
+                                          projectStatus = v ?? projectStatus),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: DropdownButtonFormField<String>(
-                                      value: projectVisibility,
+                                      initialValue: projectVisibility,
                                       items: [
-                                        DropdownMenuItem(value: 'workspace', child: Text(t('Cả không gian', 'Whole workspace'), style: TextStyle(color: colors.text, fontSize: 12.5))),
-                                        DropdownMenuItem(value: 'private', child: Text(t('Riêng tư', 'Private'), style: TextStyle(color: colors.text, fontSize: 12.5))),
+                                        DropdownMenuItem(
+                                            value: 'workspace',
+                                            child: Text(
+                                                t('Cả không gian',
+                                                    'Whole workspace'),
+                                                style: TextStyle(
+                                                    color: colors.text,
+                                                    fontSize: 12.5))),
+                                        DropdownMenuItem(
+                                            value: 'private',
+                                            child: Text(
+                                                t('Riêng tư', 'Private'),
+                                                style: TextStyle(
+                                                    color: colors.text,
+                                                    fontSize: 12.5))),
                                       ],
-                                      onChanged: (v) => setState(() => projectVisibility = v ?? projectVisibility),
+                                      onChanged: (v) => setState(() =>
+                                          projectVisibility =
+                                              v ?? projectVisibility),
                                     ),
                                   ),
                                 ],
@@ -325,26 +421,45 @@ class _WorkHubScreenState extends State<WorkHubScreen> {
                                   Expanded(
                                     child: OutlinedButton(
                                       onPressed: () async {
-                                        final picked = await _pickDate(projectStartDate);
-                                        if (picked != null) setState(() => projectStartDate = picked);
+                                        final picked =
+                                            await _pickDate(projectStartDate);
+                                        if (picked != null) {
+                                          setState(
+                                              () => projectStartDate = picked);
+                                        }
                                       },
-                                      child: Text(projectStartDate == null ? t('Ngày bắt đầu', 'Start date') : _isoDate(projectStartDate!), style: const TextStyle(fontSize: 12)),
+                                      child: Text(
+                                          projectStartDate == null
+                                              ? t('Ngày bắt đầu', 'Start date')
+                                              : _isoDate(projectStartDate!),
+                                          style: const TextStyle(fontSize: 12)),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: OutlinedButton(
                                       onPressed: () async {
-                                        final picked = await _pickDate(projectDueDate);
-                                        if (picked != null) setState(() => projectDueDate = picked);
+                                        final picked =
+                                            await _pickDate(projectDueDate);
+                                        if (picked != null) {
+                                          setState(
+                                              () => projectDueDate = picked);
+                                        }
                                       },
-                                      child: Text(projectDueDate == null ? t('Hạn chót', 'Due date') : _isoDate(projectDueDate!), style: const TextStyle(fontSize: 12)),
+                                      child: Text(
+                                          projectDueDate == null
+                                              ? t('Hạn chót', 'Due date')
+                                              : _isoDate(projectDueDate!),
+                                          style: const TextStyle(fontSize: 12)),
                                     ),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 12),
-                              AppButton(title: t('Tạo dự án', 'Create project'), onPressed: _createProject, loading: creatingProject),
+                              AppButton(
+                                  title: t('Tạo dự án', 'Create project'),
+                                  onPressed: _createProject,
+                                  loading: creatingProject),
                             ],
                           ),
                         ),
@@ -354,46 +469,97 @@ class _WorkHubScreenState extends State<WorkHubScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(t('DỰ ÁN', 'PROJECTS'), style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1)),
+                            Text(t('DỰ ÁN', 'PROJECTS'),
+                                style: TextStyle(
+                                    color: colors.primary,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 10,
+                                    letterSpacing: 1)),
                             const SizedBox(height: 10),
                             if (projects.isEmpty)
-                              Text(t('Chưa có dự án nào.', 'No projects yet.'), style: TextStyle(color: colors.textMuted, fontSize: 13)),
+                              Text(t('Chưa có dự án nào.', 'No projects yet.'),
+                                  style: TextStyle(
+                                      color: colors.textMuted, fontSize: 13)),
                             ...projects.map((project) {
-                              final isActive = project['id'] == selectedProjectId;
+                              final isActive =
+                                  project['id'] == selectedProjectId;
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
                                 child: InkWell(
-                                  onTap: () => _loadTasks(project['id'] as String),
+                                  onTap: () =>
+                                      _loadTasks(project['id'] as String),
                                   child: Container(
                                     padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
-                                      color: isActive ? colors.primarySoft : colors.panelSoft,
+                                      color: isActive
+                                          ? colors.primarySoft
+                                          : colors.panelSoft,
                                       borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: isActive ? colors.primary : colors.border),
+                                      border: Border.all(
+                                          color: isActive
+                                              ? colors.primary
+                                              : colors.border),
                                     ),
                                     child: Row(
                                       children: [
                                         Expanded(
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
-                                              Text(project['name'] as String? ?? '', style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 13)),
                                               Text(
-                                                project['due_date'] != null ? '${t('Hạn', 'Due')} ${project['due_date']}' : t('Không có hạn', 'No due date'),
-                                                style: TextStyle(color: colors.textMuted, fontSize: 11),
+                                                  project['name'] as String? ??
+                                                      '',
+                                                  style: TextStyle(
+                                                      color: colors.text,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      fontSize: 13)),
+                                              Text(
+                                                project['due_date'] != null
+                                                    ? '${t('Hạn', 'Due')} ${project['due_date']}'
+                                                    : t('Không có hạn',
+                                                        'No due date'),
+                                                style: TextStyle(
+                                                    color: colors.textMuted,
+                                                    fontSize: 11),
                                               ),
                                             ],
                                           ),
                                         ),
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                          decoration: BoxDecoration(color: _badgeColor(project['status'] as String? ?? '', colors).withValues(alpha: 0.14), borderRadius: BorderRadius.circular(999)),
-                                          child: Text(_statusLabel(project['status'] as String? ?? '', t), style: TextStyle(color: _badgeColor(project['status'] as String? ?? '', colors), fontWeight: FontWeight.w700, fontSize: 10)),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                              color: _badgeColor(
+                                                      project['status']
+                                                              as String? ??
+                                                          '',
+                                                      colors)
+                                                  .withValues(alpha: 0.14),
+                                              borderRadius:
+                                                  BorderRadius.circular(999)),
+                                          child: Text(
+                                              _statusLabel(
+                                                  project['status']
+                                                          as String? ??
+                                                      '',
+                                                  t),
+                                              style: TextStyle(
+                                                  color: _badgeColor(
+                                                      project['status']
+                                                              as String? ??
+                                                          '',
+                                                      colors),
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 10)),
                                         ),
                                         if (canManage)
                                           IconButton(
-                                            icon: Icon(Icons.delete_outline, size: 18, color: colors.danger),
-                                            onPressed: () => _deleteProject(project['id'] as String),
+                                            icon: Icon(Icons.delete_outline,
+                                                size: 18, color: colors.danger),
+                                            onPressed: () => _deleteProject(
+                                                project['id'] as String),
                                           ),
                                       ],
                                     ),
@@ -410,70 +576,147 @@ class _WorkHubScreenState extends State<WorkHubScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(t('NHIỆM VỤ', 'TASKS'), style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1)),
+                              Text(t('NHIỆM VỤ', 'TASKS'),
+                                  style: TextStyle(
+                                      color: colors.primary,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 10,
+                                      letterSpacing: 1)),
                               const SizedBox(height: 10),
-                              AppField(label: t('Tên nhiệm vụ', 'Task title'), controller: taskTitleController),
+                              AppField(
+                                  label: t('Tên nhiệm vụ', 'Task title'),
+                                  controller: taskTitleController),
                               Row(
                                 children: [
                                   Expanded(
                                     child: DropdownButtonFormField<String>(
-                                      value: taskPriority,
+                                      initialValue: taskPriority,
                                       items: _kTaskPriorities
-                                          .map((p) => DropdownMenuItem(value: p, child: Text(_statusLabel(p, t), style: TextStyle(color: colors.text, fontSize: 12.5))))
+                                          .map((p) => DropdownMenuItem(
+                                              value: p,
+                                              child: Text(_statusLabel(p, t),
+                                                  style: TextStyle(
+                                                      color: colors.text,
+                                                      fontSize: 12.5))))
                                           .toList(),
-                                      onChanged: (v) => setState(() => taskPriority = v ?? taskPriority),
+                                      onChanged: (v) => setState(() =>
+                                          taskPriority = v ?? taskPriority),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: OutlinedButton(
                                       onPressed: () async {
-                                        final picked = await _pickDate(taskDueDate);
-                                        if (picked != null) setState(() => taskDueDate = picked);
+                                        final picked =
+                                            await _pickDate(taskDueDate);
+                                        if (picked != null) {
+                                          setState(() => taskDueDate = picked);
+                                        }
                                       },
-                                      child: Text(taskDueDate == null ? t('Hạn chót', 'Due date') : _isoDate(taskDueDate!), style: const TextStyle(fontSize: 12)),
+                                      child: Text(
+                                          taskDueDate == null
+                                              ? t('Hạn chót', 'Due date')
+                                              : _isoDate(taskDueDate!),
+                                          style: const TextStyle(fontSize: 12)),
                                     ),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 10),
-                              AppButton(title: t('Thêm nhiệm vụ', 'Add task'), variant: AppButtonVariant.secondary, onPressed: _createTask, loading: creatingTask),
+                              AppButton(
+                                  title: t('Thêm nhiệm vụ', 'Add task'),
+                                  variant: AppButtonVariant.secondary,
+                                  onPressed: _createTask,
+                                  loading: creatingTask),
                               const SizedBox(height: 12),
                               if (loadingTasks)
                                 const Center(child: CircularProgressIndicator())
                               else if (tasks.isEmpty)
-                                Text(t('Chưa có nhiệm vụ nào.', 'No tasks yet.'), style: TextStyle(color: colors.textMuted, fontSize: 13))
+                                Text(
+                                    t('Chưa có nhiệm vụ nào.', 'No tasks yet.'),
+                                    style: TextStyle(
+                                        color: colors.textMuted, fontSize: 13))
                               else
                                 ...tasks.map((task) => Padding(
                                       padding: const EdgeInsets.only(bottom: 8),
                                       child: Container(
                                         padding: const EdgeInsets.all(10),
-                                        decoration: BoxDecoration(color: colors.panelSoft, borderRadius: BorderRadius.circular(12), border: Border.all(color: colors.border)),
+                                        decoration: BoxDecoration(
+                                            color: colors.panelSoft,
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            border: Border.all(
+                                                color: colors.border)),
                                         child: Row(
                                           children: [
                                             Expanded(
                                               child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
                                                 children: [
-                                                  Text(task['title'] as String? ?? '', style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 13)),
+                                                  Text(
+                                                      task['title']
+                                                              as String? ??
+                                                          '',
+                                                      style:
+                                                          TextStyle(
+                                                              color:
+                                                                  colors.text,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                              fontSize: 13)),
                                                   Text(
                                                     '${_statusLabel(task['priority'] as String? ?? '', t)}${task['due_date'] != null ? ' · ${task['due_date']}' : ''}',
-                                                    style: TextStyle(color: colors.textMuted, fontSize: 11),
+                                                    style: TextStyle(
+                                                        color: colors.textMuted,
+                                                        fontSize: 11),
                                                   ),
                                                 ],
                                               ),
                                             ),
                                             GestureDetector(
-                                              onTap: () => _cycleTaskStatus(task),
+                                              onTap: () =>
+                                                  _cycleTaskStatus(task),
                                               child: Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                                decoration: BoxDecoration(color: _badgeColor(task['status'] as String? ?? '', colors).withValues(alpha: 0.14), borderRadius: BorderRadius.circular(999)),
-                                                child: Text(_statusLabel(task['status'] as String? ?? '', t), style: TextStyle(color: _badgeColor(task['status'] as String? ?? '', colors), fontWeight: FontWeight.w700, fontSize: 10)),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 3),
+                                                decoration: BoxDecoration(
+                                                    color: _badgeColor(
+                                                            task['status']
+                                                                    as String? ??
+                                                                '',
+                                                            colors)
+                                                        .withValues(
+                                                            alpha: 0.14),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            999)),
+                                                child: Text(
+                                                    _statusLabel(
+                                                        task['status']
+                                                                as String? ??
+                                                            '',
+                                                        t),
+                                                    style: TextStyle(
+                                                        color: _badgeColor(
+                                                            task['status']
+                                                                    as String? ??
+                                                                '',
+                                                            colors),
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        fontSize: 10)),
                                               ),
                                             ),
                                             IconButton(
-                                              icon: Icon(Icons.delete_outline, size: 18, color: colors.danger),
-                                              onPressed: () => _deleteTask(task['id'] as String),
+                                              icon: Icon(Icons.delete_outline,
+                                                  size: 18,
+                                                  color: colors.danger),
+                                              onPressed: () => _deleteTask(
+                                                  task['id'] as String),
                                             ),
                                           ],
                                         ),

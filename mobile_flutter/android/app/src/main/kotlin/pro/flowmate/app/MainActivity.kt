@@ -1,4 +1,4 @@
-package com.anonymous.flowmate_ai
+package pro.flowmate.app
 
 import io.flutter.embedding.android.FlutterActivity
 

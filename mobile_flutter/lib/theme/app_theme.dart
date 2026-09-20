@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../state/theme_controller.dart';
 
 class AppRadius {
@@ -22,10 +21,11 @@ ThemeData buildAppTheme(AppColors colors) {
     brightness: brightness,
     scaffoldBackgroundColor: colors.background,
     colorScheme: ColorScheme.fromSeed(seedColor: colors.primary, brightness: brightness),
-    fontFamily: GoogleFonts.poppins().fontFamily,
+    fontFamily: 'Poppins',
   );
   return base.copyWith(
-    textTheme: GoogleFonts.poppinsTextTheme(base.textTheme).apply(
+    textTheme: base.textTheme.apply(
+      fontFamily: 'Poppins',
       bodyColor: colors.text,
       displayColor: colors.text,
     ),

@@ -84,6 +84,14 @@ class IntentOrchestrator:
         "tim email", "kiem email", "search email", "find email",
         "danh dau email", "mark email", "doi che do", "change mode",
     )
+    _EXPLICIT_WEB_RESEARCH_TERMS = (
+        "tim kiem tren internet", "tim tren internet", "tra cuu internet",
+        "kiem tren internet", "internet", "tren mang", "len mang", "tim tren mang",
+        "tim kiem tren mang", "tim kiem web", "tra cuu web",
+        "search web", "web search", "search the web", "browse the web",
+        "research online", "google", "nguon public", "public sources",
+        "nguon tham khao", "link tham khao",
+    )
 
     def detect(self, message):
         text = self.normalize(message)
@@ -92,6 +100,21 @@ class IntentOrchestrator:
         confidence = 0.35
         requires_confirmation = False
         refresh_targets = []
+
+        # Public-web research is an execution choice of its own, not a
+        # workspace-tool request and not merely passive RAG knowledge. Keep
+        # it ahead of email/calendar keyword rules so a subject such as
+        # "email marketing" cannot turn an explicit Internet lookup into an
+        # inbox action.
+        if self.is_web_research_request(message):
+            return {
+                "intent": "internet.research",
+                "confidence": 0.96,
+                "entities": entities,
+                "requires_confirmation": False,
+                "refresh_targets": refresh_targets,
+                "research_requested": True,
+            }
 
         # General knowledge questions must be resolved before keyword-based
         # workspace routing. This blocks names such as Facebook (contains
@@ -440,6 +463,14 @@ class IntentOrchestrator:
         mentions words such as email, calendar, book, event or history."""
         text = self.normalize(message)
         return self._contains_word(text, self._EXPLICIT_WORKSPACE_COMMANDS)
+
+    def is_web_research_request(self, message):
+        """Return True when the current turn explicitly asks for public-web
+        research. This intentionally uses the current turn only: old RAG
+        lessons and unrelated conversation must never select a tool for the
+        user."""
+        text = self.normalize(message)
+        return self._contains_word(text, self._EXPLICIT_WEB_RESEARCH_TERMS)
 
     def detect_with_ai(self, message, ai_service, user_id=None, db_path=None,
                         chat_session_id=None, confidence_threshold=0.6,

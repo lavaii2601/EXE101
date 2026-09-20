@@ -7,6 +7,7 @@ data/
 *.log
 *.pid
 web/backend-local.pid
+web/backend/_split_tmp/
 __pycache__/
 *.py[cod]
 .pytest_cache/

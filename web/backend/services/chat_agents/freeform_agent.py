@@ -35,6 +35,12 @@ from .schedule_agents import _format_calendar_context, _direct_current_time_resp
 
 logger = logging.getLogger(__name__)
 
+# These documents teach the offline intent classifier and are useful in the
+# admin/training views, but their labelled examples are not factual evidence
+# for a user's question. Injecting them into an answer prompt can make a label
+# such as email.latest_summary override the meaning of the current turn.
+_NON_ANSWER_KNOWLEDGE_SOURCES = frozenset({'bob-intent-500-v1'})
+
 
 def _intent_sources(message):
     normalized = _normalize_intent_text(message)
@@ -85,6 +91,7 @@ def _format_knowledge_context(message, user_id=None, mode=None, workspace_id=Non
             user_id=user_id,
             mode=mode,
             workspace_id=workspace_id,
+            excluded_sources=_NON_ANSWER_KNOWLEDGE_SOURCES,
         )
     except Exception:
         logger.warning("Knowledge base search failed", exc_info=True)

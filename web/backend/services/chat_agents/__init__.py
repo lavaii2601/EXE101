@@ -241,6 +241,7 @@ _FREEFORM_AGENT = FreeformChatAgent()
 
 _AGENT_REGISTRY = {
     'workflow.multi': MultiIntentWorkflowAgent(),
+    'internet.research': _FREEFORM_AGENT,
     'email.latest_summary': EmailLatestSummaryAgent(),
     'schedule.create': ScheduleCreateAgent(),
     'schedule.update': ScheduleUpdateAgent(),

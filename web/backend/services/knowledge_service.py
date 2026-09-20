@@ -95,7 +95,8 @@ class KnowledgeService:
             vector[term] = tf * idf
         return vector
 
-    def search(self, query, top_k=3, min_score=0.08, user_id=None, mode=None, workspace_id=None):
+    def search(self, query, top_k=3, min_score=0.08, user_id=None, mode=None,
+               workspace_id=None, excluded_sources=None):
         """user_id=None searches the whole library (admin/manual UI use).
         Pass the requesting user's id from chat so per-user auto-learned
         memories from OTHER users are excluded from candidates -- the
@@ -113,6 +114,11 @@ class KnowledgeService:
         remain visible. This prevents a Worker chat from retrieving a highly
         similar Student/Teacher template merely because the generated corpus
         uses parallel wording.
+
+        ``excluded_sources`` lets a caller omit operational corpora that are
+        indexed for training/administration but are not answer evidence. The
+        exclusion happens before ranking so those rows cannot consume the
+        caller's ``top_k`` slots.
         """
         self._ensure_index()
         if not self._doc_vectors:
@@ -132,8 +138,16 @@ class KnowledgeService:
         requested_mode = str(mode or "").strip().lower()
         if requested_mode not in valid_modes:
             requested_mode = ""
+        excluded_source_set = {
+            str(source).strip().lower()
+            for source in (excluded_sources or ())
+            if str(source).strip()
+        }
         for doc_id, doc_vector in self._doc_vectors.items():
             document = self._documents_by_id.get(doc_id, {})
+            document_source = str(document.get('source') or '').strip().lower()
+            if document_source in excluded_source_set:
+                continue
             doc_owner = document.get('user_id')
             doc_workspace = document.get('workspace_id')
             if user_id is not None:

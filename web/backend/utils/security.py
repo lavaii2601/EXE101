@@ -111,6 +111,50 @@ def authenticated_user_id():
     return None
 
 
+def active_authenticated_user_id():
+    """Return an authenticated principal only while its account exists.
+
+    Mobile tokens and Flask cookies are signed but otherwise stateless. After
+    permanent account deletion, an old token from another device must not be
+    able to pass the global API guard and let a route recreate the user row.
+    The result is cached for the request because rate limiting and the auth
+    guard may both resolve identity.
+    """
+    cache_key = '_flowmate_active_authenticated_user_id'
+    if hasattr(g, cache_key):
+        return getattr(g, cache_key)
+
+    candidate = authenticated_user_id()
+    if not candidate:
+        setattr(g, cache_key, None)
+        return None
+
+    # The explicitly enabled X-User-Id development escape hatch historically
+    # creates users lazily. Keep that local/test behavior; production bearer
+    # and cookie identities must resolve to an existing account.
+    if (
+        header_user_id() == candidate
+        and not bearer_user_id()
+        and not session.get('user_id')
+        and not session.get('gmail_user_email')
+    ):
+        setattr(g, cache_key, candidate)
+        return candidate
+
+    try:
+        from models.user import User
+
+        active = candidate if User.get(candidate) else None
+    except Exception:
+        _security_logger.exception(
+            'Could not validate authenticated account existence for %s',
+            candidate,
+        )
+        active = None
+    setattr(g, cache_key, active)
+    return active
+
+
 def enforce_rate_limit():
     if request.method == "OPTIONS":
         return None

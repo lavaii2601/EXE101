@@ -21,6 +21,11 @@ WORKSPACE_SYNC_DOMAINS = (
     "settings",
     "knowledge",
     "providers",
+    "work_hub",
+    "status_reports",
+    "workspace_knowledge",
+    "sharing",
+    "workspace_members",
 )
 _DOMAIN_SET = frozenset(WORKSPACE_SYNC_DOMAINS)
 

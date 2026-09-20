@@ -10,6 +10,22 @@ class GoogleAuthResult {
   const GoogleAuthResult({required this.connected, this.cancelled = false});
 }
 
+bool isGoogleAuthCallback(Uri uri) =>
+    uri.scheme == 'flowmateai' && uri.host == 'oauth-callback';
+
+/// Persist a Google OAuth callback whether it arrived in the running app or
+/// cold-started Android after the OS reclaimed the process in the browser.
+Future<bool> consumeGoogleAuthCallback(Uri uri) async {
+  if (!isGoogleAuthCallback(uri)) return false;
+  final accessToken = uri.queryParameters['access_token'];
+  if (accessToken == null || accessToken.isEmpty) return false;
+  await setMobileSession(
+    userId: uri.queryParameters['user_id'] ?? '',
+    accessToken: accessToken,
+  );
+  return true;
+}
+
 /// Mirrors mobile/src/api/googleAuth.js: the app's own http client never
 /// shares cookies with the system browser tab that completes Google's
 /// consent screen, so the backend hands the result back via a
@@ -19,8 +35,12 @@ class GoogleAuthResult {
 /// registered in main.dart.
 Future<GoogleAuthResult> connectGoogleAccount(AppLinks appLinks) async {
   final data = await apiGet('/email/auth_url?platform=mobile');
-  if (data is Map && ((data['access_token'] as String?)?.isNotEmpty == true || data['user_id'] != null)) {
-    await setMobileSession(userId: (data['user_id'] ?? data['email'] ?? '').toString(), accessToken: (data['access_token'] ?? '').toString());
+  if (data is Map &&
+      ((data['access_token'] as String?)?.isNotEmpty == true ||
+          data['user_id'] != null)) {
+    await setMobileSession(
+        userId: (data['user_id'] ?? data['email'] ?? '').toString(),
+        accessToken: (data['access_token'] ?? '').toString());
     return const GoogleAuthResult(connected: true);
   }
   final authUrl = data is Map ? data['auth_url'] as String? : null;
@@ -31,12 +51,13 @@ Future<GoogleAuthResult> connectGoogleAccount(AppLinks appLinks) async {
   final completer = Completer<Uri?>();
   late final StreamSubscription<Uri> sub;
   sub = appLinks.uriLinkStream.listen((uri) {
-    if (uri.scheme == 'flowmateai' && uri.host == 'oauth-callback') {
+    if (isGoogleAuthCallback(uri)) {
       if (!completer.isCompleted) completer.complete(uri);
     }
   });
 
-  final launched = await launchUrl(Uri.parse(authUrl), mode: LaunchMode.externalApplication);
+  final launched =
+      await launchUrl(Uri.parse(authUrl), mode: LaunchMode.externalApplication);
   if (!launched) {
     await sub.cancel();
     throw Exception('Không thể mở trình duyệt để đăng nhập Google.');
@@ -51,11 +72,8 @@ Future<GoogleAuthResult> connectGoogleAccount(AppLinks appLinks) async {
   if (resultUri == null) {
     return const GoogleAuthResult(connected: false, cancelled: true);
   }
-  final accessToken = resultUri.queryParameters['access_token'];
-  final userId = resultUri.queryParameters['user_id'];
-  if (accessToken == null || accessToken.isEmpty) {
+  if (!await consumeGoogleAuthCallback(resultUri)) {
     throw Exception('Không nhận được access token từ máy chủ.');
   }
-  await setMobileSession(userId: userId ?? '', accessToken: accessToken);
   return const GoogleAuthResult(connected: true);
 }

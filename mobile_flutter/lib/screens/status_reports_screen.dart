@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/client.dart';
 import '../config/app_icons.dart';
+import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
 import '../widgets/app_button.dart';
@@ -36,6 +37,9 @@ class _StatusReportsScreenState extends State<StatusReportsScreen> {
   final nextController = TextEditingController();
   final risksController = TextEditingController();
 
+  AppState? _appState;
+  int _lastHandledSyncRevision = 0;
+
   @override
   void initState() {
     super.initState();
@@ -43,7 +47,36 @@ class _StatusReportsScreenState extends State<StatusReportsScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Cross-device sync: another device/the web app changed a status report
+    // while this screen was open -- see schedule_screen.dart for the same
+    // pattern. Safe to reload here: _load() only refreshes the
+    // projects/drafts/published lists, never the in-progress draft text
+    // controllers below, so it won't clobber text the user is mid-typing.
+    final appState = context.read<AppState>();
+    if (_appState != appState) {
+      _appState?.removeListener(_handleWorkspaceSync);
+      _appState = appState;
+      _lastHandledSyncRevision = appState.syncRevision;
+      appState.addListener(_handleWorkspaceSync);
+    }
+  }
+
+  void _handleWorkspaceSync() {
+    final appState = _appState;
+    if (appState == null || appState.syncRevision == _lastHandledSyncRevision) {
+      return;
+    }
+    _lastHandledSyncRevision = appState.syncRevision;
+    if (appState.lastSyncTargets.contains('status_reports')) {
+      _load();
+    }
+  }
+
+  @override
   void dispose() {
+    _appState?.removeListener(_handleWorkspaceSync);
     doneController.dispose();
     doingController.dispose();
     blockedController.dispose();
@@ -58,7 +91,8 @@ class _StatusReportsScreenState extends State<StatusReportsScreen> {
       final data = await apiGet('/projects');
       if (data is Map && data['success'] == true) {
         projects = List<Map<String, dynamic>>.from(
-          ((data['projects'] as List?) ?? []).map((p) => Map<String, dynamic>.from(p as Map)),
+          ((data['projects'] as List?) ?? [])
+              .map((p) => Map<String, dynamic>.from(p as Map)),
         );
       }
     } catch (_) {}
@@ -66,7 +100,8 @@ class _StatusReportsScreenState extends State<StatusReportsScreen> {
       final data = await apiGet('/status-reports?status=draft');
       if (data is Map && data['success'] == true) {
         drafts = List<Map<String, dynamic>>.from(
-          ((data['reports'] as List?) ?? []).map((r) => Map<String, dynamic>.from(r as Map)),
+          ((data['reports'] as List?) ?? [])
+              .map((r) => Map<String, dynamic>.from(r as Map)),
         );
       }
     } catch (_) {}
@@ -74,7 +109,8 @@ class _StatusReportsScreenState extends State<StatusReportsScreen> {
       final data = await apiGet('/status-reports?status=published');
       if (data is Map && data['success'] == true) {
         published = List<Map<String, dynamic>>.from(
-          ((data['reports'] as List?) ?? []).map((r) => Map<String, dynamic>.from(r as Map)),
+          ((data['reports'] as List?) ?? [])
+              .map((r) => Map<String, dynamic>.from(r as Map)),
         );
       }
     } catch (_) {}
@@ -106,14 +142,17 @@ class _StatusReportsScreenState extends State<StatusReportsScreen> {
       selectedProjectId = null;
       if (mounted) {
         final t = context.read<LanguageController>().t;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('Đã lưu báo cáo nháp', 'Draft saved'))));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(t('Đã lưu báo cáo nháp', 'Draft saved'))));
       }
       await _load();
     } catch (_) {
       if (mounted) {
         final t = context.read<LanguageController>().t;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t('Không lưu được báo cáo', 'Could not save report'))),
+          SnackBar(
+              content:
+                  Text(t('Không lưu được báo cáo', 'Could not save report'))),
         );
       }
     } finally {
@@ -132,8 +171,12 @@ class _StatusReportsScreenState extends State<StatusReportsScreen> {
           'This publishes it to the workspace. Once published, its content can no longer be edited.',
         )),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('Hủy', 'Cancel'))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('Công bố', 'Publish'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(t('Hủy', 'Cancel'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t('Công bố', 'Publish'))),
         ],
       ),
     );
@@ -144,9 +187,11 @@ class _StatusReportsScreenState extends State<StatusReportsScreen> {
     } catch (error) {
       if (mounted) {
         final message = error.toString().contains('report_empty')
-            ? t('Báo cáo trống, hãy điền ít nhất một mục trước khi công bố.', 'The report is empty -- fill in at least one field before publishing.')
+            ? t('Báo cáo trống, hãy điền ít nhất một mục trước khi công bố.',
+                'The report is empty -- fill in at least one field before publishing.')
             : t('Không công bố được báo cáo', 'Could not publish report');
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
       }
     }
   }
@@ -172,9 +217,15 @@ class _StatusReportsScreenState extends State<StatusReportsScreen> {
               padding: const EdgeInsets.fromLTRB(4, 6, 20, 6),
               child: Row(
                 children: [
-                  IconButton(icon: Icon(AppIcons.emailBack, color: colors.text), onPressed: () => Navigator.pop(context)),
+                  IconButton(
+                      icon: Icon(AppIcons.emailBack, color: colors.text),
+                      onPressed: () => Navigator.pop(context)),
                   Expanded(
-                    child: Text(t('Báo cáo trạng thái', 'Status Reports'), style: TextStyle(color: colors.text, fontWeight: FontWeight.w700, fontSize: 17)),
+                    child: Text(t('Báo cáo trạng thái', 'Status Reports'),
+                        style: TextStyle(
+                            color: colors.text,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 17)),
                   ),
                 ],
               ),
@@ -186,31 +237,79 @@ class _StatusReportsScreenState extends State<StatusReportsScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                   children: [
                     if (loading)
-                      const Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator()))
+                      const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 40),
+                          child: Center(child: CircularProgressIndicator()))
                     else ...[
                       AppCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(t('BÁO CÁO MỚI', 'NEW REPORT'), style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1)),
+                            Text(t('BÁO CÁO MỚI', 'NEW REPORT'),
+                                style: TextStyle(
+                                    color: colors.primary,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 10,
+                                    letterSpacing: 1)),
                             const SizedBox(height: 10),
                             DropdownButtonFormField<String?>(
-                              value: selectedProjectId,
-                              hint: Text(t('Không gắn với dự án cụ thể', 'Not tied to a specific project'), style: TextStyle(color: colors.textMuted, fontSize: 12.5)),
+                              initialValue: selectedProjectId,
+                              hint: Text(
+                                  t('Không gắn với dự án cụ thể',
+                                      'Not tied to a specific project'),
+                                  style: TextStyle(
+                                      color: colors.textMuted, fontSize: 12.5)),
                               items: [
-                                DropdownMenuItem<String?>(value: null, child: Text(t('Không gắn với dự án cụ thể', 'Not tied to a specific project'), style: TextStyle(color: colors.text, fontSize: 12.5))),
-                                ...projects.map((p) => DropdownMenuItem<String?>(value: p['id'] as String, child: Text(p['name'] as String? ?? '', style: TextStyle(color: colors.text, fontSize: 12.5)))),
+                                DropdownMenuItem<String?>(
+                                    value: null,
+                                    child: Text(
+                                        t('Không gắn với dự án cụ thể',
+                                            'Not tied to a specific project'),
+                                        style: TextStyle(
+                                            color: colors.text,
+                                            fontSize: 12.5))),
+                                ...projects.map((p) =>
+                                    DropdownMenuItem<String?>(
+                                        value: p['id'] as String,
+                                        child: Text(p['name'] as String? ?? '',
+                                            style: TextStyle(
+                                                color: colors.text,
+                                                fontSize: 12.5)))),
                               ],
-                              onChanged: (v) => setState(() => selectedProjectId = v),
+                              onChanged: (v) =>
+                                  setState(() => selectedProjectId = v),
                             ),
                             const SizedBox(height: 8),
-                            AppField(label: 'Done', controller: doneController, hint: t('Đã hoàn thành', 'What got done'), multiline: true),
-                            AppField(label: 'Doing', controller: doingController, hint: t('Đang làm', 'What you are doing'), multiline: true),
-                            AppField(label: 'Blocked', controller: blockedController, hint: t('Đang vướng', 'What is blocked'), multiline: true),
-                            AppField(label: 'Next', controller: nextController, hint: t('Sắp tới', 'What is next'), multiline: true),
-                            AppField(label: 'Risks', controller: risksController, hint: t('Rủi ro', 'Risks'), multiline: true),
+                            AppField(
+                                label: 'Done',
+                                controller: doneController,
+                                hint: t('Đã hoàn thành', 'What got done'),
+                                multiline: true),
+                            AppField(
+                                label: 'Doing',
+                                controller: doingController,
+                                hint: t('Đang làm', 'What you are doing'),
+                                multiline: true),
+                            AppField(
+                                label: 'Blocked',
+                                controller: blockedController,
+                                hint: t('Đang vướng', 'What is blocked'),
+                                multiline: true),
+                            AppField(
+                                label: 'Next',
+                                controller: nextController,
+                                hint: t('Sắp tới', 'What is next'),
+                                multiline: true),
+                            AppField(
+                                label: 'Risks',
+                                controller: risksController,
+                                hint: t('Rủi ro', 'Risks'),
+                                multiline: true),
                             const SizedBox(height: 8),
-                            AppButton(title: t('Lưu nháp', 'Save draft'), onPressed: _saveDraft, loading: saving),
+                            AppButton(
+                                title: t('Lưu nháp', 'Save draft'),
+                                onPressed: _saveDraft,
+                                loading: saving),
                           ],
                         ),
                       ),
@@ -219,24 +318,41 @@ class _StatusReportsScreenState extends State<StatusReportsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(t('NHÁP CỦA TÔI', 'MY DRAFTS'), style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1)),
+                            Text(t('NHÁP CỦA TÔI', 'MY DRAFTS'),
+                                style: TextStyle(
+                                    color: colors.primary,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 10,
+                                    letterSpacing: 1)),
                             const SizedBox(height: 10),
                             if (drafts.isEmpty)
-                              Text(t('Chưa có báo cáo nháp.', 'No drafts yet.'), style: TextStyle(color: colors.textMuted, fontSize: 13)),
+                              Text(t('Chưa có báo cáo nháp.', 'No drafts yet.'),
+                                  style: TextStyle(
+                                      color: colors.textMuted, fontSize: 13)),
                             ...drafts.map((report) => _ReportCard(
                                   report: report,
-                                  projectName: _projectName(report['project_id'] as String?),
+                                  projectName: _projectName(
+                                      report['project_id'] as String?),
                                   colors: colors,
                                   t: t,
                                   actions: Row(
                                     children: [
                                       TextButton(
-                                        onPressed: () => _publish(report['id'] as String),
-                                        child: Text(t('Công bố', 'Publish'), style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 12)),
+                                        onPressed: () =>
+                                            _publish(report['id'] as String),
+                                        child: Text(t('Công bố', 'Publish'),
+                                            style: TextStyle(
+                                                color: colors.primary,
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 12)),
                                       ),
                                       TextButton(
-                                        onPressed: () => _deleteDraft(report['id'] as String),
-                                        child: Text(t('Xoá', 'Delete'), style: TextStyle(color: colors.danger, fontSize: 12)),
+                                        onPressed: () => _deleteDraft(
+                                            report['id'] as String),
+                                        child: Text(t('Xoá', 'Delete'),
+                                            style: TextStyle(
+                                                color: colors.danger,
+                                                fontSize: 12)),
                                       ),
                                     ],
                                   ),
@@ -249,13 +365,23 @@ class _StatusReportsScreenState extends State<StatusReportsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(t('ĐÃ CÔNG BỐ', 'PUBLISHED'), style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1)),
+                            Text(t('ĐÃ CÔNG BỐ', 'PUBLISHED'),
+                                style: TextStyle(
+                                    color: colors.primary,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 10,
+                                    letterSpacing: 1)),
                             const SizedBox(height: 10),
                             if (published.isEmpty)
-                              Text(t('Chưa có báo cáo nào được công bố.', 'No published reports yet.'), style: TextStyle(color: colors.textMuted, fontSize: 13)),
+                              Text(
+                                  t('Chưa có báo cáo nào được công bố.',
+                                      'No published reports yet.'),
+                                  style: TextStyle(
+                                      color: colors.textMuted, fontSize: 13)),
                             ...published.map((report) => _ReportCard(
                                   report: report,
-                                  projectName: _projectName(report['project_id'] as String?),
+                                  projectName: _projectName(
+                                      report['project_id'] as String?),
                                   colors: colors,
                                   t: t,
                                 )),
@@ -302,7 +428,10 @@ class _ReportCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: colors.panelSoft, borderRadius: BorderRadius.circular(12), border: Border.all(color: colors.border)),
+      decoration: BoxDecoration(
+          color: colors.panelSoft,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: colors.border)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -312,8 +441,14 @@ class _ReportCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(report['report_date'] as String? ?? '', style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 13)),
-                    Text(projectName ?? t('Không gắn dự án', 'No project'), style: TextStyle(color: colors.textMuted, fontSize: 11)),
+                    Text(report['report_date'] as String? ?? '',
+                        style: TextStyle(
+                            color: colors.text,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13)),
+                    Text(projectName ?? t('Không gắn dự án', 'No project'),
+                        style:
+                            TextStyle(color: colors.textMuted, fontSize: 11)),
                   ],
                 ),
               ),
@@ -325,9 +460,14 @@ class _ReportCard extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 4),
                 child: RichText(
                   text: TextSpan(
-                    style: TextStyle(color: colors.text, fontSize: 12, height: 1.4),
+                    style: TextStyle(
+                        color: colors.text, fontSize: 12, height: 1.4),
                     children: [
-                      TextSpan(text: '${pair[0]}: ', style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700)),
+                      TextSpan(
+                          text: '${pair[0]}: ',
+                          style: TextStyle(
+                              color: colors.primary,
+                              fontWeight: FontWeight.w700)),
                       TextSpan(text: pair[1]),
                     ],
                   ),

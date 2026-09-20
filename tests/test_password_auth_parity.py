@@ -2,6 +2,7 @@ import os
 import sys
 import unittest
 from unittest.mock import patch
+from xml.etree import ElementTree
 
 from flask import Flask, session
 from werkzeug.security import generate_password_hash
@@ -157,6 +158,56 @@ class PasswordAuthFrontendContractTests(unittest.TestCase):
     def test_app_logout_and_google_disconnect_use_distinct_endpoints(self):
         self.assertIn("apiFetch(`${API_BASE}/auth/logout`", self.javascript)
         self.assertIn("apiFetch(`${API_BASE}/email/logout`", self.javascript)
+
+
+class MobileFlutterAuthContractTests(unittest.TestCase):
+    def test_mobile_uses_canonical_api_host_without_post_redirect(self):
+        flutter_config_path = os.path.join(
+            PROJECT_ROOT, 'mobile_flutter', 'lib', 'api', 'config.dart'
+        )
+        react_native_config_path = os.path.join(
+            PROJECT_ROOT, 'mobile', 'src', 'api', 'config.js'
+        )
+        with open(flutter_config_path, encoding='utf-8') as handle:
+            flutter_config = handle.read()
+        with open(react_native_config_path, encoding='utf-8') as handle:
+            react_native_config = handle.read()
+
+        self.assertIn(
+            "const String kApiBase = 'https://www.flowmate.pro/api';",
+            flutter_config,
+        )
+        self.assertNotIn(
+            "const String kApiBase = 'https://flowmate.pro/api';",
+            flutter_config,
+        )
+        self.assertIn(
+            "const DEPLOYED_API = 'https://www.flowmate.pro/api';",
+            react_native_config,
+        )
+        self.assertNotIn(
+            "const DEPLOYED_API = 'https://flowmate.pro/api';",
+            react_native_config,
+        )
+
+    def test_release_manifest_allows_api_network_access(self):
+        manifest_path = os.path.join(
+            PROJECT_ROOT,
+            'mobile_flutter',
+            'android',
+            'app',
+            'src',
+            'main',
+            'AndroidManifest.xml',
+        )
+        manifest = ElementTree.parse(manifest_path).getroot()
+        android_name = '{http://schemas.android.com/apk/res/android}name'
+        permissions = {
+            element.attrib.get(android_name)
+            for element in manifest.findall('uses-permission')
+        }
+
+        self.assertIn('android.permission.INTERNET', permissions)
 
 
 if __name__ == '__main__':

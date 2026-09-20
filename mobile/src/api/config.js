@@ -1,5 +1,7 @@
-const DEPLOYED_API = 'https://flowmate.pro/api';
-const DEPLOYED_WEB = 'https://flowmate.pro';
+// Call the canonical host directly. The apex domain responds with a 308
+// redirect, which can break POST login/register requests on native clients.
+const DEPLOYED_API = 'https://www.flowmate.pro/api';
+const DEPLOYED_WEB = 'https://www.flowmate.pro';
 
 const ENV_API = process.env.EXPO_PUBLIC_API_BASE_URL;
 

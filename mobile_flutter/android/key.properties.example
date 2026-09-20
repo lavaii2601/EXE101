@@ -1,0 +1,6 @@
+# Copy this file to key.properties and replace every placeholder.
+# Never commit key.properties or the upload keystore.
+storePassword=REPLACE_WITH_A_STRONG_PASSWORD
+keyPassword=REPLACE_WITH_A_STRONG_PASSWORD
+keyAlias=upload
+storeFile=C:\\Users\\YOUR_USER\\upload-keystore.jks

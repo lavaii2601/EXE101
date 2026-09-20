@@ -1,0 +1,6 @@
+The first Android release of FlowMate AI.
+
+- Manage email, calendar, checklists, and work in one app.
+- Use Bob to research, summarize, and plan.
+- Keep data synchronized with the web app.
+- Delete your account and personal data directly in the app.

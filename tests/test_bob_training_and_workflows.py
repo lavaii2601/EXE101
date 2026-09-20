@@ -84,6 +84,18 @@ class BobWorkflowTests(unittest.TestCase):
         self.assertTrue(result.get("training_assisted"))
         self.assertTrue((result.get("entities") or {}).get("schedule", {}).get("start_time"))
 
+    def test_explicit_internet_request_is_a_first_class_research_intent(self):
+        prompts = (
+            "tìm kiếm trên internet, con khủng long màu gì?",
+            "search the web for dinosaur colours",
+            "kiếm nguồn public về khủng long",
+        )
+        for prompt in prompts:
+            result = self.orchestrator.detect_with_ai(prompt, ai_service=None)
+            self.assertEqual("internet.research", result["intent"], prompt)
+            self.assertTrue(result.get("research_requested"), prompt)
+            self.assertFalse(result.get("requires_confirmation"), prompt)
+
     def test_raised_read_limits(self):
         self.assertEqual(37, self.orchestrator._latest_email_count("tom tat 37 email moi nhat"))
         self.assertEqual(75, self.orchestrator._limit_from_text("xem 75 hoat dong", maximum=100))
@@ -186,6 +198,14 @@ class BobWebResearchIntentTests(unittest.TestCase):
         for prompt in prompts:
             self.assertTrue(self.service.should_research(prompt), prompt)
 
+    def test_explicit_web_instruction_is_removed_from_search_query(self):
+        cases = {
+            "tìm kiếm trên internet, con khủng long màu gì?": "con khủng long màu gì",
+            "search the web for dinosaur colours": "dinosaur colours",
+        }
+        for prompt, expected in cases.items():
+            self.assertEqual(expected, self.service._build_query(prompt), prompt)
+
     def test_plain_fact_question_researches_when_local_knowledge_has_gap(self):
         self.assertTrue(self.service.should_research(
             "Nguoi sang lap Facebook la ai?",
@@ -216,6 +236,19 @@ class BobWebResearchIntentTests(unittest.TestCase):
         ]
         ranked = self.service._rank_results(results, "sleep study", "academic")
         self.assertEqual("scholarly", ranked[0]["source_kind"])
+
+    def test_search_noise_is_rejected_before_it_reaches_bob(self):
+        query = "con khủng long màu gì"
+        self.assertFalse(self.service._is_relevant_result(query, {
+            "title": "CON Definition & Meaning",
+            "url": "https://example.com/dictionary/con",
+            "snippet": "Definition of the English word con",
+        }))
+        self.assertTrue(self.service._is_relevant_result(query, {
+            "title": "Màu sắc của khủng long",
+            "url": "https://example.com/khung-long",
+            "snippet": "Hóa thạch giúp xác định màu của một số loài khủng long.",
+        }))
 
     def test_generated_research_answer_must_use_only_collected_urls(self):
         context = (

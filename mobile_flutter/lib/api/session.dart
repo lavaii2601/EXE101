@@ -36,9 +36,12 @@ Future<void> setMobileAccessToken(String value) async {
   }
 }
 
-Future<void> setMobileSession({required String userId, required String accessToken}) async {
-  await setMobileUserId(userId);
-  await setMobileAccessToken(accessToken);
+Future<void> setMobileSession(
+    {required String userId, required String accessToken}) async {
+  await Future.wait([
+    setMobileUserId(userId),
+    setMobileAccessToken(accessToken),
+  ]);
 }
 
 Future<void> setCurrentWorkspaceId(String value) async {
@@ -54,9 +57,14 @@ Future<void> setCurrentWorkspaceId(String value) async {
 /// signed-in user doesn't get logged out just from closing the app.
 Future<void> loadPersistedSession() async {
   try {
-    _mobileUserId = await _storage.read(key: _userIdKey) ?? '';
-    _mobileAccessToken = await _storage.read(key: _accessTokenKey) ?? '';
-    _currentWorkspaceId = await _storage.read(key: _workspaceIdKey) ?? '';
+    final values = await Future.wait([
+      _storage.read(key: _userIdKey),
+      _storage.read(key: _accessTokenKey),
+      _storage.read(key: _workspaceIdKey),
+    ]);
+    _mobileUserId = values[0] ?? '';
+    _mobileAccessToken = values[1] ?? '';
+    _currentWorkspaceId = values[2] ?? '';
   } catch (_) {
     _mobileUserId = '';
     _mobileAccessToken = '';
@@ -68,7 +76,9 @@ Future<void> clearPersistedSession() async {
   _mobileUserId = '';
   _mobileAccessToken = '';
   _currentWorkspaceId = '';
-  await _storage.delete(key: _userIdKey);
-  await _storage.delete(key: _accessTokenKey);
-  await _storage.delete(key: _workspaceIdKey);
+  await Future.wait([
+    _storage.delete(key: _userIdKey),
+    _storage.delete(key: _accessTokenKey),
+    _storage.delete(key: _workspaceIdKey),
+  ]);
 }

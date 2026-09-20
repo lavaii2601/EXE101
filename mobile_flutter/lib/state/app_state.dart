@@ -35,7 +35,9 @@ List<String> workspaceTargetsForDomains(Iterable<dynamic> domains) {
     if (key == 'email') targets.add('overview');
     if (key == 'schedule') targets.addAll(['schedule', 'overview']);
     if (key == 'chat') targets.add('history');
-    if (key == 'profile' || key == 'settings') targets.addAll(['profile', 'settings']);
+    if (key == 'profile' || key == 'settings') {
+      targets.addAll(['profile', 'settings']);
+    }
     if (key == 'providers') targets.add('settings');
   }
   return targets.toList();
@@ -43,14 +45,21 @@ List<String> workspaceTargetsForDomains(Iterable<dynamic> domains) {
 
 int _workspacePollDelay(dynamic value) {
   final requested = value is num ? value.toDouble() : double.tryParse('$value');
-  if (requested == null || !requested.isFinite) return _kWorkspaceSyncPollIntervalMs;
-  return requested.clamp(_kWorkspaceSyncPollMinMs, _kWorkspaceSyncPollMaxMs).round();
+  if (requested == null || !requested.isFinite) {
+    return _kWorkspaceSyncPollIntervalMs;
+  }
+  return requested
+      .clamp(_kWorkspaceSyncPollMinMs, _kWorkspaceSyncPollMaxMs)
+      .round();
 }
 
 /// Mirrors App.js's AppShell top-level state: who's signed in, their
 /// profile/status, and the "something changed, go refetch" signal every
 /// screen listens to instead of each polling independently.
 class AppState extends ChangeNotifier {
+  final Completer<void> _bootstrapCompleter = Completer<void>();
+
+  Future<void> get bootstrapCompleted => _bootstrapCompleter.future;
   bool? isAuthenticated; // null = not checked yet
   Map<String, dynamic>? profile;
   Map<String, dynamic>? status;
@@ -83,7 +92,9 @@ class AppState extends ChangeNotifier {
       final stored = await _syncStorage.read(key: _kWorkspaceSyncRevisionKey);
       if (stored == null) return null;
       final parsed = jsonDecode(stored);
-      final revisions = (parsed is Map && parsed['revisions'] is Map) ? parsed['revisions'] as Map : const {};
+      final revisions = (parsed is Map && parsed['revisions'] is Map)
+          ? parsed['revisions'] as Map
+          : const {};
       final value = revisions[owner];
       return (value is num && value >= 0) ? value.toInt() : null;
     } catch (_) {
@@ -154,7 +165,8 @@ class AppState extends ChangeNotifier {
   void _scheduleNextSyncCheck() {
     _syncTimer?.cancel();
     if (!_syncPollingActive || !_syncForeground) return;
-    _syncTimer = Timer(Duration(milliseconds: _syncPollDelayMs), _checkWorkspaceSyncState);
+    _syncTimer = Timer(
+        Duration(milliseconds: _syncPollDelayMs), _checkWorkspaceSyncState);
   }
 
   Future<void> _checkWorkspaceSyncState() async {
@@ -168,7 +180,8 @@ class AppState extends ChangeNotifier {
     _syncCheckAgain = false;
     final owner = _syncOwner;
     try {
-      final suffix = _syncRevisionCursor == null ? '' : '?since=$_syncRevisionCursor';
+      final suffix =
+          _syncRevisionCursor == null ? '' : '?since=$_syncRevisionCursor';
       final data = await apiGet('/sync/state$suffix');
       if (!_syncPollingActive ||
           !_syncForeground ||
@@ -182,9 +195,13 @@ class AppState extends ChangeNotifier {
       if (nextRevisionRaw is! num || nextRevisionRaw < 0) return;
       final nextRevision = nextRevisionRaw.toInt();
 
-      final changedDomains = data['changed'] is List ? List<dynamic>.from(data['changed'] as List) : const [];
+      final changedDomains = data['changed'] is List
+          ? List<dynamic>.from(data['changed'] as List)
+          : const [];
       final hasBaseline = _syncRevisionCursor != null;
-      final shouldNotify = hasBaseline && nextRevision != _syncRevisionCursor && changedDomains.isNotEmpty;
+      final shouldNotify = hasBaseline &&
+          nextRevision != _syncRevisionCursor &&
+          changedDomains.isNotEmpty;
 
       _syncRevisionCursor = nextRevision;
       _syncPollDelayMs = _workspacePollDelay(data['poll_after_ms']);
@@ -198,18 +215,33 @@ class AppState extends ChangeNotifier {
       // next scheduled tick, mirroring the RN client's swallow-and-continue.
     } finally {
       _syncChecking = false;
-      if (!_syncPollingActive) return;
-      if (_syncCheckAgain && _syncForeground) {
-        _checkWorkspaceSyncState();
-      } else {
-        _scheduleNextSyncCheck();
+      if (_syncPollingActive) {
+        if (_syncCheckAgain && _syncForeground) {
+          _checkWorkspaceSyncState();
+        } else {
+          _scheduleNextSyncCheck();
+        }
       }
     }
   }
 
   Future<void> bootstrap() async {
-    await loadPersistedSession();
-    await refreshShell();
+    try {
+      await loadPersistedSession();
+      // A fresh install has no identity to validate. Avoid holding the splash
+      // screen open on a profile request that can only return 401 (or time out
+      // while the device is offline).
+      if (getMobileAccessToken().isEmpty) {
+        isAuthenticated = false;
+        notifyListeners();
+        return;
+      }
+      await refreshShell();
+    } finally {
+      if (!_bootstrapCompleter.isCompleted) {
+        _bootstrapCompleter.complete();
+      }
+    }
   }
 
   Future<void> refreshShell() async {
