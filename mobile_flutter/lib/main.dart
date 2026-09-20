@@ -50,13 +50,42 @@ class _RootFlow extends StatefulWidget {
   State<_RootFlow> createState() => _RootFlowState();
 }
 
-class _RootFlowState extends State<_RootFlow> {
+class _RootFlowState extends State<_RootFlow> with WidgetsBindingObserver {
   bool showWelcome = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Pause cross-device sync polling while backgrounded and immediately
+    // re-check on foreground, instead of waking up to a stale delayed
+    // timer -- mirrors mobile/App.js's AppState.addEventListener('change').
+    context.read<AppState>().setSyncForeground(state == AppLifecycleState.resumed);
+  }
 
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final colors = context.watch<ThemeController>().colors;
+
+    // startWorkspaceSyncPolling/stopWorkspaceSyncPolling are both no-ops
+    // when already in the requested state, so calling them on every build
+    // (driven by isAuthenticated transitions) is safe.
+    if (appState.isAuthenticated == true) {
+      appState.startWorkspaceSyncPolling();
+    } else {
+      appState.stopWorkspaceSyncPolling();
+    }
 
     if (appState.isAuthenticated == null) {
       return Scaffold(backgroundColor: colors.background, body: const SizedBox.shrink());

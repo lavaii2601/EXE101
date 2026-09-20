@@ -125,6 +125,13 @@ Các URL local:
 
 ### 4. Khởi động mobile
 
+Có hai bản mobile song song, cùng gọi một backend: `mobile/` (React
+Native/Expo) và `mobile_flutter/` (Flutter). Cả hai đều **mặc định trỏ sẵn
+tới backend production** `https://flowmate.pro/api` — clone repo và chạy là
+kết nối được ngay, không cần dựng backend riêng.
+
+**React Native (Expo):**
+
 ```powershell
 cd mobile
 npm install
@@ -139,6 +146,17 @@ npm start
 ```
 
 Xem thêm hướng dẫn APK/EAS trong [mobile/README.md](mobile/README.md).
+
+**Flutter:**
+
+```powershell
+cd mobile_flutter
+flutter pub get
+flutter run
+```
+
+Xem thêm hướng dẫn build APK trong
+[mobile_flutter/README.md](mobile_flutter/README.md).
 
 ## API chính
 

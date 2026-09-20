@@ -44,12 +44,51 @@ class _OverviewScreenState extends State<OverviewScreen> {
     }
   }
 
+  AppState? _appState;
+  int _lastHandledSyncRevision = 0;
+
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
     date = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Cross-device sync: another device/the web app changed something this
+    // dashboard summarizes while it was open -- AppState's poller (see
+    // state/app_state.dart) notifies here so it doesn't sit stale until
+    // manually reopened. Set up once per AppState instance
+    // (didChangeDependencies can fire more than once).
+    final appState = context.read<AppState>();
+    if (_appState != appState) {
+      _appState?.removeListener(_handleWorkspaceSync);
+      _appState = appState;
+      _lastHandledSyncRevision = appState.syncRevision;
+      appState.addListener(_handleWorkspaceSync);
+    }
+  }
+
+  void _handleWorkspaceSync() {
+    final appState = _appState;
+    if (appState == null || appState.syncRevision == _lastHandledSyncRevision) return;
+    _lastHandledSyncRevision = appState.syncRevision;
+    final targets = appState.lastSyncTargets;
+    if (targets.contains('overview') ||
+        targets.contains('email') ||
+        targets.contains('schedule') ||
+        targets.contains('history')) {
+      _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    _appState?.removeListener(_handleWorkspaceSync);
+    super.dispose();
   }
 
   Future<void> _load() async {

@@ -67,6 +67,9 @@ class _EmailScreenState extends State<EmailScreen> {
   String smartBucket = '';
   bool sharing = false;
 
+  AppState? _appState;
+  int _lastHandledSyncRevision = 0;
+
   @override
   void initState() {
     super.initState();
@@ -75,7 +78,36 @@ class _EmailScreenState extends State<EmailScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Cross-device sync: another device/the web app changed an email or
+    // the profile while this screen was open -- AppState's poller (see
+    // state/app_state.dart) notifies here so this tab doesn't sit stale
+    // until the user manually reopens it. Set up once per AppState
+    // instance (didChangeDependencies can fire more than once).
+    final appState = context.read<AppState>();
+    if (_appState != appState) {
+      _appState?.removeListener(_handleWorkspaceSync);
+      _appState = appState;
+      _lastHandledSyncRevision = appState.syncRevision;
+      appState.addListener(_handleWorkspaceSync);
+    }
+  }
+
+  void _handleWorkspaceSync() {
+    final appState = _appState;
+    if (appState == null || appState.syncRevision == _lastHandledSyncRevision) return;
+    _lastHandledSyncRevision = appState.syncRevision;
+    final targets = appState.lastSyncTargets;
+    if (targets.contains('email') || targets.contains('profile') || targets.contains('settings')) {
+      _load();
+      _loadSuggestions();
+    }
+  }
+
+  @override
   void dispose() {
+    _appState?.removeListener(_handleWorkspaceSync);
     searchController.dispose();
     _searchDebounce?.cancel();
     super.dispose();

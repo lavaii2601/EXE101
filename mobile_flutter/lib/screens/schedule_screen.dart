@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../api/client.dart';
+import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
 import '../widgets/app_button.dart';
@@ -36,6 +37,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   DateTime? startTime;
   DateTime? endTime;
 
+  AppState? _appState;
+  int _lastHandledSyncRevision = 0;
+
   @override
   void initState() {
     super.initState();
@@ -45,7 +49,38 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Cross-device sync: another device/the web app changed a schedule or
+    // email while this screen was open -- AppState's poller (see
+    // state/app_state.dart) notifies here so this tab doesn't sit stale
+    // until the user manually reopens it. Set up once per AppState
+    // instance (didChangeDependencies can fire more than once).
+    final appState = context.read<AppState>();
+    if (_appState != appState) {
+      _appState?.removeListener(_handleWorkspaceSync);
+      _appState = appState;
+      _lastHandledSyncRevision = appState.syncRevision;
+      appState.addListener(_handleWorkspaceSync);
+    }
+  }
+
+  void _handleWorkspaceSync() {
+    final appState = _appState;
+    if (appState == null || appState.syncRevision == _lastHandledSyncRevision) return;
+    _lastHandledSyncRevision = appState.syncRevision;
+    final targets = appState.lastSyncTargets;
+    if (targets.contains('schedule')) {
+      _load(silent: true);
+    }
+    if (targets.contains('email')) {
+      _loadSuggestions();
+    }
+  }
+
+  @override
   void dispose() {
+    _appState?.removeListener(_handleWorkspaceSync);
     titleController.dispose();
     descriptionController.dispose();
     locationController.dispose();
@@ -222,6 +257,28 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         editingSchedule = null;
       });
       await _load();
+    } on ApiException catch (error) {
+      if (error.status == 409) {
+        // The web app or another device saved first -- expected_updated_at
+        // is now stale. Close the form (its editingSchedule/timestamp can
+        // only get staler if left open) and reload, mirroring the RN
+        // client, instead of leaving the user retrying against data the
+        // server already rejected once.
+        setState(() {
+          showForm = false;
+          editingSchedule = null;
+        });
+        await _load();
+        _showMessage(
+          t('Lịch vừa thay đổi', 'Schedule just changed'),
+          t(
+            'Web hoặc một thiết bị khác đã lưu trước. Dữ liệu mới nhất đã được tải lại để tránh ghi đè.',
+            'The web app or another device saved first. The latest data was reloaded to avoid overwriting it.',
+          ),
+        );
+        return;
+      }
+      _showMessage(t('Không lưu được lịch', 'Could not save schedule'), error.toString());
     } catch (error) {
       _showMessage(t('Không lưu được lịch', 'Could not save schedule'), error.toString());
     } finally {
@@ -230,11 +287,25 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   Future<void> _updateStatus(Map<String, dynamic> schedule, String status) async {
+    final t = context.read<LanguageController>().t;
     try {
       await apiPatch('/schedule/${schedule['local_id']}/update-status', {'status': status, 'expected_updated_at': schedule['updated_at']});
       await _load();
+    } on ApiException catch (error) {
+      if (error.status == 409) {
+        await _load();
+        _showMessage(
+          t('Lịch vừa thay đổi', 'Schedule just changed'),
+          t(
+            'Web hoặc một thiết bị khác đã cập nhật lịch này. Dữ liệu mới nhất đã được tải lại.',
+            'The web app or another device updated this schedule. The latest data was reloaded.',
+          ),
+        );
+        return;
+      }
+      _showMessage(t('Không cập nhật được lịch', 'Could not update schedule'), error.toString());
     } catch (error) {
-      _showMessage(context.read<LanguageController>().t('Không cập nhật được lịch', 'Could not update schedule'), error.toString());
+      _showMessage(t('Không cập nhật được lịch', 'Could not update schedule'), error.toString());
     }
   }
 
