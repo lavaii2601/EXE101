@@ -13,7 +13,7 @@ read your local file.
 DEBUG=false
 SECRET_KEY=change-this-to-a-long-random-value
 SESSION_COOKIE_SECURE=true
-ALLOWED_ORIGINS=https://exe101.up.railway.app
+ALLOWED_ORIGINS=https://www.flowmate.pro
 SCHEDULE_FULL_SYNC_DAYS=90
 POSTGRES_POOL_MIN=1
 POSTGRES_POOL_MAX=8
@@ -33,7 +33,7 @@ ADMIN_TOTP_SESSION_SECONDS=28800
 MICROSOFT_CLIENT_ID=
 MICROSOFT_CLIENT_SECRET=
 MICROSOFT_TENANT=common
-MICROSOFT_REDIRECT_URI=https://exe101.up.railway.app/api/outlook/oauth2callback
+MICROSOFT_REDIRECT_URI=https://www.flowmate.pro/api/outlook/oauth2callback
 MICROSOFT_SCOPES=openid profile email offline_access User.Read Mail.Read Calendars.Read
 ```
 
@@ -43,6 +43,11 @@ You can use either:
 - or `GMAIL_CREDENTIALS_JSON` with the full Google OAuth client JSON on one line
 
 After changing variables, redeploy the Railway service.
+
+SEPay payment variables (`SEPAY_ENV`, `SEPAY_MERCHANT_ID`, `SEPAY_SECRET_KEY`,
+`SEPAY_IPN_SECRET_KEY`, `SEPAY_CHECKOUT_URL`) are also required for Premium
+purchases to work; see `README.md`'s "Deploy Railway" section for the full
+list and the SePay merchant-dashboard webhook setup steps.
 
 Google OAuth tokens are persisted in PostgreSQL (`oauth_tokens`) and cached in
 the Railway container only at runtime. PostgreSQL is authoritative on every
@@ -83,7 +88,7 @@ thiết bị.
 To verify the deployed service can see the variables, open:
 
 ```text
-https://exe101.up.railway.app/api/email/oauth-config-check
+https://www.flowmate.pro/api/email/oauth-config-check
 ```
 
 The response should show `has_client_id: true` and `has_client_secret: true`,
@@ -97,7 +102,7 @@ APK bundle.
 The server operations dashboard is available at:
 
 ```text
-https://exe101.up.railway.app/admin
+https://www.flowmate.pro/admin
 ```
 
 It reports aggregate PostgreSQL usage, users, Google OAuth health, Calendar
@@ -155,8 +160,8 @@ the ledger, the finance tab displays a clear empty state with zero totals.
 FlowMate serves public privacy and terms pages from the same Railway deployment:
 
 ```text
-https://flowmate.pro/privacy
-https://flowmate.pro/terms
+https://www.flowmate.pro/privacy
+https://www.flowmate.pro/terms
 ```
 
 Use these URLs for Google OAuth consent screen, Android APK review, Play Console
@@ -214,8 +219,16 @@ local configuration documented in `README.md`; do not point Railway at
 In Google Cloud OAuth Client, add:
 
 ```text
-https://exe101.up.railway.app/api/email/oauth2callback
+https://www.flowmate.pro/api/email/oauth2callback
 ```
+
+Use the `www.` host exactly -- it's the only one registered as an Authorized
+JavaScript origin/redirect URI, and it's what `ALLOWED_ORIGINS` and
+`GMAIL_REDIRECT_URI` above must also match. The apex `flowmate.pro` (no
+`www.`) is not a working origin for interactive requests; the app 308-redirects
+it to `www.flowmate.pro` so browser traffic still lands somewhere, but don't
+register the apex host anywhere that expects a working origin (Google
+Console, a webhook's callback URL, etc.).
 
 ## Outlook / Microsoft OAuth redirect URI
 
@@ -223,7 +236,7 @@ Outlook is designed as an optional provider that users connect later from
 Settings. Register a Microsoft Entra app and add this redirect URI:
 
 ```text
-https://exe101.up.railway.app/api/outlook/oauth2callback
+https://www.flowmate.pro/api/outlook/oauth2callback
 ```
 
 For local development, also add:

@@ -81,6 +81,26 @@ if Config.SESSION_COOKIE_DOMAIN:
     # SESSION_COOKIE_DOMAIN's derivation in config.py.
     app.config.update(SESSION_COOKIE_DOMAIN=Config.SESSION_COOKIE_DOMAIN)
 
+@app.before_request
+def redirect_apex_to_www():
+    """flowmate.pro (no www) duplicate-serves www.flowmate.pro's exact
+    content with no redirect between them, which is what actually confused
+    Google's indexer (Search Console flagged both bare hosts as "page with
+    redirect" after their http-> https hop). The apex host was never really
+    functional anyway: ALLOWED_ORIGINS/GMAIL_REDIRECT_URI/RAILWAY_PUBLIC_DOMAIN
+    are all www-only in Railway, so CORS already rejects interactive apex
+    requests. Consolidate onto the one working host.
+
+    308 (not 301/302) preserves the request method and body, so a webhook
+    POST that's still misconfigured against the apex URL (e.g. an old SEPay
+    IPN registration) arrives intact instead of being downgraded to GET.
+    """
+    host = (request.host or '').split(':')[0].lower()
+    if host == 'flowmate.pro':
+        target = 'https://www.flowmate.pro' + request.full_path.rstrip('?')
+        return redirect(target, code=308)
+
+
 # Set permanent session to persist across server restarts
 @app.before_request
 def make_session_permanent():
@@ -306,7 +326,7 @@ def serve_static(path):
         # Safe to cache for a year: filenames are version-tagged via ?v= query
         # string, so a new deploy is requested under a new URL automatically.
         return send_from_directory('../frontend', path, max_age=31536000)
-    if path in ('favicon.ico', 'manifest.json'):
+    if path in ('favicon.ico', 'manifest.json', 'robots.txt', 'sitemap.xml'):
         # Not version-tagged, so use a short cache instead of the 1-year one above.
         return send_from_directory('../frontend', path, max_age=3600)
     response = send_from_directory('../frontend', 'index.html')

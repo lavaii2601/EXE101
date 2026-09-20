@@ -284,12 +284,16 @@ AI_MAX_SYSTEM_PROMPT_CHARS=12000
 AI_AGENT_MAX_TOKENS=700
 ```
 
-Trong trang quản lý merchant SEPay, cấu hình IPN dùng kiểu xác thực
-`SECRET_KEY`, đặt secret trùng với `SEPAY_IPN_SECRET_KEY`, và dùng URL công
-khai sau:
+Trong trang quản lý merchant SEPay, cấu hình webhook IPN dùng phương thức
+xác thực **API Key** (SePay không có kiểu "Secret Key" riêng), dán vào ô
+"Nhập API Key" giá trị trùng với `SEPAY_IPN_SECRET_KEY`, và dùng URL công
+khai sau (dùng đúng bản có `www.`, khớp `RAILWAY_PUBLIC_DOMAIN`/
+`GMAIL_REDIRECT_URI`/`ALLOWED_ORIGINS` -- bản apex không có `www.` chỉ
+redirect sang bản này, đừng đăng ký apex cho một webhook để tránh phụ
+thuộc vào việc SePay có theo redirect đúng cách hay không):
 
 ```text
-https://flowmate.pro/api/payments/sepay/ipn
+https://www.flowmate.pro/api/payments/sepay/ipn
 ```
 
 `SEPAY_SECRET_KEY` chỉ tồn tại ở backend. Web và Flutter chỉ nhận URL checkout
