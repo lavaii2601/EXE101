@@ -79,6 +79,25 @@ class PasswordAuthParityTests(unittest.TestCase):
         with self.client.session_transaction() as browser_session:
             self.assertEqual(browser_session['user_id'], user_id)
 
+    def test_login_hashes_dummy_password_even_for_unknown_email(self):
+        # Login used to short-circuit on `not user` before ever calling
+        # check_password_hash, so "no such account" returned after only a
+        # fast DB lookup while "wrong password" paid for the deliberately
+        # slow hash comparison -- a timing side-channel for enumerating
+        # registered emails despite the identical error message/status.
+        # Assert the (slow) comparison now always runs.
+        with (
+            patch.object(auth.User, 'get_by_email', return_value=None),
+            patch.object(auth, 'check_password_hash', wraps=auth.check_password_hash) as spy,
+        ):
+            response = self.client.post(
+                '/api/auth/login',
+                json={'email': 'nobody@example.com', 'password': 'whatever123'},
+            )
+
+        self.assertEqual(response.status_code, 401)
+        spy.assert_called_once_with(auth._DUMMY_PASSWORD_HASH, 'whatever123')
+
     def test_anonymous_default_sentinel_is_not_authenticated(self):
         with self.app.test_request_context('/'):
             session['user_id'] = 'default'

@@ -246,7 +246,7 @@ class ApproveRejectSeatRequestTests(unittest.TestCase):
             ("INSERT INTO workspace_audit_events", _Result(rowcount=1)),
         ])
         with _patched_pg(connection):
-            result = wsub.approve_seat_request("req-1", "owner-1")
+            result = wsub.approve_seat_request("ws-1", "req-1", "owner-1")
 
         self.assertEqual("approved", result["status"])
         extra_seats_call = connection.calls[2]
@@ -259,9 +259,41 @@ class ApproveRejectSeatRequestTests(unittest.TestCase):
         ])
         with _patched_pg(connection):
             with self.assertRaises(wsub.WorkspaceSubscriptionError) as raised:
-                wsub.approve_seat_request("req-1", "owner-1")
+                wsub.approve_seat_request("ws-1", "req-1", "owner-1")
 
         self.assertEqual("seat_request_not_pending", raised.exception.code)
+
+    def test_approve_seat_request_rejects_when_request_belongs_to_another_workspace(self):
+        # The row exists, but for a different workspace than the URL's --
+        # the WHERE clause's workspace_id filter must make this look
+        # identical to "not found", not silently operate on someone else's
+        # seat request (this is the fix for the cross-tenant approval bug).
+        connection = _ScriptedConnection([
+            ("SELECT * FROM workspace_seat_requests WHERE id", _Result(one=None)),
+        ])
+        with _patched_pg(connection):
+            with self.assertRaises(wsub.WorkspaceSubscriptionError) as raised:
+                wsub.approve_seat_request("ws-not-owner", "req-1", "mallory")
+
+        self.assertEqual("seat_request_not_found", raised.exception.code)
+        self.assertEqual(
+            ("req-1", "ws-not-owner"),
+            connection.calls[0][1],
+        )
+
+    def test_reject_seat_request_rejects_when_request_belongs_to_another_workspace(self):
+        connection = _ScriptedConnection([
+            ("SELECT * FROM workspace_seat_requests WHERE id", _Result(one=None)),
+        ])
+        with _patched_pg(connection):
+            with self.assertRaises(wsub.WorkspaceSubscriptionError) as raised:
+                wsub.reject_seat_request("ws-not-owner", "req-1", "mallory")
+
+        self.assertEqual("seat_request_not_found", raised.exception.code)
+        self.assertEqual(
+            ("req-1", "ws-not-owner"),
+            connection.calls[0][1],
+        )
 
 
 class WorkspaceSubscriptionRouteTests(unittest.TestCase):
@@ -304,7 +336,7 @@ class WorkspaceSubscriptionRouteTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         self.assertEqual("approved", response.get_json()["seat_request"]["status"])
-        approve.assert_called_once_with("req-1", "alice", added_seats=None)
+        approve.assert_called_once_with("ws-1", "req-1", "alice", added_seats=None)
 
     def test_member_can_view_subscription_and_access_state(self):
         member_membership = {"role": "worker", "status": "active"}

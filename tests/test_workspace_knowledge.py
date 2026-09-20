@@ -154,14 +154,66 @@ class WorkspaceKnowledgeRouteTests(unittest.TestCase):
 
     def test_owner_can_create(self):
         p1, p2 = self._resolve_as("owner")
-        with p1, p2, patch.object(
-            workspace_knowledge_route.knowledge_service, "add_document",
-            return_value={"id": 1, "title": "t", "content": "c"},
+        with (
+            p1, p2,
+            patch.object(
+                workspace_knowledge_route.knowledge_service, "add_document",
+                return_value={"id": 1, "title": "t", "content": "c"},
+            ),
+            patch.object(workspace_knowledge_route.workspace_model, "record_audit_event") as audit,
         ):
             response = self.app.test_client().post(
                 "/api/workspace-knowledge", json={"title": "t", "content": "c"},
             )
         self.assertEqual(201, response.status_code)
+        audit.assert_called_once_with(
+            WORKSPACE_A, "alice", "knowledge_document_created",
+            target_type="knowledge_document", target_id="1",
+            metadata={"title": "t"},
+        )
+
+    def test_owner_can_update(self):
+        p1, p2 = self._resolve_as("owner")
+        with (
+            p1, p2,
+            patch.object(
+                workspace_knowledge_route.knowledge_service, "get_workspace_document",
+                return_value={"id": 1, "title": "old", "content": "c"},
+            ),
+            patch.object(
+                workspace_knowledge_route.knowledge_service, "update_document",
+                return_value={"id": 1, "title": "new", "content": "c"},
+            ),
+            patch.object(workspace_knowledge_route.workspace_model, "record_audit_event") as audit,
+        ):
+            response = self.app.test_client().patch(
+                "/api/workspace-knowledge/1", json={"title": "new"},
+            )
+        self.assertEqual(200, response.status_code)
+        audit.assert_called_once_with(
+            WORKSPACE_A, "alice", "knowledge_document_updated",
+            target_type="knowledge_document", target_id="1",
+            metadata={"fields": ["title"]},
+        )
+
+    def test_owner_can_delete(self):
+        p1, p2 = self._resolve_as("owner")
+        with (
+            p1, p2,
+            patch.object(
+                workspace_knowledge_route.knowledge_service, "get_workspace_document",
+                return_value={"id": 1, "title": "old", "content": "c"},
+            ),
+            patch.object(workspace_knowledge_route.knowledge_service, "delete_document"),
+            patch.object(workspace_knowledge_route.workspace_model, "record_audit_event") as audit,
+        ):
+            response = self.app.test_client().delete("/api/workspace-knowledge/1")
+        self.assertEqual(200, response.status_code)
+        audit.assert_called_once_with(
+            WORKSPACE_A, "alice", "knowledge_document_deleted",
+            target_type="knowledge_document", target_id="1",
+            metadata={"title": "old"},
+        )
 
     def test_admin_create_requires_title_and_content(self):
         p1, p2 = self._resolve_as("admin")

@@ -463,12 +463,12 @@ def decline_invitation(invitation_id, user_id, user_email):
         return result
 
 
-def revoke_invitation(invitation_id, actor_user_id):
+def revoke_invitation(workspace_id, invitation_id, actor_user_id):
     _require_pg()
     with pg.connection() as conn:
         invitation = conn.execute(
-            "SELECT * FROM workspace_invitations WHERE id = %s FOR UPDATE",
-            (invitation_id,),
+            "SELECT * FROM workspace_invitations WHERE id = %s AND workspace_id = %s FOR UPDATE",
+            (invitation_id, workspace_id),
         ).fetchone()
         if invitation is None:
             raise WorkspaceError("invitation_not_found")

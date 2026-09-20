@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 from collections import defaultdict, deque
 from urllib.parse import urlparse
@@ -8,6 +9,11 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 
 _request_buckets = defaultdict(deque)
+# Railway runs gunicorn with --workers 1 --threads 4 (railpack.json), so
+# concurrent requests really do share this process/dict -- without a lock,
+# two threads can both read len(bucket) < limit before either appends,
+# letting the limit be exceeded by a few requests right at the boundary.
+_request_buckets_lock = threading.Lock()
 _security_logger = logging.getLogger('flowmate.security')
 
 # The WorkspaceError codes that mean "this request was denied access to a
@@ -113,15 +119,22 @@ def enforce_rate_limit():
     if request.path.startswith("/api/chat/") or request.path.startswith("/api/email/summary"):
         limit = current_app.config.get("AI_RATE_LIMIT_PER_MINUTE", 30)
 
-    identity = bearer_user_id() or header_user_id() or request.remote_addr or "unknown"
+    # authenticated_user_id() (not a standalone bearer/header check) so a
+    # cookie-session browser login -- the primary auth path for this app --
+    # is keyed by its own identity too, not lumped in with every other
+    # cookie-session user behind the same IP (shared office/school NAT,
+    # CGNAT, VPN exit). Falls back to the resolved client IP only for
+    # truly unauthenticated requests (e.g. the login endpoint itself).
+    identity = authenticated_user_id() or request.remote_addr or "unknown"
     key = (identity, request.path)
     now = time.monotonic()
-    bucket = _request_buckets[key]
-    while bucket and bucket[0] <= now - 60:
-        bucket.popleft()
-    if len(bucket) >= limit:
-        return {"error": "rate_limit_exceeded"}, 429
-    bucket.append(now)
+    with _request_buckets_lock:
+        bucket = _request_buckets[key]
+        while bucket and bucket[0] <= now - 60:
+            bucket.popleft()
+        if len(bucket) >= limit:
+            return {"error": "rate_limit_exceeded"}, 429
+        bucket.append(now)
     return None
 
 

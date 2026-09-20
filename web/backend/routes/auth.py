@@ -21,6 +21,15 @@ MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 128
 GENERIC_LOGIN_ERROR = 'Email hoặc mật khẩu không đúng.'
 
+# Computed once so a login attempt for an unregistered email (or a
+# Google-only account with no password_hash) still runs a real hash
+# comparison below -- otherwise that path returns after only a fast DB
+# lookup while a genuine wrong-password attempt pays for the deliberately
+# slow scrypt/pbkdf2 verification, and the timing gap is a practical
+# side-channel for enumerating registered emails despite the identical
+# error message and status code.
+_DUMMY_PASSWORD_HASH = generate_password_hash('flowmate-timing-safe-dummy-password')
+
 
 def _local_user_id(email):
     """Deterministic, collision-resistant id for password-based accounts.
@@ -98,7 +107,11 @@ def login():
 
     user = User.get_by_email(email)
     password_hash = (user or {}).get('password_hash')
-    if not user or not password_hash or not check_password_hash(password_hash, password):
+    # Always run the comparison, even against the dummy hash, so this
+    # branch takes the same time whether or not the account/password_hash
+    # exists (see _DUMMY_PASSWORD_HASH above).
+    password_matches = check_password_hash(password_hash or _DUMMY_PASSWORD_HASH, password)
+    if not user or not password_hash or not password_matches:
         return jsonify({'success': False, 'error': 'invalid_credentials', 'message': GENERIC_LOGIN_ERROR}), 401
 
     user_id = user['user_id']

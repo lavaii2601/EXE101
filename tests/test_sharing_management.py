@@ -192,6 +192,80 @@ class WorkspaceReadOnlyEnforcementTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
 
 
+class UrlWorkspaceIdIsAuthoritativeTests(unittest.TestCase):
+    """Regression guard: unlike routes/work_hub.py (which has no
+    <workspace_id> in its URLs and is deliberately header-only), this
+    blueprint's routes carry an explicit workspace_id in the URL, so
+    resolution must use that value even when the client's "currently
+    active" workspace (X-Workspace-Id header) is a different workspace --
+    e.g. sharing into, or revoking from, a workspace other than the one
+    currently being viewed."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = Flask(__name__)
+        cls.app.config.update(TESTING=True, SECRET_KEY="test")
+        cls.app.register_blueprint(sharing_route.sharing_bp)
+
+    def test_list_resolves_against_the_url_workspace_not_the_active_header(self):
+        workspace = {"id": WORKSPACE_B, "type": "business"}
+        membership = {"role": "worker", "status": "active"}
+        with (
+            patch.object(sharing_route, "get_current_user_id", return_value="alice"),
+            patch.object(sharing_route, "header_workspace_id", return_value=WORKSPACE_A),
+            patch.object(
+                sharing_route.workspace_model, "resolve_context",
+                return_value=(workspace, membership),
+            ) as resolve_context,
+            patch.object(artifact_module, "list_artifacts", return_value=[]),
+        ):
+            response = self.app.test_client().get(f"/api/workspaces/{WORKSPACE_B}/shared-artifacts")
+
+        self.assertEqual(200, response.status_code)
+        resolve_context.assert_called_once_with("alice", WORKSPACE_B)
+
+    def test_create_resolves_against_the_url_workspace_not_the_active_header(self):
+        workspace = {"id": WORKSPACE_B, "type": "business"}
+        membership = {"role": "worker", "status": "active"}
+        with (
+            patch.object(sharing_route, "get_current_user_id", return_value="alice"),
+            patch.object(sharing_route, "header_workspace_id", return_value=WORKSPACE_A),
+            patch.object(
+                sharing_route.workspace_model, "resolve_context",
+                return_value=(workspace, membership),
+            ) as resolve_context,
+            patch.object(sharing_route.workspace_subscription, "assert_writable"),
+            patch.object(artifact_module, "create_artifact", return_value={"id": "art-1"}),
+        ):
+            response = self.app.test_client().post(
+                f"/api/workspaces/{WORKSPACE_B}/shared-artifacts",
+                json={"source_type": "email_summary", "title": "t", "content": {}},
+            )
+
+        self.assertEqual(201, response.status_code)
+        resolve_context.assert_called_once_with("alice", WORKSPACE_B)
+
+    def test_revoke_resolves_against_the_url_workspace_not_the_active_header(self):
+        workspace = {"id": WORKSPACE_B, "type": "business"}
+        membership = {"role": "worker", "status": "active"}
+        with (
+            patch.object(sharing_route, "get_current_user_id", return_value="alice"),
+            patch.object(sharing_route, "header_workspace_id", return_value=WORKSPACE_A),
+            patch.object(
+                sharing_route.workspace_model, "resolve_context",
+                return_value=(workspace, membership),
+            ) as resolve_context,
+            patch.object(sharing_route.workspace_subscription, "assert_writable"),
+            patch.object(artifact_module, "revoke_artifact", return_value=True),
+        ):
+            response = self.app.test_client().delete(
+                f"/api/workspaces/{WORKSPACE_B}/shared-artifacts/art-1",
+            )
+
+        self.assertEqual(200, response.status_code)
+        resolve_context.assert_called_once_with("alice", WORKSPACE_B)
+
+
 class PersonalRoutesHaveNoWorkspaceConceptTests(unittest.TestCase):
     """Regression guard for Phase 4's DoD line "Owner/admin khong truy van
     duoc mailbox/calendar nguon": routes/email.py and routes/calendar.py

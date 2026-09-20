@@ -89,40 +89,68 @@ class ChecklistCreateAgent:
 
         date_value = datetime.now(LOCAL_TZ).date().isoformat()
         cache_key = _checklist_cache_key(ctx.user_id, date_value)
-        cached = Cache.get(cache_key, db_path=ctx.db_path)
-        payload = _normalize_checklist_payload(cached)
-        existing_titles = {entry['title'].strip().lower() for entry in payload['custom_items']}
 
+        # Retry against Cache.set_versioned (not a plain last-write-wins
+        # Cache.set) exactly like routes/schedule.py's quick-add-activity
+        # endpoint does for this same cache row. A plain Cache.set leaves
+        # the stored revision unchanged even though custom_items actually
+        # changed, so a subsequent save from the Overview checklist widget
+        # (built from its own pre-chat snapshot) would pass its version
+        # check and silently overwrite the item(s) added here -- no
+        # conflict ever raised on either side.
         added = []
-        for title, priority in normalized_items:
-            if title.lower() in existing_titles:
-                continue
-            payload['custom_items'].append({
-                'id': f"manual:{uuid.uuid4().hex[:12]}",
-                'title': title[:240],
-                'completed': False,
-                'created_at': datetime.utcnow().isoformat(),
-                'source': 'manual',
-                'item_type': 'task',
-                'due_date': date_value,
-                'due_at': '',
-                'ai_reason': _CHECKLIST_PRIORITY_REASON[priority],
-                'priority_score': _CHECKLIST_PRIORITY_SCORE[priority],
-                'pinned': priority == 'high',
-            })
-            existing_titles.add(title.lower())
-            added.append(title)
+        payload = None
+        for _ in range(3):
+            current = _normalize_checklist_payload(Cache.get(cache_key, db_path=ctx.db_path))
+            existing_titles = {entry['title'].strip().lower() for entry in current['custom_items']}
 
-        if not added:
+            added = []
+            for title, priority in normalized_items:
+                if title.lower() in existing_titles:
+                    continue
+                current['custom_items'].append({
+                    'id': f"manual:{uuid.uuid4().hex[:12]}",
+                    'title': title[:240],
+                    'completed': False,
+                    'created_at': datetime.utcnow().isoformat(),
+                    'source': 'manual',
+                    'item_type': 'task',
+                    'due_date': date_value,
+                    'due_at': '',
+                    'ai_reason': _CHECKLIST_PRIORITY_REASON[priority],
+                    'priority_score': _CHECKLIST_PRIORITY_SCORE[priority],
+                    'pinned': priority == 'high',
+                })
+                existing_titles.add(title.lower())
+                added.append(title)
+
+            if not added:
+                return AgentResult(
+                    response="Các việc này đã có trong checklist hôm nay rồi.",
+                    workspace_sources=['overview'],
+                    refresh_targets=ctx.refresh_targets,
+                    action='Checklist đã có sẵn các việc này',
+                )
+
+            current['custom_items'] = _sort_custom_items(current['custom_items'])
+            saved, latest = Cache.set_versioned(
+                cache_key,
+                current,
+                expected_revision=current['revision'],
+                ttl=_CHECKLIST_CACHE_TTL_SECONDS,
+                db_path=ctx.db_path,
+            )
+            if saved:
+                payload = latest
+                break
+
+        if payload is None:
             return AgentResult(
-                response="Các việc này đã có trong checklist hôm nay rồi.",
+                response="Checklist đang được cập nhật ở nơi khác, bạn thử lại giúp mình nhé.",
                 workspace_sources=['overview'],
-                refresh_targets=ctx.refresh_targets,
-                action='Checklist đã có sẵn các việc này',
+                action='Không thể thêm vào checklist do xung đột cập nhật',
             )
 
-        payload['custom_items'] = _sort_custom_items(payload['custom_items'])
-        Cache.set(cache_key, payload, ttl=_CHECKLIST_CACHE_TTL_SECONDS, db_path=ctx.db_path)
         History.create(
             "Them viec vao checklist: " + ", ".join(added),
             "Them qua xac nhan trong chat",

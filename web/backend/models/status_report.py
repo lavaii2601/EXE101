@@ -132,6 +132,12 @@ def update_draft(workspace_id, report_id, actor_user_id, project_id=None, report
             """,
             tuple(params),
         ).fetchone()
+        if row is None:
+            return None
+        _record_audit_event(
+            conn, workspace_id, actor_user_id, "status_report_draft_updated",
+            target_type="status_report", target_id=str(report_id),
+        )
         return pg.normalize_row(row)
 
 

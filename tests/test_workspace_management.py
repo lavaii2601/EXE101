@@ -265,6 +265,22 @@ class WorkspaceModelTests(unittest.TestCase):
 
         self.assertEqual("invitation_not_pending", raised.exception.code)
 
+    def test_revoke_invitation_rejects_when_invitation_belongs_to_another_workspace(self):
+        # The invitation row exists but for a different workspace than the
+        # caller was authorized against -- the WHERE clause's workspace_id
+        # filter must make this look identical to "not found" rather than
+        # letting an owner/admin of one workspace revoke another
+        # workspace's pending invite (cross-tenant revoke fix).
+        connection = _ScriptedConnection([
+            ("SELECT * FROM workspace_invitations WHERE id", _Result(one=None)),
+        ])
+        with _patched_pg(connection):
+            with self.assertRaises(workspace_module.WorkspaceError) as raised:
+                workspace_module.revoke_invitation("ws-not-owner", "inv-1", "mallory")
+
+        self.assertEqual("invitation_not_found", raised.exception.code)
+        self.assertEqual(("inv-1", "ws-not-owner"), connection.calls[0][1])
+
     def test_update_member_role_rejects_changing_owner(self):
         owner_membership = {
             "id": "mem-1", "workspace_id": "ws-2", "user_id": "alice",

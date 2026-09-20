@@ -29,23 +29,31 @@ _ERROR_STATUS = {
 }
 
 
-def _error_response(exc):
+def _error_response(exc, workspace_id=None):
     status = _ERROR_STATUS.get(exc.code, 400)
     if exc.code in WORKSPACE_ACCESS_DENIED_CODES:
         log_workspace_access_denied(
-            exc.code, get_current_user_id(request, session=session), header_workspace_id(),
+            exc.code, get_current_user_id(request, session=session),
+            workspace_id or header_workspace_id(),
         )
     body = {'error': exc.code}
     body.update(exc.extra)
     return jsonify(body), status
 
 
-def _resolve():
+def _resolve(workspace_id):
     """Auth + strict tenant resolution shared by every workspace-scoped
-    handler below. Returns (user_id, workspace, membership). Raises
-    WorkspaceError, which callers must catch and pass to _error_response."""
+    handler below. Unlike routes/work_hub.py's identically-named helper,
+    this blueprint's routes carry an explicit <workspace_id> in the URL
+    (`/workspaces/<workspace_id>/shared-artifacts`), so resolution must use
+    that value -- not the X-Workspace-Id header, which tracks a client's
+    separate "currently active workspace" concept and can legitimately
+    differ from the workspace named in the URL (e.g. sharing into or
+    revoking from a workspace other than the one currently being viewed).
+    Returns (user_id, workspace, membership). Raises WorkspaceError, which
+    callers must catch and pass to _error_response."""
     user_id = get_current_user_id(request, session=session)
-    workspace, membership = workspace_model.resolve_context(user_id, header_workspace_id())
+    workspace, membership = workspace_model.resolve_context(user_id, workspace_id)
     if membership is None or membership.get('status') != 'active':
         raise workspace_model.WorkspaceError('membership_required')
     return user_id, workspace, membership
@@ -54,9 +62,9 @@ def _resolve():
 @sharing_bp.route('/workspaces/<workspace_id>/shared-artifacts', methods=['GET'])
 def list_shared_artifacts(workspace_id):
     try:
-        user_id, workspace, membership = _resolve()
+        user_id, workspace, membership = _resolve(workspace_id)
     except workspace_model.WorkspaceError as exc:
-        return _error_response(exc)
+        return _error_response(exc, workspace_id)
     artifacts = artifact_model.list_artifacts(
         workspace['id'], user_id, membership['role'],
         source_type=request.args.get('source_type'),
@@ -67,7 +75,7 @@ def list_shared_artifacts(workspace_id):
 @sharing_bp.route('/workspaces/<workspace_id>/shared-artifacts', methods=['POST'])
 def create_shared_artifact(workspace_id):
     try:
-        user_id, workspace, membership = _resolve()
+        user_id, workspace, membership = _resolve(workspace_id)
         workspace_subscription.assert_writable(workspace)
         data = request.get_json(silent=True) or {}
         artifact = artifact_model.create_artifact(
@@ -79,21 +87,21 @@ def create_shared_artifact(workspace_id):
         )
     except (workspace_model.WorkspaceError, workspace_subscription.WorkspaceSubscriptionError,
             artifact_model.ArtifactError) as exc:
-        return _error_response(exc)
+        return _error_response(exc, workspace_id)
     return jsonify({'success': True, 'artifact': artifact}), 201
 
 
 @sharing_bp.route('/workspaces/<workspace_id>/shared-artifacts/<artifact_id>', methods=['DELETE'])
 def revoke_shared_artifact(workspace_id, artifact_id):
     try:
-        user_id, workspace, membership = _resolve()
+        user_id, workspace, membership = _resolve(workspace_id)
         workspace_subscription.assert_writable(workspace)
         revoked = artifact_model.revoke_artifact(workspace['id'], artifact_id, user_id)
     except (workspace_model.WorkspaceError, workspace_subscription.WorkspaceSubscriptionError,
             artifact_model.ArtifactError) as exc:
-        return _error_response(exc)
+        return _error_response(exc, workspace_id)
     if not revoked:
-        return _error_response(artifact_model.ArtifactError('artifact_not_found'))
+        return _error_response(artifact_model.ArtifactError('artifact_not_found'), workspace_id)
     return jsonify({'success': True})
 
 

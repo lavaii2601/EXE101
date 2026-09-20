@@ -257,7 +257,7 @@ def list_seat_requests(workspace_id, status=None):
         return pg.normalize_rows(rows)
 
 
-def approve_seat_request(request_id, approved_by_user_id, added_seats=None):
+def approve_seat_request(workspace_id, request_id, approved_by_user_id, added_seats=None):
     """Grant additional seats and let the blocked invitation be retried.
 
     The invitation goes back to 'pending' rather than being auto-activated
@@ -267,8 +267,8 @@ def approve_seat_request(request_id, approved_by_user_id, added_seats=None):
     _require_pg()
     with pg.connection() as conn:
         request = conn.execute(
-            "SELECT * FROM workspace_seat_requests WHERE id = %s FOR UPDATE",
-            (request_id,),
+            "SELECT * FROM workspace_seat_requests WHERE id = %s AND workspace_id = %s FOR UPDATE",
+            (request_id, workspace_id),
         ).fetchone()
         if request is None:
             raise WorkspaceSubscriptionError("seat_request_not_found")
@@ -319,12 +319,12 @@ def approve_seat_request(request_id, approved_by_user_id, added_seats=None):
         return result
 
 
-def reject_seat_request(request_id, actor_user_id):
+def reject_seat_request(workspace_id, request_id, actor_user_id):
     _require_pg()
     with pg.connection() as conn:
         request = conn.execute(
-            "SELECT * FROM workspace_seat_requests WHERE id = %s FOR UPDATE",
-            (request_id,),
+            "SELECT * FROM workspace_seat_requests WHERE id = %s AND workspace_id = %s FOR UPDATE",
+            (request_id, workspace_id),
         ).fetchone()
         if request is None:
             raise WorkspaceSubscriptionError("seat_request_not_found")

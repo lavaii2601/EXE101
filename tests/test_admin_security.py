@@ -27,18 +27,33 @@ class AdminTotpTests(unittest.TestCase):
         )
 
     def test_totp_accepts_current_window_and_rejects_bad_format(self):
+        # _verify_totp returns the matched time-step counter (not a plain
+        # bool) so _consume_totp_counter can detect a replay of the same
+        # code -- assert both matches resolve to the SAME counter (they're
+        # the same 30s step, just checked at different offsets).
         now = 1_700_000_000
         code = admin._totp_at(RFC_6238_SECRET, timestamp=now)
-        self.assertTrue(admin._verify_totp(code, RFC_6238_SECRET, timestamp=now))
-        self.assertTrue(
-            admin._verify_totp(code, RFC_6238_SECRET, timestamp=now + 30)
+        matched = admin._verify_totp(code, RFC_6238_SECRET, timestamp=now)
+        self.assertIsNotNone(matched)
+        self.assertEqual(
+            matched,
+            admin._verify_totp(code, RFC_6238_SECRET, timestamp=now + 30),
         )
-        self.assertFalse(
+        self.assertIsNone(
             admin._verify_totp(code, RFC_6238_SECRET, timestamp=now + 60)
         )
-        self.assertFalse(
+        self.assertIsNone(
             admin._verify_totp('12345x', RFC_6238_SECRET, timestamp=now)
         )
+
+    def test_consume_totp_counter_rejects_replay_of_the_same_code(self):
+        admin._totp_consumed_counters.clear()
+        self.assertTrue(admin._consume_totp_counter('admin-1', 12345))
+        self.assertFalse(admin._consume_totp_counter('admin-1', 12345))
+        # A different user, or the next time-step, must not be blocked by
+        # someone else's (or an earlier) consumed counter.
+        self.assertTrue(admin._consume_totp_counter('admin-2', 12345))
+        self.assertTrue(admin._consume_totp_counter('admin-1', 12346))
 
     def test_short_secret_is_rejected(self):
         with self.assertRaises(ValueError):
@@ -55,6 +70,7 @@ class AdminRouteSecurityTests(unittest.TestCase):
 
     def setUp(self):
         admin._totp_attempts.clear()
+        admin._totp_consumed_counters.clear()
 
     def _client_with_google_session(self, email='admin@example.com'):
         client = self.app.test_client()
@@ -133,6 +149,73 @@ class AdminRouteSecurityTests(unittest.TestCase):
         self.assertTrue(response.get_json()['totp_verified'])
         self.assertEqual(session_response.status_code, 200)
         self.assertTrue(session_response.get_json()['totp_verified'])
+
+    def test_totp_rate_limit_cannot_be_bypassed_by_spoofing_x_forwarded_for(self):
+        # _attempt_key used to read the client-supplied X-Forwarded-For
+        # header directly (taking its attacker-controlled leftmost entry)
+        # instead of request.remote_addr, which ProxyFix(x_for=1) already
+        # resolves correctly. That let every attempt land in a fresh bucket
+        # by sending a different fake header each time, bypassing the
+        # brute-force cap entirely. Assert a spoofed header no longer helps.
+        client = self._client_with_google_session()
+        google_user = {'gmail_email': 'admin@example.com', 'gmail_connected': 1}
+        with (
+            patch.object(Config, 'ADMIN_EMAILS', {'admin@example.com'}),
+            patch.object(Config, 'ADMIN_TOTP_SECRET', RFC_6238_SECRET),
+            patch.object(Config, 'ADMIN_TOTP_MAX_ATTEMPTS', 3),
+            patch.object(admin.User, 'get', return_value=google_user),
+        ):
+            # ProxyFix(x_for=1) trusts exactly one hop, taken from the
+            # RIGHT of X-Forwarded-For -- that's Railway's own edge
+            # appending the real observed client IP. A prepended fake
+            # left-hand entry is exactly what an attacker can freely
+            # inject; the real client IP (last segment) stays constant.
+            for i in range(3):
+                response = client.post(
+                    '/api/admin/verify-totp',
+                    json={'code': '000000'},
+                    headers={
+                        'Origin': 'http://localhost:5000',
+                        'X-Forwarded-For': f'{i}.{i}.{i}.{i}, 203.0.113.50',
+                    },
+                )
+                self.assertEqual(401, response.status_code)
+
+            # A 4th attempt with yet another fake prefix (same real IP)
+            # must now be throttled -- not land in a brand-new bucket.
+            response = client.post(
+                '/api/admin/verify-totp',
+                json={'code': '000000'},
+                headers={
+                    'Origin': 'http://localhost:5000',
+                    'X-Forwarded-For': '9.9.9.9, 203.0.113.50',
+                },
+            )
+        self.assertEqual(429, response.status_code)
+        self.assertEqual('admin_totp_rate_limited', response.get_json()['error'])
+
+    def test_replayed_totp_code_is_rejected_on_second_submission(self):
+        client = self._client_with_google_session()
+        google_user = {'gmail_email': 'admin@example.com', 'gmail_connected': 1}
+        code = admin._totp_at(RFC_6238_SECRET, timestamp=time.time())
+        with (
+            patch.object(Config, 'ADMIN_EMAILS', {'admin@example.com'}),
+            patch.object(Config, 'ADMIN_TOTP_SECRET', RFC_6238_SECRET),
+            patch.object(admin.User, 'get', return_value=google_user),
+        ):
+            first = client.post(
+                '/api/admin/verify-totp',
+                json={'code': code},
+                headers={'Origin': 'http://localhost:5000'},
+            )
+            second = client.post(
+                '/api/admin/verify-totp',
+                json={'code': code},
+                headers={'Origin': 'http://localhost:5000'},
+            )
+        self.assertEqual(200, first.status_code)
+        self.assertEqual(401, second.status_code)
+        self.assertEqual('admin_totp_invalid', second.get_json()['error'])
 
     def test_admin_dashboard_redirects_to_login_shell_without_admin_session(self):
         client = self.app.test_client()

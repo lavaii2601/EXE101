@@ -95,6 +95,11 @@ def create_document():
         title, content, tags=tags, source='manual',
         workspace_id=workspace['id'], created_by_user_id=user_id,
     )
+    workspace_model.record_audit_event(
+        workspace['id'], user_id, 'knowledge_document_created',
+        target_type='knowledge_document', target_id=str(document.get('id')),
+        metadata={'title': title},
+    )
     return jsonify({'success': True, 'document': document}), 201
 
 
@@ -126,6 +131,11 @@ def update_document(doc_id):
         content=content.strip() if content is not None else None,
         tags=tags.strip() if tags is not None else None,
     )
+    workspace_model.record_audit_event(
+        workspace['id'], user_id, 'knowledge_document_updated',
+        target_type='knowledge_document', target_id=str(doc_id),
+        metadata={'fields': [k for k in ('title', 'content', 'tags') if data.get(k) is not None]},
+    )
     return jsonify({'success': True, 'document': document})
 
 
@@ -143,4 +153,9 @@ def delete_document(doc_id):
         return _error_response(workspace_model.WorkspaceError('knowledge_not_found'))
 
     knowledge_service.delete_document(doc_id)
+    workspace_model.record_audit_event(
+        workspace['id'], user_id, 'knowledge_document_deleted',
+        target_type='knowledge_document', target_id=str(doc_id),
+        metadata={'title': existing.get('title')},
+    )
     return jsonify({'success': True})

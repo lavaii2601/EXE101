@@ -22,6 +22,8 @@ from routes import _background as background_route  # noqa: E402
 from routes import chat as chat_route  # noqa: E402
 from routes import schedule as schedule_route  # noqa: E402
 from services.chat_agents import AgentResult  # noqa: E402
+from services.chat_agents.checklist_agents import ChecklistCreateAgent  # noqa: E402
+from services.chat_agents.common import ChatContext  # noqa: E402
 
 
 class ScheduleOptimisticConcurrencyTests(unittest.TestCase):
@@ -392,6 +394,77 @@ class ChecklistOptimisticConcurrencyTests(unittest.TestCase):
             [{"id": "fresh"}],
             Cache.get(key, db_path=self.alice_db)["items"],
         )
+
+
+class ChecklistChatAgentConcurrencyTests(unittest.TestCase):
+    """services/chat_agents/checklist_agents.py's ChecklistCreateAgent used
+    to write through a plain Cache.set (last-write-wins, no revision check)
+    while routes/schedule.py's own checklist save path always uses
+    Cache.set_versioned for this exact cache row. A concurrent Overview
+    save landing between the chat agent's read and write would silently
+    disappear, with no conflict raised on either side. Assert the fix:
+    the chat agent retries against the versioned write, so both sides'
+    changes survive."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.temp_dir.name, "alice-checklist.db")
+        self.pg_patch = patch.object(cache_module.pg, "enabled", return_value=False)
+        self.pg_patch.start()
+
+    def tearDown(self):
+        self.pg_patch.stop()
+        Cache._initialized_dbs.discard(self.db_path)
+        self.temp_dir.cleanup()
+
+    def _ctx(self):
+        return ChatContext(
+            user_message="them viec vao checklist",
+            user_id="alice",
+            db_path=self.db_path,
+            chat_session_id="sess-1",
+            mode="general",
+            mode_prompt="",
+            task="checklist.create",
+            intent_result={},
+        )
+
+    def test_chat_added_item_survives_a_concurrent_overview_save(self):
+        cache_key = schedule_route._checklist_cache_key(
+            "alice", schedule_route.datetime.now(schedule_route.LOCAL_TZ).date().isoformat(),
+        )
+        Cache.set_versioned(
+            cache_key, {"custom_items": [], "completed": {}}, expected_revision=0, db_path=self.db_path,
+        )
+
+        agent = ChecklistCreateAgent()
+        original_get = Cache.get
+        call_count = {"n": 0}
+
+        def get_with_concurrent_write(key, db_path=None):
+            call_count["n"] += 1
+            result = original_get(key, db_path=db_path)
+            if call_count["n"] == 1:
+                # Simulate the Overview widget's own save landing in the
+                # gap between the chat agent's read and its write.
+                current = original_get(key, db_path=db_path)
+                Cache.set_versioned(
+                    key,
+                    {**current, "custom_items": [{
+                        "id": "web:1", "title": "Overview item", "completed": False,
+                    }]},
+                    expected_revision=current["revision"],
+                    db_path=db_path,
+                )
+            return result
+
+        with patch.object(Cache, "get", side_effect=get_with_concurrent_write):
+            result = agent._apply(self._ctx(), [{"title": "Chat item", "priority": "normal"}])
+
+        self.assertIn("Chat item", result.response)
+        final = Cache.get(cache_key, db_path=self.db_path)
+        titles = {item["title"] for item in final["custom_items"]}
+        self.assertEqual({"Overview item", "Chat item"}, titles)
 
 
 class ChatProfileModeTests(unittest.TestCase):

@@ -199,7 +199,7 @@ def revoke_invitation(workspace_id, invitation_id):
     membership = workspace_model.get_membership(workspace_id, user_id)
     try:
         _require_role(membership, ('owner', 'admin'))
-        result = workspace_model.revoke_invitation(invitation_id, user_id)
+        result = workspace_model.revoke_invitation(workspace_id, invitation_id, user_id)
     except workspace_model.WorkspaceError as exc:
         return _error_response(exc)
     return jsonify({'success': True, 'invitation': result})
@@ -248,7 +248,7 @@ def approve_seat_request(workspace_id, request_id):
     try:
         _require_role(membership, ('owner', 'admin'))
         result = workspace_subscription.approve_seat_request(
-            request_id, user_id, added_seats=data.get('added_seats'),
+            workspace_id, request_id, user_id, added_seats=data.get('added_seats'),
         )
     except (workspace_model.WorkspaceError, workspace_subscription.WorkspaceSubscriptionError) as exc:
         return _error_response(exc)
@@ -261,7 +261,7 @@ def reject_seat_request(workspace_id, request_id):
     membership = workspace_model.get_membership(workspace_id, user_id)
     try:
         _require_role(membership, ('owner', 'admin'))
-        result = workspace_subscription.reject_seat_request(request_id, user_id)
+        result = workspace_subscription.reject_seat_request(workspace_id, request_id, user_id)
     except (workspace_model.WorkspaceError, workspace_subscription.WorkspaceSubscriptionError) as exc:
         return _error_response(exc)
     return jsonify({'success': True, 'seat_request': result})

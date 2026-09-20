@@ -176,6 +176,30 @@ class StatusReportLifecycleTests(unittest.TestCase):
         published = {"author_user_id": "alice", "status": "published", "visibility": "workspace"}
         self.assertTrue(status_report_module.is_report_visible(published, "bob", "worker"))
 
+    def test_update_draft_records_an_audit_event(self):
+        # create_draft/publish_report/delete_report all record an audit
+        # event; update_draft was the one lifecycle mutation that didn't,
+        # leaving a gap in the trail between a report's creation and its
+        # publish/delete with no record of what changed in between.
+        draft = {
+            "id": "r1", "workspace_id": WORKSPACE_A, "author_user_id": "alice", "status": "draft",
+        }
+        updated_row = {**draft, "done_text": "progress update"}
+        connection = _ScriptedConnection([
+            ("UPDATE status_reports SET", _Result(one=updated_row)),
+            ("INSERT INTO workspace_audit_events", _Result(rowcount=1)),
+        ])
+        with (
+            patch.object(status_report_module, "get_report", return_value=draft),
+            _patched_pg(status_report_module, connection),
+        ):
+            result = status_report_module.update_draft(
+                WORKSPACE_A, "r1", "alice", done_text="progress update",
+            )
+        self.assertEqual("progress update", result["done_text"])
+        audit_call = connection.calls[1]
+        self.assertIn("status_report_draft_updated", audit_call[1])
+
     def test_delete_published_report_requires_admin_role(self):
         with (
             patch.object(status_report_module.pg, "enabled", return_value=True),
@@ -229,6 +253,75 @@ class WorkspaceReadOnlyEnforcementTests(unittest.TestCase):
             response = self.app.test_client().post("/api/projects", json={"name": "New"})
         self.assertEqual(403, response.status_code)
         self.assertEqual("insufficient_role", response.get_json()["error"])
+
+
+class ProjectDeleteAuthorizationTests(unittest.TestCase):
+    """delete_project used to enforce the workspace-wide owner/admin-only
+    _require_manage_role instead of can_manage_project (its own docstring:
+    "whether the caller may PATCH/DELETE this project") -- so a worker set
+    as a project's delegate owner_user_id could PATCH it but got 403 trying
+    to DELETE the very project they're documented to manage."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = Flask(__name__)
+        cls.app.config.update(TESTING=True, SECRET_KEY="test")
+        cls.app.register_blueprint(work_hub_route.work_hub_bp)
+
+    def _resolve_as(self, role, user_id="alice", workspace_type="business"):
+        workspace = {"id": WORKSPACE_A, "type": workspace_type}
+        membership = {"role": role, "status": "active"}
+        return (
+            patch.object(work_hub_route, "get_current_user_id", return_value=user_id),
+            patch.object(
+                work_hub_route.workspace_model, "resolve_context",
+                return_value=(workspace, membership),
+            ),
+        )
+
+    def test_project_delegate_owner_can_delete_their_own_project(self):
+        p1, p2 = self._resolve_as("worker", user_id="alice")
+        project = {"id": "p1", "owner_user_id": "alice"}
+        with (
+            p1, p2,
+            patch.object(project_module, "get_project", return_value=project),
+            patch.object(project_module, "delete_project", return_value=True) as delete,
+        ):
+            response = self.app.test_client().delete("/api/projects/p1")
+        self.assertEqual(200, response.status_code)
+        delete.assert_called_once_with(WORKSPACE_A, "p1", "alice")
+
+    def test_worker_who_is_not_the_project_delegate_cannot_delete_it(self):
+        p1, p2 = self._resolve_as("worker", user_id="bob")
+        project = {"id": "p1", "owner_user_id": "alice"}
+        with (
+            p1, p2,
+            patch.object(project_module, "get_project", return_value=project),
+            patch.object(project_module, "delete_project") as delete,
+        ):
+            response = self.app.test_client().delete("/api/projects/p1")
+        self.assertEqual(403, response.status_code)
+        self.assertEqual("insufficient_role", response.get_json()["error"])
+        delete.assert_not_called()
+
+    def test_workspace_admin_can_delete_a_project_they_do_not_own(self):
+        p1, p2 = self._resolve_as("admin", user_id="admin-user")
+        project = {"id": "p1", "owner_user_id": "alice"}
+        with (
+            p1, p2,
+            patch.object(project_module, "get_project", return_value=project),
+            patch.object(project_module, "delete_project", return_value=True) as delete,
+        ):
+            response = self.app.test_client().delete("/api/projects/p1")
+        self.assertEqual(200, response.status_code)
+        delete.assert_called_once_with(WORKSPACE_A, "p1", "admin-user")
+
+    def test_delete_missing_project_is_not_found(self):
+        p1, p2 = self._resolve_as("owner")
+        with p1, p2, patch.object(project_module, "get_project", return_value=None):
+            response = self.app.test_client().delete("/api/projects/missing")
+        self.assertEqual(404, response.status_code)
+        self.assertEqual("project_not_found", response.get_json()["error"])
 
 
 class WorkHubDashboardTests(unittest.TestCase):

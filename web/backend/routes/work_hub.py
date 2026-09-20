@@ -219,10 +219,22 @@ def patch_project(project_id):
 def delete_project(project_id):
     try:
         user_id, workspace, membership = _resolve()
-        _require_manage_role(membership)
+        # can_manage_project (its own docstring: "whether the caller may
+        # PATCH/DELETE this project") -- not the stricter workspace-wide
+        # _require_manage_role -- so a worker who is this specific
+        # project's delegate owner_user_id can delete it, exactly like
+        # patch_project already allows. _require_manage_role alone would
+        # let such a delegate rename/reschedule the project but then 403
+        # them on deleting the very project they're documented to manage.
+        existing = project_model.get_project(workspace['id'], project_id)
+        if existing is None:
+            raise project_model.ProjectError('project_not_found')
+        if not project_model.can_manage_project(existing, user_id, membership['role']):
+            raise workspace_model.WorkspaceError('insufficient_role')
         workspace_subscription.assert_writable(workspace)
         deleted = project_model.delete_project(workspace['id'], project_id, user_id)
-    except (workspace_model.WorkspaceError, workspace_subscription.WorkspaceSubscriptionError) as exc:
+    except (workspace_model.WorkspaceError, workspace_subscription.WorkspaceSubscriptionError,
+            project_model.ProjectError) as exc:
         return _error_response(exc)
     if not deleted:
         return _error_response(project_model.ProjectError('project_not_found'))

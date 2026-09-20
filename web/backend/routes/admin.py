@@ -29,6 +29,12 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 _PROCESS_STARTED_AT = time.time()
 _totp_attempts = defaultdict(deque)
 _totp_attempts_lock = threading.Lock()
+# Last RFC 6238 time-step counter successfully consumed per admin user_id --
+# _verify_totp's +-1 step window means a captured, still-valid code could
+# otherwise be replayed for up to ~90s. Consuming a counter once makes a
+# second submission of the identical code fail even inside that window.
+_totp_consumed_counters = {}
+_totp_consumed_lock = threading.Lock()
 
 
 def _decode_totp_secret(secret):
@@ -65,14 +71,30 @@ def _totp_at(secret, timestamp=None, digits=6, period=30):
 
 
 def _verify_totp(code, secret, timestamp=None, window=1):
+    """Return the matched RFC 6238 time-step counter, or None if `code`
+    doesn't match any step in the +-window. (Not a plain bool: the matched
+    counter is what _consume_totp_counter needs to detect a replay of the
+    same code within its still-valid window.)"""
     code = str(code or '').strip()
     if not re.fullmatch(r'\d{6}', code):
-        return False
+        return None
     now = time.time() if timestamp is None else float(timestamp)
-    return any(
-        hmac.compare_digest(code, _totp_at(secret, now + offset * 30))
-        for offset in range(-window, window + 1)
-    )
+    for offset in range(-window, window + 1):
+        candidate_time = now + offset * 30
+        if hmac.compare_digest(code, _totp_at(secret, candidate_time)):
+            return int(candidate_time // 30)
+    return None
+
+
+def _consume_totp_counter(user_id, counter):
+    """True the first time this (user, time-step) pair is seen; False if
+    that exact code has already been used once (a replay), even though
+    it's still inside _verify_totp's valid window."""
+    with _totp_consumed_lock:
+        if _totp_consumed_counters.get(user_id) == counter:
+            return False
+        _totp_consumed_counters[user_id] = counter
+        return True
 
 
 def _trusted_google_email(user_id):
@@ -174,8 +196,13 @@ def _require_admin():
 
 
 def _attempt_key(user_id):
-    forwarded = (request.headers.get('X-Forwarded-For') or '').split(',')[0].strip()
-    return user_id, forwarded or request.remote_addr or 'unknown'
+    # request.remote_addr (not a raw X-Forwarded-For read) -- app.py's
+    # ProxyFix(x_for=1) already resolves the one trusted Railway edge hop
+    # into this value. Re-parsing the header directly here used to take its
+    # client-supplied leftmost entry instead, letting an attacker pick a
+    # fresh, unthrottled bucket on every request and bypass the TOTP
+    # brute-force cap entirely.
+    return user_id, request.remote_addr or 'unknown'
 
 
 def _consume_totp_attempt(user_id):
@@ -841,7 +868,8 @@ def verify_admin_totp():
         return response, 429
 
     code = (request.get_json(silent=True) or {}).get('code')
-    if not _verify_totp(code, Config.ADMIN_TOTP_SECRET):
+    counter = _verify_totp(code, Config.ADMIN_TOTP_SECRET)
+    if counter is None or not _consume_totp_counter(user_id, counter):
         return jsonify({
             'error': 'admin_totp_invalid',
             'message': 'Mã Authenticator không đúng hoặc đã hết hạn.',
