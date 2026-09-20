@@ -21,7 +21,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from services.gmail_service import GmailService, get_cached_gmail_service
-from services.mistral_service import MistralService
 from services.ai_service import AIService
 from routes.admin import is_current_user_admin
 from models.history import History
@@ -53,7 +52,6 @@ logger = logging.getLogger(__name__)
 email_bp = Blueprint('email', __name__, url_prefix='/api/email')
 
 # Initialize services
-mistral_service = MistralService()
 ai_service = AIService()
 
 # Local-development email list cache. PostgreSQL deployments can run several
@@ -262,7 +260,7 @@ def _set_flow_code_verifier(flow, code_verifier):
         except Exception:
             pass
 
-def _get_cache_key(user_id, filter_type, include_read=False, scan_limit=EMAIL_SCAN_DEFAULT):
+def _get_cache_key(user_id, filter_type, include_read=False, scan_limit=EMAIL_SCAN_DEFAULT, search=''):
     """Generate one shared inbox cache key for every client-side filter.
 
     Older versions included ``filter_type`` in this key and stored only the
@@ -270,8 +268,17 @@ def _get_cache_key(user_id, filter_type, include_read=False, scan_limit=EMAIL_SC
     which was both slow and capable of exhausting Railway's request window.
     Filtering now happens after the common metadata cache is loaded.
     ``filter_type`` stays in the signature for backwards compatibility.
+
+    ``search`` is deliberately its own cache namespace, not folded into the
+    plain inbox one above: a search re-queries Gmail directly (see
+    get_unread_emails), so its result set has entirely different scope/
+    semantics than "the most recent N unread/inbox messages" and must never
+    be served from, or overwrite, that cache entry.
     """
     read_scope = 'with_read' if include_read else 'unread'
+    if search:
+        search_key = _normalize_search_text(search)[:200]
+        return f"{user_id}:emails:list:v3:search:{read_scope}:{scan_limit}:{search_key}"
     return f"{user_id}:emails:list:v3:inbox:{read_scope}:{scan_limit}"
 
 
@@ -281,6 +288,23 @@ def _email_body_cache_key(user_id, email_id):
 
 def _email_summary_cache_key(user_id, email_id):
     return f"{user_id}:email:summary:{email_id}"
+
+
+def _gmail_query_for_email_list(search):
+    """Gmail API `q=` for the inbox-list scan.
+
+    A `search` term routes through Gmail's own server-side search -- which
+    spans the whole mailbox, not just this request's scan_limit-sized
+    recent-messages window -- instead of only being applied as a local
+    re-filter afterward (the previous behavior: a keyword only "worked" when
+    the matching email happened to already be among the most recent ~25
+    fetched messages). Always widens to the whole inbox (not just unread)
+    while searching -- a user looking for a specific email wants it found
+    regardless of read state.
+    """
+    if search:
+        return f'in:inbox {search}'
+    return 'is:unread'
 
 
 def _clamp_scan_limit(raw_value):
@@ -433,20 +457,6 @@ def _matches_filter(email, filter_type):
 def _normalize_search_text(value):
     text = unicodedata.normalize('NFKD', str(value or '').lower())
     return ''.join(char for char in text if not unicodedata.combining(char))
-
-
-def _matches_search(email, keyword):
-    normalized_keyword = _normalize_search_text(keyword).strip()
-    if not normalized_keyword:
-        return True
-    searchable = ' '.join([
-        email.get('sender', ''),
-        email.get('subject', ''),
-        email.get('snippet', ''),
-        email.get('summary', ''),
-        email.get('tag', '')
-    ])
-    return normalized_keyword in _normalize_search_text(searchable)
 
 
 def _parse_email_base_date(email):
@@ -1236,7 +1246,9 @@ def get_unread_emails():
         cache_only = request.args.get('cache_only', 'false', type=str).lower() in {'1', 'true', 'yes'}
         db_path = get_user_db_path(user_id)
         
-        cache_key = _get_cache_key(user_id, filter_type, include_read=include_read, scan_limit=scan_limit)
+        cache_key = _get_cache_key(
+            user_id, filter_type, include_read=include_read, scan_limit=scan_limit, search=search,
+        )
         db_cache_key = cache_key
         
         # Try in-memory cache first, then DB cache.
@@ -1298,7 +1310,7 @@ def get_unread_emails():
 
                 raw_emails = service.get_emails(
                     max_results=scan_limit,
-                    query='is:unread',
+                    query=_gmail_query_for_email_list(search),
                     include_read=include_read,
                     raise_errors=True,
                 )
@@ -1341,8 +1353,13 @@ def get_unread_emails():
                 email for email in filtered_emails
                 if (email.get('smart_bucket') or _smart_inbox_bucket(email)) == smart_bucket_filter
             ]
-        if search:
-            filtered_emails = [email for email in filtered_emails if _matches_search(email, search)]
+        # No local _matches_search re-filter here: when `search` is set,
+        # `inbox_emails` already came from a Gmail-side search query (see
+        # above), which searches the full message body/headers across the
+        # whole mailbox. Re-applying a local substring check against just
+        # sender/subject/snippet/summary/tag would incorrectly drop a
+        # legitimate Gmail match whose only hit was in body text this
+        # narrower local check never looks at.
 
         # Calculate pagination
         total_emails = len(filtered_emails)
