@@ -32,11 +32,10 @@ const USAGE_LABELS = {
 };
 
 const ACCENT_OPTIONS = [
-  { key: 'charcoal', hex: '#242423' },
-  { key: 'blue',     hex: '#2563eb' },
-  { key: 'purple',   hex: '#7c3aed' },
-  { key: 'green',    hex: '#059669' },
-  { key: 'orange',   hex: '#ea580c' },
+  { key: 'blue',   hex: '#0B5ED7' },
+  { key: 'green',  hex: '#4F7D1C' },
+  { key: 'cyan',   hex: '#167D91' },
+  { key: 'yellow', hex: '#A56800' },
 ];
 
 function formatSubscriptionRemaining(subscription, t) {

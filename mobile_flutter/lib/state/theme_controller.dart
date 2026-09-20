@@ -12,11 +12,10 @@ class AccentDef {
 }
 
 const Map<String, AccentDef> kAccents = {
-  'charcoal': AccentDef(Color(0xFF242423), Color(0xFF1E1E1D)),
-  'blue': AccentDef(Color(0xFF2563EB), Color(0xFF1D4ED8)),
-  'purple': AccentDef(Color(0xFF6C63FF), Color(0xFF5951E8)),
-  'green': AccentDef(Color(0xFF059669), Color(0xFF047857)),
-  'orange': AccentDef(Color(0xFFEA580C), Color(0xFFC2410C)),
+  'blue': AccentDef(Color(0xFF0B5ED7), Color(0xFF0847A6)),
+  'green': AccentDef(Color(0xFF4F7D1C), Color(0xFF3B6114)),
+  'cyan': AccentDef(Color(0xFF167D91), Color(0xFF105E6D)),
+  'yellow': AccentDef(Color(0xFFA56800), Color(0xFF7E4F00)),
 };
 
 /// Palette shape mirrors ThemeContext.js buildColors() exactly (same key
@@ -57,49 +56,49 @@ class AppColors {
   });
 
   static AppColors build(bool isDark, String accentKey) {
-    final accent = kAccents[accentKey] ?? kAccents['purple']!;
+    final accent = kAccents[accentKey] ?? kAccents['blue']!;
     if (isDark) {
       return AppColors(
-        background: const Color(0xFF0B1020),
-        panel: const Color(0xFF12182A),
-        panelSoft: const Color(0xFF192137),
-        text: const Color(0xFFF7F8FF),
-        textMuted: const Color(0xFF9DA8C3),
-        border: Colors.white.withValues(alpha: 0.08),
+        background: const Color(0xFF071827),
+        panel: const Color(0xFF0E2335),
+        panelSoft: const Color(0xFF153149),
+        text: const Color(0xFFF3FBFD),
+        textMuted: const Color(0xFFA7C2CC),
+        border: const Color(0xFF82D6E5).withValues(alpha: 0.16),
         primary: accent.primary,
         primaryDark: accent.primaryDark,
         primarySoft: accent.primary.withValues(alpha: 0.14),
         danger: const Color(0xFFEF4444),
-        success: const Color(0xFF34D399),
-        warning: const Color(0xFFFBBF24),
-        secondaryBg: const Color(0xFF202A43),
-        secondaryText: const Color(0xFFE5E9F7),
-        inputPlaceholder: const Color(0xFF5C5C70),
+        success: const Color(0xFF8BC34A),
+        warning: const Color(0xFFF6C667),
+        secondaryBg: const Color(0xFF17384A),
+        secondaryText: const Color(0xFF82D6E5),
+        inputPlaceholder: const Color(0xFF74909B),
       );
     }
     return AppColors(
-      background: const Color(0xFFF4F6FC),
+      background: const Color(0xFFF4FAFB),
       panel: const Color(0xFFFFFFFF),
-      panelSoft: const Color(0xFFF7F8FD),
-      text: const Color(0xFF182033),
-      textMuted: const Color(0xFF667085),
-      border: const Color(0xFFE4E7F0),
+      panelSoft: const Color(0xFFEAF7F9),
+      text: const Color(0xFF173042),
+      textMuted: const Color(0xFF587181),
+      border: const Color(0xFFCBE7EC),
       primary: accent.primary,
       primaryDark: accent.primaryDark,
       primarySoft: accent.primary.withValues(alpha: 0.09),
       danger: const Color(0xFFDC2626),
-      success: const Color(0xFF16A34A),
-      warning: const Color(0xFFD97706),
-      secondaryBg: const Color(0xFFEEF0FF),
-      secondaryText: const Color(0xFF4338CA),
-      inputPlaceholder: const Color(0xFF9AA8BC),
+      success: const Color(0xFF4F7D1C),
+      warning: const Color(0xFFA56800),
+      secondaryBg: const Color(0xFFDFF4F7),
+      secondaryText: const Color(0xFF176B7B),
+      inputPlaceholder: const Color(0xFF78939D),
     );
   }
 }
 
 class ThemeController extends ChangeNotifier {
   bool isDark = false;
-  String accent = 'purple';
+  String accent = 'blue';
 
   ThemeController() {
     _load();

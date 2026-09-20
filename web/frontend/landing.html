@@ -22,17 +22,18 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --primary: #2563eb;
-      --primary-dark: #1d4ed8;
-      --grad-start: #55BEFE;
-      --grad-mid: #5A54FB;
-      --grad-end: #D65EFC;
-      --text: #172033;
-      --text-secondary: #5f6f89;
-      --border: #dfe6f1;
-      --bg: #f5f7fb;
+      --primary: #0B5ED7;
+      --primary-dark: #0847A6;
+      --grad-start: #82D6E5;
+      --grad-mid: #0B5ED7;
+      --grad-end: #8BC34A;
+      --highlight: #F6C667;
+      --text: #173042;
+      --text-secondary: #587181;
+      --border: #CBE7EC;
+      --bg: #F4FAFB;
       --panel: #ffffff;
-      --shadow: 0 14px 40px rgba(23, 32, 51, 0.09);
+      --shadow: 0 14px 40px rgba(22, 78, 99, 0.10);
     }
 
     body {
@@ -50,7 +51,7 @@
       position: sticky;
       top: 0;
       z-index: 100;
-      background: rgba(245, 247, 251, 0.92);
+      background: rgba(244, 250, 251, 0.92);
       backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border);
       display: flex;
@@ -118,14 +119,14 @@
       content: '';
       position: absolute;
       inset: 0;
-      background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(85, 190, 254, 0.12) 0%, transparent 70%);
+      background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(130, 214, 229, 0.18) 0%, transparent 70%);
       pointer-events: none;
     }
 
     .hero-badge {
       display: inline-block;
-      background: linear-gradient(135deg, rgba(85,190,254,0.15), rgba(214,94,252,0.15));
-      border: 1px solid rgba(90, 84, 251, 0.2);
+      background: linear-gradient(135deg, rgba(130,214,229,0.18), rgba(246,198,103,0.18));
+      border: 1px solid rgba(11, 94, 215, 0.2);
       color: var(--primary);
       font-size: 0.75rem;
       font-weight: 600;
@@ -146,7 +147,7 @@
     }
 
     .hero h1 .gradient-text {
-      background: linear-gradient(135deg, var(--grad-start) 0%, var(--grad-mid) 50%, var(--grad-end) 100%);
+      background: linear-gradient(135deg, var(--grad-start) 0%, var(--grad-mid) 42%, var(--grad-end) 72%, var(--highlight) 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -172,7 +173,7 @@
       display: inline-flex;
       align-items: center;
       gap: 10px;
-      background: linear-gradient(135deg, var(--grad-start), var(--grad-mid), var(--grad-end));
+      background: linear-gradient(135deg, var(--grad-start), var(--grad-mid) 48%, var(--grad-end) 76%, var(--highlight));
       color: #fff;
       font-family: inherit;
       font-size: 1rem;
@@ -182,14 +183,14 @@
       border-radius: 12px;
       cursor: pointer;
       transition: opacity 0.15s, transform 0.1s, box-shadow 0.15s;
-      box-shadow: 0 4px 20px rgba(90, 84, 251, 0.35);
+      box-shadow: 0 4px 20px rgba(11, 94, 215, 0.30);
       text-decoration: none;
     }
 
     .btn-primary:hover {
       opacity: 0.9;
       transform: translateY(-2px);
-      box-shadow: 0 8px 28px rgba(90, 84, 251, 0.45);
+      box-shadow: 0 8px 28px rgba(11, 94, 215, 0.38);
     }
 
     .btn-outline {
@@ -282,10 +283,10 @@
       font-size: 1.5rem;
     }
 
-    .feature-icon.blue  { background: linear-gradient(135deg, #dbeafe, #bfdbfe); }
-    .feature-icon.purple{ background: linear-gradient(135deg, #ede9fe, #ddd6fe); }
-    .feature-icon.pink  { background: linear-gradient(135deg, #fce7f3, #fbcfe8); }
-    .feature-icon.green { background: linear-gradient(135deg, #dcfce7, #bbf7d0); }
+    .feature-icon.blue  { background: linear-gradient(135deg, #dbeafe, #bcd7fb); }
+    .feature-icon.purple{ background: linear-gradient(135deg, #dff4f7, #bdebf2); }
+    .feature-icon.pink  { background: linear-gradient(135deg, #fff6df, #f9dda4); }
+    .feature-icon.green { background: linear-gradient(135deg, #edf7df, #d5eab9); }
 
     .feature-card h3 {
       font-size: 1.05rem;
@@ -357,7 +358,7 @@
     .cta-section {
       padding: 96px 40px;
       text-align: center;
-      background: linear-gradient(135deg, rgba(85,190,254,0.06) 0%, rgba(214,94,252,0.06) 100%);
+      background: linear-gradient(135deg, rgba(130,214,229,0.10) 0%, rgba(246,198,103,0.10) 100%);
     }
 
     .cta-section h2 {

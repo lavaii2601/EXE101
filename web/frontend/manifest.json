@@ -4,8 +4,8 @@
   "description": "AI-powered workspace for email, calendar, and tasks.",
   "start_url": "/app",
   "display": "standalone",
-  "background_color": "#f6f8fb",
-  "theme_color": "#5A54FB",
+  "background_color": "#F4FAFB",
+  "theme_color": "#0B5ED7",
   "icons": [
     {
       "src": "/img/android-chrome-192x192.png",

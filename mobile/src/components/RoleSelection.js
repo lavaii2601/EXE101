@@ -10,7 +10,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 function GradientLine({ width }) {
   return (
     <LinearGradient
-      colors={['#ff6fd8', '#D65EFC', '#946BFD']}
+      colors={['#82D6E5', '#8BC34A', '#F6C667']}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 0 }}
       style={[calendarStyles.line, { width }]}
@@ -108,7 +108,7 @@ export default function RoleSelection({ initialValue = '', onContinue, saving })
     <View style={styles.root}>
       <View style={styles.brand}>
         <LinearGradient
-          colors={['#55BEFE', '#5A54FB', '#8171FD', '#D65EFC']}
+          colors={['#82D6E5', '#0B5ED7', '#8BC34A', '#F6C667']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.orb}
@@ -172,7 +172,7 @@ function makeStyles(colors) {
       borderRadius: 26,
       alignItems: 'center',
       justifyContent: 'center',
-      shadowColor: '#5A54FB',
+      shadowColor: '#0B5ED7',
       shadowOffset: { width: 0, height: 10 },
       shadowOpacity: 0.50,
       shadowRadius: 22,

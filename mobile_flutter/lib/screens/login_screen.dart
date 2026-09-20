@@ -139,7 +139,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       height: 64,
                       decoration: BoxDecoration(
                         boxShadow: [
-                          BoxShadow(color: const Color(0xFF5A54FB).withValues(alpha: 0.4), blurRadius: 16, offset: const Offset(0, 8)),
+                          BoxShadow(color: const Color(0xFF0B5ED7).withValues(alpha: 0.34), blurRadius: 16, offset: const Offset(0, 8)),
                         ],
                       ),
                       child: Image.asset('assets/images/logo.png', width: 64, height: 64, fit: BoxFit.contain),

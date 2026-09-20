@@ -1,13 +1,13 @@
 export const colors = {
-  background: '#f5f7fb',
+  background: '#f4fafb',
   panel: '#ffffff',
-  panelSoft: '#f8fafc',
-  text: '#172033',
-  textMuted: '#5f6f89',
-  border: '#dfe6f1',
-  primary: '#242423',
-  primaryDark: '#1e1e1d',
+  panelSoft: '#eaf7f9',
+  text: '#173042',
+  textMuted: '#587181',
+  border: '#cbe7ec',
+  primary: '#0b5ed7',
+  primaryDark: '#0847a6',
   danger: '#dc2626',
-  success: '#16a34a',
-  warning: '#d97706'
+  success: '#4f7d1c',
+  warning: '#a56800'
 };

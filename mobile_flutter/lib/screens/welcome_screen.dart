@@ -125,7 +125,7 @@ class _Illustration extends StatelessWidget {
             height: 140,
             decoration: BoxDecoration(
               boxShadow: [
-                BoxShadow(color: const Color(0xFF5A54FB).withValues(alpha: 0.5), blurRadius: 22, offset: const Offset(0, 10)),
+                BoxShadow(color: const Color(0xFF0B5ED7).withValues(alpha: 0.38), blurRadius: 22, offset: const Offset(0, 10)),
               ],
             ),
             child: Image.asset('assets/images/logo.png', width: 140, height: 140, fit: BoxFit.contain),

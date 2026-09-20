@@ -61,7 +61,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                         colors: kOrbGradient,
                       ),
                       boxShadow: [
-                        BoxShadow(color: const Color(0xFF5A54FB).withValues(alpha: 0.5), blurRadius: 22, offset: const Offset(0, 10)),
+                        BoxShadow(color: const Color(0xFF0B5ED7).withValues(alpha: 0.38), blurRadius: 22, offset: const Offset(0, 10)),
                       ],
                     ),
                     child: const Icon(Icons.calendar_month_outlined, color: Colors.white, size: 34),
@@ -163,4 +163,3 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     );
   }
 }
-

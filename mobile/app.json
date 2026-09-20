@@ -13,7 +13,7 @@
     "android": {
       "versionCode": 3,
       "adaptiveIcon": {
-        "backgroundColor": "#55BEFE"
+        "backgroundColor": "#82D6E5"
       },
       "package": "com.anonymous.flowmateai"
     },

@@ -99,7 +99,7 @@ export default function App() {
   });
 
   if (!fontsLoaded) {
-    return <View style={{ flex: 1, backgroundColor: '#f5f7fb' }} />;
+    return <View style={{ flex: 1, backgroundColor: '#f4fafb' }} />;
   }
 
   return (

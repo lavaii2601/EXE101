@@ -130,7 +130,7 @@ function makeStyles(colors) {
     illustrationOrb: {
       width: 140,
       height: 140,
-      shadowColor: '#5A54FB',
+      shadowColor: '#0B5ED7',
       shadowOffset: { width: 0, height: 10 },
       shadowOpacity: 0.5,
       shadowRadius: 22,
