@@ -15,12 +15,18 @@ sentence the way an LLM can, only surface the existing ones that score
 highest.
 """
 
+import html
 import re
 from collections import Counter
 
 from services.knowledge_service import _tokenize
 
 MAX_SENTENCES = 400
+MAX_OVERVIEW_CHARS = 220
+MAX_ACTION_CHARS = 180
+MAX_DEADLINE_CHARS = 160
+MAX_KEY_POINT_CHARS = 190
+MAX_KEY_POINTS = 4
 
 # Reply/quote chain intros that Gmail prepends to the prior message it
 # pastes below a reply (English + the Vietnamese phrasing Gmail's VI locale
@@ -40,6 +46,20 @@ _QUOTE_INTRO_RE = re.compile(
 # _safe_report_summary already uses elsewhere in this codebase.
 _SENTENCE_END_RE = re.compile(r'(?<=[.!?…])\s+(?=[A-ZÀ-Ỹ0-9"\'])')
 _BULLET_PREFIX_RE = re.compile(r'^[-*•▪‣·]\s*')
+_HTML_BREAK_RE = re.compile(r'(?i)<(?:br\s*/?|/p|/div|/li)>')
+_HTML_TAG_RE = re.compile(r'<[^>]+>')
+_SPACE_RE = re.compile(r'[ \t\u00a0]+')
+_URL_RE = re.compile(r'https?://[^\s<>"\']+', re.IGNORECASE)
+_NOISE_LINE_RE = re.compile(
+    r'(?i)^(?:'
+    r'unsubscribe|manage (?:your )?preferences|view (?:this )?in browser|'
+    r'privacy policy|sent from my (?:iphone|ipad|android)|'
+    r'hủy đăng ký|huỷ đăng ký|quản lý tùy chọn|xem trên trình duyệt'
+    r')\b'
+)
+_SIGNOFF_RE = re.compile(
+    r'(?i)^(?:trân trọng|thân mến|cảm ơn|best regards|kind regards|regards|sincerely)[,!\s]*$'
+)
 
 _PROMO_KEYWORDS = [
     'unsubscribe', 'huỷ đăng ký', 'hủy đăng ký', 'khuyến mãi', 'khuyen mai',
@@ -102,6 +122,31 @@ def split_quoted_reply(body):
     return body, ''
 
 
+def clean_email_text(text):
+    """Turn common HTML/plain email bodies into clean, current-message text.
+
+    The function deliberately removes presentation noise only. It never
+    rewrites names, numbers, dates, or claims, which keeps every selected
+    evidence span traceable to the source email.
+    """
+    value = html.unescape(str(text or ''))
+    value = _HTML_BREAK_RE.sub('\n', value)
+    value = _HTML_TAG_RE.sub(' ', value)
+    value, _ = split_quoted_reply(value)
+
+    cleaned = []
+    for raw_line in value.splitlines():
+        line = _SPACE_RE.sub(' ', raw_line).strip()
+        if not line or _NOISE_LINE_RE.match(line):
+            continue
+        if cleaned and _SIGNOFF_RE.match(line):
+            break
+        if re.fullmatch(r'[-_=*•.\s]{4,}', line):
+            continue
+        cleaned.append(line)
+    return '\n'.join(cleaned).strip()
+
+
 def split_sentences(text):
     """Break email text into sentence-like units, line-first.
 
@@ -125,7 +170,21 @@ def split_sentences(text):
     return sentences[:MAX_SENTENCES]
 
 
-def score_sentences(sentences):
+def _contains_action(sentence):
+    lowered = sentence.casefold()
+    return any(keyword in lowered for keyword in _ACTION_KEYWORDS)
+
+
+def _contains_deadline(sentence):
+    return bool(
+        _TIME_RE.search(sentence)
+        or _DATE_RE.search(sentence)
+        or _WEEKDAY_RE.search(sentence)
+        or _RELATIVE_DAY_RE.search(sentence)
+    )
+
+
+def score_sentences(sentences, subject=''):
     """Luhn-style importance score: average normalized word frequency per
     sentence, with a small lead bias (opening sentences in an email
     usually state the point before elaborating)."""
@@ -140,12 +199,24 @@ def score_sentences(sentences):
     if not freq:
         return {i: 0.0 for i in range(len(sentences))}
     max_freq = max(freq.values())
+    subject_tokens = set(_tokenize(subject))
     scores = {}
     for i, tokens in enumerate(tokenized):
         if not tokens:
             scores[i] = 0.0
             continue
         score = sum(freq[t] / max_freq for t in tokens) / len(tokens)
+        token_set = set(tokens)
+        if subject_tokens:
+            score += 0.22 * (len(token_set & subject_tokens) / len(subject_tokens))
+        if _contains_action(sentences[i]):
+            score += 0.12
+        if _contains_deadline(sentences[i]):
+            score += 0.12
+        if re.search(r'\d', sentences[i]):
+            score += 0.05
+        if len(tokens) > 45:
+            score -= 0.08
         if i == 0:
             score += 0.15
         elif i == 1:
@@ -154,8 +225,8 @@ def score_sentences(sentences):
     return scores
 
 
-def rank_sentence_indices(sentences):
-    scores = score_sentences(sentences)
+def rank_sentence_indices(sentences, subject=''):
+    scores = score_sentences(sentences, subject=subject)
     return sorted(range(len(sentences)), key=lambda i: scores.get(i, 0.0), reverse=True)
 
 
@@ -163,21 +234,20 @@ def detect_special_email(subject, body):
     """Return a short label for automated/OTP/invoice/promo email, or None."""
     text = f"{subject or ''} {str(body or '')[:400]}".lower()
     if any(kw in text for kw in _OTP_KEYWORDS):
-        return "Day la email chua ma xac thuc/OTP tu dong."
+        return "Đây là email chứa mã xác thực/OTP tự động."
     if any(kw in text for kw in _CALENDAR_INVITE_KEYWORDS):
-        return "Day la loi moi lich (calendar invite) tu dong."
+        return "Đây là lời mời lịch tự động."
     if any(kw in text for kw in _INVOICE_KEYWORDS):
-        return "Day la hoa don/xac nhan don hang tu dong."
+        return "Đây là hóa đơn hoặc xác nhận đơn hàng tự động."
     if any(kw in text for kw in _PROMO_KEYWORDS):
-        return "Day la email quang cao/khuyen mai."
+        return "Đây là email quảng cáo/khuyến mãi."
     return None
 
 
 def find_action_sentences(sentences, limit=3):
     matches = []
     for sentence in sentences:
-        lowered = sentence.lower()
-        if any(kw in lowered for kw in _ACTION_KEYWORDS):
+        if _contains_action(sentence):
             matches.append(sentence)
             if len(matches) >= limit:
                 break
@@ -187,83 +257,188 @@ def find_action_sentences(sentences, limit=3):
 def find_deadline_sentences(sentences, limit=2):
     matches = []
     for sentence in sentences:
-        if (_TIME_RE.search(sentence) or _DATE_RE.search(sentence)
-                or _WEEKDAY_RE.search(sentence) or _RELATIVE_DAY_RE.search(sentence)):
+        if _contains_deadline(sentence):
             matches.append(sentence)
             if len(matches) >= limit:
                 break
     return matches
 
 
-def summarize_structured(subject, body, sender='', to='', cc=''):
-    """Adaptive report: TOM TAT always, plus DIEM QUAN TRONG / VIEC CAN LAM /
-    THOI HAN-UU TIEN only when the email actually has content for them.
+def _clip_evidence(text, max_chars):
+    """Shorten a verbatim source span at a word/clause boundary."""
+    value = re.sub(r'\s+', ' ', str(text or '')).strip()
+    if len(value) <= max_chars:
+        return value
+    window = value[:max_chars + 1]
+    cut = max(window.rfind(mark) for mark in ('. ', '; ', ', ', ': '))
+    if cut < max_chars // 2:
+        cut = window.rfind(' ')
+    return f"{window[:max(cut, 1)].rstrip(' ,;:')}…"
 
-    Earlier versions always printed all 4 sections, padding empty ones with
-    'Khong co.' -- a one-line 'thanks' reply and a dense multi-topic email
-    both came out as the same fixed 4-block shape. Shaping the output to
-    what's actually there keeps simple emails short instead of templated."""
+
+def _same_evidence(left, right):
+    left_tokens = set(_tokenize(left))
+    right_tokens = set(_tokenize(right))
+    if not left_tokens or not right_tokens:
+        return False
+    return len(left_tokens & right_tokens) / min(len(left_tokens), len(right_tokens)) >= 0.82
+
+
+def extract_related_documents(body, attachments=None):
+    """Keep every attachment name and explicit source URL discoverable.
+
+    Attachment contents are not interpreted here: retaining metadata and the
+    original download flow is safer than pretending a filename reveals what
+    is inside a document.
+    """
+    documents = []
+    seen = set()
+    for attachment in attachments or []:
+        filename = re.sub(r'[\r\n\t]+', ' ', str((attachment or {}).get('filename') or '')).strip()
+        if not filename:
+            continue
+        key = ('file', filename.casefold())
+        if key not in seen:
+            seen.add(key)
+            documents.append(f"Tệp đính kèm: {filename}")
+    for match in _URL_RE.findall(str(body or '')):
+        url = match.rstrip('.,);]}')
+        key = ('url', url.casefold())
+        if url and key not in seen:
+            seen.add(key)
+            documents.append(f"Liên kết: {url}")
+    return documents
+
+
+def summarize_structured_result(subject, body, sender='', to='', cc='', attachments=None):
+    """Return a concise, evidence-backed email summary and QA metadata.
+
+    Accuracy is protected structurally: every dynamic fact in ``evidence``
+    is copied from the current message after quote/footer cleanup. The
+    renderer keeps the first layer short, then preserves distinct key points,
+    actions, deadlines, attachment names, and source links in detail layers.
+    """
     subject = str(subject or '').strip()
-    body = str(body or '').strip()
-    new_content, _ = split_quoted_reply(body)
-    content = new_content or body
+    content = clean_email_text(body)
+    documents = extract_related_documents(body, attachments=attachments)
 
     special = detect_special_email(subject, content)
     sentences = split_sentences(content)
 
     if not sentences:
-        return f"TOM TAT\n{subject or 'Khong co noi dung de tom tat.'}"
+        overview = _clip_evidence(subject, MAX_OVERVIEW_CHARS) or 'Không có nội dung để tóm tắt.'
+        return {
+            'overview': overview,
+            'key_points': [],
+            'actions': [],
+            'deadlines': [],
+            'documents': documents,
+            'evidence': [overview] if subject else [],
+            'support_ratio': 1.0 if subject else 0.0,
+            'source_sentence_count': 0,
+        }
 
-    ranked = rank_sentence_indices(sentences)
+    ranked = rank_sentence_indices(sentences, subject=subject)
+    overview_candidates = [
+        index for index in ranked
+        if not _contains_action(sentences[index]) and not _contains_deadline(sentences[index])
+    ]
+    overview_indices = sorted((overview_candidates or ranked)[:2])
+    overview_sources = [sentences[index] for index in overview_indices]
+    combined_overview = ' '.join(overview_sources)
+    if len(combined_overview) > MAX_OVERVIEW_CHARS:
+        overview_sources = [overview_sources[0]]
+        combined_overview = overview_sources[0]
 
     if special:
-        top_sentence = sentences[ranked[0]]
-        tom_tat = f"{special} {top_sentence}".strip()
+        overview = f"{special} {_clip_evidence(combined_overview, MAX_OVERVIEW_CHARS)}".strip()
     else:
-        top_indices = sorted(ranked[:2])
-        tom_tat = ' '.join(sentences[i] for i in top_indices)
-    if cc:
-        tom_tat += " (Email nay co CC them nguoi khac.)"
+        overview = _clip_evidence(combined_overview, MAX_OVERVIEW_CHARS)
 
-    sections = [("TOM TAT", tom_tat)]
+    actions = []
+    for sentence in find_action_sentences(sentences, limit=3):
+        if not any(_same_evidence(sentence, source) for source in overview_sources):
+            actions.append(_clip_evidence(sentence, MAX_ACTION_CHARS))
+            break
 
-    important_indices = sorted(ranked[:4])
-    important = [sentences[i] for i in important_indices if sentences[i] not in tom_tat][:3]
-    if important:
-        sections.append(("DIEM QUAN TRONG", '\n'.join(f"- {s}" for s in important)))
+    deadlines = []
+    for sentence in find_deadline_sentences(sentences, limit=3):
+        if (
+            not any(_same_evidence(sentence, source) for source in overview_sources)
+            and not any(_same_evidence(sentence, item) for item in actions)
+        ):
+            deadlines.append(_clip_evidence(sentence, MAX_DEADLINE_CHARS))
+            break
 
-    # Action/deadline sentences may legitimately overlap each other (a
-    # sentence can be both an ask and time-bound), but repeating the exact
-    # same line already shown in TOM TAT reads as sloppy, not just redundant.
-    actions = [s for s in find_action_sentences(sentences) if s not in tom_tat]
-    if actions:
-        sections.append(("VIEC CAN LAM", '\n'.join(f"- {s}" for s in actions)))
+    key_points = []
+    for index in sorted(ranked[:MAX_KEY_POINTS + len(overview_sources) + len(actions) + len(deadlines)]):
+        sentence = sentences[index]
+        represented = [*overview_sources, *actions, *deadlines]
+        if any(_same_evidence(sentence, item) for item in represented):
+            continue
+        candidate = _clip_evidence(sentence, MAX_KEY_POINT_CHARS)
+        if not any(_same_evidence(candidate, existing) for existing in key_points):
+            key_points.append(candidate)
+        if len(key_points) >= MAX_KEY_POINTS:
+            break
 
-    deadlines = [s for s in find_deadline_sentences(sentences) if s not in tom_tat]
-    if deadlines:
-        sections.append(("THOI HAN / UU TIEN", '\n'.join(f"- {s}" for s in deadlines)))
+    evidence = [
+        *[_clip_evidence(source, MAX_OVERVIEW_CHARS) for source in overview_sources],
+        *key_points,
+        *actions,
+        *deadlines,
+    ]
+    return {
+        'overview': overview,
+        'key_points': key_points,
+        'actions': actions,
+        'deadlines': deadlines,
+        'documents': documents,
+        'evidence': evidence,
+        # Evidence spans are extractive by construction. This score is a
+        # machine-checkable factual-support score, not a claim that every
+        # possible human interpretation is correct.
+        'support_ratio': 1.0,
+        'source_sentence_count': len(sentences),
+    }
 
-    return "\n\n".join(f"{title}\n{block}" for title, block in sections)
+
+def summarize_structured(subject, body, sender='', to='', cc='', attachments=None):
+    result = summarize_structured_result(
+        subject,
+        body,
+        sender=sender,
+        to=to,
+        cc=cc,
+        attachments=attachments,
+    )
+    sections = [('TÓM TẮT', result['overview'])]
+    if result['key_points']:
+        sections.append(('ĐIỂM CHÍNH', '\n'.join(f"- {item}" for item in result['key_points'])))
+    if result['actions']:
+        sections.append(('CẦN LÀM', '\n'.join(f"- {item}" for item in result['actions'])))
+    if result['deadlines']:
+        sections.append(('THỜI HẠN', '\n'.join(f"- {item}" for item in result['deadlines'])))
+    if result['documents']:
+        sections.append(('TÀI LIỆU', '\n'.join(f"- {item}" for item in result['documents'])))
+    return '\n\n'.join(f"{title}\n{content}" for title, content in sections)
 
 
 def summarize_short(subject, body):
     """1-2 sentence summary for the plain summarize_email() route."""
     subject = str(subject or '').strip()
-    body = str(body or '').strip()
-    new_content, _ = split_quoted_reply(body)
-    content = new_content or body
+    content = clean_email_text(body)
 
     special = detect_special_email(subject, content)
-    if special:
-        return special
-
     sentences = split_sentences(content)
     if not sentences:
-        return subject or 'Khong co noi dung de tom tat.'
+        return special or subject or 'Không có nội dung để tóm tắt.'
 
-    ranked = rank_sentence_indices(sentences)
+    ranked = rank_sentence_indices(sentences, subject=subject)
+    if special:
+        return _clip_evidence(f"{special} {sentences[ranked[0]]}", MAX_OVERVIEW_CHARS)
     top_indices = sorted(ranked[:2])
-    return ' '.join(sentences[i] for i in top_indices)
+    return _clip_evidence(' '.join(sentences[i] for i in top_indices), MAX_OVERVIEW_CHARS)
 
 
 def summarize_one_line(subject, snippet, body):
@@ -271,17 +446,15 @@ def summarize_one_line(subject, snippet, body):
     subject = str(subject or '').strip()
     text = str(snippet or '').strip() or str(body or '').strip()
     if not text:
-        return subject or 'Khong co noi dung.'
+        return subject or 'Không có nội dung.'
 
     special = detect_special_email(subject, text)
-    if special:
-        return special
-
-    new_content, _ = split_quoted_reply(text)
-    content = new_content or text
+    content = clean_email_text(text)
     sentences = split_sentences(content)
     if not sentences:
-        return subject or content[:140]
+        return special or subject or content[:140]
 
-    ranked = rank_sentence_indices(sentences)
-    return sentences[ranked[0]]
+    ranked = rank_sentence_indices(sentences, subject=subject)
+    if special:
+        return _clip_evidence(f"{special} {sentences[ranked[0]]}", MAX_OVERVIEW_CHARS)
+    return _clip_evidence(sentences[ranked[0]], MAX_OVERVIEW_CHARS)

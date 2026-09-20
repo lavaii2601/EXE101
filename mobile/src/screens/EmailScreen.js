@@ -56,6 +56,72 @@ const modes = [
   { label: 'Soạn thư', value: 'compose' },
 ];
 
+const SUMMARY_SECTION_META = {
+  'TÓM TẮT': { icon: 'sparkles-outline', colorKey: 'primary' },
+  'ĐIỂM CHÍNH': { icon: 'list-outline', colorKey: 'secondaryText' },
+  'CẦN LÀM': { icon: 'checkbox-outline', colorKey: 'success' },
+  'THỜI HẠN': { icon: 'time-outline', colorKey: 'warning' },
+  'TÀI LIỆU': { icon: 'attach-outline', colorKey: 'secondaryText' },
+};
+
+function parseEmailSummary(value) {
+  const text = String(value || '').trim();
+  if (!text) return [];
+  const sections = [];
+  let current = null;
+  text.split(/\r?\n/).forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) return;
+    const heading = line.toUpperCase();
+    if (SUMMARY_SECTION_META[heading]) {
+      current = { heading, lines: [] };
+      sections.push(current);
+      return;
+    }
+    if (!current) {
+      current = { heading: 'TÓM TẮT', lines: [] };
+      sections.push(current);
+    }
+    current.lines.push(line.replace(/^[-•]\s*/, ''));
+  });
+  return sections.filter((section) => section.lines.length);
+}
+
+function emailSummaryPreview(value) {
+  const sections = parseEmailSummary(value);
+  return sections[0]?.lines.join(' ') || String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function EmailSummaryCard({ value, colors, styles }) {
+  const sections = parseEmailSummary(value);
+  if (!sections.length) return null;
+  return (
+    <View style={styles.summaryCard}>
+      <View style={styles.summaryTrustRow}>
+        <Ionicons name="shield-checkmark-outline" size={14} color={colors.secondaryText} />
+        <Text style={styles.summaryTrustText}>Trích từ nội dung email</Text>
+      </View>
+      {sections.map((section) => {
+        const meta = SUMMARY_SECTION_META[section.heading] || SUMMARY_SECTION_META['TÓM TẮT'];
+        const color = colors[meta.colorKey] || colors.primary;
+        return (
+          <View key={section.heading} style={styles.summarySection}>
+            <View style={styles.summaryHeadingRow}>
+              <Ionicons name={meta.icon} size={15} color={color} />
+              <Text style={[styles.summaryHeading, { color }]}>{section.heading}</Text>
+            </View>
+            {section.lines.map((line, index) => (
+              <Text key={`${section.heading}-${index}`} style={styles.summaryLine}>
+                {section.lines.length > 1 ? '• ' : ''}{line}
+              </Text>
+            ))}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNavigate, syncEvent }) {
   // Business-workspace collaboration ("Chia sẻ" into a Business workspace)
   // is scoped to the "worker" and "business" user modes, matching
@@ -293,7 +359,9 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
 
   const summarizeEmail = async (email) => {
     if (!email?.id) return;
-    setSelectedEmail(email);
+    if (selectedEmail?.id !== email.id) {
+      await openEmail(email);
+    }
     setSummarizingId(email.id);
     try {
       const data = email.provider && email.provider !== 'gmail'
@@ -586,7 +654,7 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
                 {email.summary ? (
                   <View style={styles.aiSummary}>
                     <Text style={styles.aiSummaryLabel}>AI TÓM TẮT</Text>
-                    <Text style={styles.preview} numberOfLines={4}>{email.summary}</Text>
+                    <Text style={styles.preview} numberOfLines={3}>{emailSummaryPreview(email.summary)}</Text>
                   </View>
                 ) : (
                   <Text style={styles.preview} numberOfLines={3}>{email.snippet || ''}</Text>
@@ -646,7 +714,7 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
           {(report.rows || []).map((row, index) => (
             <View key={`${row.subject}-${index}`} style={styles.reportRow}>
               <Text style={styles.subject}>{index + 1}. {row.subject || 'Email'}</Text>
-              <Text style={styles.preview}>{row.summary || 'Không có tóm tắt'}</Text>
+              <Text style={styles.preview}>{emailSummaryPreview(row.summary) || 'Không có tóm tắt'}</Text>
               {row.is_meeting
                 ? <Button title="Tạo lịch" variant="secondary" onPress={() => createScheduleFromReport(row)} style={styles.reportButton} />
                 : null}
@@ -707,7 +775,7 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
               <Text style={styles.subject}>{selectedEmail.subject || '(Không tiêu đề)'}</Text>
               <Text style={styles.sender}>{selectedEmail.sender || selectedEmail.from || ''}</Text>
               <Text style={styles.body}>{emailBody || selectedEmail.snippet || 'Đang tải...'}</Text>
-              {summary ? <Text style={styles.summary}>{summary}</Text> : null}
+              {summary ? <EmailSummaryCard value={summary} colors={colors} styles={styles} /> : null}
               {attachments.length > 0 ? (
                 <View style={styles.attachmentList}>
                   <Text style={styles.attachmentHeader}>{`ĐÍNH KÈM (${attachments.length})`}</Text>
@@ -1129,14 +1197,20 @@ function makeStyles(colors) {
     },
     reportButton: { marginTop: 10, alignSelf: 'flex-start' },
     body:    { marginTop: 14, color: colors.text, fontFamily: 'Poppins_400Regular', lineHeight: 21 },
-    summary: {
+    summaryCard: {
       marginTop: 14,
-      padding: 12,
-      borderRadius: 8,
+      padding: 14,
+      borderRadius: radius.card,
       backgroundColor: colors.panelSoft,
-      color: colors.text,
-      fontFamily: 'Poppins_400Regular',
+      borderWidth: 1,
+      borderColor: colors.border,
     },
+    summaryTrustRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+    summaryTrustText: { color: colors.secondaryText, fontFamily: 'Poppins_600SemiBold', fontSize: 10.5 },
+    summarySection: { marginTop: 5, marginBottom: 7 },
+    summaryHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+    summaryHeading: { fontFamily: 'Poppins_700Bold', fontSize: 10, letterSpacing: 0.8 },
+    summaryLine: { color: colors.text, fontFamily: 'Poppins_400Regular', fontSize: 13, lineHeight: 19 },
     detailButton: { marginTop: 14 },
     attachmentList: {
       marginTop: 14,

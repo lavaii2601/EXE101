@@ -993,7 +993,15 @@ class AIService:
         cc = str(email_data.get('cc', '') or '').strip()
         to = str(email_data.get('to', '') or '').strip()
         body = str(email_data.get('body', '') or email_data.get('snippet', '') or '').strip()
-        return extractive_summary.summarize_structured(subject, body, sender=sender, to=to, cc=cc)
+        attachments = email_data.get('attachments') or []
+        return extractive_summary.summarize_structured(
+            subject,
+            body,
+            sender=sender,
+            to=to,
+            cc=cc,
+            attachments=attachments,
+        )
 
     def generate_reply(self, context, user_choice, user_id=None):
         """Create a bounded, deterministic email reply without a model."""
