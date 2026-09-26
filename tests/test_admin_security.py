@@ -264,7 +264,7 @@ class AdminRouteSecurityTests(unittest.TestCase):
     def test_auth_status_exposes_admin_role_from_server_allowlist(self):
         client = self._client_with_google_session()
         credential_status = {
-            'token_file': os.path.join(BACKEND_DIR, 'missing-test-token.pickle'),
+            'token_file': os.path.join(BACKEND_DIR, 'missing-test-token.json'),
             'valid': True,
             'scopes': [],
             'has_token': True,
@@ -272,8 +272,8 @@ class AdminRouteSecurityTests(unittest.TestCase):
             'refreshed': False,
         }
         with (
-            patch.object(email, 'inspect_google_credentials', return_value=credential_status),
-            patch.object(email, 'is_current_user_admin', return_value=True),
+            patch.object(email.oauth, 'inspect_google_credentials', return_value=credential_status),
+            patch.object(email.oauth, 'is_current_user_admin', return_value=True),
             patch.object(email.User, 'get', return_value={}),
         ):
             response = client.get('/api/email/auth-status')
@@ -285,7 +285,7 @@ class AdminRouteSecurityTests(unittest.TestCase):
     def test_auth_status_keeps_regular_user_out_of_admin_role(self):
         client = self._client_with_google_session(email='person@example.com')
         credential_status = {
-            'token_file': os.path.join(BACKEND_DIR, 'missing-test-token.pickle'),
+            'token_file': os.path.join(BACKEND_DIR, 'missing-test-token.json'),
             'valid': True,
             'scopes': [],
             'has_token': True,
@@ -293,8 +293,8 @@ class AdminRouteSecurityTests(unittest.TestCase):
             'refreshed': False,
         }
         with (
-            patch.object(email, 'inspect_google_credentials', return_value=credential_status),
-            patch.object(email, 'is_current_user_admin', return_value=False),
+            patch.object(email.oauth, 'inspect_google_credentials', return_value=credential_status),
+            patch.object(email.oauth, 'is_current_user_admin', return_value=False),
             patch.object(email.User, 'get', return_value={}),
         ):
             response = client.get('/api/email/auth-status')

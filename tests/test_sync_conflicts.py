@@ -166,18 +166,18 @@ class ScheduleOptimisticConcurrencyTests(unittest.TestCase):
 
         with (
             patch.object(
-                schedule_route,
+                schedule_route.gcal_sync,
                 "_calendar_auth_failure_payload",
                 return_value=None,
             ),
             patch.object(
-                schedule_route,
+                schedule_route.gcal_sync,
                 "_load_calendar_service",
                 return_value=_Calendar(),
             ),
-            patch.object(schedule_route, "_clear_schedule_cache"),
+            patch.object(schedule_route.gcal_sync, "_clear_schedule_cache"),
         ):
-            event_id = schedule_route._sync_schedule_to_calendar(
+            event_id = schedule_route.gcal_sync._sync_schedule_to_calendar(
                 "alice",
                 schedule_id,
                 schedule,
@@ -214,18 +214,18 @@ class ScheduleOptimisticConcurrencyTests(unittest.TestCase):
 
         with (
             patch.object(
-                schedule_route,
+                schedule_route.gcal_sync,
                 "_calendar_auth_failure_payload",
                 return_value=None,
             ),
             patch.object(
-                schedule_route,
+                schedule_route.gcal_sync,
                 "_load_calendar_service",
                 return_value=_Calendar(),
             ),
-            patch.object(schedule_route, "_clear_schedule_cache"),
+            patch.object(schedule_route.gcal_sync, "_clear_schedule_cache"),
         ):
-            event_id = schedule_route._sync_schedule_to_calendar(
+            event_id = schedule_route.gcal_sync._sync_schedule_to_calendar(
                 "alice",
                 schedule_id,
                 stale_schedule,
@@ -431,7 +431,7 @@ class ChecklistChatAgentConcurrencyTests(unittest.TestCase):
 
     def test_chat_added_item_survives_a_concurrent_overview_save(self):
         cache_key = schedule_route._checklist_cache_key(
-            "alice", schedule_route.datetime.now(schedule_route.LOCAL_TZ).date().isoformat(),
+            "alice", schedule_route.checklist.datetime.now(schedule_route.checklist.LOCAL_TZ).date().isoformat(),
         )
         Cache.set_versioned(
             cache_key, {"custom_items": [], "completed": {}}, expected_revision=0, db_path=self.db_path,

@@ -19,7 +19,7 @@ from routes.email import (  # noqa: E402
 class EmailMeetingDetectionTests(unittest.TestCase):
     def test_empty_calendar_does_not_hide_pending_suggestions(self):
         pending = [{"id": 1, "title": "Testing lịch hẹn"}]
-        with patch("routes.email._load_schedule_match_index", return_value=[]), patch(
+        with patch("routes.email.meeting._load_schedule_match_index", return_value=[]), patch(
             "routes.email.MeetingSuggestion.get_pending", return_value=pending
         ):
             self.assertEqual(pending, _prune_existing_meeting_suggestions("test.db"))
@@ -31,7 +31,7 @@ class EmailMeetingDetectionTests(unittest.TestCase):
             {"id": 1, "email_id": "old-mail", "title": "Đã trôi qua", "start_time": past},
             {"id": 2, "email_id": "new-mail", "title": "Sắp tới", "start_time": upcoming},
         ]
-        with patch("routes.email._load_schedule_match_index", return_value=[]), patch(
+        with patch("routes.email.meeting._load_schedule_match_index", return_value=[]), patch(
             "routes.email.MeetingSuggestion.get_pending", return_value=pending
         ), patch("routes.email.MeetingSuggestion.dismiss_email") as dismiss:
             visible = _prune_existing_meeting_suggestions("test.db")

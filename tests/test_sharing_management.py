@@ -273,7 +273,12 @@ class PersonalRoutesHaveNoWorkspaceConceptTests(unittest.TestCase):
     workspace-scoped caller reach another member's personal mailbox data."""
 
     def test_email_routes_have_no_workspace_concept(self):
-        source = (BACKEND_DIR / "routes" / "email.py").read_text(encoding="utf-8")
+        # routes/email.py was split into a routes/email/ package; scan every
+        # submodule the same way the original single-file check did.
+        package_dir = BACKEND_DIR / "routes" / "email"
+        source = "\n".join(
+            path.read_text(encoding="utf-8") for path in sorted(package_dir.glob("*.py"))
+        )
         self.assertNotIn("workspace_id", source)
         self.assertNotIn("resolve_context", source)
 

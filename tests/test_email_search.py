@@ -95,17 +95,17 @@ class GetUnreadEmailsSearchRouteTests(unittest.TestCase):
         # the response) -- stub it as a passthrough so those internals
         # can't make this test fragile.
         with (
-            patch.object(email_route, 'get_current_user_id', return_value='alice'),
-            patch.object(email_route, 'get_user_db_path', return_value='alice.db'),
-            patch.object(email_route, '_get_cached_emails', return_value=(None, None)),
+            patch.object(email_route.list, 'get_current_user_id', return_value='alice'),
+            patch.object(email_route.list, 'get_user_db_path', return_value='alice.db'),
+            patch.object(email_route.list, '_get_cached_emails', return_value=(None, None)),
             patch.object(email_route.Cache, 'get', return_value=None),
             patch.object(email_route.Cache, 'set'),
             patch.object(email_route.Cache, 'get_many', return_value={}),
-            patch.object(email_route, '_cache_emails'),
-            patch.object(email_route, '_load_gmail_service', return_value=service),
-            patch.object(email_route, '_store_meeting_suggestions', return_value=[]),
-            patch.object(email_route, '_safe_pending_meeting_suggestions', return_value=[]),
-            patch.object(email_route, '_hydrate_email_for_list', side_effect=lambda email, *a, **k: email),
+            patch.object(email_route.list, '_cache_emails'),
+            patch.object(email_route.list, '_load_gmail_service', return_value=service),
+            patch.object(email_route.list, '_store_meeting_suggestions', return_value=[]),
+            patch.object(email_route.list, '_safe_pending_meeting_suggestions', return_value=[]),
+            patch.object(email_route.list, '_hydrate_email_for_list', side_effect=lambda email, *a, **k: email),
         ):
             response = self.client.get('/api/email/get-unread?search=invoice&max_results=20&filter=all')
 

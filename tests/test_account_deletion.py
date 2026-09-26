@@ -89,7 +89,7 @@ class AccountDeletionServiceTests(unittest.TestCase):
     def test_sqlite_deletion_removes_user_record_and_private_database(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             database_path = os.path.join(temp_dir, 'assistant.db')
-            token_path = os.path.join(temp_dir, 'gmail_token.pickle')
+            token_path = os.path.join(temp_dir, 'gmail_token.json')
             with (
                 patch.object(Config, 'DATABASE_PATH', database_path),
                 patch.object(Config, 'GMAIL_TOKEN_FILE', token_path),

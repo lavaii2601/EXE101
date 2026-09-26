@@ -1,3 +1,4 @@
+import glob
 import os
 import sys
 import unittest
@@ -119,9 +120,9 @@ class PasswordAuthParityTests(unittest.TestCase):
             browser_session['user_id'] = 'local_test_user'
 
         with (
-            patch.object(email, 'get_user_token_file', return_value=os.path.join(os.devnull, 'missing-token.pickle')),
+            patch.object(email.oauth, 'get_user_token_file', return_value=os.path.join(os.devnull, 'missing-token.json')),
             patch.object(email.User, 'update'),
-            patch.object(email, '_clear_oauth_state'),
+            patch.object(email.oauth, '_clear_oauth_state'),
         ):
             response = self.client.post('/api/email/logout')
 
@@ -135,8 +136,14 @@ class PasswordAuthFrontendContractTests(unittest.TestCase):
     def setUpClass(cls):
         with open(os.path.join(PROJECT_ROOT, 'web', 'frontend', 'index.html'), encoding='utf-8') as handle:
             cls.html = handle.read()
-        with open(os.path.join(PROJECT_ROOT, 'web', 'frontend', 'js', 'app.js'), encoding='utf-8') as handle:
-            cls.javascript = handle.read()
+        # app.js was split into per-feature files (web/frontend/js/*.js) --
+        # concatenate them all so substring assertions below still work
+        # regardless of which file now holds the matching code.
+        js_dir = os.path.join(PROJECT_ROOT, 'web', 'frontend', 'js')
+        cls.javascript = ''.join(
+            open(path, encoding='utf-8').read()
+            for path in sorted(glob.glob(os.path.join(js_dir, '*.js')))
+        )
 
     def test_web_exposes_the_same_password_and_google_choices_as_mobile(self):
         for element_id in (

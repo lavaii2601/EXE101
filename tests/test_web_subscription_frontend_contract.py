@@ -4,14 +4,19 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 INDEX_HTML = PROJECT_ROOT / "web" / "frontend" / "index.html"
-APP_JS = PROJECT_ROOT / "web" / "frontend" / "js" / "app.js"
+JS_DIR = PROJECT_ROOT / "web" / "frontend" / "js"
 
 
 class WebSubscriptionFrontendContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.html = INDEX_HTML.read_text(encoding="utf-8")
-        cls.javascript = APP_JS.read_text(encoding="utf-8")
+        # app.js was split into per-feature files (web/frontend/js/*.js) --
+        # concatenate them all so substring assertions below still work
+        # regardless of which file now holds the matching code.
+        cls.javascript = ''.join(
+            path.read_text(encoding="utf-8") for path in sorted(JS_DIR.glob("*.js"))
+        )
 
     def test_web_exposes_upgrade_and_renew_controls(self):
         self.assertIn('id="subscriptionHeaderBtn"', self.html)

@@ -1,3 +1,4 @@
+import glob
 import os
 import unittest
 
@@ -10,8 +11,14 @@ class AdminAccessChoiceFrontendTests(unittest.TestCase):
     def setUpClass(cls):
         with open(os.path.join(ROOT, 'web', 'frontend', 'index.html'), encoding='utf-8') as handle:
             cls.html = handle.read()
-        with open(os.path.join(ROOT, 'web', 'frontend', 'js', 'app.js'), encoding='utf-8') as handle:
-            cls.javascript = handle.read()
+        # app.js was split into per-feature files (web/frontend/js/*.js) --
+        # concatenate them all so substring assertions below still work
+        # regardless of which file now holds the matching code.
+        js_dir = os.path.join(ROOT, 'web', 'frontend', 'js')
+        cls.javascript = ''.join(
+            open(path, encoding='utf-8').read()
+            for path in sorted(glob.glob(os.path.join(js_dir, '*.js')))
+        )
 
     def test_admin_choice_exposes_app_and_dashboard_actions(self):
         self.assertIn('id="adminAccessChoice"', self.html)

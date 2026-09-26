@@ -81,7 +81,7 @@ def header_user_id():
 
 def header_workspace_id():
     """The active tenant, sent by every client as X-Workspace-Id once a
-    workspace exists (see web/frontend/js/app.js's apiFetch, mobile/src/api/
+    workspace exists (see web/frontend/js/utils.js's apiFetch, mobile/src/api/
     client.js, mobile_flutter/lib/api/client.dart). Unlike header_user_id
     this isn't an identity bypass -- it only selects which already-
     authenticated caller's workspace to operate in -- so it needs no

@@ -41,9 +41,9 @@ class OAuthStateSecurityTests(unittest.TestCase):
     def test_unknown_callback_state_is_rejected_before_token_exchange(self):
         flow = MagicMock()
         with (
-            patch.object(email_route, "_build_oauth_flow", return_value=flow),
+            patch.object(email_route.oauth, "_build_oauth_flow", return_value=flow),
             patch.object(
-                email_route,
+                email_route.oauth,
                 "_consume_oauth_state",
                 return_value=_missing_state(),
             ),
@@ -63,9 +63,9 @@ class OAuthStateSecurityTests(unittest.TestCase):
             browser_session["oauth_state"] = "browser-state"
 
         with (
-            patch.object(email_route, "_build_oauth_flow", return_value=flow),
+            patch.object(email_route.oauth, "_build_oauth_flow", return_value=flow),
             patch.object(
-                email_route,
+                email_route.oauth,
                 "_consume_oauth_state",
                 return_value=_missing_state(),
             ),
@@ -82,9 +82,9 @@ class OAuthStateSecurityTests(unittest.TestCase):
         flow = MagicMock()
         flow.fetch_token.side_effect = RuntimeError("exchange stopped for test")
         with (
-            patch.object(email_route, "_build_oauth_flow", return_value=flow),
+            patch.object(email_route.oauth, "_build_oauth_flow", return_value=flow),
             patch.object(
-                email_route,
+                email_route.oauth,
                 "_consume_oauth_state",
                 side_effect=[_issued_mobile_state(), _missing_state()],
             ),
