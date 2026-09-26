@@ -57,6 +57,12 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT,
     avatar_url TEXT,
     password_hash TEXT,
+    -- Bumped to invalidate every previously issued mobile access token at
+    -- once (see utils/security.py's issue_mobile_token/verify_mobile_token
+    -- and the /api/auth/logout-all-devices route) -- those tokens are
+    -- otherwise stateless JWT-like signed blobs with no revocation story
+    -- for a 30-day validity window.
+    token_version INTEGER NOT NULL DEFAULT 0,
 
     gmail_email TEXT,
     gmail_name TEXT,
@@ -475,6 +481,9 @@ ALTER TABLE knowledge_documents
 
 ALTER TABLE users
     ADD COLUMN IF NOT EXISTS password_hash TEXT;
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
 
 DO $$
 BEGIN

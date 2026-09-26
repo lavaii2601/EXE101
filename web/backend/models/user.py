@@ -38,6 +38,7 @@ class User:
                 gmail_connected_at DATETIME,
                 user_mode TEXT DEFAULT '',
                 user_mode_selected_at DATETIME,
+                token_version INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -70,6 +71,10 @@ class User:
             pass
         try:
             cursor.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0")
         except sqlite3.OperationalError:
             pass
 
@@ -165,6 +170,36 @@ class User:
         conn.commit()
         conn.close()
         return cursor.rowcount > 0
+
+    @staticmethod
+    def increment_token_version(user_id):
+        """Invalidate every mobile access token issued for this user so far.
+
+        issue_mobile_token embeds the version current at issue time;
+        verify_mobile_token's caller (active_authenticated_user_id) rejects
+        any token whose embedded version no longer matches this column.
+        An atomic ``token_version + 1`` avoids the lost-update race a
+        read-then-write from User.update would have under concurrent calls.
+        """
+        if pg.enabled():
+            with pg.connection() as conn:
+                conn.execute(
+                    "UPDATE users SET token_version = token_version + 1 WHERE user_id = %s",
+                    (user_id,),
+                )
+            return
+
+        db_path = Config.DATABASE_PATH
+        User.init_db()
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                "UPDATE users SET token_version = COALESCE(token_version, 0) + 1 WHERE user_id = ?",
+                (user_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     @staticmethod
     def get(user_id):

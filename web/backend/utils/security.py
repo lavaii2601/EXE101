@@ -47,7 +47,17 @@ def _serializer():
 
 
 def issue_mobile_token(user_id):
-    return _serializer().dumps({"sub": user_id, "type": "mobile"})
+    # Embeds the account's *current* token_version so a later
+    # increment_token_version() call (password change, "log out all
+    # devices", suspected device loss) makes every token issued before that
+    # point fail verify_mobile_token's check in active_authenticated_user_id
+    # below -- without this, a signed mobile token has no revocation story
+    # for its whole 30-day validity window.
+    from models.user import User
+
+    user = User.get(user_id)
+    version = int((user or {}).get("token_version") or 0)
+    return _serializer().dumps({"sub": user_id, "type": "mobile", "ver": version})
 
 
 def verify_mobile_token(token):
@@ -60,6 +70,13 @@ def verify_mobile_token(token):
         return None
     if payload.get("type") != "mobile":
         return None
+    # Stashed for active_authenticated_user_id, which already fetches the
+    # user row to check the account still exists -- comparing token_version
+    # there costs no extra query. A token signed before this field existed
+    # has no "ver" key, treated as version 0 (matches every account's
+    # DEFAULT 0 column value, so no pre-existing token is force-invalidated
+    # by this change alone).
+    g._mobile_token_version = int(payload.get("ver") or 0)
     return payload.get("sub")
 
 
@@ -144,7 +161,20 @@ def active_authenticated_user_id():
     try:
         from models.user import User
 
-        active = candidate if User.get(candidate) else None
+        user_row = User.get(candidate)
+        active = candidate if user_row else None
+        # Only bearer-token requests carry an embedded version (see
+        # verify_mobile_token) -- cookie-session browser logins have no
+        # token_version concept and skip this check entirely. A mismatch
+        # means the token was issued before the account's last
+        # increment_token_version() call (password change, "log out all
+        # devices"), so treat it exactly like a deleted account: not
+        # authenticated, rather than letting a stale token keep working for
+        # the rest of its 30-day signature validity.
+        if active and hasattr(g, '_mobile_token_version'):
+            current_version = int((user_row or {}).get('token_version') or 0)
+            if getattr(g, '_mobile_token_version') != current_version:
+                active = None
     except Exception:
         _security_logger.exception(
             'Could not validate authenticated account existence for %s',

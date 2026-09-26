@@ -11,7 +11,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.user import User
-from utils.security import issue_mobile_token
+from utils.security import active_authenticated_user_id, issue_mobile_token
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 logger = logging.getLogger(__name__)
@@ -137,3 +137,27 @@ def logout():
     """
     session.clear()
     return jsonify({'success': True, 'message': 'Đăng xuất thành công'})
+
+
+@auth_bp.route('/logout-all-devices', methods=['POST'])
+def logout_all_devices():
+    """Invalidate every mobile access token issued for this account so far,
+    plus the current browser session -- for a user who changed their
+    password on another device or suspects a phone/tablet was lost or
+    stolen. Bumps token_version so verify_mobile_token's embedded version on
+    every previously issued token (including the one used to call this
+    endpoint, if any) stops matching; active_authenticated_user_id then
+    treats those tokens the same as a deleted account.
+    """
+    user_id = active_authenticated_user_id()
+    if not user_id:
+        return jsonify({'success': False, 'error': 'not_authenticated'}), 401
+
+    User.increment_token_version(user_id)
+    session.clear()
+
+    logger.info('All-device logout (token revocation) for: %s', user_id)
+    return jsonify({
+        'success': True,
+        'message': 'Đã đăng xuất khỏi tất cả thiết bị. Vui lòng đăng nhập lại.',
+    })
