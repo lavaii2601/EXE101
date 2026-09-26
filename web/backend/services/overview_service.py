@@ -22,7 +22,7 @@ _revalidating = set()
 _last_revalidated = {}
 _ai_service = AIService()
 
-# Keep in sync with the deadline heuristic in web/frontend/js/app.js (getOverviewPriority).
+# Keep in sync with the deadline heuristic in web/frontend/js/overview.js (getOverviewPriority).
 _DEADLINE_PATTERN = re.compile(r'(deadline|h[aạ]n|n[ộo]p|due|submit|b[àa]n giao)', re.IGNORECASE)
 
 
