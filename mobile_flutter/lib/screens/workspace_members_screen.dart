@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/client.dart';
 import '../config/app_icons.dart';
+import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
 import '../state/workspace_controller.dart';
@@ -30,6 +31,9 @@ class _WorkspaceMembersScreenState extends State<WorkspaceMembersScreen> {
   final emailController = TextEditingController();
   String inviteRole = 'worker';
 
+  AppState? _appState;
+  int _lastHandledSyncRevision = 0;
+
   @override
   void initState() {
     super.initState();
@@ -37,7 +41,32 @@ class _WorkspaceMembersScreenState extends State<WorkspaceMembersScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Cross-device sync: another device/the web app changed membership,
+    // invitations, or seat requests while this screen was open -- see
+    // schedule_screen.dart for the same pattern.
+    final appState = context.read<AppState>();
+    if (_appState != appState) {
+      _appState?.removeListener(_handleWorkspaceSync);
+      _appState = appState;
+      _lastHandledSyncRevision = appState.syncRevision;
+      appState.addListener(_handleWorkspaceSync);
+    }
+  }
+
+  void _handleWorkspaceSync() {
+    final appState = _appState;
+    if (appState == null || appState.syncRevision == _lastHandledSyncRevision) return;
+    _lastHandledSyncRevision = appState.syncRevision;
+    if (appState.lastSyncTargets.contains('workspace_members')) {
+      _load();
+    }
+  }
+
+  @override
   void dispose() {
+    _appState?.removeListener(_handleWorkspaceSync);
     emailController.dispose();
     super.dispose();
   }

@@ -15,6 +15,7 @@ import '../widgets/app_screen.dart';
 import 'sharing_center_screen.dart';
 import 'status_reports_screen.dart';
 import 'work_hub_screen.dart';
+import 'workspace_knowledge_screen.dart';
 import 'workspace_members_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -423,6 +424,14 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                     title: t('Báo cáo trạng thái', 'Status Reports'),
                     subtitle: t('Done / Doing / Blocked / Next / Risks', 'Done / Doing / Blocked / Next / Risks'),
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StatusReportsScreen())),
+                  ),
+                  _Row(
+                    icon: Icons.menu_book_outlined,
+                    iconBg: colors.primarySoft,
+                    iconColor: colors.primary,
+                    title: t('Kiến thức', 'Knowledge'),
+                    subtitle: t('Policy, quy trình, FAQ dùng chung', 'Shared policies, processes, FAQs'),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WorkspaceKnowledgeScreen())),
                   ),
                 ],
               ),
