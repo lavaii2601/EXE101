@@ -1,7 +1,6 @@
 import os
 import sys
 import logging
-import pickle
 import httplib2
 from datetime import datetime, timedelta
 
@@ -13,7 +12,11 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from config import Config
 from models.schedule import LOCAL_TZ
-from utils.user_context import persist_google_credentials, user_id_from_token_file
+from utils.user_context import (
+    persist_google_credentials,
+    read_local_credentials,
+    user_id_from_token_file,
+)
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -68,8 +71,7 @@ class CalendarService:
             
             # Load token if exists
             if os.path.exists(self.token_file):
-                with open(self.token_file, 'rb') as token:
-                    creds = pickle.load(token)
+                creds = read_local_credentials(self.token_file)
             
             # If no valid credentials, return False
             if not creds or not creds.valid:

@@ -13,7 +13,7 @@ class _FakeGoogleService:
 
 
 def test_cache_separates_gmail_and_calendar_for_the_same_token(tmp_path):
-    token_file = Path(tmp_path) / 'google-token.pickle'
+    token_file = Path(tmp_path) / 'google-token.json'
     token_file.write_bytes(b'token')
 
     gmail = get_cached_service(
@@ -33,7 +33,7 @@ def test_cache_separates_gmail_and_calendar_for_the_same_token(tmp_path):
 
 
 def test_invalidation_clears_every_service_for_the_token(tmp_path):
-    token_file = Path(tmp_path) / 'google-token.pickle'
+    token_file = Path(tmp_path) / 'google-token.json'
     token_file.write_bytes(b'token')
 
     first_gmail = get_cached_service(

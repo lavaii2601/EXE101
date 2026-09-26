@@ -1,5 +1,4 @@
 import os
-import pickle
 import sys
 import tempfile
 import unittest
@@ -95,14 +94,25 @@ class GoogleSyncVisibilityTests(unittest.TestCase):
 
     def test_credential_inspection_refreshes_and_reports_valid_token(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            token_file = os.path.join(temp_dir, 'google.pickle')
-            with open(token_file, 'wb') as token:
-                pickle.dump(_RefreshableCredentials(), token)
+            token_file = os.path.join(temp_dir, 'google.json')
+            # Content is irrelevant here -- read_local_credentials is
+            # patched below to hand back a controllable fake credential
+            # instead of parsing this file, since exercising the real
+            # google-auth refresh() network call is out of scope for this
+            # test (it only verifies inspect_google_credentials' own
+            # refresh-detection/status-reporting logic). Only its existence
+            # matters, for the has_token check.
+            with open(token_file, 'w', encoding='utf-8') as token:
+                token.write('{}')
 
             with patch.object(
                 user_context,
                 'get_user_token_file',
                 return_value=token_file,
+            ), patch.object(
+                user_context,
+                'read_local_credentials',
+                return_value=_RefreshableCredentials(),
             ), patch.object(
                 user_context,
                 'persist_google_credentials',

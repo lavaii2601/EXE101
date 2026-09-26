@@ -1,13 +1,13 @@
 import json
 import hashlib
 import os
-import pickle
 import re
 import sys
 import tempfile
 import threading
 from flask import session as flask_session
 from google.auth.transport.requests import Request as GoogleAuthRequest
+from google.oauth2.credentials import Credentials
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -39,7 +39,7 @@ def _user_token_path(user_id):
     user_id = sanitize_user_id(user_id)
     users_dir = os.path.join(os.path.dirname(Config.GMAIL_TOKEN_FILE), 'users')
     os.makedirs(users_dir, exist_ok=True)
-    return os.path.join(users_dir, f'gmail_token_{user_id}.pickle')
+    return os.path.join(users_dir, f'gmail_token_{user_id}.json')
 
 
 def user_id_from_token_file(token_file):
@@ -299,20 +299,30 @@ def _invalidate_google_service_cache(token_file):
     invalidate_cached_service(token_file)
 
 
-def _write_local_credentials(token_file, creds):
-    """Atomically replace the process-local credential cache."""
+def write_local_credentials(token_file, creds):
+    """Atomically replace the process-local credential cache.
+
+    Stored as plain JSON (Credentials.to_json(), the same format already
+    used for the PostgreSQL oauth_tokens.token_json column) rather than
+    pickle: a pickle file is a code-execution gadget for whoever can write
+    into data/users/ through any future upload or path-traversal bug, since
+    unpickling runs arbitrary constructors/reduce methods. JSON has no such
+    risk -- read_local_credentials below only ever builds a
+    google.oauth2.credentials.Credentials from known field names.
+    """
     os.makedirs(os.path.dirname(token_file), exist_ok=True)
     temporary_path = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode='wb',
+            mode='w',
+            encoding='utf-8',
             prefix=f'{os.path.basename(token_file)}.',
             suffix='.tmp',
             dir=os.path.dirname(token_file),
             delete=False,
         ) as temporary:
             temporary_path = temporary.name
-            pickle.dump(creds, temporary)
+            temporary.write(creds.to_json())
             temporary.flush()
             os.fsync(temporary.fileno())
         os.replace(temporary_path, token_file)
@@ -323,6 +333,26 @@ def _write_local_credentials(token_file, creds):
                 os.remove(temporary_path)
             except OSError:
                 pass
+
+
+def read_local_credentials(token_file):
+    """Load the process-local Google credential cache written by
+    write_local_credentials. Returns None on any missing/unreadable/corrupt
+    file rather than raising -- every caller already treats "no credential"
+    and "an unusable credential" the same way (re-authenticate)."""
+    try:
+        with open(token_file, 'r', encoding='utf-8') as handle:
+            token_info = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(token_info, dict):
+        return None
+    try:
+        return Credentials.from_authorized_user_info(
+            token_info, scopes=token_info.get('scopes')
+        )
+    except Exception:
+        return None
 
 
 def _discard_local_credentials(token_file):
@@ -336,8 +366,9 @@ def _discard_local_credentials(token_file):
             pass
         except OSError as exc:
             # If unlinking is temporarily unavailable (for example, a Windows
-            # file handle is still open), truncate the pickle so no caller can
-            # continue using a credential PostgreSQL considers revoked.
+            # file handle is still open), truncate the local cache file so no
+            # caller can continue using a credential PostgreSQL considers
+            # revoked.
             try:
                 with open(token_file, 'wb'):
                     pass
@@ -365,14 +396,14 @@ def persist_google_credentials(user_id, creds, account_email=''):
     """Persist Google OAuth credentials to the local token cache and Postgres.
 
     Railway's filesystem is ephemeral, so the database copy is the durable
-    source. The pickle file remains a local cache for the existing Gmail and
-    Calendar service constructors.
+    source. The local JSON cache file remains a local cache for the existing
+    Gmail and Calendar service constructors.
     """
     user_id = sanitize_user_id(user_id)
     token_file = _user_token_path(user_id)
     if not pg.enabled():
         with _credential_file_lock(token_file):
-            _write_local_credentials(token_file, creds)
+            write_local_credentials(token_file, creds)
             _invalidate_google_service_cache(token_file)
         return token_file
 
@@ -407,16 +438,16 @@ def persist_google_credentials(user_id, creds, account_email=''):
 
         normalized_path = os.path.abspath(os.fspath(token_file))
         with _credential_file_lock(token_file):
-            _write_local_credentials(token_file, creds)
+            write_local_credentials(token_file, creds)
             _credential_versions[normalized_path] = (
                 _credential_revision(row),
                 _local_token_digest(token_file),
             )
             _invalidate_google_service_cache(token_file)
     except Exception as exc:
-        # In production, a local pickle is only a cache. If the durable write
-        # cannot be confirmed, fail closed instead of leaving a token that
-        # another request could mistake for authoritative state.
+        # In production, the local JSON cache file is only a cache. If the
+        # durable write cannot be confirmed, fail closed instead of leaving a
+        # token that another request could mistake for authoritative state.
         _discard_local_credentials(token_file)
         if isinstance(exc, CredentialStoreError):
             raise
@@ -459,8 +490,9 @@ def inspect_google_credentials(user_id, refresh=False):
         return status
 
     try:
-        with open(token_file, 'rb') as token:
-            creds = pickle.load(token)
+        creds = read_local_credentials(token_file)
+        if creds is None:
+            raise ValueError('Local Google credential cache is missing or unreadable')
         status['expired'] = bool(getattr(creds, 'expired', False))
         status['refreshable'] = bool(getattr(creds, 'refresh_token', None))
         status['scopes'] = list(
@@ -515,10 +547,8 @@ def delete_google_credentials(user_id):
 
 
 def _restore_google_credentials_from_db(user_id, token_file):
-    """Synchronize the local pickle with PostgreSQL, failing closed on errors."""
+    """Synchronize the local JSON cache with PostgreSQL, failing closed on errors."""
     try:
-        from google.oauth2.credentials import Credentials
-
         with pg.connection() as conn:
             row = conn.execute(
                 """
@@ -570,7 +600,7 @@ def _restore_google_credentials_from_db(user_id, token_file):
         try:
             scopes = _row_value(row, 'scopes') or token_info.get('scopes') or None
             creds = Credentials.from_authorized_user_info(token_info, scopes=scopes)
-            _write_local_credentials(token_file, creds)
+            write_local_credentials(token_file, creds)
         except Exception as exc:
             _discard_local_credentials(token_file)
             raise CredentialStoreError(

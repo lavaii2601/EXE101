@@ -19,7 +19,7 @@ def _sync_to_calendar_async(user_id, schedule_id):
         schedule = Schedule.get_by_id(schedule_id, db_path=db_path)
         if not schedule:
             return
-        token_file = os.path.join(os.path.dirname(db_path), 'users', f'gmail_token_{user_id}.pickle')
+        token_file = os.path.join(os.path.dirname(db_path), 'users', f'gmail_token_{user_id}.json')
         if not os.path.exists(token_file):
             return
         cal = CalendarService(token_file=token_file)

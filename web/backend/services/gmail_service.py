@@ -1,7 +1,6 @@
 import os
 import sys
 import logging
-import pickle
 import base64
 import html
 import re
@@ -20,7 +19,12 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from config import Config
 from utils.google_service_cache import get_cached_service
-from utils.user_context import persist_google_credentials, user_id_from_token_file
+from utils.user_context import (
+    persist_google_credentials,
+    read_local_credentials,
+    user_id_from_token_file,
+    write_local_credentials,
+)
 
 # Retried automatically by googleapiclient's execute(num_retries=...) on
 # transient network/SSL/5xx errors (see GMAIL_EXECUTE_RETRIES below). A
@@ -126,8 +130,7 @@ class GmailService:
             
             # Load token if exists
             if os.path.exists(self.token_file):
-                with open(self.token_file, 'rb') as token:
-                    creds = pickle.load(token)
+                creds = read_local_credentials(self.token_file)
             
             # OAuth is completed by routes/email.py. Never start an
             # interactive local-server flow from a production API request:
@@ -141,8 +144,7 @@ class GmailService:
                     return False
                 
                 # Save the credentials for the next run
-                with open(self.token_file, 'wb') as token:
-                    pickle.dump(creds, token)
+                write_local_credentials(self.token_file, creds)
                 self._persist_refreshed_credentials(creds)
             
             authorized_http = AuthorizedHttp(creds, http=httplib2.Http(timeout=GMAIL_HTTP_TIMEOUT_SECONDS))

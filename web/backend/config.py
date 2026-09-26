@@ -26,7 +26,7 @@ class Config:
     DATABASE_PATH = os.path.join(DATA_DIR, "assistant.db")
     DATABASE_URL = os.getenv("DATABASE_URL", "")
     GMAIL_CREDENTIALS_FILE = os.path.join(DATA_DIR, "credentials.json")
-    GMAIL_TOKEN_FILE = os.path.join(DATA_DIR, "users", "gmail_token.pickle")
+    GMAIL_TOKEN_FILE = os.path.join(DATA_DIR, "users", "gmail_token.json")
 
     GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
     GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")

@@ -1,8 +1,9 @@
+import json
 import os
-import pickle
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +18,16 @@ from utils import user_context  # noqa: E402
 from utils.google_service_cache import get_cached_service  # noqa: E402
 
 
+# Credentials.from_authorized_user_info() (google-auth) treats a missing
+# "expiry" as "already expired" (it's designed for gcloud-style
+# refresh-token-only info with no access token yet) -- a real credential
+# this app persists always has one after a genuine OAuth exchange/refresh,
+# so fixtures need a real future expiry to behave like production data
+# instead of accidentally exercising the "always expired" branch.
+_FUTURE_EXPIRY_DT = datetime.utcnow() + timedelta(hours=1)
+_FUTURE_EXPIRY_ISO = _FUTURE_EXPIRY_DT.strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
+
+
 def _token_info(token):
     return {
         'token': token,
@@ -25,7 +36,15 @@ def _token_info(token):
         'client_id': 'client-id',
         'client_secret': 'client-secret',
         'scopes': ['scope-a'],
+        'expiry': _FUTURE_EXPIRY_ISO,
     }
+
+
+def _credentials(token):
+    """A live Credentials object with a real (non-expired) expiry -- the
+    constructor wants a datetime for `expiry`, unlike to_json()'s string."""
+    info = {key: value for key, value in _token_info(token).items() if key != 'expiry'}
+    return Credentials(expiry=_FUTURE_EXPIRY_DT, **info)
 
 
 def _token_row(token, updated_at, revoked_at=None):
@@ -104,7 +123,7 @@ class GoogleCredentialCoherenceTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
-        self.base_token = os.path.join(self.temp_dir.name, 'gmail_token.pickle')
+        self.base_token = os.path.join(self.temp_dir.name, 'gmail_token.json')
         self.config_patch = patch.object(
             user_context.Config,
             'GMAIL_TOKEN_FILE',
@@ -146,10 +165,10 @@ class GoogleCredentialCoherenceTests(unittest.TestCase):
 
         self.assertEqual(state['select_count'], 2)
         self.assertIs(second, first)
-        with open(token_file, 'rb') as token:
-            self.assertEqual(pickle.load(token).token, 'token-v1')
+        with open(token_file, 'r', encoding='utf-8') as token:
+            self.assertEqual(json.load(token)['token'], 'token-v1')
 
-    def test_cross_worker_token_update_rewrites_pickle_and_evicts_services(self):
+    def test_cross_worker_token_update_rewrites_local_cache_and_evicts_services(self):
         state = {'row': _token_row('token-v1', 'revision-1')}
         enabled, connection = self._postgres(state)
         with enabled, connection:
@@ -168,12 +187,12 @@ class GoogleCredentialCoherenceTests(unittest.TestCase):
                 service_kind='gmail',
             )
 
-        with open(token_file, 'rb') as token:
-            self.assertEqual(pickle.load(token).token, 'token-v2')
+        with open(token_file, 'r', encoding='utf-8') as token:
+            self.assertEqual(json.load(token)['token'], 'token-v2')
         self.assertIsNot(next_service, first_service)
         self.assertEqual(next_service.name, 'new')
 
-    def test_cross_worker_revocation_removes_pickle_and_evicts_services(self):
+    def test_cross_worker_revocation_removes_local_cache_and_evicts_services(self):
         state = {'row': _token_row('token-v1', 'revision-1')}
         enabled, connection = self._postgres(state)
         with enabled, connection:
@@ -212,7 +231,7 @@ class GoogleCredentialCoherenceTests(unittest.TestCase):
 
         self.assertFalse(os.path.exists(token_file))
 
-    def test_inspection_reports_store_failure_without_using_stale_pickle(self):
+    def test_inspection_reports_store_failure_without_using_stale_local_cache(self):
         state = {'row': _token_row('token-v1', 'revision-1')}
         enabled, connection = self._postgres(state)
         with enabled, connection:
@@ -227,7 +246,7 @@ class GoogleCredentialCoherenceTests(unittest.TestCase):
 
     def test_persist_updates_authority_and_invalidates_cached_service(self):
         state = {'row': _token_row('old-token', 'revision-1')}
-        credentials = Credentials(**_token_info('new-token'))
+        credentials = _credentials('new-token')
         enabled, connection = self._postgres(state)
         with (
             enabled,
@@ -254,15 +273,15 @@ class GoogleCredentialCoherenceTests(unittest.TestCase):
 
         self.assertEqual(state['row']['token_json']['token'], 'new-token')
         self.assertIsNot(new_service, old_service)
-        with open(token_file, 'rb') as token:
-            self.assertEqual(pickle.load(token).token, 'new-token')
+        with open(token_file, 'r', encoding='utf-8') as token:
+            self.assertEqual(json.load(token)['token'], 'new-token')
 
     def test_failed_persist_cannot_leave_a_local_token(self):
         state = {
             'row': _token_row('old-token', 'revision-1'),
             'persist_error': RuntimeError('write failed'),
         }
-        credentials = Credentials(**_token_info('new-token'))
+        credentials = _credentials('new-token')
         enabled, connection = self._postgres(state)
         with (
             enabled,
@@ -310,7 +329,7 @@ class GoogleCredentialCoherenceTests(unittest.TestCase):
         self.assertIsNone(state['row']['revoked_at'])
 
     def test_sqlite_mode_keeps_existing_local_only_behavior(self):
-        credentials = Credentials(**_token_info('local-token'))
+        credentials = _credentials('local-token')
         with patch.object(user_context.pg, 'enabled', return_value=False):
             token_file = user_context.persist_google_credentials(
                 'worker@example.com',
