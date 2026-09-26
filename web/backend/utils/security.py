@@ -13,6 +13,13 @@ _request_buckets = defaultdict(deque)
 # concurrent requests really do share this process/dict -- without a lock,
 # two threads can both read len(bucket) < limit before either appends,
 # letting the limit be exceeded by a few requests right at the boundary.
+#
+# This whole in-memory approach only works with a SINGLE worker process,
+# though: each additional `--workers` gets its own separate copy of this
+# dict with no cross-process coordination, so the effective limit silently
+# becomes `limit * worker_count` instead of the configured value -- no
+# error, no log line, it just stops enforcing. See RAILWAY.md's "Do not
+# raise --workers above 1 without adding Redis first" before scaling.
 _request_buckets_lock = threading.Lock()
 _security_logger = logging.getLogger('flowmate.security')
 

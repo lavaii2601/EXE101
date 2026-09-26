@@ -35,6 +35,12 @@ _totp_attempts_lock = threading.Lock()
 # second submission of the identical code fail even inside that window.
 _totp_consumed_counters = {}
 _totp_consumed_lock = threading.Lock()
+# Both dicts above only work correctly with Railway's current single
+# gunicorn worker (railpack.json's --workers 1): a second worker process
+# gets its own separate copy, so attempt throttling and TOTP-replay
+# protection would silently stop being enforced across the whole account,
+# not just within one process, with no error to notice it. See RAILWAY.md's
+# "Do not raise --workers above 1 without adding Redis first".
 
 
 def _decode_totp_secret(secret):

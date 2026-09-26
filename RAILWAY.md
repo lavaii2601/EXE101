@@ -4,6 +4,30 @@ Railway/Railpack deploys from the repository root, while the Flask app lives in
 `web/backend/app.py`. The `railpack.json` file applies the PostgreSQL schema and
 migrations automatically before starting Gunicorn.
 
+## Do not raise `--workers` above 1 without adding Redis first
+
+`railpack.json`'s `startCommand` runs Gunicorn as `--workers 1 --worker-class
+gthread --threads 4`. That worker count is load-bearing, not incidental:
+several in-process, in-memory data structures assume every request is
+handled inside the *same* Python process and would silently stop working
+correctly under multiple worker processes (each gets its own separate copy
+of these structures, with no coordination between them):
+
+- `utils/security.py`'s `_request_buckets` (the per-identity rate limiter) --
+  a second worker would track its own independent bucket, so the effective
+  rate limit becomes `limit × worker_count` instead of the configured value.
+- `routes/admin.py`'s `_totp_attempts` and `_totp_consumed_counters` (admin
+  TOTP attempt throttling and replay-protection) -- same problem, plus a
+  worker restart or a request landing on a different worker could let a
+  replayed TOTP code through.
+
+None of these raise an error or log a warning if scaled -- they just quietly
+stop enforcing their limit. If Railway's traffic ever requires more than one
+worker process (`--workers 1` maxes out on one CPU core's throughput
+regardless of `--threads`), move these to a shared store (Redis is the
+natural fit -- `INCR`/`EXPIRE` for the rate-limit buckets, `SET`/`GET` for
+the TOTP counters) *before* raising `--workers`, not after.
+
 ## Required variables
 
 Set these in Railway **Variables**. Do not rely on `web/.env`; Railway does not
