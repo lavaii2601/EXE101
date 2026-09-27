@@ -1,7 +1,35 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
-import { apiGet } from './client';
+import * as Crypto from 'expo-crypto';
+import { apiGet, apiPost } from './client';
 import { setMobileSession } from './session';
+
+function bytesToHex(bytes) {
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function base64ToBase64Url(base64) {
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// RFC 7636 PKCE, generated app-side and applied to the backend->app deep-link
+// handoff below -- distinct from (and in addition to) the PKCE
+// google-auth-oauthlib already does server-side for its own exchange with
+// Google. A custom URL scheme like flowmateai:// isn't domain-verified, so
+// another app registering the same scheme could in principle intercept the
+// oauth2callback redirect; this verifier never leaves this function except
+// as a POST body over HTTPS when redeeming the exchange_code, so an
+// interceptor holding only the deep link's URL can't complete the exchange.
+async function generatePkcePair() {
+  const randomBytes = await Crypto.getRandomBytesAsync(32);
+  const codeVerifier = bytesToHex(randomBytes);
+  const digest = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    codeVerifier,
+    { encoding: Crypto.CryptoEncoding.BASE64 }
+  );
+  return { codeVerifier, codeChallenge: base64ToBase64Url(digest) };
+}
 
 // Runs Google's OAuth consent flow and stores the resulting mobile session.
 // Shared by LoginScreen (initial sign-in) and EmailScreen (reconnect Gmail
@@ -10,11 +38,14 @@ import { setMobileSession } from './session';
 // openAuthSessionAsync (NOT openBrowserAsync) is required: the app's own
 // fetch() never shares cookies with the system browser tab that completes
 // Google's consent screen, so the backend can't hand the session back via a
-// cookie. Instead it 302-redirects to our `flowmateai://oauth-callback?
-// access_token=...` deep link once the OAuth exchange finishes server-side,
-// and openAuthSessionAsync is the API that actually captures that redirect.
+// cookie. Instead it 302-redirects to our `flowmateai://oauth-callback?...`
+// deep link once the OAuth exchange finishes server-side, and
+// openAuthSessionAsync is the API that actually captures that redirect.
 export async function connectGoogleAccount() {
-  const data = await apiGet('/email/auth_url?platform=mobile');
+  const { codeVerifier, codeChallenge } = await generatePkcePair();
+  const data = await apiGet(
+    `/email/auth_url?platform=mobile&code_challenge=${encodeURIComponent(codeChallenge)}`
+  );
   if (data.access_token || data.user_id) {
     setMobileSession({ userId: data.user_id || data.email, accessToken: data.access_token || '' });
     return { connected: true };
@@ -29,6 +60,23 @@ export async function connectGoogleAccount() {
     return { connected: false, cancelled: true };
   }
   const { queryParams } = Linking.parse(result.url);
+
+  if (queryParams?.exchange_code) {
+    // The deep link carried only a one-time code, not the real token --
+    // redeem it by proving we hold the matching verifier.
+    const exchanged = await apiPost('/email/oauth-token-exchange', {
+      exchange_code: queryParams.exchange_code,
+      code_verifier: codeVerifier,
+    });
+    if (!exchanged?.access_token) {
+      throw new Error('Không đổi được mã xác thực lấy access token.');
+    }
+    setMobileSession({ userId: exchanged.user_id, accessToken: exchanged.access_token });
+    return { connected: true };
+  }
+
+  // Legacy fallback, kept for a backend deploy that predates the
+  // exchange-code flow: the token arrives directly in the deep link.
   if (!queryParams?.access_token) {
     throw new Error('Không nhận được access token từ máy chủ.');
   }

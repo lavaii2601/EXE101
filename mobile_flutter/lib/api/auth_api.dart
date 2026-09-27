@@ -26,3 +26,11 @@ Future<AuthResult> loginWithEmail({required String email, required String passwo
   final data = await apiPost('/auth/login', {'email': email, 'password': password});
   return AuthResult.fromJson(data as Map<String, dynamic>);
 }
+
+/// Revokes every mobile access token issued for this account (bumps
+/// token_version server-side) plus the browser session -- for a user who
+/// suspects a device was lost/stolen. Includes the very token used to call
+/// it, so the caller must also log this device out locally right after.
+Future<void> logoutAllDevices() async {
+  await apiPost('/auth/logout-all-devices');
+}

@@ -29,6 +29,16 @@ bool _authAlertActive = false;
 DateTime? _lastAuthAlertAt;
 const _kAuthAlertCooldown = Duration(seconds: 60);
 
+// Set by main.dart so this file can drive AppState back to a logged-out
+// state (and reset the rest of the app shell) the same way a manual
+// "Đăng xuất" tap does, without client.dart importing app_state.dart --
+// app_state.dart already imports client.dart, so the reverse would be a
+// circular import.
+VoidCallback? _onSessionRevoked;
+void setSessionRevokedHandler(VoidCallback? handler) {
+  _onSessionRevoked = handler;
+}
+
 // Mirrors mobile/src/api/client.js's handleUnauthorized. A 401 with no
 // token stored just means "never signed in on this device" -- normal for a
 // fresh install, not worth interrupting the user. A 401 while a token IS
@@ -50,6 +60,15 @@ void _handleUnauthorized(Map<String, dynamic> data) {
   _authAlertActive = true;
   _lastAuthAlertAt = now;
   final googleOnly = data['auth_scope'] == 'google';
+  if (!googleOnly) {
+    // Unlike a Google-scope reconnect, this token can never work again
+    // (expired past its 30-day signature, or explicitly revoked via "log
+    // out all devices" from another device) -- clear it now instead of
+    // leaving a dead token in secure storage that keeps tripping this same
+    // 401 on every background poll (workspace sync, ...) for up to 30 more
+    // days with no way for the user to get back to a clean login screen.
+    _onSessionRevoked?.call();
+  }
   showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -73,13 +92,17 @@ void _handleUnauthorized(Map<String, dynamic> data) {
 Future<dynamic> _request(String path,
     {required String method, Map<String, dynamic>? body}) async {
   final accessToken = getMobileAccessToken();
-  final userId = getMobileUserId();
   final workspaceId = getCurrentWorkspaceId();
   final headers = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
+    // No X-User-Id here: this app always authenticates with a real Bearer
+    // token, so the header would be redundant identity at best and, if
+    // MOBILE_USER_HEADER_ENABLED were ever accidentally left on in some
+    // environment, an unauthenticated impersonation path at worst. It's
+    // still meant to exist as a dev-only escape hatch (see utils/security.py),
+    // just not one this production client should be the one sending.
     if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
-    if (userId.isNotEmpty) 'X-User-Id': userId,
     // Tells the backend which tenant (Personal vs. a Business workspace)
     // this request belongs to -- routes/chat.py's get_current_workspace_id
     // resolves it, scoping chat history/sessions and the AI response cache.

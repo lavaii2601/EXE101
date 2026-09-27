@@ -16,3 +16,11 @@ export async function loginWithEmail({ email, password }) {
   setMobileSession({ userId: data.user_id, accessToken: data.access_token });
   return data;
 }
+
+// Revokes every mobile access token issued for this account (bumps
+// token_version server-side) plus the browser session -- for a user who
+// suspects a device was lost/stolen. Includes the very token used to call
+// it, so the caller must also log this device out locally right after.
+export async function logoutAllDevices() {
+  return apiPost('/auth/logout-all-devices');
+}

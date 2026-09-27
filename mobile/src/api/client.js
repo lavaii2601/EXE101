@@ -1,10 +1,18 @@
 import { Alert } from 'react-native';
 import { API_BASE } from './config';
-import { getCurrentWorkspaceId, getMobileAccessToken, getMobileUserId } from './session';
+import { clearPersistedSession, getCurrentWorkspaceId, getMobileAccessToken } from './session';
 
 let authAlertActive = false;
 let lastAuthAlertAt = 0;
 const AUTH_ALERT_COOLDOWN_MS = 60000;
+
+// Set by App.js so this non-component module can drive isAuthenticated back
+// to false (and reset the rest of the app shell's state) the same way a
+// manual "Đăng xuất" tap does, without client.js importing App.js itself.
+let sessionRevokedHandler = null;
+export function setSessionRevokedHandler(handler) {
+  sessionRevokedHandler = handler;
+}
 
 // A 401 with no token at all just means "never signed in yet" -- normal for
 // a fresh install, not worth interrupting the user. A 401 while a token IS
@@ -20,6 +28,17 @@ function handleUnauthorized(data = {}) {
   authAlertActive = true;
   lastAuthAlertAt = now;
   const googleOnly = data?.auth_scope === 'google';
+  if (!googleOnly) {
+    // Unlike a Google-scope reconnect, this token can never work again
+    // (expired past its 30-day signature, or explicitly revoked via "log
+    // out all devices" from another device) -- clear it now instead of
+    // leaving a dead token in SecureStore that keeps tripping this same 401
+    // on every background poll (new-mail-check, workspace sync, ...) for
+    // up to 30 more days with no way for the user to get back to a clean
+    // login screen.
+    clearPersistedSession().catch(() => {});
+    if (sessionRevokedHandler) sessionRevokedHandler();
+  }
   Alert.alert(
     googleOnly ? 'Cần kết nối lại Google' : 'Cần đăng nhập lại',
     googleOnly
@@ -31,15 +50,19 @@ function handleUnauthorized(data = {}) {
 
 async function request(path, options = {}) {
   const accessToken = getMobileAccessToken();
-  const mobileUserId = getMobileUserId();
   const workspaceId = getCurrentWorkspaceId();
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      // No X-User-Id here: this app always authenticates with a real Bearer
+      // token, so the header would be redundant identity at best and, if
+      // MOBILE_USER_HEADER_ENABLED were ever accidentally left on in some
+      // environment, an unauthenticated impersonation path at worst. It's
+      // still meant to exist as a dev-only escape hatch (see utils/security.py),
+      // just not one this production client should be the one sending.
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...(mobileUserId ? { 'X-User-Id': mobileUserId } : {}),
       ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}),
       ...(options.headers || {})
     }

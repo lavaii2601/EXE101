@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'api/client.dart';
 import 'api/nav_key.dart';
 import 'api/google_auth.dart';
 import 'screens/welcome_screen.dart';
@@ -108,6 +109,15 @@ class _RootFlowState extends State<_RootFlow> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final colors = context.watch<ThemeController>().colors;
+
+    // client.dart calls this when a 401 means the device's own session is
+    // truly dead (not just a Google-scope reconnect) -- e.g. "log out all
+    // devices" was triggered from another device -- so this app bounces
+    // straight back to a clean login screen instead of getting stuck
+    // showing a repeating "session expired" dialog forever. Reassigning the
+    // same closure on every build is harmless, same as the sync-polling
+    // calls below.
+    setSessionRevokedHandler(() => appState.logout());
 
     // startWorkspaceSyncPolling/stopWorkspaceSyncPolling are both no-ops
     // when already in the requested state, so calling them on every build

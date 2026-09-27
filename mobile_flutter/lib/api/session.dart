@@ -4,6 +4,16 @@ const _storage = FlutterSecureStorage();
 const _userIdKey = 'flowmate.mobileUserId';
 const _accessTokenKey = 'flowmate.mobileAccessToken';
 const _workspaceIdKey = 'flowmate.currentWorkspaceId';
+// Unlike RN's WebBrowser.openAuthSessionAsync (an in-app overlay that keeps
+// the app alive), google_auth.dart launches a real external browser -- the
+// OS can kill the Flutter process while the user is still in it, and
+// main.dart's cold-start link handler needs this PKCE verifier to still be
+// around to redeem the deep link's exchange_code. A plain random string
+// isn't itself a credential (it's useless without the matching one-time
+// exchange_code, which is short-lived and single-use), so this doesn't need
+// the same protection as the access token above -- but it's already in
+// secure storage, so no reason not to keep it there too.
+const _pendingOauthVerifierKey = 'flowmate.pendingOauthCodeVerifier';
 
 // client.dart reads these synchronously on every request, so we keep an
 // in-memory cache fed from secure storage at startup (see
@@ -70,6 +80,18 @@ Future<void> loadPersistedSession() async {
     _mobileAccessToken = '';
     _currentWorkspaceId = '';
   }
+}
+
+Future<void> setPendingOauthCodeVerifier(String value) async {
+  await _storage.write(key: _pendingOauthVerifierKey, value: value);
+}
+
+Future<String?> getPendingOauthCodeVerifier() async {
+  return _storage.read(key: _pendingOauthVerifierKey);
+}
+
+Future<void> clearPendingOauthCodeVerifier() async {
+  await _storage.delete(key: _pendingOauthVerifierKey);
 }
 
 Future<void> clearPersistedSession() async {

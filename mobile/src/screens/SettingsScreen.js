@@ -20,6 +20,7 @@ import { getUserMode } from '../config/userModes';
 import { apiGet, apiPost } from '../api/client';
 import { PRIVACY_URL, TERMS_URL } from '../api/config';
 import { connectGoogleAccount } from '../api/googleAuth';
+import { logoutAllDevices } from '../api/emailAuth';
 import PricingModal from '../components/PricingModal';
 import WorkspaceMembersScreen from './WorkspaceMembersScreen';
 import WorkHubScreen from './WorkHubScreen';
@@ -144,6 +145,35 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
       { text: t('Hủy', 'Cancel'), style: 'cancel' },
       { text: t('Đăng xuất', 'Sign out'), style: 'destructive', onPress: onLogout },
     ]);
+  };
+
+  const confirmLogoutAllDevices = () => {
+    Alert.alert(
+      t('Đăng xuất khỏi tất cả thiết bị?', 'Sign out of all devices?'),
+      t(
+        'Mọi phiên đăng nhập trên điện thoại/máy tính khác sẽ bị hủy ngay lập tức. Dùng khi bạn nghi ngờ bị mất thiết bị hoặc lộ tài khoản.',
+        'Every session on another phone or computer is revoked immediately. Use this if you suspect a device was lost or your account was compromised.'
+      ),
+      [
+        { text: t('Hủy', 'Cancel'), style: 'cancel' },
+        {
+          text: t('Đăng xuất tất cả', 'Sign out everywhere'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logoutAllDevices();
+            } catch (_) {
+              // The server-side revocation may have already succeeded even
+              // if this response was lost (e.g. network dropped) -- either
+              // way, this device's own token is now dead or about to be, so
+              // still log it out locally below.
+            } finally {
+              onLogout();
+            }
+          },
+        },
+      ]
+    );
   };
 
   const comingSoon = (featureVi, featureEn) =>
@@ -689,6 +719,11 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         <Text style={styles.sectionLabel}>{t('DỮ LIỆU', 'DATA')}</Text>
         <Button title={t('Làm mới trạng thái', 'Refresh status')} variant="secondary" onPress={onRefresh} />
         <Button title={t('Xóa toàn bộ lịch sử', 'Clear all history')} variant="secondary" onPress={clearHistory} />
+        <Button
+          title={t('Đăng xuất khỏi tất cả thiết bị', 'Sign out of all devices')}
+          variant="secondary"
+          onPress={confirmLogoutAllDevices}
+        />
         <Button title={t('Đăng xuất', 'Sign out')} variant="danger" onPress={confirmLogout} />
       </View>
 

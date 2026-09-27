@@ -23,7 +23,7 @@ import WorkerModeScreen from './src/screens/WorkerModeScreen';
 import ProfileHeader from './src/components/ProfileHeader';
 import OrgWorkspaceBar from './src/components/OrgWorkspaceBar';
 import RoleSelection from './src/components/RoleSelection';
-import { apiGet, apiPost } from './src/api/client';
+import { apiGet, apiPost, setSessionRevokedHandler } from './src/api/client';
 import {
   clearPersistedSession,
   getMobileUserId,
@@ -393,6 +393,16 @@ function AppShell() {
     // user stuck inside the authenticated tabs (e.g. still on Settings).
     setIsAuthenticated(false);
   }, [orgWorkspace.reset]);
+
+  useEffect(() => {
+    // client.js calls this when a 401 means the device's own session is
+    // truly dead (not just a Google-scope reconnect) -- e.g. "log out all
+    // devices" was triggered from another device -- so this app bounces
+    // straight back to a clean login screen instead of getting stuck
+    // showing a repeating "session expired" alert forever.
+    setSessionRevokedHandler(handleLogout);
+    return () => setSessionRevokedHandler(null);
+  }, [handleLogout]);
 
   const handleLoggedIn = useCallback(() => {
     setIsAuthenticated(null);

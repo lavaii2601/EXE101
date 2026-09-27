@@ -2,6 +2,7 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../api/auth_api.dart';
 import '../api/client.dart';
 import '../api/config.dart';
 import '../api/google_auth.dart';
@@ -240,6 +241,37 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     );
     if (confirmed == true && context.mounted) {
       await context.read<AppState>().logout();
+    }
+  }
+
+  Future<void> _confirmLogoutAllDevices(BuildContext context) async {
+    final t = context.read<LanguageController>().t;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t('Đăng xuất khỏi tất cả thiết bị?', 'Sign out of all devices?')),
+        content: Text(t(
+          'Mọi phiên đăng nhập trên điện thoại/máy tính khác sẽ bị hủy ngay lập tức. Dùng khi bạn nghi ngờ bị mất thiết bị hoặc lộ tài khoản.',
+          'Every session on another phone or computer is revoked immediately. Use this if you suspect a device was lost or your account was compromised.',
+        )),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('Hủy', 'Cancel'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('Đăng xuất tất cả', 'Sign out everywhere'))),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await logoutAllDevices();
+    } catch (_) {
+      // The server-side revocation may have already succeeded even if this
+      // response was lost (e.g. network dropped) -- either way, this
+      // device's own token is now dead or about to be, so still log it out
+      // locally below.
+    } finally {
+      if (context.mounted) {
+        await context.read<AppState>().logout();
+      }
     }
   }
 
@@ -484,6 +516,12 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
               label: t('DỮ LIỆU', 'DATA'),
               children: [
                 AppButton(title: t('Làm mới trạng thái', 'Refresh status'), variant: AppButtonVariant.secondary, onPressed: appState.refreshShell),
+                const SizedBox(height: 10),
+                AppButton(
+                  title: t('Đăng xuất khỏi tất cả thiết bị', 'Sign out of all devices'),
+                  variant: AppButtonVariant.secondary,
+                  onPressed: () => _confirmLogoutAllDevices(context),
+                ),
                 const SizedBox(height: 10),
                 AppButton(title: t('Đăng xuất', 'Sign out'), variant: AppButtonVariant.danger, onPressed: () => _confirmLogout(context)),
                 const SizedBox(height: 10),
