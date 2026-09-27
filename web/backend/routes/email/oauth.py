@@ -5,9 +5,12 @@ Split out of the former monolithic routes/email.py -- see
 routes/email/__init__.py for the package-level overview.
 """
 import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
+import secrets
 from threading import Lock
 from urllib.parse import urlencode
 
@@ -48,6 +51,13 @@ logger = logging.getLogger(__name__)
 OAUTH_STATE_TTL_SECONDS = 1800
 _oauth_state_lock = Lock()
 
+# Short-lived on purpose: an app that's mid-flow finishes this round trip in
+# a few seconds (deep link delivered, immediately POSTed back), so there is
+# no legitimate reason for an exchange code to still be valid a couple
+# minutes later.
+OAUTH_EXCHANGE_TTL_SECONDS = 120
+_oauth_exchange_lock = Lock()
+
 
 def _oauth_state_file():
     os.makedirs(Config.DATA_DIR, exist_ok=True)
@@ -68,6 +78,29 @@ def _read_oauth_states():
 
 def _write_oauth_states(data):
     path = _oauth_state_file()
+    with open(path, 'w', encoding='utf-8') as handle:
+        json.dump(data, handle)
+
+
+def _oauth_exchange_file():
+    os.makedirs(Config.DATA_DIR, exist_ok=True)
+    return os.path.join(Config.DATA_DIR, 'oauth_exchange_codes.json')
+
+
+def _read_oauth_exchanges():
+    path = _oauth_exchange_file()
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, 'r', encoding='utf-8') as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_oauth_exchanges(data):
+    path = _oauth_exchange_file()
     with open(path, 'w', encoding='utf-8') as handle:
         json.dump(data, handle)
 
@@ -112,6 +145,7 @@ def _consume_oauth_state(state):
         'found': False,
         'code_verifier': None,
         'mobile': False,
+        'mobile_code_challenge': None,
     }
     if not state:
         return missing
@@ -121,7 +155,7 @@ def _consume_oauth_state(state):
                 """
                 DELETE FROM oauth_states
                 WHERE state = %s AND created_at >= NOW() - (%s * INTERVAL '1 second')
-                RETURNING code_verifier, mobile
+                RETURNING code_verifier, mobile, mobile_code_challenge
                 """,
                 (state, OAUTH_STATE_TTL_SECONDS),
             ).fetchone()
@@ -131,6 +165,7 @@ def _consume_oauth_state(state):
             'found': True,
             'code_verifier': row['code_verifier'],
             'mobile': bool(row['mobile']),
+            'mobile_code_challenge': row['mobile_code_challenge'],
         }
 
     now = datetime.utcnow().timestamp()
@@ -151,6 +186,7 @@ def _consume_oauth_state(state):
         'found': True,
         'code_verifier': record.get('code_verifier'),
         'mobile': bool(record.get('mobile')),
+        'mobile_code_challenge': record.get('mobile_code_challenge'),
     }
 
 
@@ -189,6 +225,123 @@ def _mark_oauth_mobile(state):
         record['mobile'] = True
         data[state] = record
         _write_oauth_states(data)
+
+
+def _store_mobile_code_challenge(state, code_challenge):
+    """Record the mobile app's own PKCE challenge for this transaction.
+
+    Only set by app builds updated to protect the backend->app deep-link
+    handoff (see oauth_exchange_codes) -- an older, not-yet-updated app
+    simply never calls this, and oauth2callback falls back to its previous
+    behavior for that state. Merges into the same row _mark_oauth_mobile
+    writes, so call this after it, not instead of it.
+    """
+    if not state or not code_challenge:
+        return
+    if pg.enabled():
+        with pg.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO oauth_states (state, mobile_code_challenge)
+                VALUES (%s, %s)
+                ON CONFLICT (state) DO UPDATE SET mobile_code_challenge = EXCLUDED.mobile_code_challenge
+                """,
+                (state, code_challenge),
+            )
+        return
+
+    now = datetime.utcnow().timestamp()
+    with _oauth_state_lock:
+        data = _read_oauth_states()
+        data = {
+            key: value for key, value in data.items()
+            if isinstance(value, dict)
+            and now - float(value.get('created_at') or 0) <= OAUTH_STATE_TTL_SECONDS
+        }
+        record = data.get(state) if isinstance(data.get(state), dict) else {'created_at': now}
+        record['mobile_code_challenge'] = code_challenge
+        data[state] = record
+        _write_oauth_states(data)
+
+
+def _store_oauth_exchange(exchange_code, code_challenge, payload):
+    """Stash the real token payload behind a one-time exchange_code, keyed
+    separately from oauth_states (which is already consumed by the time this
+    is called -- see oauth2callback)."""
+    if pg.enabled():
+        with pg.connection() as conn:
+            conn.execute(
+                "DELETE FROM oauth_exchange_codes WHERE created_at < NOW() - (%s * INTERVAL '1 second')",
+                (OAUTH_EXCHANGE_TTL_SECONDS,),
+            )
+            conn.execute(
+                """
+                INSERT INTO oauth_exchange_codes (exchange_code, code_challenge, payload)
+                VALUES (%s, %s, %s)
+                """,
+                (exchange_code, code_challenge, pg.json_value(payload)),
+            )
+        return
+
+    now = datetime.utcnow().timestamp()
+    with _oauth_exchange_lock:
+        data = _read_oauth_exchanges()
+        data = {
+            key: value for key, value in data.items()
+            if isinstance(value, dict)
+            and now - float(value.get('created_at') or 0) <= OAUTH_EXCHANGE_TTL_SECONDS
+        }
+        data[exchange_code] = {
+            'code_challenge': code_challenge,
+            'payload': payload,
+            'created_at': now,
+        }
+        _write_oauth_exchanges(data)
+
+
+def _consume_oauth_exchange(exchange_code):
+    """Atomically consume a one-time OAuth exchange code. Returns None if
+    unknown, expired, or already used."""
+    if not exchange_code:
+        return None
+    if pg.enabled():
+        with pg.connection() as conn:
+            row = conn.execute(
+                """
+                DELETE FROM oauth_exchange_codes
+                WHERE exchange_code = %s AND created_at >= NOW() - (%s * INTERVAL '1 second')
+                RETURNING code_challenge, payload
+                """,
+                (exchange_code, OAUTH_EXCHANGE_TTL_SECONDS),
+            ).fetchone()
+        if not row:
+            return None
+        payload = row['payload']
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except ValueError:
+                payload = {}
+        return {'code_challenge': row['code_challenge'], 'payload': payload}
+
+    now = datetime.utcnow().timestamp()
+    with _oauth_exchange_lock:
+        data = _read_oauth_exchanges()
+        record = data.pop(exchange_code, None)
+        data = {
+            key: value for key, value in data.items()
+            if isinstance(value, dict)
+            and now - float(value.get('created_at') or 0) <= OAUTH_EXCHANGE_TTL_SECONDS
+        }
+        _write_oauth_exchanges(data)
+    if not isinstance(record, dict):
+        return None
+    if now - float(record.get('created_at') or 0) > OAUTH_EXCHANGE_TTL_SECONDS:
+        return None
+    return {
+        'code_challenge': record.get('code_challenge'),
+        'payload': record.get('payload') or {},
+    }
 
 
 def _is_oauth_mobile(state):
@@ -830,6 +983,28 @@ def oauth2callback():
         # link instead -- WebBrowser.openAuthSessionAsync on the app side
         # captures this redirect and reads the token straight from the URL.
         if is_mobile_flow:
+            mobile_code_challenge = issued_state.get('mobile_code_challenge')
+            if mobile_code_challenge:
+                # Protect the deep-link handoff itself: flowmateai:// is a
+                # custom scheme, not domain-verified, so another app could in
+                # principle register it too and intercept this redirect. Hand
+                # back only a one-time exchange_code instead of the real
+                # token; POST /email/oauth-token-exchange only releases the
+                # token to whoever also holds the code_verifier that produced
+                # this challenge -- i.e. the same app instance that started
+                # the flow.
+                exchange_code = secrets.token_urlsafe(32)
+                _store_oauth_exchange(exchange_code, mobile_code_challenge, {
+                    'access_token': issue_mobile_token(user_id),
+                    'user_id': user_id,
+                    'email': gmail_email,
+                })
+                exchange_query = urlencode({'exchange_code': exchange_code})
+                return redirect(f"{Config.MOBILE_OAUTH_REDIRECT_URL}?{exchange_query}")
+
+            # Legacy fallback for an app build that hasn't updated to send a
+            # code_challenge yet -- keep working exactly as before rather
+            # than breaking sign-in for whatever's already installed.
             token_query = urlencode({
                 'access_token': issue_mobile_token(user_id),
                 'user_id': user_id,
@@ -902,4 +1077,53 @@ def gmail_auth_url():
     # record rather than overwriting it).
     if (request.args.get('platform') or '').strip().lower() == 'mobile':
         _mark_oauth_mobile(state)
+        # Optional: an app build updated to protect the deep-link handoff
+        # (see oauth_exchange_codes) sends its own PKCE challenge here. An
+        # older app that hasn't updated simply omits it, and oauth2callback
+        # falls back to handing the token straight back in the deep link,
+        # exactly as before -- this stays backward compatible with whatever
+        # APK/IPA build is already installed on a user's device.
+        code_challenge = (request.args.get('code_challenge') or '').strip()
+        if 20 <= len(code_challenge) <= 256:
+            _store_mobile_code_challenge(state, code_challenge)
     return jsonify({'auth_url': auth_url})
+
+
+def _pkce_s256_challenge(code_verifier):
+    """RFC 7636 S256: base64url(SHA256(code_verifier)), no padding."""
+    digest = hashlib.sha256(code_verifier.encode('utf-8')).digest()
+    return base64.urlsafe_b64encode(digest).decode('ascii').rstrip('=')
+
+
+@email_bp.route('/oauth-token-exchange', methods=['POST'])
+def oauth_token_exchange():
+    """Redeem a one-time exchange_code (handed to the mobile app via the
+    flowmateai:// deep link instead of the real access token -- see
+    oauth2callback) for the actual mobile session payload.
+
+    Requires the code_verifier the app generated before starting the flow.
+    Only whoever holds it can pass this check, which is the whole point:
+    the deep link itself carries nothing but an opaque, single-use code.
+    """
+    data = request.get_json(silent=True) or {}
+    exchange_code = str(data.get('exchange_code') or '').strip()
+    code_verifier = str(data.get('code_verifier') or '').strip()
+    if not exchange_code or not code_verifier:
+        return jsonify({'error': 'invalid_request', 'message': 'Missing exchange_code or code_verifier'}), 400
+
+    record = _consume_oauth_exchange(exchange_code)
+    if not record:
+        return jsonify({'error': 'invalid_or_expired_exchange_code'}), 400
+
+    expected_challenge = str(record.get('code_challenge') or '')
+    computed_challenge = _pkce_s256_challenge(code_verifier)
+    if not expected_challenge or not hmac.compare_digest(computed_challenge, expected_challenge):
+        return jsonify({'error': 'code_verifier_mismatch'}), 400
+
+    payload = record.get('payload') or {}
+    return jsonify({
+        'success': True,
+        'access_token': payload.get('access_token'),
+        'user_id': payload.get('user_id'),
+        'email': payload.get('email'),
+    })

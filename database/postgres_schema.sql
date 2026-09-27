@@ -118,6 +118,25 @@ CREATE TABLE IF NOT EXISTS oauth_states (
     state TEXT PRIMARY KEY,
     code_verifier TEXT,
     mobile BOOLEAN NOT NULL DEFAULT FALSE,
+    -- The mobile app's own PKCE challenge (distinct from code_verifier above,
+    -- which is this backend's PKCE verifier for its own token exchange with
+    -- Google). Set only by app builds updated to protect the backend->app
+    -- deep-link handoff -- see oauth_exchange_codes below.
+    mobile_code_challenge TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- One-time codes handed to the mobile app via the flowmateai://oauth-callback
+-- deep link instead of the real access token. A custom URL scheme is not
+-- domain-verified, so another app registering the same scheme could in
+-- principle intercept that redirect; this table lets the real token only be
+-- released to whoever also holds the code_verifier that produced
+-- code_challenge, i.e. the same app instance that started the flow -- PKCE's
+-- protection applied to this handoff, not just the Google<->backend leg.
+CREATE TABLE IF NOT EXISTS oauth_exchange_codes (
+    exchange_code TEXT PRIMARY KEY,
+    code_challenge TEXT NOT NULL,
+    payload JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -484,6 +503,9 @@ ALTER TABLE users
 
 ALTER TABLE users
     ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE oauth_states
+    ADD COLUMN IF NOT EXISTS mobile_code_challenge TEXT;
 
 DO $$
 BEGIN
