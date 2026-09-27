@@ -353,27 +353,27 @@ def health_check():
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
-    """Get system status"""
-    gmail_from_env = bool(Config.GMAIL_CLIENT_ID and Config.GMAIL_CLIENT_SECRET)
-    gmail_from_json = bool(Config.GMAIL_CREDENTIALS_JSON)
-    gmail_from_file = os.path.exists(Config.GMAIL_CREDENTIALS_FILE)
+    """Get system status.
 
-    ai_map = {'bob-local': True}
-    missing_ai = []
+    Public (unauthenticated -- see app.py's public_api_paths) since the web/
+    RN/Flutter clients all ping this before login to render a readiness
+    indicator. Deliberately reports only that top-level signal: it used to
+    also return which of 3 methods supplied the Gmail OAuth client
+    credentials and whether the DB backend is Postgres vs SQLite --
+    implementation detail no client reads (verified against web/frontend,
+    mobile/, mobile_flutter/), so there's no reason to hand it to an
+    unauthenticated caller.
+    """
+    gmail_configured = bool(
+        (Config.GMAIL_CLIENT_ID and Config.GMAIL_CLIENT_SECRET)
+        or Config.GMAIL_CREDENTIALS_JSON
+        or os.path.exists(Config.GMAIL_CREDENTIALS_FILE)
+    )
 
     return jsonify({
-        'gmail_configured': gmail_from_env or gmail_from_json or gmail_from_file,
-        'database': {
-            'backend': 'postgres' if pg.enabled() else 'sqlite',
-            'shared': pg.enabled()
-        },
-        'gmail_methods': {
-            'env_vars': gmail_from_env,
-            'json_env': gmail_from_json,
-            'credentials_file': gmail_from_file
-        },
-        'ai_providers': {k: v for k, v in ai_map.items()},
-        'missing_ai_providers': missing_ai,
+        'gmail_configured': gmail_configured,
+        'ai_providers': {'bob-local': True},
+        'missing_ai_providers': [],
         'local_only': True,
         'all_ready': True
     })
