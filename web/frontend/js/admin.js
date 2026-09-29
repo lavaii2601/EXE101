@@ -151,6 +151,29 @@ function activateTab(name, { focus = false, load = true } = {}) {
   });
   if (next === 'finance' && load && !state.financeLoaded) loadFinance();
   if (next === 'workspaces' && load && !state.workspacesLoaded) loadWorkspaces();
+  closeMobileSidebar();
+}
+
+function openMobileSidebar() {
+  document.body.classList.add('sidebar-open');
+  $('sidebar').classList.add('open');
+  $('sidebarScrim').hidden = false;
+  $('sidebarOpenButton').setAttribute('aria-expanded', 'true');
+}
+
+function closeMobileSidebar() {
+  document.body.classList.remove('sidebar-open');
+  $('sidebar').classList.remove('open');
+  $('sidebarScrim').hidden = true;
+  $('sidebarOpenButton').setAttribute('aria-expanded', 'false');
+}
+
+function setSidebarCollapsed(collapsed) {
+  $('dashboard').classList.toggle('sidebar-collapsed', collapsed);
+  $('sidebarCollapseButton').setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+  try {
+    localStorage.setItem('admin_sidebar_collapsed', collapsed ? '1' : '0');
+  } catch (_) {}
 }
 
 function handleAdminGate(error) {
@@ -1026,8 +1049,8 @@ document.querySelectorAll('[data-dashboard-tab]').forEach((tab) => {
     const tabs = Array.from(document.querySelectorAll('[data-dashboard-tab]'));
     const index = tabs.indexOf(tab);
     let nextIndex = index;
-    if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
-    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+    if (event.key === 'ArrowDown') nextIndex = (index + 1) % tabs.length;
+    else if (event.key === 'ArrowUp') nextIndex = (index - 1 + tabs.length) % tabs.length;
     else if (event.key === 'Home') nextIndex = 0;
     else if (event.key === 'End') nextIndex = tabs.length - 1;
     else return;
@@ -1035,6 +1058,21 @@ document.querySelectorAll('[data-dashboard-tab]').forEach((tab) => {
     activateTab(tabs[nextIndex].dataset.dashboardTab, { focus: true });
   });
 });
+
+$('sidebarCollapseButton').addEventListener('click', () => {
+  setSidebarCollapsed(!$('dashboard').classList.contains('sidebar-collapsed'));
+});
+$('sidebarOpenButton').addEventListener('click', openMobileSidebar);
+$('sidebarScrim').addEventListener('click', closeMobileSidebar);
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && $('sidebar').classList.contains('open')) closeMobileSidebar();
+});
+
+let sidebarCollapsedPref = '0';
+try {
+  sidebarCollapsedPref = localStorage.getItem('admin_sidebar_collapsed') || '0';
+} catch (_) {}
+setSidebarCollapsed(sidebarCollapsedPref === '1');
 
 loadDashboard();
 state.timer = setInterval(updateRefreshCountdown, 1000);
