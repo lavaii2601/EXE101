@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import sys
@@ -75,6 +76,17 @@ class MeetingSuggestion:
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_meeting_suggestions_status_start ON meeting_suggestions(status, start_time, created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_meeting_suggestions_email ON meeting_suggestions(email_id)")
+        # Added later: confidence/metadata, populated once an AI confirmation
+        # pass upgrades a regex-only candidate (see AIService.
+        # confirm_meeting_extraction). Guarded for DBs created before this.
+        try:
+            conn.execute("ALTER TABLE meeting_suggestions ADD COLUMN confidence REAL")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE meeting_suggestions ADD COLUMN metadata TEXT")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
         conn.close()
         MeetingSuggestion._initialized_dbs.add(db_path)
@@ -92,9 +104,10 @@ class MeetingSuggestion:
                     """
                     INSERT INTO meeting_suggestions (
                         user_id, email_id, sender, subject, email_date, snippet,
-                        title, description, start_time, end_time, location, attendees
+                        title, description, start_time, end_time, location, attendees,
+                        confidence, metadata
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (user_id, email_id) DO UPDATE
                     SET sender = EXCLUDED.sender,
                         subject = EXCLUDED.subject,
@@ -105,7 +118,9 @@ class MeetingSuggestion:
                         start_time = EXCLUDED.start_time,
                         end_time = EXCLUDED.end_time,
                         location = EXCLUDED.location,
-                        attendees = EXCLUDED.attendees
+                        attendees = EXCLUDED.attendees,
+                        confidence = EXCLUDED.confidence,
+                        metadata = EXCLUDED.metadata
                     RETURNING id
                     """,
                     (
@@ -121,6 +136,8 @@ class MeetingSuggestion:
                         end_time,
                         suggestion.get("location", ""),
                         suggestion.get("attendees", ""),
+                        suggestion.get("confidence"),
+                        pg.json_value(suggestion.get("metadata") or {}),
                     ),
                 ).fetchone()
                 return row['id']
@@ -138,7 +155,8 @@ class MeetingSuggestion:
                 UPDATE meeting_suggestions
                 SET sender = ?, subject = ?, email_date = ?, snippet = ?,
                     title = ?, description = ?, start_time = ?, end_time = ?,
-                    location = ?, attendees = ?, updated_at = ?
+                    location = ?, attendees = ?, confidence = ?, metadata = ?,
+                    updated_at = ?
                 WHERE email_id = ?
                 """,
                 (
@@ -152,6 +170,8 @@ class MeetingSuggestion:
                     suggestion.get("end_time"),
                     suggestion.get("location", ""),
                     suggestion.get("attendees", ""),
+                    suggestion.get("confidence"),
+                    json.dumps(suggestion.get("metadata") or {}),
                     datetime.now().isoformat(),
                     email_id,
                 ),
@@ -162,8 +182,9 @@ class MeetingSuggestion:
                 """
                 INSERT INTO meeting_suggestions (
                     email_id, sender, subject, email_date, snippet, title,
-                    description, start_time, end_time, location, attendees
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    description, start_time, end_time, location, attendees,
+                    confidence, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     email_id,
@@ -177,6 +198,8 @@ class MeetingSuggestion:
                     suggestion.get("end_time"),
                     suggestion.get("location", ""),
                     suggestion.get("attendees", ""),
+                    suggestion.get("confidence"),
+                    json.dumps(suggestion.get("metadata") or {}),
                 ),
             )
             suggestion_id = cursor.lastrowid

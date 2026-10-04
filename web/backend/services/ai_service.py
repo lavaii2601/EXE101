@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
 from services.openrouter_service import OpenRouterService
 from services import extractive_summary
+from services.ai_json_utils import parse_json_object
 from models import ai_cost_log
 from models.cache import Cache
 from models import subscription as subscription_model
@@ -1370,3 +1371,85 @@ class AIService:
             return None
         text = strip_markup(str(raw or '').strip())
         return text if len(text) >= 20 else None
+
+    @staticmethod
+    def _coerce_iso_datetime(value):
+        text = str(value or '').strip()
+        if not text or text.lower() == 'null':
+            return None
+        try:
+            datetime.fromisoformat(text.replace('Z', '+00:00'))
+        except ValueError:
+            return None
+        return text
+
+    def confirm_meeting_extraction(self, email, regex_candidate, user_id=None):
+        """Cheap-tier confirm+improve a borderline regex meeting candidate.
+
+        "Borderline" means the regex pass flagged the email as a likely
+        meeting but couldn't resolve a concrete start_time. Never
+        auto-creates anything -- returns improved fields for the SAME
+        pending suggestion row, or None to leave regex_candidate as-is.
+        Disabled, unconfigured, or any invalid/unparseable AI response all
+        fall back to None (keep the regex-only result), same philosophy as
+        generate_daily_overview_brief.
+        """
+        if not Config.AI_MEETING_CONFIRM_ENABLED:
+            return None
+        if Config.BOB_LOCAL_ONLY or not self.configured_providers:
+            return None
+
+        subject = str(email.get('subject') or '')[:200]
+        sender = str(email.get('sender') or '')[:200]
+        body_excerpt = str(email.get('body') or email.get('snippet') or '')[:1500]
+        messages = [
+            {"role": "system", "content": (
+                "Ban la bo xac nhan trich xuat lich hop tu email. Doc email va "
+                "ket qua regex so bo, TRA VE DUY NHAT JSON dang: "
+                '{"is_meeting": bool, "title": "", '
+                '"start_time": "YYYY-MM-DDTHH:MM:SS hoac null", '
+                '"end_time": "... hoac null", "location": "", "attendees": "", '
+                '"confidence": 0.0-1.0}. Neu khong chac ve mot thoi gian cu the, '
+                "dat start_time=null va is_meeting=false. KHONG bia dat thong tin "
+                "khong co trong email. Khong giai thich, khong dung markdown."
+            )},
+            {"role": "user", "content": (
+                f"EMAIL:\nTu: {sender}\nChu de: {subject}\nNoi dung: {body_excerpt}\n\n"
+                f"KET QUA REGEX SO BO: {json.dumps(regex_candidate or {}, ensure_ascii=False)}"
+            )},
+        ]
+        try:
+            raw = self.generate_response(
+                messages,
+                max_tokens=self.task_max_tokens.get('meeting_confirm', 220),
+                task='meeting_confirm',
+                user_id=user_id,
+            )
+        except Exception:
+            logger.warning("Meeting AI confirmation failed", exc_info=True)
+            return None
+        if self.last_provider_used not in self.configured_providers:
+            return None
+
+        data = parse_json_object(raw)
+        if not isinstance(data, dict) or not data.get('is_meeting'):
+            return None
+        start_time = self._coerce_iso_datetime(data.get('start_time'))
+        if not start_time:
+            # Mirrors intent_orchestrator.py's rule for schedule.create:
+            # reject the whole AI result if it can't name a concrete time.
+            return None
+        try:
+            confidence = max(0.5, min(0.97, float(data.get('confidence') or 0.6)))
+        except (TypeError, ValueError):
+            confidence = 0.6
+
+        regex_candidate = regex_candidate or {}
+        return {
+            'title': str(data.get('title') or regex_candidate.get('title') or '')[:200],
+            'start_time': start_time,
+            'end_time': self._coerce_iso_datetime(data.get('end_time')) or regex_candidate.get('end_time'),
+            'location': (str(data.get('location') or '')[:120]) or regex_candidate.get('location', ''),
+            'attendees': (str(data.get('attendees') or '')[:300]) or regex_candidate.get('attendees', ''),
+            'confidence': confidence,
+        }

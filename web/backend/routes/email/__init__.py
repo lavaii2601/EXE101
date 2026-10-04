@@ -33,7 +33,8 @@ path (routes.email.<name>), so those call sites need no changes:
 - `_clear_email_list_cache`: services/chat_agents/email_agents.py does a
   deferred `from routes.email import _clear_email_list_cache` inside
   `_mark_emails_apply` to avoid a circular import.
-- `_extract_meeting_suggestion`, `_is_meeting_suggestion_stale`,
+- `_extract_meeting_suggestion`, `_is_borderline_meeting_extraction`,
+  `_is_meeting_suggestion_stale`,
   `_prune_existing_meeting_suggestions`, `_store_meeting_suggestions`,
   `_gmail_query_for_email_list`, `_get_cache_key`, `_smart_inbox_bucket`,
   `_store_oauth_code_verifier`, `_mark_oauth_mobile`, `_consume_oauth_state`,
@@ -81,6 +82,7 @@ from routes.email import report  # noqa: F401
 from routes.email.smart_inbox import _smart_inbox_bucket  # noqa: F401
 from routes.email.meeting import (  # noqa: F401
     _extract_meeting_suggestion,
+    _is_borderline_meeting_extraction,
     _is_meeting_suggestion_stale,
     _prune_existing_meeting_suggestions,
     _store_meeting_suggestions,

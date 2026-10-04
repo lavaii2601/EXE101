@@ -211,6 +211,76 @@ class AIServiceCostLogRecordingTests(unittest.TestCase):
         self.assertEqual('error', failure_calls[0].kwargs['error_type'])
 
 
+class AIServiceMeetingConfirmationTests(unittest.TestCase):
+    """AIService.confirm_meeting_extraction must stay on the regex
+    candidate for any disabled/unconfigured/invalid-response path, and
+    only ever accept a result with a concrete, parseable start_time."""
+
+    def setUp(self):
+        self.service = ai_service_module.AIService()
+        self.email = {'subject': 'Họp dự án', 'sender': 'a@example.com', 'body': 'noi dung'}
+        self.regex_candidate = {'title': 'Họp dự án', 'start_time': None}
+
+    def test_returns_none_when_feature_disabled(self):
+        with patch.object(ai_service_module.Config, 'AI_MEETING_CONFIRM_ENABLED', False):
+            result = self.service.confirm_meeting_extraction(self.email, self.regex_candidate)
+        self.assertIsNone(result)
+
+    def test_returns_none_when_local_only(self):
+        with patch.object(ai_service_module.Config, 'AI_MEETING_CONFIRM_ENABLED', True), \
+             patch.object(ai_service_module.Config, 'BOB_LOCAL_ONLY', True):
+            result = self.service.confirm_meeting_extraction(self.email, self.regex_candidate)
+        self.assertIsNone(result)
+
+    def test_returns_none_when_ai_json_is_malformed(self):
+        with patch.object(ai_service_module.Config, 'AI_MEETING_CONFIRM_ENABLED', True), \
+             patch.object(ai_service_module.Config, 'BOB_LOCAL_ONLY', False), \
+             patch.object(self.service, 'configured_providers', ['openai']), \
+             patch.object(self.service, 'generate_response', return_value='not json'):
+            self.service.last_provider_used = 'openai'
+            result = self.service.confirm_meeting_extraction(self.email, self.regex_candidate)
+        self.assertIsNone(result)
+
+    def test_returns_none_when_start_time_missing_from_ai_response(self):
+        with patch.object(ai_service_module.Config, 'AI_MEETING_CONFIRM_ENABLED', True), \
+             patch.object(ai_service_module.Config, 'BOB_LOCAL_ONLY', False), \
+             patch.object(self.service, 'configured_providers', ['openai']), \
+             patch.object(self.service, 'generate_response',
+                           return_value='{"is_meeting": true, "start_time": null}'):
+            self.service.last_provider_used = 'openai'
+            result = self.service.confirm_meeting_extraction(self.email, self.regex_candidate)
+        self.assertIsNone(result)
+
+    def test_accepts_a_valid_response_and_clamps_confidence(self):
+        raw = (
+            '{"is_meeting": true, "title": "Họp dự án", '
+            '"start_time": "2026-07-20T10:00:00", "end_time": null, '
+            '"location": "", "attendees": "", "confidence": 1.4}'
+        )
+        with patch.object(ai_service_module.Config, 'AI_MEETING_CONFIRM_ENABLED', True), \
+             patch.object(ai_service_module.Config, 'BOB_LOCAL_ONLY', False), \
+             patch.object(self.service, 'configured_providers', ['openai']), \
+             patch.object(self.service, 'generate_response', return_value=raw):
+            self.service.last_provider_used = 'openai'
+            result = self.service.confirm_meeting_extraction(self.email, self.regex_candidate)
+        self.assertIsNotNone(result)
+        self.assertEqual('2026-07-20T10:00:00', result['start_time'])
+        self.assertEqual(0.97, result['confidence'])
+
+    def test_rejects_the_demo_fallback_sentinel(self):
+        """generate_response never raises for provider exhaustion -- it
+        silently degrades to 'demo'/'bob-local' instead. That must not be
+        mistaken for a genuine AI-confirmed result."""
+        raw = '{"is_meeting": true, "start_time": "2026-07-20T10:00:00"}'
+        with patch.object(ai_service_module.Config, 'AI_MEETING_CONFIRM_ENABLED', True), \
+             patch.object(ai_service_module.Config, 'BOB_LOCAL_ONLY', False), \
+             patch.object(self.service, 'configured_providers', ['openai']), \
+             patch.object(self.service, 'generate_response', return_value=raw):
+            self.service.last_provider_used = 'demo'
+            result = self.service.confirm_meeting_extraction(self.email, self.regex_candidate)
+        self.assertIsNone(result)
+
+
 class AICostLogNoOpTests(unittest.TestCase):
     """models.ai_cost_log must be a true no-op (no DB connection attempted,
     never raises) whenever Postgres isn't configured or tracking is off --

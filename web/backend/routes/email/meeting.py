@@ -17,10 +17,13 @@ its new module, the same way services/chat_agents' split required updating
 """
 import logging
 import re
+import threading
 from datetime import datetime, timedelta
 
 from flask import jsonify, request, session
 
+from config import Config
+from models import postgres_db as pg
 from models.meeting_suggestion import MeetingSuggestion
 from models.schedule import Schedule
 from utils.user_context import get_current_user_id, get_user_db_path
@@ -324,6 +327,46 @@ def _is_meeting_suggestion_stale(suggestion):
     return reference_dt < datetime.now()
 
 
+def _is_borderline_meeting_extraction(candidate):
+    """The regex pass flagged a candidate but couldn't resolve a concrete
+    start_time -- the single clearest signal the extraction is incomplete
+    and worth a cheap-tier AI confirmation pass."""
+    return not (candidate or {}).get('start_time')
+
+
+def _confirm_and_upgrade_meeting_suggestion(email, regex_candidate, email_id, db_path):
+    """Runs on a background thread (fire-and-forget) -- never called
+    synchronously from a request, since _store_meeting_suggestions is on
+    5 hot email-listing paths that must never wait on an LLM call."""
+    try:
+        # Deferred import: avoids a load-order-sensitive circular import
+        # between routes.email and services.chat_agents (same convention
+        # already used by services/chat_agents/email_agents.py for the
+        # reverse direction).
+        from services.chat_agents.common import ai_service
+
+        user_id = pg.user_id_from_db_path(db_path)
+        improved = ai_service.confirm_meeting_extraction(email, regex_candidate, user_id=user_id)
+        if not improved:
+            return
+        merged = {**regex_candidate, **improved, 'metadata': {'ai_confirmed': True}}
+        MeetingSuggestion.upsert(email_id, merged, db_path=db_path)
+    except Exception:
+        logger.warning("AI meeting confirmation upgrade failed for %s", email_id, exc_info=True)
+
+
+def _maybe_confirm_meeting_with_ai(email, suggestion, email_id, db_path):
+    if not Config.AI_MEETING_CONFIRM_ENABLED or Config.BOB_LOCAL_ONLY:
+        return
+    if not _is_borderline_meeting_extraction(suggestion):
+        return
+    threading.Thread(
+        target=_confirm_and_upgrade_meeting_suggestion,
+        args=(dict(email), dict(suggestion), email_id, db_path),
+        daemon=True,
+    ).start()
+
+
 def _store_meeting_suggestions(emails, db_path):
     detected = []
     schedule_index = None
@@ -347,6 +390,7 @@ def _store_meeting_suggestions(emails, db_path):
                 MeetingSuggestion.dismiss_email(email_id, db_path=db_path)
                 continue
             suggestion_id = MeetingSuggestion.upsert(email_id, suggestion, db_path=db_path)
+            _maybe_confirm_meeting_with_ai(email, suggestion, email_id, db_path)
             detected.append({'id': suggestion_id, 'email_id': email_id, **suggestion})
         except Exception as e:
             logger.warning(
