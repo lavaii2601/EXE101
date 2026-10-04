@@ -293,13 +293,22 @@ SEPAY_IPN_SECRET_KEY=<secret-khop-voi-cau-hinh-ipn>
 ADMIN_EMAILS=
 ADMIN_TOTP_SECRET=
 
-BOB_LOCAL_ONLY=true
 OLLAMA_ENABLED=false
 WEB_RESEARCH_ENABLED=false
 AI_MAX_CONTEXT_MESSAGES=10
 AI_MAX_INPUT_CHARS=12000
 AI_MAX_SYSTEM_PROMPT_CHARS=12000
 AI_AGENT_MAX_TOKENS=700
+
+# Chỉ cần set 1 trong 4 key dưới đây là Bob tự động dùng provider ngoài
+# thay vì engine local -- không cần set BOB_LOCAL_ONLY thủ công. Để trống
+# cả 4 (mặc định) thì Bob vẫn chạy local-only như trước, miễn phí.
+OPENAI_API_KEY=
+MISTRAL_API_KEY=
+CLAUDE_API_KEY=
+GEMINI_API_KEY=
+# Chỉ đặt khi muốn ép buộc chế độ cụ thể bất kể đã set key hay chưa.
+# BOB_LOCAL_ONLY=true
 ```
 
 Trong trang quản lý merchant SEPay, cấu hình webhook IPN dùng phương thức
