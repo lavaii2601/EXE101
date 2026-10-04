@@ -48,6 +48,25 @@ class OverviewStaleWhileRevalidateTests(unittest.TestCase):
         self.assertTrue(payload['refreshing'])
         self.assertEqual(payload['refresh_state'], 'checking')
 
+    def test_refresh_sets_brief_to_none_when_no_provider_configured(self):
+        """Default test env has no AI provider keys -- generate_daily_overview_brief
+        must degrade to None (its own internal guard), and refresh_daily_overview
+        must not choke on that, still returning rows/email_signature as usual."""
+        with patch.object(overview_service, 'build_cached_overview', return_value=None), \
+             patch('os.path.exists', return_value=False):
+            payload = overview_service.refresh_daily_overview('user@example.com', day='2026-07-20')
+        self.assertIsNone(payload.get('brief'))
+        self.assertEqual(payload['emails'], [])
+
+    def test_brief_generation_failure_never_breaks_the_existing_payload(self):
+        with patch.object(overview_service, 'build_cached_overview', return_value=None), \
+             patch('os.path.exists', return_value=False), \
+             patch.object(overview_service._ai_service, 'generate_daily_overview_brief',
+                           side_effect=RuntimeError('boom')):
+            payload = overview_service.refresh_daily_overview('user@example.com', day='2026-07-20')
+        self.assertIsNone(payload.get('brief'))
+        self.assertTrue(payload['generated'])
+
     def test_daily_warmup_reuses_cache_instead_of_forcing_ai(self):
         calls = []
         with patch.object(

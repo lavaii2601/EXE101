@@ -129,6 +129,17 @@ def refresh_daily_overview(user_id, day=None, max_results=50, force=False):
 
     payload = build_overview_payload(user_id, day, rows=rows, generated=True)
     payload['email_signature'] = email_signature
+    # Optional AI-written narrative on top of the same compact data already
+    # assembled above (schedules + extractive summaries) -- never raw
+    # emails. None means "no narrative"; callers fall back to rendering the
+    # bullet list, same as before this existed.
+    try:
+        payload['brief'] = _ai_service.generate_daily_overview_brief(
+            payload['schedules'], rows, report_date=format_report_date(day), user_id=user_id,
+        )
+    except Exception:
+        logger.warning("Could not generate AI overview brief for %s", user_id, exc_info=True)
+        payload['brief'] = None
     store_overview_payload(user_id, day, payload)
     return payload
 

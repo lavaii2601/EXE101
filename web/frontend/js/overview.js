@@ -1111,6 +1111,10 @@ async function loadOverviewPage(options = {}) {
                 ? ui('Đang kiểm tra thay đổi mới trong nền. Bản tổng hợp hiện tại vẫn dùng được ngay.', 'Checking for changes in the background. The current overview remains available.')
                 : ui('AI đang cập nhật bản tổng hợp trong nền. Dữ liệu hiện có vẫn xem được ngay.', 'AI is updating the overview in the background. Existing data remains available.')}</p>`
             : '';
+        // overviewData.brief is the AI-synthesized narrative (backend,
+        // when a provider is configured); buildOverviewInsight is the
+        // local/deterministic fallback used whenever it's absent.
+        const briefText = overviewData.brief || buildOverviewInsight({ schedules, emails, selectedDate });
 
         container.innerHTML = `
             <section class="overview-hero">
@@ -1119,6 +1123,7 @@ async function loadOverviewPage(options = {}) {
                     <h3>${attentionCount
                         ? ui(`Bạn có ${attentionCount} điều đáng chú ý.`, `You have ${attentionCount} things worth attention.`)
                         : ui('Hôm nay trông thật nhẹ nhàng.', 'Today looks refreshingly clear.')}</h3>
+                    <p class="overview-ai-brief">${escapeHtml(briefText)}</p>
                     <ul class="overview-attention-list">${renderOverviewAttention({ schedules, emails, deadlines })}</ul>
                     ${refreshNote}
                 </div>

@@ -1307,3 +1307,66 @@ class AIService:
         except Exception:
             pass
         return rows
+
+    def _build_overview_brief_context(self, schedules, email_rows, report_date):
+        lines = [f"Ngay: {report_date}"] if report_date else []
+        for item in (schedules or [])[:10]:
+            if not isinstance(item, dict):
+                continue
+            lines.append(
+                f"- Lich: {item.get('title','')} luc {item.get('start_time','')} "
+                f"({item.get('status','')})"
+            )
+        for row in (email_rows or [])[:10]:
+            if not isinstance(row, dict):
+                continue
+            tag = " [co the la cuoc hop]" if row.get('is_meeting') else ""
+            lines.append(f"- Email tu {row.get('sender','')}: {row.get('summary','')}{tag}")
+        return "\n".join(lines)
+
+    def generate_daily_overview_brief(self, schedules, email_rows, report_date=None, user_id=None):
+        """Synthesize a short written brief from already-compact structured
+        data (live schedules + the extractive per-email one-liners
+        summarize_email_report already produces) -- never raw emails.
+
+        Returns None (never raises) when disabled, unconfigured, there's no
+        input data, or the result looks unusable -- callers must keep
+        rendering their existing bullet-list rendering in that case, never
+        regress or crash.
+        """
+        if not Config.AI_OVERVIEW_BRIEF_ENABLED:
+            return None
+        if Config.BOB_LOCAL_ONLY or not self.configured_providers:
+            return None
+        if not schedules and not email_rows:
+            return None
+
+        context = self._build_overview_brief_context(schedules, email_rows, report_date)
+        messages = [
+            {"role": "system", "content": (
+                "Ban la Bob, viet MOT doan brief ngan (3-5 cau, van xuoi, khong "
+                "markdown, khong gach dau dong) tong hop ngay lam viec cua nguoi "
+                "dung dua TREN DUNG du kien duoc cung cap. KHONG bia them ten, "
+                "gio, hay su kien khong co trong du lieu. Neu du lieu rong, noi "
+                "ngan gon ngay nay chua co gi noi bat."
+            )},
+            {"role": "user", "content": context},
+        ]
+        try:
+            raw = self.generate_response(
+                messages,
+                max_tokens=self.task_max_tokens.get('overview_brief', 260),
+                task='overview_brief',
+                user_id=user_id,
+            )
+        except Exception:
+            logger.warning("Overview brief synthesis failed", exc_info=True)
+            return None
+        # generate_response never raises for provider exhaustion -- it
+        # silently degrades to the demo/bob-local sentinel instead. Reject
+        # that case explicitly so callers never mistake a canned non-answer
+        # for a real synthesized brief.
+        if self.last_provider_used not in self.configured_providers:
+            return None
+        text = strip_markup(str(raw or '').strip())
+        return text if len(text) >= 20 else None

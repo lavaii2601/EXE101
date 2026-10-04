@@ -2437,6 +2437,10 @@ select:focus {
     font-weight: 500;
 }
 
+.overview-hero .overview-ai-brief {
+    margin-bottom: 8px;
+}
+
 .overview-score {
     display: grid;
     place-items: center;
