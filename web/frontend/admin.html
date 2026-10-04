@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/admin.css?v=20260929-admin-sidebar-01">
+  <link rel="stylesheet" href="/css/admin.css?v=20261004-operations-01">
 </head>
 <body>
   <div class="ambient ambient-a"></div>
@@ -107,6 +107,24 @@
             <svg class="tab-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2"/><circle cx="12" cy="12.5" r="3"/><path d="M6 6V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>
             <span class="tab-label">Tài chính &amp; Subscription</span>
           </button>
+          <button id="usersTab" class="dashboard-tab" type="button" role="tab" aria-selected="false" aria-controls="usersPanel" tabindex="-1" data-dashboard-tab="users">
+            <span class="tab-icon text-icon" aria-hidden="true">U</span><span class="tab-label">Người dùng</span>
+          </button>
+          <button id="aiTab" class="dashboard-tab" type="button" role="tab" aria-selected="false" aria-controls="aiPanel" tabindex="-1" data-dashboard-tab="ai">
+            <span class="tab-icon text-icon" aria-hidden="true">AI</span><span class="tab-label">AI Usage &amp; Cost</span>
+          </button>
+          <button id="controlsTab" class="dashboard-tab" type="button" role="tab" aria-selected="false" aria-controls="controlsPanel" tabindex="-1" data-dashboard-tab="controls">
+            <span class="tab-icon text-icon" aria-hidden="true">$</span><span class="tab-label">Limits &amp; Budget</span>
+          </button>
+          <button id="integrationsTab" class="dashboard-tab" type="button" role="tab" aria-selected="false" aria-controls="integrationsPanel" tabindex="-1" data-dashboard-tab="integrations">
+            <span class="tab-icon text-icon" aria-hidden="true">↔</span><span class="tab-label">Integrations</span>
+          </button>
+          <button id="healthTab" class="dashboard-tab" type="button" role="tab" aria-selected="false" aria-controls="healthPanel" tabindex="-1" data-dashboard-tab="health">
+            <span class="tab-icon text-icon" aria-hidden="true">+</span><span class="tab-label">System &amp; Logs</span>
+          </button>
+          <button id="securityTab" class="dashboard-tab" type="button" role="tab" aria-selected="false" aria-controls="securityPanel" tabindex="-1" data-dashboard-tab="security">
+            <span class="tab-icon text-icon" aria-hidden="true">✓</span><span class="tab-label">Security &amp; Audit</span>
+          </button>
           <button
             id="workspacesTab"
             class="dashboard-tab"
@@ -175,6 +193,19 @@
           <strong id="actions24h">—</strong>
           <span id="syncFailures">— lỗi sync</span>
         </article>
+      </section>
+
+      <section class="hero-grid ops-kpis" aria-label="Chỉ số kinh doanh và AI">
+        <article class="hero-card"><p class="metric-label">Active hôm nay</p><strong id="activeUsersToday">—</strong><span id="activeUsersMonth">— active trong tháng</span></article>
+        <article class="hero-card accent-green"><p class="metric-label">Free / Plus</p><strong id="planMix">— / —</strong><span id="newUsersMonth">— người dùng mới tháng này</span></article>
+        <article class="hero-card accent-violet"><p class="metric-label">Revenue tháng</p><strong id="overviewRevenueMonth">—</strong><span>Ledger theo đơn vị gốc</span></article>
+        <article class="hero-card accent-amber"><p class="metric-label">AI tháng này</p><strong id="overviewAiCost">—</strong><span id="overviewAiRequests">— requests</span></article>
+      </section>
+
+      <section class="grid three ops-charts">
+        <article class="panel"><div class="panel-head"><div><p class="eyebrow">30 NGÀY</p><h2>User Growth</h2></div></div><div id="userGrowthChart" class="chart mini-chart"></div></article>
+        <article class="panel"><div class="panel-head"><div><p class="eyebrow">30 NGÀY</p><h2>Revenue</h2></div></div><div id="overviewRevenueChart" class="chart mini-chart"></div></article>
+        <article class="panel"><div class="panel-head"><div><p class="eyebrow">30 NGÀY</p><h2>AI Cost</h2></div><span id="overviewErrorRate" class="pill">— lỗi</span></div><div id="aiCostChart" class="chart mini-chart"></div></article>
       </section>
 
       <section class="grid two">
@@ -548,11 +579,63 @@
           </div>
         </section>
       </section>
+
+      <section id="usersPanel" class="dashboard-panel" role="tabpanel" aria-labelledby="usersTab" data-dashboard-panel="users" hidden>
+        <section class="panel table-panel">
+          <div class="panel-head"><div><p class="eyebrow">USER MANAGEMENT</p><h2>Quản lý tài khoản</h2></div><span id="adminUserCount" class="pill">0 users</span></div>
+          <div class="table-toolbar">
+            <label class="search-control"><span class="sr-only">Tìm user</span><input id="adminUserSearch" type="search" placeholder="User ID, tên hoặc email…"></label>
+            <select id="adminUserPlanFilter"><option value="all">Mọi gói</option><option value="free">Free</option><option value="plus">Plus</option></select>
+            <select id="adminUserStatusFilter"><option value="all">Mọi trạng thái</option><option value="active">Active</option><option value="suspended">Suspended</option><option value="disabled">Disabled</option></select>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>User</th><th>Plan / Status</th><th>Đăng nhập / Active</th><th>Google</th><th>AI tháng</th><th>Hành động</th></tr></thead><tbody id="adminUsersBody"></tbody></table></div>
+        </section>
+      </section>
+
+      <section id="aiPanel" class="dashboard-panel" role="tabpanel" aria-labelledby="aiTab" data-dashboard-panel="ai" hidden>
+        <section class="hero-grid">
+          <article class="hero-card"><p class="metric-label">AI requests</p><strong id="aiTotalRequests">—</strong><span id="aiSuccessRate">— success</span></article>
+          <article class="hero-card accent-cyan"><p class="metric-label">Tokens</p><strong id="aiTotalTokens">—</strong><span id="aiAvgTokens">— / request</span></article>
+          <article class="hero-card accent-violet"><p class="metric-label">Total cost</p><strong id="aiTotalCost">—</strong><span id="aiAvgCost">— / request</span></article>
+          <article class="hero-card accent-amber"><p class="metric-label">Cache / Errors</p><strong id="aiCacheRate">—</strong><span id="aiErrorRate">— error rate</span></article>
+        </section>
+        <section class="panel"><div class="panel-head"><div><p class="eyebrow">THEO NGÀY</p><h2>Request &amp; chi phí AI</h2></div><select id="aiUsageDays"><option value="7">7 ngày</option><option value="30" selected>30 ngày</option><option value="90">90 ngày</option></select></div><div id="aiDailyChart" class="chart"></div></section>
+        <section class="grid two"><article class="panel"><div class="panel-head"><h2>Provider</h2></div><div id="aiProviders" class="metric-list"></div></article><article class="panel"><div class="panel-head"><h2>Model tier</h2></div><div id="aiTiers" class="metric-list"></div></article></section>
+        <section class="grid two"><article class="panel"><div class="panel-head"><h2>Model</h2></div><div id="aiModels" class="bars compact"></div></article><article class="panel"><div class="panel-head"><h2>Feature</h2></div><div id="aiFeatures" class="bars compact"></div></article></section>
+        <section class="panel table-panel"><div class="panel-head"><div><p class="eyebrow">AI ERRORS</p><h2>Lỗi gần đây</h2></div></div><div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>User</th><th>Feature</th><th>Provider / Model</th><th>Lỗi</th><th>Latency</th></tr></thead><tbody id="aiErrorsBody"></tbody></table></div></section>
+      </section>
+
+      <section id="controlsPanel" class="dashboard-panel" role="tabpanel" aria-labelledby="controlsTab" data-dashboard-panel="controls" hidden>
+        <form id="aiControlsForm">
+          <section class="grid two">
+            <article class="panel"><div class="panel-head"><div><p class="eyebrow">FREE</p><h2>Quota mỗi ngày</h2></div></div><div id="freeQuotaFields" class="settings-grid"></div></article>
+            <article class="panel"><div class="panel-head"><div><p class="eyebrow">PLUS</p><h2>Quota mỗi ngày</h2></div></div><div id="plusQuotaFields" class="settings-grid"></div></article>
+          </section>
+          <section class="panel"><div class="panel-head"><div><p class="eyebrow">BUDGET CONTROL</p><h2>Ngân sách AI tháng</h2></div><span id="budgetSpent" class="pill">— đã dùng</span></div><div id="budgetFields" class="settings-grid budget-grid"></div><label class="toggle-row"><input id="hardStopEnabled" type="checkbox"><span>Hard stop khi chạm giới hạn</span></label><div class="form-actions"><button class="button primary" type="submit">Lưu quota &amp; budget</button></div></section>
+        </form>
+      </section>
+
+      <section id="integrationsPanel" class="dashboard-panel" role="tabpanel" aria-labelledby="integrationsTab" data-dashboard-panel="integrations" hidden>
+        <section id="integrationCards" class="grid three"></section>
+        <section class="panel table-panel"><div class="panel-head"><div><p class="eyebrow">API ERRORS</p><h2>Lỗi tích hợp 30 ngày</h2></div></div><div id="integrationErrors" class="metric-list"></div></section>
+      </section>
+
+      <section id="healthPanel" class="dashboard-panel" role="tabpanel" aria-labelledby="healthTab" data-dashboard-panel="health" hidden>
+        <section id="healthCards" class="hero-grid"></section>
+        <section class="panel table-panel"><div class="panel-head"><div><p class="eyebrow">SYSTEM LOGS</p><h2>Operational events</h2></div></div><div class="table-wrap"><table><thead><tr><th>Timestamp</th><th>Request ID</th><th>User</th><th>Feature</th><th>Provider</th><th>Model</th><th>Status</th><th>Latency</th><th>Error</th></tr></thead><tbody id="systemLogsBody"></tbody></table></div></section>
+      </section>
+
+      <section id="securityPanel" class="dashboard-panel" role="tabpanel" aria-labelledby="securityTab" data-dashboard-panel="security" hidden>
+        <section id="securityCounters" class="hero-grid"></section>
+        <section class="panel table-panel"><div class="panel-head"><div><p class="eyebrow">ADMIN ACTIVITY</p><h2>Audit log</h2></div></div><div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>Admin</th><th>Action</th><th>Target</th><th>Before → After</th><th>Request ID</th></tr></thead><tbody id="adminAuditBody"></tbody></table></div></section>
+        <section class="grid two"><article class="panel table-panel"><div class="panel-head"><div><p class="eyebrow">LOGIN ANOMALY</p><h2>Đăng nhập đáng ngờ (24h)</h2></div></div><div id="suspiciousLoginList" class="metric-list"></div></article><article class="panel table-panel"><div class="panel-head"><div><p class="eyebrow">AI ANOMALY</p><h2>AI usage bất thường (24h)</h2></div></div><div id="suspiciousAiList" class="metric-list"></div></article></section>
+      </section>
       </div>
     </div>
   </main>
 
   <div id="adminToast" class="admin-toast" role="status" aria-live="polite"></div>
-  <script src="/js/admin.js?v=20260929-admin-sidebar-01" defer></script>
+  <dialog id="userDetailDialog" class="admin-dialog"><button id="closeUserDetail" class="dialog-close" type="button" aria-label="Đóng">×</button><div id="userDetailContent"></div></dialog>
+  <script src="/js/admin.js?v=20261004-operations-01" defer></script>
 </body>
 </html>

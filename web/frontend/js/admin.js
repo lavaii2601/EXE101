@@ -17,6 +17,14 @@ const state = {
   auditEvents: [],
   auditNextBefore: null,
   auditLoading: false,
+  users: [],
+  aiUsage: null,
+  controls: null,
+  integrations: null,
+  health: null,
+  security: null,
+  loadedTabs: new Set(),
+  loadingTab: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -70,6 +78,9 @@ const money = (minorValue, currency = 'VND', compact = false) => {
     return `${number(value)} ${currency}`;
   }
 };
+const usd = (value) => new Intl.NumberFormat('en-US', {
+  style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4,
+}).format(Number(value || 0));
 const escapeHtml = (value) => String(value ?? '')
   .replaceAll('&', '&amp;')
   .replaceAll('<', '&lt;')
@@ -80,6 +91,22 @@ const normalizedText = (value) => String(value ?? '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
   .toLowerCase();
+
+function renderMiniChart(targetId, items, valueKey = 'value', formatter = number) {
+  const target = $(targetId);
+  if (!target) return;
+  const values = items.map((item) => Number(item[valueKey] || 0));
+  const max = Math.max(...values, 1);
+  target.innerHTML = items.length ? items.map((item) => {
+    const value = Number(item[valueKey] || 0);
+    const height = Math.max(3, Math.round(value / max * 120));
+    const label = String(item.day || item.month || '').slice(-5);
+    return `<div class="chart-column" title="${escapeHtml(item.day || item.month || '')}: ${escapeHtml(formatter(value))}">
+      <span class="chart-value">${escapeHtml(formatter(value))}</span>
+      <div class="chart-bar" style="height:${height}px"></div><span class="chart-day">${escapeHtml(label)}</span>
+    </div>`;
+  }).join('') : '<p class="muted">Chưa có dữ liệu.</p>';
+}
 
 function showToast(message, tone = 'success') {
   const node = $('adminToast');
@@ -138,7 +165,8 @@ function showGate(name, message = '') {
 }
 
 function activateTab(name, { focus = false, load = true } = {}) {
-  const next = ['finance', 'workspaces'].includes(name) ? name : 'overview';
+  const validTabs = ['overview', 'users', 'finance', 'ai', 'controls', 'integrations', 'health', 'security', 'workspaces'];
+  const next = validTabs.includes(name) ? name : 'overview';
   state.activeTab = next;
   document.querySelectorAll('[data-dashboard-tab]').forEach((tab) => {
     const active = tab.dataset.dashboardTab === next;
@@ -151,6 +179,17 @@ function activateTab(name, { focus = false, load = true } = {}) {
   });
   if (next === 'finance' && load && !state.financeLoaded) loadFinance();
   if (next === 'workspaces' && load && !state.workspacesLoaded) loadWorkspaces();
+  if (load && !state.loadedTabs.has(next)) {
+    const loaders = {
+      users: loadAdminUsers,
+      ai: loadAiUsage,
+      controls: loadAiControls,
+      integrations: loadIntegrations,
+      health: loadSystemHealth,
+      security: loadSecurity,
+    };
+    loaders[next]?.();
+  }
   closeMobileSidebar();
 }
 
@@ -388,6 +427,16 @@ function render(data) {
   $('databaseSize').textContent = bytes(data.database?.bytes);
   $('generatedAt').textContent = `Cập nhật ${dateTime(data.generated_at)}`;
   $('runtimeInfo').textContent = `${data.backend} · uptime ${Math.floor(Number(data.process_uptime_seconds || 0) / 60)} phút`;
+  $('activeUsersToday').textContent = number(summary.users_active_today);
+  $('activeUsersMonth').textContent = `${number(summary.users_active_month)} active trong tháng`;
+  $('planMix').textContent = `${number(summary.users_free)} / ${number(summary.users_plus)}`;
+  $('newUsersMonth').textContent = `${number(summary.users_new_month)} mới tháng này · ${number(summary.users_new_today)} hôm nay`;
+  $('overviewRevenueMonth').textContent = money(summary.revenue_month, 'VND', true);
+  $('overviewAiCost').textContent = usd(summary.ai_cost_month_usd);
+  $('overviewAiRequests').textContent = `${number(summary.ai_requests_month)} requests`;
+  const overviewErrorRate = Number(summary.ai_requests_month)
+    ? Number(summary.ai_errors_month || 0) / Number(summary.ai_requests_month) * 100 : 0;
+  $('overviewErrorRate').textContent = `${overviewErrorRate.toFixed(1)}% lỗi`;
 
   renderAlerts(summary);
   renderMetricList(summary);
@@ -396,6 +445,9 @@ function render(data) {
   renderBars('tableSizes', data.table_sizes || [], bytes);
   renderSyncJobs(data.recent_sync_jobs || []);
   renderUsers(data.recent_users || []);
+  renderMiniChart('userGrowthChart', data.user_growth_30d || [], 'value');
+  renderMiniChart('overviewRevenueChart', data.revenue_30d || [], 'value');
+  renderMiniChart('aiCostChart', data.ai_cost_30d || [], 'value', (value) => usd(value));
   markRefreshed(data);
 }
 
@@ -629,14 +681,20 @@ function renderRevenueChart(finance, currency) {
   }).join('');
 }
 
-function renderFinanceMetrics(summary, currency) {
+function renderFinanceMetrics(summary, currency, audience = {}) {
   const metrics = [
+    ['Revenue hôm nay', money(summary.revenue_today, currency), ''],
     ['Phí cổng thanh toán', money(summary.fees_month, currency), Number(summary.fees_month) ? 'warn' : ''],
     ['Hoàn tiền trong tháng', money(summary.refunds_month, currency), Number(summary.refunds_month) ? 'warn' : ''],
     ['Đang dùng thử', number(summary.trialing_subscriptions), ''],
     ['Quá hạn thanh toán', number(summary.past_due_subscriptions), Number(summary.past_due_subscriptions) ? 'bad' : ''],
     ['Subscription mới', number(summary.new_subscriptions_month), ''],
     ['Subscription hủy', number(summary.canceled_subscriptions_month), Number(summary.canceled_subscriptions_month) ? 'warn' : ''],
+    ['Failed payments', number(summary.failed_payments), Number(summary.failed_payments) ? 'bad' : ''],
+    ['Free / Plus users', `${number(audience.free_users)} / ${number(audience.plus_users)}`, ''],
+    ['Monthly / Annual', `${number(audience.monthly_subscriptions)} / ${number(audience.annual_subscriptions)}`, ''],
+    ['Conversion Free → Plus', `${Number(audience.conversion_rate || 0).toFixed(2)}%`, ''],
+    ['Churn rate', `${Number(audience.churn_rate || 0).toFixed(2)}%`, Number(audience.churn_rate) ? 'warn' : ''],
   ];
   $('financeMetrics').innerHTML = metrics.map(([label, value, tone]) => (
     `<div class="metric-row"><span>${escapeHtml(label)}</span><strong class="${tone}">${escapeHtml(value)}</strong></div>`
@@ -762,7 +820,7 @@ function renderFinance(data) {
   $('financeGeneratedAt').textContent = `Cập nhật ${dateTime(data.generated_at)}`;
 
   renderRevenueChart(finance, currency);
-  renderFinanceMetrics(summary, currency);
+  renderFinanceMetrics(summary, currency, finance.audience || {});
   renderSubscriptionPlans(finance, currency);
   renderRecentPayments(finance, currency);
   renderRecentSubscriptions(finance, currency);
@@ -826,6 +884,227 @@ async function loadWorkspaces() {
     state.workspacesLoading = false;
     $('refreshButton').disabled = false;
   }
+}
+
+function renderAdminUsers() {
+  const query = normalizedText($('adminUserSearch').value);
+  const plan = $('adminUserPlanFilter').value;
+  const status = $('adminUserStatusFilter').value;
+  const filtered = state.users.filter((user) => {
+    const isPlus = Boolean(user.plan_code || user.plan_name);
+    const matchesPlan = plan === 'all' || (plan === 'plus' ? isPlus : !isPlus);
+    const matchesStatus = status === 'all' || (user.account_status || 'active') === status;
+    const haystack = normalizedText([user.user_id, user.name, user.email, user.gmail_email].join(' '));
+    return matchesPlan && matchesStatus && (!query || haystack.includes(query));
+  });
+  $('adminUserCount').textContent = `${number(filtered.length)} / ${number(state.users.length)} users`;
+  $('adminUsersBody').innerHTML = filtered.length ? filtered.map((user) => {
+    const isPlus = Boolean(user.plan_code || user.plan_name);
+    const accountStatus = user.account_status || 'active';
+    return `<tr>
+      <td><strong>${escapeHtml(user.name || user.user_id)}</strong><br><span class="muted">${escapeHtml(user.email || user.gmail_email || '—')}</span><br><code>${escapeHtml(user.user_id)}</code></td>
+      <td><span class="badge ${isPlus ? 'success' : ''}">${isPlus ? 'Plus' : 'Free'}</span><br><span class="badge ${escapeHtml(accountStatus)}">${escapeHtml(accountStatus)}</span></td>
+      <td>${escapeHtml(dateTime(user.last_login_at))}<br><span class="muted">Active ${escapeHtml(dateTime(user.last_active_at))}</span></td>
+      <td>Gmail: ${user.gmail_connected ? '✓' : '—'}<br><span class="muted">Calendar: ${user.calendar_connected ? '✓' : '—'}</span></td>
+      <td>${number(user.ai_usage_month)} requests<br><strong>${escapeHtml(usd(user.ai_cost_month_usd))}</strong></td>
+      <td class="subscription-actions">
+        <button class="btn-link" type="button" data-user-detail="${escapeHtml(user.user_id)}">Chi tiết</button>
+        ${accountStatus === 'active' ? `<button class="btn-link" type="button" data-user-status="suspended" data-user-id="${escapeHtml(user.user_id)}">Suspend</button>` : `<button class="btn-link" type="button" data-user-status="active" data-user-id="${escapeHtml(user.user_id)}">Activate</button>`}
+        ${accountStatus !== 'disabled' ? `<button class="btn-link danger" type="button" data-user-status="disabled" data-user-id="${escapeHtml(user.user_id)}">Disable</button>` : ''}
+        ${isPlus ? `<button class="btn-link danger" type="button" data-admin-revoke-plan="${escapeHtml(user.user_id)}">Downgrade</button>` : `<button class="btn-link" type="button" data-admin-upgrade-plan="${escapeHtml(user.user_id)}">Upgrade</button>`}
+        <button class="btn-link" type="button" data-reset-quota="${escapeHtml(user.user_id)}">Reset quota</button>
+        <button class="btn-link danger" type="button" data-reset-usage="${escapeHtml(user.user_id)}">Reset AI limits</button>
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="6" class="muted">Không có người dùng phù hợp.</td></tr>';
+}
+
+async function loadAdminUsers() {
+  if (state.loadingTab === 'users') return;
+  state.loadingTab = 'users';
+  try {
+    const data = await api('/api/admin/users');
+    state.users = data.users || [];
+    state.loadedTabs.add('users');
+    renderAdminUsers();
+    markRefreshed(data);
+  } catch (error) {
+    if (!handleAdminGate(error)) showToast(error.message, 'error');
+  } finally { state.loadingTab = null; }
+}
+
+async function updateUserStatus(userId, status) {
+  if (!window.confirm(`${status} tài khoản ${userId}?`)) return;
+  try {
+    await api(`/api/admin/users/${encodeURIComponent(userId)}/status`, {
+      method: 'POST', body: JSON.stringify({ status }),
+    });
+    state.loadedTabs.delete('users');
+    await loadAdminUsers();
+    showToast(`Đã chuyển tài khoản sang ${status}.`, status === 'active' ? 'success' : 'warning');
+  } catch (error) { if (!handleAdminGate(error)) showToast(error.message, 'error'); }
+}
+
+async function resetUserUsage(userId, scope = 'today') {
+  const label = scope === 'all' ? 'toàn bộ bộ đếm AI usage' : 'quota AI hôm nay';
+  if (!window.confirm(`Reset ${label} của ${userId}?`)) return;
+  try {
+    await api(`/api/admin/users/${encodeURIComponent(userId)}/usage/reset`, {
+      method: 'POST', body: JSON.stringify({ scope }),
+    });
+    showToast(`Đã reset ${label}.`);
+    state.loadedTabs.delete('users');
+    await loadAdminUsers();
+  } catch (error) { if (!handleAdminGate(error)) showToast(error.message, 'error'); }
+}
+
+function showUserDetail(userId) {
+  const user = state.users.find((item) => item.user_id === userId);
+  if (!user) return;
+  const rows = [
+    ['User ID', user.user_id], ['Name', user.name], ['Email', user.email || user.gmail_email],
+    ['Plan', user.plan_name || 'Free'], ['Account status', user.account_status || 'active'],
+    ['Created', dateTime(user.created_at)], ['Last login', dateTime(user.last_login_at)],
+    ['Last active', dateTime(user.last_active_at)], ['Gmail', user.gmail_connected ? 'Connected' : 'Not connected'],
+    ['Calendar', user.calendar_connected ? 'Connected' : 'Not connected'],
+    ['AI usage tháng', number(user.ai_usage_month)], ['AI cost tháng', usd(user.ai_cost_month_usd)],
+    ['Input / Output tokens', `${number(user.ai_input_tokens_month)} / ${number(user.ai_output_tokens_month)}`],
+  ];
+  $('userDetailContent').innerHTML = `<p class="eyebrow">USER DETAIL</p><h2>${escapeHtml(user.name || user.user_id)}</h2><div class="detail-list">${rows.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || '—')}</strong></div>`).join('')}</div>`;
+  $('userDetailDialog').showModal();
+}
+
+function renderAiUsage(data) {
+  const usage = data.usage || {};
+  const summary = usage.summary || {};
+  const requests = Number(summary.requests || 0);
+  const successes = Number(summary.successes || 0);
+  const errors = Number(summary.errors || 0);
+  const totalTokens = Number(summary.input_tokens || 0) + Number(summary.output_tokens || 0);
+  $('aiTotalRequests').textContent = number(requests);
+  $('aiSuccessRate').textContent = `${requests ? (successes / requests * 100).toFixed(1) : '0.0'}% success`;
+  $('aiTotalTokens').textContent = number(totalTokens);
+  $('aiAvgTokens').textContent = `${number(summary.input_tokens)} in · ${number(summary.output_tokens)} out · ${number(summary.avg_tokens_request)} / request`;
+  $('aiTotalCost').textContent = usd(summary.cost_usd);
+  $('aiAvgCost').textContent = `${usd(summary.avg_cost_user_usd)} / user · ${usd(summary.avg_cost_request_usd)} / request`;
+  $('aiCacheRate').textContent = `${requests ? (Number(summary.cache_hits || 0) / requests * 100).toFixed(1) : '0.0'}%`;
+  $('aiErrorRate').textContent = `${requests ? (errors / requests * 100).toFixed(1) : '0.0'}% error rate`;
+  renderMiniChart('aiDailyChart', usage.daily || [], 'cost_usd', usd);
+  const renderGroups = (target, rows) => {
+    $(target).innerHTML = rows.length ? rows.map((item) => `<div class="metric-row"><span>${escapeHtml(item.label)}</span><strong>${number(item.requests)} · ${escapeHtml(usd(item.cost_usd))}</strong></div>`).join('') : '<p class="muted">Chưa có dữ liệu.</p>';
+  };
+  renderGroups('aiProviders', usage.providers || []);
+  renderGroups('aiTiers', usage.tiers || []);
+  renderBars('aiModels', (usage.models || []).map((item) => ({ label: item.label, value: item.requests })));
+  renderBars('aiFeatures', (usage.features || []).map((item) => ({ label: item.label, value: item.requests })));
+  $('aiErrorsBody').innerHTML = (usage.recent_errors || []).length ? usage.recent_errors.map((item) => `<tr><td>${escapeHtml(dateTime(item.created_at))}</td><td>${escapeHtml(item.user_id || '—')}</td><td>${escapeHtml(item.feature || '—')}</td><td>${escapeHtml([item.provider, item.model].filter(Boolean).join(' · ') || '—')}</td><td>${escapeHtml(item.error_type || 'error')}</td><td>${number(item.latency_ms)} ms</td></tr>`).join('') : '<tr><td colspan="6" class="muted">Không có lỗi trong kỳ.</td></tr>';
+}
+
+async function loadAiUsage() {
+  const days = Number($('aiUsageDays').value || 30);
+  if (state.loadingTab === 'ai') return;
+  state.loadingTab = 'ai';
+  try {
+    const data = await api(`/api/admin/ai-usage?days=${days}`);
+    state.aiUsage = data;
+    state.loadedTabs.add('ai');
+    renderAiUsage(data);
+    markRefreshed(data);
+  } catch (error) { if (!handleAdminGate(error)) showToast(error.message, 'error'); }
+  finally { state.loadingTab = null; }
+}
+
+const quotaLabels = {
+  bob_chat: 'Bob requests/day', email_summary: 'Email summaries/day',
+  daily_overview: 'Daily Overview/day', claude: 'Claude requests/day',
+  study_summary: 'Study summaries/day',
+};
+const budgetLabels = {
+  monthly_usd: 'Monthly AI Budget', openai_usd: 'OpenAI Budget', claude_usd: 'Claude Budget',
+  warning_usd: 'Warning level 1', warning_high_usd: 'Warning level 2',
+  critical_usd: 'Critical level', hard_limit_usd: 'Hard limit',
+};
+
+function renderAiControls(data) {
+  state.controls = data.controls;
+  ['free', 'plus'].forEach((plan) => {
+    $(`${plan}QuotaFields`).innerHTML = Object.entries(state.controls.quotas[plan]).map(([key, value]) => `<label><span>${escapeHtml(quotaLabels[key] || key)}</span><input type="number" min="0" max="1000000" step="1" data-quota-plan="${plan}" data-quota-key="${escapeHtml(key)}" value="${Number(value)}"></label>`).join('');
+  });
+  $('budgetFields').innerHTML = Object.entries(budgetLabels).map(([key, label]) => `<label><span>${escapeHtml(label)} (USD)</span><input type="number" min="0" step="0.01" data-budget-key="${escapeHtml(key)}" value="${Number(state.controls.budgets[key] || 0)}"></label>`).join('');
+  $('hardStopEnabled').checked = Boolean(state.controls.budgets.hard_stop_enabled);
+  $('budgetSpent').textContent = `${usd(data.budget_state?.month_cost_usd)} đã dùng`;
+}
+
+async function loadAiControls() {
+  try {
+    const data = await api('/api/admin/ai-controls');
+    renderAiControls(data);
+    state.loadedTabs.add('controls');
+  } catch (error) { if (!handleAdminGate(error)) showToast(error.message, 'error'); }
+}
+
+async function saveAiControls(event) {
+  event.preventDefault();
+  const controls = { quotas: { free: {}, plus: {} }, budgets: {} };
+  document.querySelectorAll('[data-quota-plan]').forEach((input) => { controls.quotas[input.dataset.quotaPlan][input.dataset.quotaKey] = Number(input.value); });
+  document.querySelectorAll('[data-budget-key]').forEach((input) => { controls.budgets[input.dataset.budgetKey] = Number(input.value); });
+  controls.budgets.hard_stop_enabled = $('hardStopEnabled').checked;
+  try {
+    const data = await api('/api/admin/ai-controls', { method: 'PUT', body: JSON.stringify(controls) });
+    renderAiControls(data);
+    showToast('Đã lưu quota và budget.');
+  } catch (error) { if (!handleAdminGate(error)) showToast(error.message, 'error'); }
+}
+
+async function loadIntegrations() {
+  try {
+    const data = await api('/api/admin/integrations');
+    const item = data.integrations || {};
+    state.integrations = item;
+    const google = item.google || {};
+    const providerHealth = item.ai_providers?.provider_health || {};
+    const providerMetrics = Object.fromEntries((item.provider_metrics || []).map((metric) => [metric.provider, metric]));
+    const cards = [
+      ['Gmail', google.gmail_active, `${number(google.expired_tokens)} expired · ${number(google.revoked_access)} revoked`, true],
+      ['Google Calendar', google.calendar_active, `${number(google.connected_users)} connected users`, true],
+      ...['openai', 'claude'].map((provider) => {
+        const metric = providerMetrics[provider] || {};
+        return [provider === 'openai' ? 'OpenAI' : 'Claude', providerHealth[provider]?.healthy ? 'Online' : 'Unavailable', `${number(metric.avg_latency_ms)} ms avg · ${number(metric.rate_limit_errors)} rate-limit errors`, Boolean(providerHealth[provider]?.healthy)];
+      }),
+    ];
+    $('integrationCards').innerHTML = cards.map(([label, value, detail, ok]) => `<article class="panel integration-card"><p class="eyebrow">${escapeHtml(label)}</p><h2 class="${ok ? 'good' : 'warn'}">${escapeHtml(value)}</h2><p class="muted">${escapeHtml(detail)}</p></article>`).join('');
+    $('integrationErrors').innerHTML = (item.api_errors || []).length ? item.api_errors.map((error) => `<div class="metric-row"><span>${escapeHtml(error.feature)}</span><strong class="bad">${number(error.errors)}</strong></div>`).join('') : '<p class="muted">Không có lỗi tích hợp được ghi nhận.</p>';
+    state.loadedTabs.add('integrations');
+  } catch (error) { if (!handleAdminGate(error)) showToast(error.message, 'error'); }
+}
+
+async function loadSystemHealth() {
+  try {
+    const data = await api('/api/admin/system-health');
+    const health = data.health || {};
+    state.health = health;
+    const metrics = health.metrics || {};
+    const google = health.integration_status?.google || {};
+    const providers = health.ai_providers?.provider_health || {};
+    const errorRate = Number(metrics.requests) ? Number(metrics.errors || 0) / Number(metrics.requests) * 100 : 0;
+    const cards = [['Frontend', health.frontend_status], ['Backend', health.backend_status], ['Database', health.database_status], ['Gmail API', Number(google.gmail_active) ? 'operational' : 'not connected'], ['Calendar API', Number(google.calendar_active) ? 'operational' : 'not connected'], ['OpenAI', providers.openai?.healthy ? 'operational' : 'unavailable'], ['Claude', providers.claude?.healthy ? 'operational' : 'unavailable'], ['Average API', `${number(metrics.avg_latency_ms)} ms`], ['Uptime', `${Math.floor(Number(health.uptime_seconds || 0) / 60)} min`], ['Error rate', `${errorRate.toFixed(2)}%`]];
+    $('healthCards').innerHTML = cards.map(([label, value]) => `<article class="hero-card"><p class="metric-label">${escapeHtml(label)}</p><strong>${escapeHtml(value)}</strong></article>`).join('');
+    $('systemLogsBody').innerHTML = (health.events || []).length ? health.events.map((event) => `<tr><td>${escapeHtml(dateTime(event.created_at))}</td><td><code>${escapeHtml(event.request_id || '—')}</code></td><td>${escapeHtml(event.user_id || '—')}</td><td>${escapeHtml(event.feature || event.event_type)}</td><td>${escapeHtml(event.provider || '—')}</td><td>${escapeHtml(event.model || '—')}</td><td><span class="badge ${Number(event.status) >= 500 || event.status === 'error' ? 'failed' : ''}">${escapeHtml(event.status)}</span></td><td>${number(event.latency_ms)} ms</td><td>${escapeHtml(event.error_message || '—')}</td></tr>`).join('') : '<tr><td colspan="9" class="muted">Chưa có log lỗi vận hành.</td></tr>';
+    state.loadedTabs.add('health');
+  } catch (error) { if (!handleAdminGate(error)) showToast(error.message, 'error'); }
+}
+
+async function loadSecurity() {
+  try {
+    const data = await api('/api/admin/security');
+    const security = data.security || {};
+    state.security = security;
+    $('securityCounters').innerHTML = (security.event_counts || []).map((item) => `<article class="hero-card"><p class="metric-label">${escapeHtml(item.event_type.replaceAll('_', ' '))}</p><strong>${number(item.value)}</strong><span>30 ngày gần nhất</span></article>`).join('') || '<article class="hero-card"><p class="metric-label">Security events</p><strong>0</strong><span>30 ngày gần nhất</span></article>';
+    $('adminAuditBody').innerHTML = (security.admin_audit || []).length ? security.admin_audit.map((event) => `<tr><td>${escapeHtml(dateTime(event.created_at))}</td><td>${escapeHtml(event.admin_user_id || 'system')}</td><td>${escapeHtml(event.action)}</td><td>${escapeHtml([event.target_type, event.target_id].filter(Boolean).join(' · '))}</td><td><code>${escapeHtml(JSON.stringify(event.before_state || {}))}</code><br><code>${escapeHtml(JSON.stringify(event.after_state || {}))}</code></td><td><code>${escapeHtml(event.request_id || '—')}</code></td></tr>`).join('') : '<tr><td colspan="6" class="muted">Chưa có admin activity.</td></tr>';
+    $('suspiciousLoginList').innerHTML = (security.suspicious_logins || []).length ? security.suspicious_logins.map((item) => `<div class="metric-row"><span>Client ${escapeHtml(item.client_fingerprint)}<br><small>${escapeHtml(dateTime(item.last_attempt_at))}</small></span><strong class="bad">${number(item.failed_attempts)} failures</strong></div>`).join('') : '<p class="muted">Không phát hiện đăng nhập đáng ngờ.</p>';
+    $('suspiciousAiList').innerHTML = (security.suspicious_ai_usage || []).length ? security.suspicious_ai_usage.map((item) => `<div class="metric-row"><span>${escapeHtml(item.user_id || 'anonymous')} · ${number(item.requests)} requests · ${number(item.tokens)} tokens</span><strong class="warn">${escapeHtml(usd(item.cost_usd))}</strong></div>`).join('') : '<p class="muted">Không phát hiện usage bất thường.</p>';
+    state.loadedTabs.add('security');
+  } catch (error) { if (!handleAdminGate(error)) showToast(error.message, 'error'); }
 }
 
 async function loadDashboard() {
@@ -960,6 +1239,18 @@ function exportCurrentData() {
     ], ...rows]);
     return;
   }
+  if (state.activeTab === 'users') {
+    const rows = state.users.map((user) => [
+      user.user_id, user.name, user.email || user.gmail_email, user.plan_name || 'Free',
+      user.account_status || 'active', user.created_at, user.last_login_at, user.last_active_at,
+      user.gmail_connected, user.calendar_connected, user.ai_usage_month, user.ai_cost_month_usd,
+    ]);
+    downloadCsv(`flowmate-user-management-${stamp}.csv`, [[
+      'user_id', 'name', 'email', 'plan', 'status', 'created_at', 'last_login', 'last_active',
+      'gmail_connected', 'calendar_connected', 'ai_usage_month', 'ai_cost_month_usd',
+    ], ...rows]);
+    return;
+  }
   const rows = (state.overview?.recent_users || []).map((user) => [
     user.user_id,
     user.name,
@@ -978,6 +1269,14 @@ function exportCurrentData() {
 function refreshActiveTab() {
   if (state.activeTab === 'finance') return loadFinance();
   if (state.activeTab === 'workspaces') return loadWorkspaces();
+  const loaders = {
+    users: loadAdminUsers, ai: loadAiUsage, controls: loadAiControls,
+    integrations: loadIntegrations, health: loadSystemHealth, security: loadSecurity,
+  };
+  if (loaders[state.activeTab]) {
+    state.loadedTabs.delete(state.activeTab);
+    return loaders[state.activeTab]();
+  }
   return loadDashboard();
 }
 
@@ -1024,6 +1323,32 @@ $('autoRefreshToggle').addEventListener('change', (event) => {
 ['workspaceSearch', 'workspaceStateFilter'].forEach((id) => {
   $(id).addEventListener(id === 'workspaceSearch' ? 'input' : 'change', () => renderWorkspaces());
 });
+['adminUserSearch', 'adminUserPlanFilter', 'adminUserStatusFilter'].forEach((id) => {
+  $(id).addEventListener(id === 'adminUserSearch' ? 'input' : 'change', renderAdminUsers);
+});
+$('adminUsersBody').addEventListener('click', (event) => {
+  const detail = event.target.closest('[data-user-detail]')?.dataset.userDetail;
+  const statusButton = event.target.closest('[data-user-status]');
+  const resetQuota = event.target.closest('[data-reset-quota]')?.dataset.resetQuota;
+  const reset = event.target.closest('[data-reset-usage]')?.dataset.resetUsage;
+  const upgrade = event.target.closest('[data-admin-upgrade-plan]')?.dataset.adminUpgradePlan;
+  const downgrade = event.target.closest('[data-admin-revoke-plan]')?.dataset.adminRevokePlan;
+  if (detail) showUserDetail(detail);
+  if (statusButton) updateUserStatus(statusButton.dataset.userId, statusButton.dataset.userStatus);
+  if (resetQuota) resetUserUsage(resetQuota, 'today');
+  if (reset) resetUserUsage(reset, 'all');
+  if (upgrade) grantPremium(upgrade, 'purchase').then(() => { state.loadedTabs.delete('users'); loadAdminUsers(); });
+  if (downgrade) revokePremium(downgrade).then(() => { state.loadedTabs.delete('users'); loadAdminUsers(); });
+});
+$('closeUserDetail').addEventListener('click', () => $('userDetailDialog').close());
+$('userDetailDialog').addEventListener('click', (event) => {
+  if (event.target === $('userDetailDialog')) $('userDetailDialog').close();
+});
+$('aiUsageDays').addEventListener('change', () => {
+  state.loadedTabs.delete('ai');
+  loadAiUsage();
+});
+$('aiControlsForm').addEventListener('submit', saveAiControls);
 $('workspacesBody').addEventListener('click', (event) => {
   const grantId = event.target.closest('[data-grant-business]')?.dataset.grantBusiness;
   const renewId = event.target.closest('[data-renew-business]')?.dataset.renewBusiness;

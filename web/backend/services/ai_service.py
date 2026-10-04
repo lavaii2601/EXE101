@@ -13,10 +13,11 @@ from config import Config
 from services.openrouter_service import OpenRouterService
 from services import extractive_summary
 from services.ai_json_utils import parse_json_object
-from models import ai_cost_log
+from models import ai_cost_log, admin_ops
 from models.cache import Cache
 from models import subscription as subscription_model
 from utils.user_context import get_user_db_path
+from utils.quota import enforce_ai_quota
 import hashlib
 from urllib.parse import urlparse
 
@@ -297,6 +298,25 @@ class AIService:
                 remaining = health.get('cooldown_minutes', 0)
                 print(f"⏭️  Bỏ qua {provider.upper()} (đang cooldown ~{remaining}min)")
                 continue
+
+            budget = admin_ops.current_budget_state(provider)
+            if not budget['allowed']:
+                ai_cost_log.record_call(
+                    user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                    provider=provider, model=self._model_for(provider, tier), success=False,
+                    error_type='budget_hard_stop',
+                )
+                logger.warning("AI budget hard stop skipped provider=%s", provider)
+                continue
+            if provider == 'claude' and user_id:
+                provider_quota = enforce_ai_quota(user_id, 'claude')
+                if provider_quota:
+                    ai_cost_log.record_call(
+                        user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                        provider=provider, model=self._model_for(provider, tier), success=False,
+                        error_type='user_quota',
+                    )
+                    continue
             
             t0 = time.monotonic()
             try:
@@ -391,6 +411,12 @@ class AIService:
             raise ValueError(f"{provider} chưa được cấu hình")
         if not self._is_provider_healthy(provider):
             raise RuntimeError(f"{provider} đang cooldown")
+        if not admin_ops.current_budget_state(provider)['allowed']:
+            raise RuntimeError(f"{provider} bị tạm dừng vì đã chạm ngân sách AI")
+        if provider == 'claude' and user_id:
+            provider_quota = enforce_ai_quota(user_id, 'claude')
+            if provider_quota:
+                raise RuntimeError("Đã đạt giới hạn Claude trong ngày")
 
         if max_tokens is None:
             max_tokens = self.task_max_tokens.get(task, self.default_max_tokens)

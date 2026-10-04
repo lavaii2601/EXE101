@@ -78,8 +78,16 @@ CREATE TABLE IF NOT EXISTS users (
     timezone TEXT NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
     preferences JSONB NOT NULL DEFAULT '{}'::JSONB,
 
+    account_status TEXT NOT NULL DEFAULT 'active',
+    last_login_at TIMESTAMPTZ,
+    last_active_at TIMESTAMPTZ,
+    quota_reset_at TIMESTAMPTZ,
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT users_account_status_check CHECK (
+        account_status IN ('active', 'suspended', 'disabled')
+    )
 );
 
 -- Immutable external identities prevent two distinct Google accounts whose
@@ -635,6 +643,51 @@ CREATE INDEX IF NOT EXISTS idx_ai_cost_log_user_created
     ON ai_cost_log (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_cost_log_task_created
     ON ai_cost_log (task, created_at DESC);
+
+-- Runtime operations controls and telemetry for the Admin Console. Values in
+-- admin_settings are deliberately generic JSON so quota/budget changes do not
+-- require another schema migration; API validation supplies the strict shape.
+CREATE TABLE IF NOT EXISTS admin_settings (
+    key TEXT PRIMARY KEY,
+    value JSONB NOT NULL DEFAULT '{}'::JSONB,
+    updated_by_user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS admin_audit_events (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    admin_user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL,
+    action TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT,
+    before_state JSONB,
+    after_state JSONB,
+    request_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS operational_events (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL,
+    feature TEXT,
+    provider TEXT,
+    model TEXT,
+    status TEXT NOT NULL,
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT,
+    request_id TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS api_metrics_daily (
+    metric_date DATE PRIMARY KEY,
+    request_count BIGINT NOT NULL DEFAULT 0,
+    error_count BIGINT NOT NULL DEFAULT 0,
+    total_latency_ms BIGINT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 CREATE TABLE IF NOT EXISTS workspace_memberships (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

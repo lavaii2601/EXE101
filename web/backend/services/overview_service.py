@@ -9,6 +9,7 @@ from models.cache import Cache
 from models.schedule import LOCAL_TZ, Schedule
 from services.ai_service import AIService
 from services.gmail_service import get_cached_gmail_service
+from utils.quota import enforce_ai_quota
 from utils.user_context import get_user_db_path, get_user_token_file, sanitize_user_id
 
 logger = logging.getLogger(__name__)
@@ -134,9 +135,12 @@ def refresh_daily_overview(user_id, day=None, max_results=50, force=False):
     # emails. None means "no narrative"; callers fall back to rendering the
     # bullet list, same as before this existed.
     try:
-        payload['brief'] = _ai_service.generate_daily_overview_brief(
+        quota_rejection = enforce_ai_quota(user_id, 'daily_overview')
+        payload['brief'] = None if quota_rejection else _ai_service.generate_daily_overview_brief(
             payload['schedules'], rows, report_date=format_report_date(day), user_id=user_id,
         )
+        if quota_rejection:
+            payload['ai_quota'] = {'action': 'daily_overview', **quota_rejection}
     except Exception:
         logger.warning("Could not generate AI overview brief for %s", user_id, exc_info=True)
         payload['brief'] = None

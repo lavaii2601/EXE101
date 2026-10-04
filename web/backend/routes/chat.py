@@ -236,6 +236,10 @@ def send_message():
     if not user_message:
         return jsonify({'error': 'Empty message'}), 400
 
+    quota_rejection = enforce_ai_quota(user_id, 'bob_chat')
+    if quota_rejection:
+        return jsonify({'error': 'ai_limit_reached', **quota_rejection}), 403
+
     db_path = get_user_db_path(user_id)
     History.init_db(db_path=db_path)
     Schedule.init_db(db_path=db_path)

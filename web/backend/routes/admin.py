@@ -21,6 +21,7 @@ from models.user import User
 from models import subscription as subscription_model
 from models import workspace as workspace_model
 from models import workspace_subscription
+from models import admin_ops
 from models.workspace_sync import WorkspaceSync
 from utils.security import authenticated_user_id
 from utils.user_context import sanitize_user_id
@@ -129,6 +130,12 @@ def is_current_user_admin():
     if not raw_user_id or not Config.ADMIN_EMAILS:
         return False
     user_id = sanitize_user_id(raw_user_id)
+    account = User.get(user_id) or {}
+    if str(account.get('account_status') or 'active').lower() != 'active':
+        return None, (
+            jsonify({'error': 'admin_account_inactive', 'message': 'Tài khoản quản trị đang bị khóa.'}),
+            403,
+        )
     admin_email = _trusted_admin_email(user_id)
     return bool(admin_email and admin_email in Config.ADMIN_EMAILS)
 
@@ -218,6 +225,13 @@ def _require_admin():
     return {'identity': user_id, 'mode': 'google_allowlist_totp'}, None
 
 
+def _admin_actor_id(admin):
+    """Normalize the authenticated admin payload for routes and test doubles."""
+    if isinstance(admin, dict):
+        return admin.get('identity')
+    return str(admin or '')
+
+
 def _attempt_key(user_id):
     # request.remote_addr (not a raw X-Forwarded-For read) -- app.py's
     # ProxyFix(x_for=1) already resolves the one trusted Railway edge hop
@@ -281,6 +295,18 @@ def _postgres_dashboard():
             """
             SELECT
                 (SELECT COUNT(*) FROM users) AS users_total,
+                (SELECT COUNT(*) FROM users WHERE last_active_at >= CURRENT_DATE) AS users_active_today,
+                (SELECT COUNT(*) FROM users WHERE last_active_at >= DATE_TRUNC('month', NOW())) AS users_active_month,
+                (SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_DATE) AS users_new_today,
+                (SELECT COUNT(*) FROM users WHERE created_at >= DATE_TRUNC('month', NOW())) AS users_new_month,
+                (SELECT COUNT(*) FROM users u WHERE NOT EXISTS (
+                    SELECT 1 FROM subscriptions s WHERE s.user_id = u.user_id
+                    AND s.status IN ('trialing', 'active')
+                    AND (s.current_period_end IS NULL OR s.current_period_end > NOW())
+                )) AS users_free,
+                (SELECT COUNT(DISTINCT user_id) FROM subscriptions
+                 WHERE user_id IS NOT NULL AND status IN ('trialing', 'active')
+                 AND (current_period_end IS NULL OR current_period_end > NOW())) AS users_plus,
                 (SELECT COUNT(*) FROM users WHERE gmail_connected = TRUE) AS google_connected_users,
                 (SELECT COUNT(*) FROM oauth_tokens WHERE revoked_at IS NULL) AS oauth_active,
                 (SELECT COUNT(*) FROM oauth_tokens WHERE revoked_at IS NOT NULL) AS oauth_revoked,
@@ -307,7 +333,17 @@ def _postgres_dashboard():
                     AND created_at >= NOW() - INTERVAL '24 hours') AS sync_failures_24h,
                 (SELECT COUNT(*) FROM cache WHERE expires_at >= NOW()) AS cache_entries_active,
                 (SELECT COUNT(*) FROM payment_transactions WHERE status = 'failed'
-                    AND created_at >= NOW() - INTERVAL '24 hours') AS failed_payments_24h
+                    AND created_at >= NOW() - INTERVAL '24 hours') AS failed_payments_24h,
+                (SELECT COALESCE(SUM(gross_amount - fee_amount - refund_amount), 0)
+                 FROM payment_transactions WHERE status IN ('paid', 'partially_refunded')
+                 AND currency = 'VND'
+                 AND paid_at >= DATE_TRUNC('month', NOW())) AS revenue_month,
+                (SELECT COALESCE(SUM(estimated_cost_usd), 0) FROM ai_cost_log
+                 WHERE created_at >= DATE_TRUNC('month', NOW())) AS ai_cost_month_usd,
+                (SELECT COUNT(*) FROM ai_cost_log
+                 WHERE created_at >= DATE_TRUNC('month', NOW())) AS ai_requests_month,
+                (SELECT COUNT(*) FROM ai_cost_log WHERE success = FALSE
+                 AND created_at >= DATE_TRUNC('month', NOW())) AS ai_errors_month
             """
         ).fetchone()
         modes = conn.execute(
@@ -332,6 +368,44 @@ def _postgres_dashboard():
                 WHERE created_at >= CURRENT_DATE - INTERVAL '13 days'
                 GROUP BY created_at::DATE
             ) AS counts ON counts.activity_day = day::DATE
+            ORDER BY day
+            """
+        ).fetchall()
+        user_growth = conn.execute(
+            """
+            SELECT day::DATE::TEXT AS day, COALESCE(counts.value, 0) AS value
+            FROM generate_series(CURRENT_DATE - INTERVAL '29 days', CURRENT_DATE, INTERVAL '1 day') day
+            LEFT JOIN (
+                SELECT created_at::DATE AS created_day, COUNT(*) AS value
+                FROM users WHERE created_at >= CURRENT_DATE - INTERVAL '29 days'
+                GROUP BY created_at::DATE
+            ) counts ON counts.created_day = day::DATE
+            ORDER BY day
+            """
+        ).fetchall()
+        revenue_daily = conn.execute(
+            """
+            SELECT paid_at::DATE::TEXT AS day, currency,
+                   SUM(gross_amount - fee_amount - refund_amount) AS value
+            FROM payment_transactions
+            WHERE status IN ('paid', 'partially_refunded')
+              AND paid_at >= CURRENT_DATE - INTERVAL '29 days'
+            GROUP BY paid_at::DATE, currency ORDER BY paid_at::DATE
+            """
+        ).fetchall()
+        ai_cost_daily = conn.execute(
+            """
+            SELECT day::DATE::TEXT AS day,
+                   COALESCE(cost.value, 0) AS value,
+                   COALESCE(cost.requests, 0) AS requests
+            FROM generate_series(CURRENT_DATE - INTERVAL '29 days', CURRENT_DATE, INTERVAL '1 day') day
+            LEFT JOIN (
+                SELECT created_at::DATE AS cost_day,
+                       SUM(COALESCE(estimated_cost_usd, 0)) AS value,
+                       COUNT(*) AS requests
+                FROM ai_cost_log WHERE created_at >= CURRENT_DATE - INTERVAL '29 days'
+                GROUP BY created_at::DATE
+            ) cost ON cost.cost_day = day::DATE
             ORDER BY day
             """
         ).fetchall()
@@ -403,6 +477,9 @@ def _postgres_dashboard():
         'summary': summary_row,
         'users_by_mode': pg.normalize_rows(modes),
         'activity_14d': pg.normalize_rows(activity),
+        'user_growth_30d': pg.normalize_rows(user_growth),
+        'revenue_30d': pg.normalize_rows(revenue_daily),
+        'ai_cost_30d': pg.normalize_rows(ai_cost_daily),
         'recent_sync_jobs': pg.normalize_rows(sync_jobs),
         'recent_users': pg.normalize_rows(recent_users),
         'table_sizes': pg.normalize_rows(table_sizes),
@@ -439,6 +516,9 @@ def _sqlite_dashboard():
         },
         'users_by_mode': [],
         'activity_14d': [],
+        'user_growth_30d': [],
+        'revenue_30d': [],
+        'ai_cost_30d': [],
         'recent_sync_jobs': [],
         'recent_users': recent_users,
         'table_sizes': [],
@@ -456,6 +536,7 @@ def _empty_finance():
         'currencies': [{
             'currency': 'VND',
             'gross_revenue_month': 0,
+            'revenue_today': 0,
             'fees_month': 0,
             'refunds_month': 0,
             'net_revenue_month': 0,
@@ -468,11 +549,16 @@ def _empty_finance():
             'mrr': 0,
             'total_subscriptions': 0,
             'total_transactions': 0,
+            'failed_payments': 0,
         }],
         'revenue_12m': [],
         'subscriptions_by_plan': [],
         'recent_payments': [],
         'recent_subscriptions': [],
+        'audience': {
+            'free_users': 0, 'plus_users': 0, 'monthly_subscriptions': 0,
+            'annual_subscriptions': 0, 'conversion_rate': 0, 'churn_rate': 0,
+        },
         'money_unit': 'minor',
         'reporting_timezone': 'Asia/Ho_Chi_Minh',
     }
@@ -606,6 +692,10 @@ def _postgres_finance():
                           AND paid_at AT TIME ZONE 'Asia/Ho_Chi_Minh'
                               >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
                     ), 0)::BIGINT AS gross_revenue_month,
+                    COALESCE(SUM(gross_amount - fee_amount - refund_amount) FILTER (
+                        WHERE status IN ('paid', 'partially_refunded')
+                          AND paid_at AT TIME ZONE 'Asia/Ho_Chi_Minh' >= CURRENT_DATE
+                    ), 0)::BIGINT AS revenue_today,
                     COALESCE(SUM(fee_amount) FILTER (
                         WHERE status IN ('paid', 'partially_refunded', 'refunded')
                           AND paid_at AT TIME ZONE 'Asia/Ho_Chi_Minh'
@@ -620,7 +710,8 @@ def _postgres_finance():
                           AND paid_at AT TIME ZONE 'Asia/Ho_Chi_Minh'
                               >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
                     ) AS payments_month,
-                    COUNT(*) AS total_transactions
+                    COUNT(*) AS total_transactions,
+                    COUNT(*) FILTER (WHERE status = 'failed') AS failed_payments
                 FROM payment_transactions
                 GROUP BY currency
             ),
@@ -652,6 +743,7 @@ def _postgres_finance():
             SELECT
                 currencies.currency,
                 COALESCE(payment_stats.gross_revenue_month, 0)::BIGINT AS gross_revenue_month,
+                COALESCE(payment_stats.revenue_today, 0)::BIGINT AS revenue_today,
                 COALESCE(payment_stats.fees_month, 0)::BIGINT AS fees_month,
                 COALESCE(payment_stats.refunds_month, 0)::BIGINT AS refunds_month,
                 (
@@ -667,7 +759,8 @@ def _postgres_finance():
                 COALESCE(subscription_stats.canceled_subscriptions_month, 0)::BIGINT AS canceled_subscriptions_month,
                 COALESCE(subscription_stats.mrr, 0)::BIGINT AS mrr,
                 COALESCE(subscription_stats.total_subscriptions, 0)::BIGINT AS total_subscriptions,
-                COALESCE(payment_stats.total_transactions, 0)::BIGINT AS total_transactions
+                COALESCE(payment_stats.total_transactions, 0)::BIGINT AS total_transactions,
+                COALESCE(payment_stats.failed_payments, 0)::BIGINT AS failed_payments
             FROM currencies
             LEFT JOIN payment_stats USING (currency)
             LEFT JOIN subscription_stats USING (currency)
@@ -835,6 +928,31 @@ def _postgres_finance():
             LIMIT 30
             """
         ).fetchall()
+        audience = conn.execute(
+            """
+            WITH active_plus AS (
+                SELECT DISTINCT user_id, billing_interval
+                FROM subscriptions
+                WHERE user_id IS NOT NULL AND status IN ('active', 'trialing')
+                  AND (current_period_end IS NULL OR current_period_end > NOW())
+            ), totals AS (
+                SELECT COUNT(*)::NUMERIC AS users_total FROM users
+            ), churn AS (
+                SELECT COUNT(*) FILTER (WHERE canceled_at >= DATE_TRUNC('month', NOW()))::NUMERIC AS canceled,
+                       COUNT(*) FILTER (WHERE status IN ('active', 'trialing'))::NUMERIC AS active
+                FROM subscriptions WHERE user_id IS NOT NULL
+            )
+            SELECT totals.users_total - COUNT(DISTINCT active_plus.user_id) AS free_users,
+                   COUNT(DISTINCT active_plus.user_id) AS plus_users,
+                   COUNT(DISTINCT active_plus.user_id) FILTER (WHERE billing_interval = 'monthly') AS monthly_subscriptions,
+                   COUNT(DISTINCT active_plus.user_id) FILTER (WHERE billing_interval = 'yearly') AS annual_subscriptions,
+                   CASE WHEN totals.users_total > 0 THEN ROUND(COUNT(DISTINCT active_plus.user_id) * 100.0 / totals.users_total, 2) ELSE 0 END AS conversion_rate,
+                   CASE WHEN churn.active + churn.canceled > 0 THEN ROUND(churn.canceled * 100.0 / (churn.active + churn.canceled), 2) ELSE 0 END AS churn_rate
+            FROM totals CROSS JOIN churn
+            LEFT JOIN active_plus ON TRUE
+            GROUP BY totals.users_total, churn.active, churn.canceled
+            """
+        ).fetchone()
 
     normalized_currencies = pg.normalize_rows(currency_summary)
     has_data = any(
@@ -849,8 +967,268 @@ def _postgres_finance():
         'subscriptions_by_plan': pg.normalize_rows(subscriptions_by_plan),
         'recent_payments': pg.normalize_rows(recent_payments),
         'recent_subscriptions': pg.normalize_rows(recent_subscriptions),
+        'audience': pg.normalize_row(audience),
         'money_unit': 'minor',
         'reporting_timezone': 'Asia/Ho_Chi_Minh',
+    }
+
+
+def _postgres_admin_users(user_id=None):
+    where = "WHERE u.user_id = %s" if user_id else ""
+    params = (user_id,) if user_id else ()
+    with pg.connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT u.user_id, u.name, u.email, u.gmail_email, u.gmail_connected,
+                   u.user_mode::TEXT AS user_mode, u.account_status,
+                   u.created_at, u.updated_at, u.last_login_at, u.last_active_at,
+                   u.quota_reset_at,
+                   COALESCE(oauth.calendar_connected, FALSE) AS calendar_connected,
+                   sub.plan_code, sub.plan_name, sub.billing_interval,
+                   sub.status AS subscription_status, sub.current_period_end,
+                   COALESCE(usage.request_count, 0) AS ai_usage_month,
+                   COALESCE(usage.cost_usd, 0) AS ai_cost_month_usd,
+                   COALESCE(usage.input_tokens, 0) AS ai_input_tokens_month,
+                   COALESCE(usage.output_tokens, 0) AS ai_output_tokens_month
+            FROM users u
+            LEFT JOIN LATERAL (
+                SELECT plan_code, plan_name, billing_interval, status, current_period_end
+                FROM subscriptions s
+                WHERE s.user_id = u.user_id AND s.status IN ('trialing', 'active')
+                  AND (s.current_period_end IS NULL OR s.current_period_end > NOW())
+                ORDER BY s.current_period_end DESC NULLS LAST LIMIT 1
+            ) sub ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT BOOL_OR(
+                    revoked_at IS NULL AND scopes @> ARRAY[
+                        'https://www.googleapis.com/auth/calendar.events'
+                    ]::TEXT[]
+                ) AS calendar_connected
+                FROM oauth_tokens ot WHERE ot.user_id = u.user_id
+            ) oauth ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS request_count,
+                       SUM(COALESCE(estimated_cost_usd, 0)) AS cost_usd,
+                       SUM(COALESCE(input_tokens, 0)) AS input_tokens,
+                       SUM(COALESCE(output_tokens, 0)) AS output_tokens
+                FROM ai_cost_log cost
+                WHERE cost.user_id = u.user_id
+                  AND cost.created_at >= DATE_TRUNC('month', NOW())
+            ) usage ON TRUE
+            {where}
+            ORDER BY COALESCE(u.last_active_at, u.updated_at) DESC
+            LIMIT 1000
+            """,
+            params,
+        ).fetchall()
+    return pg.normalize_rows(rows)
+
+
+def _postgres_ai_usage(days=30):
+    with pg.connection() as conn:
+        summary = conn.execute(
+            """
+            SELECT COUNT(*) AS requests,
+                   SUM(COALESCE(input_tokens, 0)) AS input_tokens,
+                   SUM(COALESCE(output_tokens, 0)) AS output_tokens,
+                   SUM(COALESCE(estimated_cost_usd, 0)) AS cost_usd,
+                   AVG(COALESCE(estimated_cost_usd, 0)) AS avg_cost_request_usd,
+                   CASE WHEN COUNT(DISTINCT user_id) > 0
+                        THEN SUM(COALESCE(estimated_cost_usd, 0)) / COUNT(DISTINCT user_id)
+                        ELSE 0 END AS avg_cost_user_usd,
+                   AVG(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)) AS avg_tokens_request,
+                   AVG(latency_ms) AS avg_latency_ms,
+                   COUNT(DISTINCT user_id) AS users,
+                   COUNT(*) FILTER (WHERE cache_hit) AS cache_hits,
+                   COUNT(*) FILTER (WHERE success) AS successes,
+                   COUNT(*) FILTER (WHERE NOT success) AS errors
+            FROM ai_cost_log WHERE created_at >= NOW() - (%s * INTERVAL '1 day')
+            """,
+            (days,),
+        ).fetchone()
+        groups = {}
+        for key, expression in (
+            ('providers', 'provider'), ('models', "COALESCE(NULLIF(model, ''), 'unknown')"),
+            ('tiers', 'tier'), ('features', 'task'),
+        ):
+            rows = conn.execute(
+                f"""
+                SELECT {expression} AS label, COUNT(*) AS requests,
+                       SUM(COALESCE(input_tokens, 0)) AS input_tokens,
+                       SUM(COALESCE(output_tokens, 0)) AS output_tokens,
+                       SUM(COALESCE(estimated_cost_usd, 0)) AS cost_usd,
+                       AVG(latency_ms) AS avg_latency_ms,
+                       COUNT(*) FILTER (WHERE NOT success) AS errors
+                FROM ai_cost_log WHERE created_at >= NOW() - (%s * INTERVAL '1 day')
+                GROUP BY {expression} ORDER BY cost_usd DESC, requests DESC
+                """,
+                (days,),
+            ).fetchall()
+            groups[key] = pg.normalize_rows(rows)
+        daily = conn.execute(
+            """
+            SELECT day::DATE::TEXT AS day,
+                   COALESCE(cost.requests, 0) AS requests,
+                   COALESCE(cost.cost_usd, 0) AS cost_usd,
+                   COALESCE(cost.input_tokens, 0) AS input_tokens,
+                   COALESCE(cost.output_tokens, 0) AS output_tokens,
+                   COALESCE(cost.errors, 0) AS errors
+            FROM generate_series(CURRENT_DATE - ((%s - 1) * INTERVAL '1 day'), CURRENT_DATE, INTERVAL '1 day') day
+            LEFT JOIN (
+                SELECT created_at::DATE AS cost_day, COUNT(*) AS requests,
+                       SUM(COALESCE(estimated_cost_usd, 0)) AS cost_usd,
+                       SUM(COALESCE(input_tokens, 0)) AS input_tokens,
+                       SUM(COALESCE(output_tokens, 0)) AS output_tokens,
+                       COUNT(*) FILTER (WHERE NOT success) AS errors
+                FROM ai_cost_log WHERE created_at >= CURRENT_DATE - ((%s - 1) * INTERVAL '1 day')
+                GROUP BY created_at::DATE
+            ) cost ON cost.cost_day = day::DATE ORDER BY day
+            """,
+            (days, days),
+        ).fetchall()
+        recent_errors = conn.execute(
+            """
+            SELECT created_at, user_id, task AS feature, provider, model,
+                   error_type, latency_ms
+            FROM ai_cost_log WHERE NOT success
+              AND created_at >= NOW() - (%s * INTERVAL '1 day')
+            ORDER BY created_at DESC LIMIT 100
+            """,
+            (days,),
+        ).fetchall()
+    return {
+        'summary': pg.normalize_row(summary),
+        'daily': pg.normalize_rows(daily),
+        'recent_errors': pg.normalize_rows(recent_errors),
+        **groups,
+    }
+
+
+def _postgres_integrations():
+    with pg.connection() as conn:
+        google = conn.execute(
+            """
+            SELECT
+                COUNT(DISTINCT user_id) AS connected_users,
+                COUNT(*) FILTER (WHERE revoked_at IS NULL) AS active_connections,
+                COUNT(*) FILTER (WHERE revoked_at IS NOT NULL) AS revoked_access,
+                COUNT(*) FILTER (WHERE revoked_at IS NULL AND expires_at < NOW()) AS expired_tokens,
+                COUNT(*) FILTER (WHERE revoked_at IS NULL AND scopes @> ARRAY[
+                    'https://www.googleapis.com/auth/gmail.modify']::TEXT[]) AS gmail_active,
+                COUNT(*) FILTER (WHERE revoked_at IS NULL AND scopes @> ARRAY[
+                    'https://www.googleapis.com/auth/calendar.events']::TEXT[]) AS calendar_active
+            FROM oauth_tokens
+            """
+        ).fetchone()
+        api_errors = conn.execute(
+            """
+            SELECT feature, COUNT(*) AS errors
+            FROM operational_events
+            WHERE event_type IN ('oauth_failure', 'api_error')
+              AND created_at >= NOW() - INTERVAL '30 days'
+              AND (feature ILIKE '%%email%%' OR feature ILIKE '%%calendar%%')
+            GROUP BY feature ORDER BY errors DESC
+            """
+        ).fetchall()
+        provider_metrics = conn.execute(
+            """
+            SELECT provider,
+                   ROUND(AVG(latency_ms))::BIGINT AS avg_latency_ms,
+                   COUNT(*) FILTER (WHERE error_type IN ('quota', 'rate_limit')) AS rate_limit_errors,
+                   COUNT(*) AS requests
+            FROM ai_cost_log
+            WHERE created_at >= NOW() - INTERVAL '24 hours'
+              AND provider IN ('openai', 'claude')
+            GROUP BY provider
+            """
+        ).fetchall()
+    return {
+        'google': pg.normalize_row(google),
+        'api_errors': pg.normalize_rows(api_errors),
+        'provider_metrics': pg.normalize_rows(provider_metrics),
+    }
+
+
+def _postgres_system_health():
+    with pg.connection() as conn:
+        database = conn.execute("SELECT NOW() AS checked_at, current_database() AS name").fetchone()
+        metrics = conn.execute(
+            """
+            SELECT SUM(request_count) AS requests, SUM(error_count) AS errors,
+                   CASE WHEN SUM(request_count) > 0
+                        THEN SUM(total_latency_ms)::NUMERIC / SUM(request_count) ELSE 0 END AS avg_latency_ms
+            FROM api_metrics_daily WHERE metric_date >= CURRENT_DATE - INTERVAL '29 days'
+            """
+        ).fetchone()
+        events = conn.execute(
+            """
+            SELECT * FROM (
+                SELECT created_at, request_id, user_id, event_type, feature,
+                       provider, model, status, latency_ms, error_message
+                FROM operational_events
+                UNION ALL
+                SELECT created_at, NULL::TEXT AS request_id, user_id,
+                       'ai_provider_error' AS event_type, task AS feature,
+                       provider, model, 'error' AS status, latency_ms,
+                       error_type AS error_message
+                FROM ai_cost_log WHERE NOT success
+            ) logs ORDER BY created_at DESC LIMIT 100
+            """
+        ).fetchall()
+    return {
+        'database': pg.normalize_row(database),
+        'metrics': pg.normalize_row(metrics),
+        'events': pg.normalize_rows(events),
+    }
+
+
+def _postgres_security():
+    with pg.connection() as conn:
+        counts = conn.execute(
+            """
+            SELECT event_type, COUNT(*) AS value
+            FROM operational_events WHERE created_at >= NOW() - INTERVAL '30 days'
+            GROUP BY event_type ORDER BY value DESC
+            """
+        ).fetchall()
+        audits = conn.execute(
+            """
+            SELECT id, admin_user_id, action, target_type, target_id,
+                   before_state, after_state, request_id, created_at
+            FROM admin_audit_events ORDER BY created_at DESC LIMIT 100
+            """
+        ).fetchall()
+        suspicious_ai = conn.execute(
+            """
+            SELECT user_id, COUNT(*) AS requests,
+                   SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)) AS tokens,
+                   SUM(COALESCE(estimated_cost_usd, 0)) AS cost_usd
+            FROM ai_cost_log WHERE created_at >= NOW() - INTERVAL '24 hours'
+            GROUP BY user_id
+            HAVING COUNT(*) >= 100 OR SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)) >= 100000
+            ORDER BY cost_usd DESC LIMIT 50
+            """
+        ).fetchall()
+        suspicious_logins = conn.execute(
+            """
+            SELECT metadata->>'client_fingerprint' AS client_fingerprint,
+                   COUNT(*) AS failed_attempts,
+                   MIN(created_at) AS first_attempt_at,
+                   MAX(created_at) AS last_attempt_at
+            FROM operational_events
+            WHERE event_type = 'failed_login'
+              AND created_at >= NOW() - INTERVAL '24 hours'
+              AND COALESCE(metadata->>'client_fingerprint', '') <> ''
+            GROUP BY metadata->>'client_fingerprint'
+            HAVING COUNT(*) >= 5
+            ORDER BY failed_attempts DESC LIMIT 50
+            """
+        ).fetchall()
+    return {
+        'event_counts': pg.normalize_rows(counts),
+        'admin_audit': pg.normalize_rows(audits),
+        'suspicious_ai_usage': pg.normalize_rows(suspicious_ai),
+        'suspicious_logins': pg.normalize_rows(suspicious_logins),
     }
 
 
@@ -911,6 +1289,10 @@ def verify_admin_totp():
     session['admin_totp_verified_at'] = int(time.time())
     session.modified = True
     _clear_totp_attempts(user_id)
+    admin_ops.record_admin_audit(
+        user_id, 'admin_login', 'admin_session', user_id,
+        after={'totp_verified': True}, request_id=request.headers.get('X-Request-Id'),
+    )
     return jsonify({
         'success': True,
         'totp_verified': True,
@@ -957,6 +1339,185 @@ def admin_finance():
         'generated_at': datetime.now(timezone.utc).isoformat(),
         'finance': finance,
     })
+
+
+@admin_bp.route('/users', methods=['GET'])
+def admin_users():
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    users = _postgres_admin_users() if pg.enabled() else _sqlite_dashboard()['recent_users']
+    return jsonify({
+        'success': True, 'admin': admin,
+        'generated_at': datetime.now(timezone.utc).isoformat(), 'users': users,
+    })
+
+
+@admin_bp.route('/users/<user_id>', methods=['GET'])
+def admin_user_detail(user_id):
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    if not pg.enabled():
+        user = User.get(user_id)
+        return (jsonify({'success': True, 'admin': admin, 'user': user}) if user
+                else (jsonify({'error': 'user_not_found'}), 404))
+    rows = _postgres_admin_users(user_id=user_id)
+    if not rows:
+        return jsonify({'error': 'user_not_found'}), 404
+    return jsonify({'success': True, 'admin': admin, 'user': rows[0]})
+
+
+@admin_bp.route('/users/<user_id>/status', methods=['POST'])
+def admin_update_user_status(user_id):
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    if not pg.enabled():
+        return jsonify({'error': 'account_status_requires_postgres'}), 400
+    status = str((request.get_json(silent=True) or {}).get('status') or '').strip().lower()
+    if status not in {'active', 'suspended', 'disabled'}:
+        return jsonify({'error': 'invalid_account_status'}), 400
+    if user_id == _admin_actor_id(admin) and status != 'active':
+        return jsonify({'error': 'cannot_disable_current_admin'}), 409
+    before = User.get(user_id)
+    if not before:
+        return jsonify({'error': 'user_not_found'}), 404
+    with pg.connection() as conn:
+        row = conn.execute(
+            """
+            UPDATE users SET account_status = %s,
+                token_version = token_version + CASE WHEN %s = 'active' THEN 0 ELSE 1 END,
+                updated_at = NOW()
+            WHERE user_id = %s RETURNING *
+            """,
+            (status, status, user_id),
+        ).fetchone()
+    after = pg.normalize_row(row)
+    admin_ops.record_admin_audit(
+        _admin_actor_id(admin), f'user_{status}', 'user', user_id,
+        before={'account_status': before.get('account_status', 'active')},
+        after={'account_status': status},
+        request_id=getattr(request, 'request_id', None) or request.headers.get('X-Request-Id'),
+    )
+    return jsonify({'success': True, 'admin': admin, 'user': after})
+
+
+@admin_bp.route('/users/<user_id>/usage/reset', methods=['POST'])
+def admin_reset_user_usage(user_id):
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    if not pg.enabled():
+        return jsonify({'error': 'usage_reset_requires_postgres'}), 400
+    scope = str((request.get_json(silent=True) or {}).get('scope') or 'today').lower()
+    if scope not in {'today', 'all'}:
+        return jsonify({'error': 'invalid_reset_scope'}), 400
+    if not User.get(user_id):
+        return jsonify({'error': 'user_not_found'}), 404
+    with pg.connection() as conn:
+        if scope == 'all':
+            deleted = conn.execute(
+                "DELETE FROM ai_usage_daily WHERE user_id = %s", (user_id,),
+            ).rowcount
+        else:
+            deleted = conn.execute(
+                "DELETE FROM ai_usage_daily WHERE user_id = %s AND usage_date = CURRENT_DATE",
+                (user_id,),
+            ).rowcount
+        conn.execute("UPDATE users SET quota_reset_at = NOW() WHERE user_id = %s", (user_id,))
+    admin_ops.record_admin_audit(
+        _admin_actor_id(admin), 'reset_ai_usage', 'user', user_id,
+        before={'scope': scope}, after={'deleted_counters': deleted},
+        request_id=request.headers.get('X-Request-Id'),
+    )
+    return jsonify({'success': True, 'admin': admin, 'deleted_counters': deleted})
+
+
+@admin_bp.route('/ai-usage', methods=['GET'])
+def admin_ai_usage():
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    try:
+        days = min(max(int(request.args.get('days', 30)), 1), 365)
+    except (TypeError, ValueError):
+        days = 30
+    usage = _postgres_ai_usage(days) if pg.enabled() else {
+        'summary': {}, 'providers': [], 'models': [], 'tiers': [],
+        'features': [], 'daily': [], 'recent_errors': [],
+    }
+    return jsonify({
+        'success': True, 'admin': admin, 'days': days, 'usage': usage,
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+    })
+
+
+@admin_bp.route('/ai-controls', methods=['GET', 'PUT'])
+def admin_ai_controls():
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    if request.method == 'GET':
+        controls = admin_ops.get_controls()
+    else:
+        before = admin_ops.get_controls()
+        try:
+            controls = admin_ops.save_controls(request.get_json(silent=True) or {}, _admin_actor_id(admin))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+        admin_ops.record_admin_audit(
+            _admin_actor_id(admin), 'update_ai_controls', 'settings', admin_ops.CONTROLS_KEY,
+            before=before, after=controls, request_id=request.headers.get('X-Request-Id'),
+        )
+    return jsonify({
+        'success': True, 'admin': admin, 'controls': controls,
+        'budget_state': admin_ops.current_budget_state(),
+    })
+
+
+@admin_bp.route('/integrations', methods=['GET'])
+def admin_integrations():
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    payload = _postgres_integrations() if pg.enabled() else {'google': {}, 'api_errors': []}
+    from services.chat_agents import ai_service
+    payload['ai_providers'] = ai_service.get_provider_status()
+    return jsonify({'success': True, 'admin': admin, 'integrations': payload})
+
+
+@admin_bp.route('/system-health', methods=['GET'])
+def admin_system_health():
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    postgres_enabled = pg.enabled()
+    payload = _postgres_system_health() if postgres_enabled else {
+        'database': {'name': 'sqlite'}, 'metrics': {}, 'events': [],
+    }
+    integration = _postgres_integrations() if postgres_enabled else {'google': {}, 'api_errors': []}
+    from services.chat_agents import ai_service
+    payload.update({
+        'frontend_status': 'operational', 'backend_status': 'operational',
+        'database_status': 'operational',
+        'uptime_seconds': int(time.time() - _PROCESS_STARTED_AT),
+        'integration_status': integration,
+        'ai_providers': ai_service.get_provider_status(),
+    })
+    return jsonify({'success': True, 'admin': admin, 'health': payload})
+
+
+@admin_bp.route('/security', methods=['GET'])
+def admin_security():
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    payload = _postgres_security() if pg.enabled() else {
+        'event_counts': [], 'admin_audit': [], 'suspicious_ai_usage': [],
+        'suspicious_logins': [],
+    }
+    return jsonify({'success': True, 'admin': admin, 'security': payload})
 
 
 @admin_bp.route('/workspaces', methods=['GET'])
@@ -1061,6 +1622,11 @@ def admin_grant_subscription(user_id):
         WorkspaceSync.bump(user_id, ('profile', 'settings', 'overview'))
     except Exception:
         pass
+    admin_ops.record_admin_audit(
+        _admin_actor_id(admin), 'subscription_upgrade', 'user', user_id,
+        after={'plan_code': row.get('plan_code'), 'status': row.get('status')},
+        request_id=request.headers.get('X-Request-Id'),
+    )
     return jsonify({
         'success': True,
         'admin': admin,
@@ -1111,7 +1677,7 @@ def admin_grant_workspace_subscription(workspace_id):
             included_seats=included_seats,
             days=days,
             action=action,
-            actor_user_id=admin['identity'],
+            actor_user_id=_admin_actor_id(admin),
         )
     except workspace_subscription.WorkspaceSubscriptionError as exc:
         return jsonify({
@@ -1119,6 +1685,12 @@ def admin_grant_workspace_subscription(workspace_id):
             'allowed_action': exc.extra.get('allowed_action'),
             'subscription': exc.extra.get('subscription'),
         }), 409
+
+    admin_ops.record_admin_audit(
+        _admin_actor_id(admin), 'workspace_subscription_update', 'workspace', workspace_id,
+        after={'plan_code': row.get('plan_code'), 'status': row.get('status')},
+        request_id=request.headers.get('X-Request-Id'),
+    )
 
     return jsonify({
         'success': True,
@@ -1138,10 +1710,14 @@ def admin_revoke_workspace_subscription(workspace_id):
 
     revoked = workspace_subscription.revoke(
         workspace_id,
-        actor_user_id=admin['identity'],
+        actor_user_id=_admin_actor_id(admin),
     )
     if not revoked:
         return jsonify({'error': 'no_active_business_subscription'}), 404
+    admin_ops.record_admin_audit(
+        _admin_actor_id(admin), 'workspace_subscription_revoke', 'workspace', workspace_id,
+        after={'revoked': True}, request_id=request.headers.get('X-Request-Id'),
+    )
     return jsonify({'success': True, 'admin': admin, 'revoked': True})
 
 
@@ -1160,4 +1736,8 @@ def admin_revoke_subscription(user_id):
         WorkspaceSync.bump(user_id, ('profile', 'settings', 'overview'))
     except Exception:
         pass
+    admin_ops.record_admin_audit(
+        _admin_actor_id(admin), 'subscription_downgrade', 'user', user_id,
+        after={'revoked': True}, request_id=request.headers.get('X-Request-Id'),
+    )
     return jsonify({'success': True, 'admin': admin, 'revoked': True})

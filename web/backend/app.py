@@ -7,6 +7,8 @@ import re
 import uuid
 import sys
 import logging
+import time
+import hashlib
 
 # Ensure stdout/stderr can print emoji/unicode log messages on Windows consoles
 # (default cp1252 encoding raises UnicodeEncodeError on prints like "🔄").
@@ -34,6 +36,7 @@ from models.history import History
 from models.user import User
 from models.knowledge import KnowledgeDocument
 from models.workspace_sync import WorkspaceSync
+from models import admin_ops
 from models import postgres_db as pg
 from services.overview_scheduler import start_overview_scheduler
 from services.subscription_lifecycle_scheduler import start_subscription_lifecycle_scheduler
@@ -109,6 +112,7 @@ def redirect_apex_to_www():
 # Set permanent session to persist across server restarts
 @app.before_request
 def make_session_permanent():
+    g.request_started_at = time.monotonic()
     # Correlation ID for this request -- reuse an inbound X-Request-Id if a
     # proxy/client already set one (useful for tracing a single request
     # across services), otherwise mint one. Read by the structured
@@ -167,6 +171,51 @@ install_workspace_sync_hooks(app)
 
 @app.after_request
 def add_security_headers(response):
+    latency_ms = int((time.monotonic() - getattr(g, 'request_started_at', time.monotonic())) * 1000)
+    # Route tests often replace the database layer with partial mocks. Avoid
+    # making an unrelated telemetry write through those mocks; production and
+    # development requests still record the same metrics and activity.
+    if request.path.startswith('/api/') and not app.testing:
+        admin_ops.record_request_metric(response.status_code, latency_ms)
+        user_id = active_authenticated_user_id()
+        is_login = request.path in {
+            '/api/auth/login',
+            '/api/auth/register',
+            '/api/email/google-auth',
+            '/api/email/oauth2callback',
+        }
+        if response.status_code < 400 and user_id:
+            admin_ops.touch_user(user_id, login=is_login)
+        if response.status_code >= 400:
+            payload = response.get_json(silent=True) or {}
+            error_code = payload.get('error') if isinstance(payload, dict) else None
+            if response.status_code == 429:
+                event_type = 'rate_limit_triggered'
+            elif is_login and response.status_code in {400, 401, 403}:
+                event_type = 'failed_login'
+            elif 'oauth' in request.path or request.path.startswith('/api/email/auth'):
+                event_type = 'oauth_failure'
+            elif response.status_code in {401, 403}:
+                event_type = 'blocked_request'
+            else:
+                event_type = 'api_error'
+            admin_ops.record_event(
+                event_type,
+                str(response.status_code),
+                user_id=user_id,
+                feature=request.endpoint or request.path,
+                latency_ms=latency_ms,
+                error_message=error_code,
+                request_id=getattr(g, 'correlation_id', None),
+                metadata={
+                    'method': request.method,
+                    # Stable enough to detect repeated attempts without
+                    # retaining a raw IP address in the operations log.
+                    'client_fingerprint': hashlib.sha256(
+                        f"{Config.SECRET_KEY}:{request.remote_addr or 'unknown'}".encode('utf-8')
+                    ).hexdigest()[:16],
+                },
+            )
     if (
         response.status_code == 401
         and request.path.startswith('/api/')

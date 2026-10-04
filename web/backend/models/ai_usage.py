@@ -1,5 +1,6 @@
-"""Daily usage counters for AI-costing actions, gating the free tier of the
-Freemium/Premium split. Backed by the dedicated ai_usage_daily table (not the
+"""Daily usage counters for AI-costing actions and runtime plan limits.
+
+Backed by the dedicated ai_usage_daily table (not the
 generic Cache model, which only supports overwrite-set and would race under
 concurrent requests) -- a single atomic
 INSERT ... ON CONFLICT ... DO UPDATE SET count = count + 1 RETURNING count
@@ -16,7 +17,7 @@ FREE_LIMITS = {
 }
 
 
-def check_and_increment(user_id, action):
+def check_and_increment(user_id, action, limit=None):
     """Atomically bump today's counter for (user_id, action) and report
     whether this call is still within the free-tier limit.
 
@@ -24,7 +25,7 @@ def check_and_increment(user_id, action):
     configured (local SQLite dev), usage tracking is a no-op and everything
     is allowed -- gating only matters in production.
     """
-    limit = FREE_LIMITS.get(action, 0)
+    limit = FREE_LIMITS.get(action, 0) if limit is None else max(0, int(limit))
     if not pg.enabled():
         return True, 0, limit
     if not user_id:
@@ -47,7 +48,15 @@ def check_and_increment(user_id, action):
 def get_usage_snapshot(user_id):
     """Today's usage per action, without incrementing anything. Used to
     surface "X/limit lượt hôm nay" on the profile/status payload."""
-    snapshot = {action: {"used": 0, "limit": limit} for action, limit in FREE_LIMITS.items()}
+    from models import admin_ops
+    from models.subscription import is_premium
+
+    plan = "plus" if is_premium(user_id) else "free"
+    plan_limits = admin_ops.get_controls()["quotas"][plan]
+    snapshot = {
+        action: {"used": 0, "limit": int(limit)}
+        for action, limit in plan_limits.items()
+    }
     if not pg.enabled() or not user_id:
         return snapshot
     with pg.connection() as conn:

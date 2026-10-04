@@ -125,8 +125,8 @@ def authenticated_user_id():
     # session accepted by the global API guard.
     for candidate in (
         bearer_user_id(),
-        session.get("gmail_user_email"),
         session.get("user_id"),
+        session.get("gmail_user_email"),
         header_user_id(),
     ):
         value = str(candidate or "").strip()
@@ -169,7 +169,8 @@ def active_authenticated_user_id():
         from models.user import User
 
         user_row = User.get(candidate)
-        active = candidate if user_row else None
+        account_status = str((user_row or {}).get('account_status') or 'active').lower()
+        active = candidate if user_row and account_status == 'active' else None
         # Only bearer-token requests carry an embedded version (see
         # verify_mobile_token) -- cookie-session browser logins have no
         # token_version concept and skip this check entirely. A mismatch
