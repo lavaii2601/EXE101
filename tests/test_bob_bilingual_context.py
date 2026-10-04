@@ -935,5 +935,75 @@ class BobDeepContextTests(unittest.TestCase):
         self.assertNotIn("Student planning", titles)
 
 
+class BobWorkflowAiCallBudgetTests(unittest.TestCase):
+    """Phase 4 of the AI cost/quality plan: detect_workflow_with_ai must cap
+    how many of its fanned-out parts can reach the AI classification
+    fallback, without affecting the typical 2-3 part message or the two
+    whole-message (non-fan-out) detect_with_ai calls elsewhere in it."""
+
+    def setUp(self):
+        self.orchestrator = IntentOrchestrator()
+
+    def test_per_part_calls_share_one_budget_the_whole_message_fallback_does_not(self):
+        from config import Config
+
+        seen_budgets = []
+
+        def fake_detect_with_ai(part, ai_service, **kwargs):
+            seen_budgets.append(kwargs.get('ai_call_budget'))
+            return {"intent": "chat.freeform", "confidence": 0.5, "entities": {}}
+
+        message = "lam a roi lam b roi lam c roi lam d roi lam e roi lam f roi lam g"
+        with patch.object(self.orchestrator, 'detect_with_ai', side_effect=fake_detect_with_ai):
+            self.orchestrator.detect_workflow_with_ai(message, ai_service=object())
+
+        # 7 per-part calls (none actionable -> triggers the whole-message
+        # fallback as an 8th call).
+        self.assertEqual(8, len(seen_budgets))
+        per_part_budgets, fallback_budget = seen_budgets[:7], seen_budgets[7]
+        self.assertTrue(all(b is per_part_budgets[0] for b in per_part_budgets))
+        self.assertIsNotNone(per_part_budgets[0])
+        self.assertIn('remaining', per_part_budgets[0])
+        self.assertEqual(
+            int(getattr(Config, 'AI_WORKFLOW_MAX_AI_CLASSIFICATIONS', 4)),
+            per_part_budgets[0]['remaining'],
+        )
+        # The final whole-message retry is NOT part of the fan-out budget.
+        self.assertIsNone(fallback_budget)
+
+    def test_typical_two_part_message_is_unaffected(self):
+        # len(expanded) < 2 never even reaches the per-part loop/budget.
+        result = self.orchestrator.detect_workflow_with_ai(
+            "xem lich hom nay roi tom tat email moi nhat",
+            ai_service=None,
+        )
+        self.assertEqual("workflow.multi", result["intent"])
+        self.assertEqual(
+            ["schedule.list", "email.latest_summary"],
+            [step["intent"] for step in result["steps"]],
+        )
+
+    def test_budget_exhaustion_falls_back_to_the_free_rule_based_result_not_a_dropped_part(self):
+        from config import Config
+
+        call_count = {'n': 0}
+
+        def fake_detect_with_ai(part, ai_service, ai_call_budget=None, **kwargs):
+            call_count['n'] += 1
+            if ai_call_budget is not None:
+                if ai_call_budget.get('remaining', 0) <= 0:
+                    return {"intent": "chat.freeform", "confidence": 0.3, "entities": {}}
+                ai_call_budget['remaining'] -= 1
+            return {"intent": "schedule.create", "confidence": 0.9, "entities": {}}
+
+        message = "lam a roi lam b roi lam c roi lam d roi lam e roi lam f roi lam g"
+        with patch.object(Config, 'AI_WORKFLOW_MAX_AI_CLASSIFICATIONS', 2), \
+             patch.object(self.orchestrator, 'detect_with_ai', side_effect=fake_detect_with_ai):
+            result = self.orchestrator.detect_workflow_with_ai(message, ai_service=object())
+
+        intents = [step['intent'] for step in result['steps']]
+        self.assertEqual(['schedule.create'] * 2 + ['chat.freeform'] * 5, intents)
+
+
 if __name__ == "__main__":
     unittest.main()

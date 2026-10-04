@@ -4,6 +4,7 @@ import re
 import unicodedata
 from datetime import datetime, timedelta
 
+from config import Config
 from models.history import History
 from models.schedule import LOCAL_TZ, Schedule
 from models.user import User
@@ -474,7 +475,7 @@ class IntentOrchestrator:
 
     def detect_with_ai(self, message, ai_service, user_id=None, db_path=None,
                         chat_session_id=None, confidence_threshold=0.6,
-                        workspace_id=None):
+                        workspace_id=None, ai_call_budget=None):
         """Run the deterministic rules first; only ask the AI to read the
         message when the rules aren't confident (i.e. it fell through to
         chat.freeform) AND the message at least hints at a recognizable
@@ -494,6 +495,12 @@ class IntentOrchestrator:
         through the AI every time until it has been confirmed enough times,
         spending quota deliberately up front so only well-proven patterns
         ever get to answer on their own later.
+
+        ai_call_budget: optional mutable dict with a 'remaining' counter,
+        shared across a batch of calls (see detect_workflow_with_ai) to cap
+        how many of them may actually reach the AI fallback below. None
+        (the default, used by every direct/non-workflow caller) means
+        unlimited -- unchanged behavior.
         """
         result = self.detect(message)
         contextual_followup = is_context_dependent_followup(message)
@@ -531,6 +538,11 @@ class IntentOrchestrator:
 
         if not ai_service:
             return result
+
+        if ai_call_budget is not None:
+            if ai_call_budget.get('remaining', 0) <= 0:
+                return result
+            ai_call_budget['remaining'] -= 1
 
         try:
             ai_result = self._detect_via_ai(
@@ -597,11 +609,20 @@ class IntentOrchestrator:
                 chat_session_id=chat_session_id, workspace_id=workspace_id,
             )
 
+        # Each part can itself trigger up to 2 AI calls inside detect_with_ai
+        # (an initial attempt plus one self-correction retry), so splitting
+        # into up to 8 parts could otherwise reach the AI up to 16 times for
+        # one message. Budget only the per-part loop below -- the two
+        # whole-message detect_with_ai calls elsewhere in this function stay
+        # unbudgeted, since they classify the *original* message once, not
+        # part of this fan-out.
+        ai_call_budget = {'remaining': max(0, int(getattr(Config, 'AI_WORKFLOW_MAX_AI_CLASSIFICATIONS', 4)))}
         steps = []
         for part in expanded[:8]:
             result = self.detect_with_ai(
                 part, ai_service, user_id=user_id, db_path=db_path,
                 chat_session_id=chat_session_id, workspace_id=workspace_id,
+                ai_call_budget=ai_call_budget,
             )
             steps.append({**result, "message": part})
         actionable_steps = [
