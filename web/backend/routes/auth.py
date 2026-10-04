@@ -10,6 +10,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from config import Config
 from models.user import User
 from utils.security import active_authenticated_user_id, issue_mobile_token
 
@@ -54,6 +55,16 @@ def register():
         return jsonify({'success': False, 'error': 'missing_name', 'message': 'Vui lòng nhập họ tên.'}), 400
     if not email or not EMAIL_RE.match(email):
         return jsonify({'success': False, 'error': 'invalid_email', 'message': 'Email không hợp lệ.'}), 400
+    if email in Config.ADMIN_EMAILS:
+        # The admin dashboard trusts this column as identity (see
+        # routes/admin.py's _trusted_admin_email) -- never let a brand-new
+        # password account self-register with an allowlisted admin
+        # address, since register() never verifies email ownership.
+        return jsonify({
+            'success': False,
+            'error': 'email_reserved',
+            'message': 'Địa chỉ email này không thể sử dụng.',
+        }), 400
     if len(password) < MIN_PASSWORD_LENGTH or len(password) > MAX_PASSWORD_LENGTH:
         return jsonify({
             'success': False,

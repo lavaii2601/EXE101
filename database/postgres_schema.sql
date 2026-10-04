@@ -109,6 +109,18 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
     CONSTRAINT oauth_tokens_user_provider_unique UNIQUE (user_id, provider)
 );
 
+-- One TOTP secret per admin email, replacing a single secret shared by
+-- every admin. An email with no row here falls back to the legacy shared
+-- Config.ADMIN_TOTP_SECRET -- see routes/admin.py's
+-- _resolve_admin_totp_secret -- so nothing breaks until an operator
+-- provisions someone a personal secret via scripts/manage_admin_totp.py.
+CREATE TABLE IF NOT EXISTS admin_totp_secrets (
+    email TEXT PRIMARY KEY,
+    secret_base32 TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Transient state for an in-progress Google OAuth handshake (PKCE code
 -- verifier, and whether the mobile app started it). Must be in the shared
 -- DB, not a local file: the request that starts the flow (/auth_url) and
@@ -1093,6 +1105,11 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 DROP TRIGGER IF EXISTS trg_oauth_tokens_updated_at ON oauth_tokens;
 CREATE TRIGGER trg_oauth_tokens_updated_at
 BEFORE UPDATE ON oauth_tokens
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_admin_totp_secrets_updated_at ON admin_totp_secrets;
+CREATE TRIGGER trg_admin_totp_secrets_updated_at
+BEFORE UPDATE ON admin_totp_secrets
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 DROP TRIGGER IF EXISTS trg_user_identities_updated_at ON user_identities;

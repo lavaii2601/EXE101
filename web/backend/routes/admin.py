@@ -14,6 +14,7 @@ from hashlib import sha1
 from flask import Blueprint, jsonify, request, session
 
 from config import Config
+from models import admin_totp
 from models import postgres_db as pg
 from models.knowledge import KnowledgeDocument
 from models.user import User
@@ -103,19 +104,23 @@ def _consume_totp_counter(user_id, counter):
         return True
 
 
-def _trusted_google_email(user_id):
+def _trusted_admin_email(user_id):
+    """Return this FlowMate account's own registered email.
+
+    Covers both Google-linked accounts (oauth2callback/google_auth_native
+    always mirror gmail_email into this same `email` column) and local
+    email/password accounts uniformly. Trusting this column for the admin
+    allowlist check relies on the write paths -- /api/auth/register and
+    POST /api/user/profile -- refusing to let anyone self-assign an
+    ADMIN_EMAILS address that isn't verifiably theirs; see the
+    `email_reserved` guards in routes/auth.py and routes/user.py.
+    """
     user = User.get(user_id) or {}
-    session_email = str(session.get('gmail_user_email') or '').strip().lower()
-    stored_email = str(user.get('gmail_email') or '').strip().lower()
-    if session_email:
-        return session_email
-    if user.get('gmail_connected') and stored_email:
-        return stored_email
-    return ''
+    return str(user.get('email') or '').strip().lower()
 
 
 def is_current_user_admin():
-    """Return whether the signed-in Google identity is allowlisted.
+    """Return whether the signed-in account's email is allowlisted.
 
     This is deliberately only a role check. Opening the dashboard still
     requires the independent TOTP gate enforced by ``_require_admin``.
@@ -124,18 +129,30 @@ def is_current_user_admin():
     if not raw_user_id or not Config.ADMIN_EMAILS:
         return False
     user_id = sanitize_user_id(raw_user_id)
-    google_email = _trusted_google_email(user_id)
-    return bool(google_email and google_email in Config.ADMIN_EMAILS)
+    admin_email = _trusted_admin_email(user_id)
+    return bool(admin_email and admin_email in Config.ADMIN_EMAILS)
 
 
 def _configuration_error():
     if not Config.ADMIN_EMAILS:
         return 'ADMIN_EMAILS is not configured'
-    try:
-        _decode_totp_secret(Config.ADMIN_TOTP_SECRET)
-    except ValueError as exc:
-        return str(exc)
     return None
+
+
+def _resolve_admin_totp_secret(email):
+    """Return the TOTP secret that should validate `email`'s codes.
+
+    Prefers a personal secret (models.admin_totp); falls back to the
+    legacy secret shared by every admin so nothing breaks for an admin
+    who hasn't been migrated to a personal one yet (see
+    scripts/manage_admin_totp.py).
+    """
+    personal_secret = admin_totp.get_secret(email)
+    if personal_secret:
+        return personal_secret
+    if Config.ADMIN_TOTP_SECRET:
+        return Config.ADMIN_TOTP_SECRET
+    raise ValueError('No TOTP secret is configured for this admin')
 
 
 def _google_admin_identity():
@@ -160,12 +177,12 @@ def _google_admin_identity():
         )
 
     user_id = sanitize_user_id(raw_user_id)
-    google_email = _trusted_google_email(user_id)
-    if not google_email or google_email not in Config.ADMIN_EMAILS:
+    admin_email = _trusted_admin_email(user_id)
+    if not admin_email or admin_email not in Config.ADMIN_EMAILS:
         return None, (
             jsonify({
                 'error': 'admin_not_allowed',
-                'message': 'Tài khoản Google này không có quyền quản trị.',
+                'message': 'Tài khoản này không có quyền quản trị.',
             }),
             403,
         )
@@ -873,8 +890,17 @@ def verify_admin_totp():
         response.headers['Retry-After'] = str(retry_after)
         return response, 429
 
+    admin_email = _trusted_admin_email(user_id)
+    try:
+        secret = _resolve_admin_totp_secret(admin_email)
+    except ValueError:
+        return jsonify({
+            'error': 'admin_totp_not_configured',
+            'message': 'Chưa cấu hình TOTP cho tài khoản này. Liên hệ quản trị viên khác để được cấp mã.',
+        }), 503
+
     code = (request.get_json(silent=True) or {}).get('code')
-    counter = _verify_totp(code, Config.ADMIN_TOTP_SECRET)
+    counter = _verify_totp(code, secret)
     if counter is None or not _consume_totp_counter(user_id, counter):
         return jsonify({
             'error': 'admin_totp_invalid',

@@ -5,6 +5,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from config import Config
 from models.user import User
 from models import subscription as subscription_model
 from models import entitlements
@@ -139,6 +140,23 @@ def update_profile():
         k: v for k, v in data.items()
         if k in ['name', 'email', 'avatar_url']
     }
+
+    requested_email = str(update_data.get('email') or '').strip().lower()
+    if requested_email and requested_email in Config.ADMIN_EMAILS:
+        # The admin dashboard now trusts this column as identity (see
+        # routes/admin.py's _trusted_admin_email) -- refuse to let anyone
+        # self-assign an allowlisted admin address unless it's already
+        # their own Google-verified gmail_email, so this endpoint can
+        # never be used to claim admin access.
+        current_user = User.get(user_id) or {}
+        verified_gmail_email = str(current_user.get('gmail_email') or '').strip().lower()
+        if not (current_user.get('gmail_connected') and requested_email == verified_gmail_email):
+            return jsonify({
+                'success': False,
+                'error': 'email_reserved',
+                'message': 'Địa chỉ email này không thể sử dụng.',
+            }), 400
+
     if requested_mode:
         update_data['user_mode'] = requested_mode
         update_data['user_mode_selected_at'] = datetime.now().isoformat()

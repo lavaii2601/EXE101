@@ -90,29 +90,70 @@ class AdminRouteSecurityTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.get_json()['error'], 'admin_not_configured')
 
-    def test_profile_email_cannot_grant_admin_access(self):
+    def test_profile_update_cannot_self_assign_an_admin_email(self):
+        # The admin gate now trusts users.email directly (so a local
+        # password account's own email can qualify, not just gmail_email).
+        # That means the write paths -- not the read-time check -- are
+        # what must refuse to let anyone self-assign an allowlisted
+        # address that isn't verifiably theirs.
         client = self.app.test_client()
         with client.session_transaction() as flask_session:
             flask_session['user_id'] = 'ordinary_user'
 
-        editable_profile = {
-            'email': 'admin@example.com',
-            'gmail_email': 'person@example.com',
+        unverified_profile = {'email': 'person@example.com', 'gmail_connected': 0}
+        with (
+            patch.object(Config, 'ADMIN_EMAILS', {'admin@example.com'}),
+            patch.object(admin.User, 'get', return_value=unverified_profile),
+        ):
+            response = client.post(
+                '/api/user/profile',
+                json={'email': 'admin@example.com'},
+                headers={'Origin': 'http://localhost:5000'},
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['error'], 'email_reserved')
+
+    def test_profile_update_allows_reclaiming_ones_own_verified_gmail_email(self):
+        client = self.app.test_client()
+        with client.session_transaction() as flask_session:
+            flask_session['user_id'] = 'admin_example_com'
+
+        verified_profile = {
+            'email': 'someone-else@example.com',
+            'gmail_email': 'admin@example.com',
             'gmail_connected': 1,
         }
         with (
             patch.object(Config, 'ADMIN_EMAILS', {'admin@example.com'}),
-            patch.object(Config, 'ADMIN_TOTP_SECRET', RFC_6238_SECRET),
-            patch.object(admin.User, 'get', return_value=editable_profile),
+            patch.object(admin.User, 'get', return_value=verified_profile),
+            patch('routes.user.User.get', return_value=verified_profile),
+            patch('routes.user.User.update', return_value=True),
         ):
-            response = client.get('/api/admin/overview')
+            response = client.post(
+                '/api/user/profile',
+                json={'email': 'admin@example.com'},
+                headers={'Origin': 'http://localhost:5000'},
+            )
 
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.get_json()['error'], 'admin_not_allowed')
+        self.assertEqual(response.status_code, 200)
+
+    def test_register_cannot_self_assign_an_admin_email(self):
+        client = self.app.test_client()
+        with patch.object(Config, 'ADMIN_EMAILS', {'admin@example.com'}):
+            response = client.post('/api/auth/register', json={
+                'name': 'Someone',
+                'email': 'admin@example.com',
+                'password': 'a-long-enough-password',
+            })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['error'], 'email_reserved')
 
     def test_allowlisted_google_account_still_requires_totp(self):
         client = self._client_with_google_session()
         google_user = {
+            'email': 'admin@example.com',
             'gmail_email': 'admin@example.com',
             'gmail_connected': 1,
         }
@@ -129,6 +170,7 @@ class AdminRouteSecurityTests(unittest.TestCase):
     def test_valid_totp_creates_admin_session(self):
         client = self._client_with_google_session()
         google_user = {
+            'email': 'admin@example.com',
             'gmail_email': 'admin@example.com',
             'gmail_connected': 1,
         }
@@ -158,7 +200,7 @@ class AdminRouteSecurityTests(unittest.TestCase):
         # by sending a different fake header each time, bypassing the
         # brute-force cap entirely. Assert a spoofed header no longer helps.
         client = self._client_with_google_session()
-        google_user = {'gmail_email': 'admin@example.com', 'gmail_connected': 1}
+        google_user = {'email': 'admin@example.com', 'gmail_email': 'admin@example.com', 'gmail_connected': 1}
         with (
             patch.object(Config, 'ADMIN_EMAILS', {'admin@example.com'}),
             patch.object(Config, 'ADMIN_TOTP_SECRET', RFC_6238_SECRET),
@@ -196,7 +238,7 @@ class AdminRouteSecurityTests(unittest.TestCase):
 
     def test_replayed_totp_code_is_rejected_on_second_submission(self):
         client = self._client_with_google_session()
-        google_user = {'gmail_email': 'admin@example.com', 'gmail_connected': 1}
+        google_user = {'email': 'admin@example.com', 'gmail_email': 'admin@example.com', 'gmail_connected': 1}
         code = admin._totp_at(RFC_6238_SECRET, timestamp=time.time())
         with (
             patch.object(Config, 'ADMIN_EMAILS', {'admin@example.com'}),
@@ -253,11 +295,11 @@ class AdminRouteSecurityTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'Server Control', response.data)
 
-    def test_admin_role_check_uses_trusted_google_identity(self):
+    def test_admin_role_check_uses_trusted_admin_identity(self):
         with (
             patch.object(Config, 'ADMIN_EMAILS', {'admin@example.com'}),
             patch.object(admin, 'authenticated_user_id', return_value='admin_example_com'),
-            patch.object(admin, '_trusted_google_email', return_value='admin@example.com'),
+            patch.object(admin, '_trusted_admin_email', return_value='admin@example.com'),
         ):
             self.assertTrue(admin.is_current_user_admin())
 
@@ -328,6 +370,7 @@ class AdminRouteSecurityTests(unittest.TestCase):
     def test_finance_endpoint_returns_currency_safe_empty_ledger(self):
         client = self._client_with_google_session()
         google_user = {
+            'email': 'admin@example.com',
             'gmail_email': 'admin@example.com',
             'gmail_connected': 1,
         }
