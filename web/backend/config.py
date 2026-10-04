@@ -58,25 +58,59 @@ class Config:
 
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
     OPENROUTER_ENABLED = _bool(os.getenv("OPENROUTER_ENABLED"), default=bool(OPENROUTER_API_KEY))
-    # Bob's production engine is deterministic/local by default. External
-    # model adapters remain in the repository only for backwards-compatible
-    # experiments; core chat, tools, RAG, summaries, and learning must never
-    # require them.
-    # Bob never sends prompts to hosted AI providers. A self-hosted Ollama
-    # instance may still be used as the local reasoning engine below.
-    BOB_LOCAL_ONLY = True
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
     MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
     CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    # Bob calls out to a hosted provider (OpenAI/Mistral/Claude/Gemini, via
+    # services/ai_service.py) whenever at least one of the keys above is
+    # configured -- cheap to justify while the user base is still small.
+    # BOB_LOCAL_ONLY can still force the old fully-local/deterministic
+    # engine explicitly (e.g. "BOB_LOCAL_ONLY=true") regardless of which
+    # keys are present; with no keys AND no override it defaults to local,
+    # so an empty/misconfigured key set degrades to the old deterministic
+    # behavior rather than to AIService's much weaker generic Demo Mode.
+    _any_external_ai_key_configured = bool(
+        OPENAI_API_KEY or MISTRAL_API_KEY or CLAUDE_API_KEY or GEMINI_API_KEY
+    )
+    BOB_LOCAL_ONLY = _bool(
+        os.getenv("BOB_LOCAL_ONLY"), default=not _any_external_ai_key_configured
+    )
     OLLAMA_ENABLED = _bool(os.getenv("OLLAMA_ENABLED"), default=False)
     OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
+    # "-latest"/dated aliases the providers themselves keep pointed at their
+    # current flagship, so these stay valid without needing to be bumped by
+    # hand -- override via env var for a specific pinned version instead.
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
-    MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-1")
-    CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-opus")
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
+    MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
+    CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+
+    # OpenRouter's own model selection -- previously referenced via getattr()
+    # in services/openrouter_service.py with no definition here at all, so
+    # self.primary_model was always None and every OpenRouter call
+    # unconditionally raised RuntimeError regardless of API key. Defining
+    # them (empty-string default, matching that prior no-op state) is a
+    # pure bugfix; OpenRouter stays inert until an operator sets one.
+    OPENROUTER_PRIMARY_MODEL = os.getenv("OPENROUTER_PRIMARY_MODEL", "")
+    OPENROUTER_MODEL_FALLBACK = os.getenv("OPENROUTER_MODEL_FALLBACK", "")
+
+    # Cheap-tier model siblings, one per provider -- each defaults to that
+    # provider's own strong model above, so a deployment that never sets
+    # these sees byte-for-byte identical behavior to before tiering existed.
+    # AIService picks cheap vs strong per task (see AI_TASK_TIER_* below),
+    # not per provider -- these just say *which model* a given provider
+    # uses once a task has already picked a tier.
+    OPENAI_MODEL_CHEAP = os.getenv("OPENAI_MODEL_CHEAP", "") or OPENAI_MODEL
+    MISTRAL_MODEL_CHEAP = os.getenv("MISTRAL_MODEL_CHEAP", "") or MISTRAL_MODEL
+    CLAUDE_MODEL_CHEAP = os.getenv("CLAUDE_MODEL_CHEAP", "") or CLAUDE_MODEL
+    GEMINI_MODEL_CHEAP = os.getenv("GEMINI_MODEL_CHEAP", "") or GEMINI_MODEL
+    OLLAMA_MODEL_CHEAP = os.getenv("OLLAMA_MODEL_CHEAP", "") or OLLAMA_MODEL
+    OPENROUTER_PRIMARY_MODEL_CHEAP = (
+        os.getenv("OPENROUTER_PRIMARY_MODEL_CHEAP", "") or OPENROUTER_PRIMARY_MODEL
+    )
 
     AI_PRIMARY_PROVIDER = os.getenv("AI_PRIMARY_PROVIDER", "openrouter")
     AI_PROVIDER_ORDER = os.getenv("AI_PROVIDER_ORDER", "openrouter,openai,mistral,claude,gemini")
@@ -93,11 +127,55 @@ class Config:
     AI_SUMMARY_MAX_TOKENS = int(os.getenv("AI_SUMMARY_MAX_TOKENS", 180))
     AI_REPLY_MAX_TOKENS = int(os.getenv("AI_REPLY_MAX_TOKENS", 220))
     AI_ANALYZE_MAX_TOKENS = int(os.getenv("AI_ANALYZE_MAX_TOKENS", 180))
+    AI_OVERVIEW_BRIEF_MAX_TOKENS = int(os.getenv("AI_OVERVIEW_BRIEF_MAX_TOKENS", 260))
+    AI_MEETING_CONFIRM_MAX_TOKENS = int(os.getenv("AI_MEETING_CONFIRM_MAX_TOKENS", 220))
 
     AI_TASK_PROVIDERS_CHAT = os.getenv("AI_TASK_PROVIDERS_CHAT", "")
     AI_TASK_PROVIDERS_SUMMARY = os.getenv("AI_TASK_PROVIDERS_SUMMARY", "")
     AI_TASK_PROVIDERS_REPLY = os.getenv("AI_TASK_PROVIDERS_REPLY", "")
     AI_TASK_PROVIDERS_ANALYZE = os.getenv("AI_TASK_PROVIDERS_ANALYZE", "")
+    AI_TASK_PROVIDERS_INTENT_CLASSIFICATION = os.getenv("AI_TASK_PROVIDERS_INTENT_CLASSIFICATION", "")
+    AI_TASK_PROVIDERS_OVERVIEW_BRIEF = os.getenv("AI_TASK_PROVIDERS_OVERVIEW_BRIEF", "")
+    AI_TASK_PROVIDERS_MEETING_CONFIRM = os.getenv("AI_TASK_PROVIDERS_MEETING_CONFIRM", "")
+
+    # Which model size each task uses. 'chat' (Bob's free-text synthesis) is
+    # the one task worth paying for quality; everything else -- intent
+    # classification and the two new AI-assist features below -- gets a
+    # fast/cheap model by default since their inputs are small and
+    # structured. Falls back to the strong model automatically wherever a
+    # provider has no cheap sibling configured (see *_MODEL_CHEAP above).
+    AI_TASK_TIER_CHAT = os.getenv("AI_TASK_TIER_CHAT", "strong")
+    AI_TASK_TIER_INTENT_CLASSIFICATION = os.getenv("AI_TASK_TIER_INTENT_CLASSIFICATION", "cheap")
+    AI_TASK_TIER_SUMMARY = os.getenv("AI_TASK_TIER_SUMMARY", "cheap")
+    AI_TASK_TIER_REPLY = os.getenv("AI_TASK_TIER_REPLY", "cheap")
+    AI_TASK_TIER_ANALYZE = os.getenv("AI_TASK_TIER_ANALYZE", "cheap")
+    AI_TASK_TIER_OVERVIEW_BRIEF = os.getenv("AI_TASK_TIER_OVERVIEW_BRIEF", "cheap")
+    AI_TASK_TIER_MEETING_CONFIRM = os.getenv("AI_TASK_TIER_MEETING_CONFIRM", "cheap")
+
+    # Caps the worst case of detect_workflow_with_ai fanning one message into
+    # up to 8 parts, each of which can itself trigger up to 2 intent-
+    # classification LLM calls (an initial attempt plus one self-correction
+    # retry) -- i.e. up to 16 calls for a single user message. Once this
+    # many of those calls have actually reached the AI fallback, remaining
+    # parts use the free, already-computed rule-based classifier result
+    # instead of escalating further. Does not affect the typical 2-3 part
+    # message, and does not touch any single-message (non-workflow) call.
+    AI_WORKFLOW_MAX_AI_CLASSIFICATIONS = int(os.getenv("AI_WORKFLOW_MAX_AI_CLASSIFICATIONS", 4))
+
+    # Kill switches for the two new AI-assist features below (Daily Overview
+    # narrative synthesis, meeting-detection AI confirmation). Both also
+    # hard-gate on BOB_LOCAL_ONLY/no configured providers regardless of this
+    # flag, so a zero-provider deployment is unaffected either way; this is
+    # for an operator who HAS providers configured but wants to disable just
+    # one of these specific features without touching provider config.
+    AI_OVERVIEW_BRIEF_ENABLED = _bool(os.getenv("AI_OVERVIEW_BRIEF_ENABLED"), default=True)
+    AI_MEETING_CONFIRM_ENABLED = _bool(os.getenv("AI_MEETING_CONFIRM_ENABLED"), default=True)
+
+    # Observability only -- never gates behavior, just whether ai_cost_log
+    # rows get written. Postgres-only and fail-open regardless (see
+    # models/ai_cost_log.py), so this is purely an extra off-switch for an
+    # operator who wants to silence the writes without a redeploy.
+    AI_COST_TRACKING_ENABLED = _bool(os.getenv("AI_COST_TRACKING_ENABLED"), default=True)
 
     # Offline by default: local RAG remains fully available, while public web
     # retrieval must be an explicit deployment choice.

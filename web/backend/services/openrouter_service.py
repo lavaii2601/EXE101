@@ -21,13 +21,17 @@ class OpenRouterService:
                 models.append(m)
         return models
 
-    def generate_chat(self, messages, max_tokens=220, temperature=0.5):
+    def generate_chat(self, messages, max_tokens=220, temperature=0.5, model_override=None):
         if not self.api_key:
             raise ValueError('OpenRouter API key not configured')
 
         last_error = None
 
-        for model in self._models_to_try():
+        models_to_try = self._models_to_try()
+        if model_override and model_override not in models_to_try:
+            models_to_try = [model_override] + models_to_try
+
+        for model in models_to_try:
             try:
                 payload = {
                     'model': model,

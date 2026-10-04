@@ -370,11 +370,22 @@ def get_status():
         or os.path.exists(Config.GMAIL_CREDENTIALS_FILE)
     )
 
+    ai_providers = {
+        'openai': bool(Config.OPENAI_API_KEY),
+        'mistral': bool(Config.MISTRAL_API_KEY),
+        'claude': bool(Config.CLAUDE_API_KEY),
+        'gemini': bool(Config.GEMINI_API_KEY),
+        'ollama': bool(Config.OLLAMA_ENABLED),
+    }
+    if Config.BOB_LOCAL_ONLY:
+        ai_providers = {'bob-local': True}
+    missing_ai_providers = [name for name, configured in ai_providers.items() if not configured]
+
     return jsonify({
         'gmail_configured': gmail_configured,
-        'ai_providers': {'bob-local': True},
-        'missing_ai_providers': [],
-        'local_only': True,
+        'ai_providers': ai_providers,
+        'missing_ai_providers': missing_ai_providers,
+        'local_only': Config.BOB_LOCAL_ONLY,
         'all_ready': True
     })
 

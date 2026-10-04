@@ -74,7 +74,10 @@ class AIService:
             'chat': Config.AI_DEFAULT_MAX_TOKENS,
             'summary': Config.AI_SUMMARY_MAX_TOKENS,
             'reply': Config.AI_REPLY_MAX_TOKENS,
-            'analyze': Config.AI_ANALYZE_MAX_TOKENS
+            'analyze': Config.AI_ANALYZE_MAX_TOKENS,
+            'intent_classification': 320,
+            'overview_brief': Config.AI_OVERVIEW_BRIEF_MAX_TOKENS,
+            'meeting_confirm': Config.AI_MEETING_CONFIRM_MAX_TOKENS,
         }
         self.provider_order = [
             p.strip().lower() for p in Config.AI_PROVIDER_ORDER.split(',') if p.strip()
@@ -84,7 +87,39 @@ class AIService:
             'chat': self._parse_provider_list(Config.AI_TASK_PROVIDERS_CHAT),
             'summary': self._parse_provider_list(Config.AI_TASK_PROVIDERS_SUMMARY),
             'reply': self._parse_provider_list(Config.AI_TASK_PROVIDERS_REPLY),
-            'analyze': self._parse_provider_list(Config.AI_TASK_PROVIDERS_ANALYZE)
+            'analyze': self._parse_provider_list(Config.AI_TASK_PROVIDERS_ANALYZE),
+            'intent_classification': self._parse_provider_list(Config.AI_TASK_PROVIDERS_INTENT_CLASSIFICATION),
+            'overview_brief': self._parse_provider_list(Config.AI_TASK_PROVIDERS_OVERVIEW_BRIEF),
+            'meeting_confirm': self._parse_provider_list(Config.AI_TASK_PROVIDERS_MEETING_CONFIRM),
+        }
+        # Which model SIZE each task uses ('cheap' vs 'strong') -- see
+        # _model_for() below for how a tier resolves to an actual model
+        # name per provider. Unknown tasks default to 'strong' (today's
+        # single-model behavior, unchanged).
+        self.task_tiers = {
+            'chat': self._normalize_tier(Config.AI_TASK_TIER_CHAT, 'strong'),
+            'intent_classification': self._normalize_tier(Config.AI_TASK_TIER_INTENT_CLASSIFICATION, 'cheap'),
+            'summary': self._normalize_tier(Config.AI_TASK_TIER_SUMMARY, 'cheap'),
+            'reply': self._normalize_tier(Config.AI_TASK_TIER_REPLY, 'cheap'),
+            'analyze': self._normalize_tier(Config.AI_TASK_TIER_ANALYZE, 'cheap'),
+            'overview_brief': self._normalize_tier(Config.AI_TASK_TIER_OVERVIEW_BRIEF, 'cheap'),
+            'meeting_confirm': self._normalize_tier(Config.AI_TASK_TIER_MEETING_CONFIRM, 'cheap'),
+        }
+        # Per-provider model name for each tier. Every 'cheap' entry
+        # defaults to that provider's own strong model (Config.X_MODEL_CHEAP
+        # falls back to Config.X_MODEL when unset), so tiering is a no-op
+        # on model choice until an operator explicitly configures a cheap
+        # model for a provider.
+        self.provider_models = {
+            'openai': {'strong': Config.OPENAI_MODEL, 'cheap': Config.OPENAI_MODEL_CHEAP},
+            'mistral': {'strong': Config.MISTRAL_MODEL, 'cheap': Config.MISTRAL_MODEL_CHEAP},
+            'claude': {'strong': Config.CLAUDE_MODEL, 'cheap': Config.CLAUDE_MODEL_CHEAP},
+            'gemini': {'strong': Config.GEMINI_MODEL, 'cheap': Config.GEMINI_MODEL_CHEAP},
+            'ollama': {'strong': Config.OLLAMA_MODEL, 'cheap': Config.OLLAMA_MODEL_CHEAP},
+            'openrouter': {
+                'strong': Config.OPENROUTER_PRIMARY_MODEL,
+                'cheap': Config.OPENROUTER_PRIMARY_MODEL_CHEAP,
+            },
         }
         self.last_provider_used = None
         self.provider_usage = {
@@ -190,6 +225,7 @@ class AIService:
 
         if max_tokens is None:
             max_tokens = self.task_max_tokens.get(task, self.default_max_tokens)
+        tier = self._tier_for_task(task)
 
         is_premium = bool(user_id) and subscription_model.is_premium(user_id)
         if is_premium:
@@ -247,7 +283,7 @@ class AIService:
                 continue
             
             try:
-                response = self._call_provider(provider, optimized_messages, max_tokens)
+                response = self._call_provider(provider, optimized_messages, max_tokens, tier=tier)
                 if response and response.strip():
                     # Successful - mark as used
                     self.last_provider_used = provider
@@ -317,6 +353,7 @@ class AIService:
 
         if max_tokens is None:
             max_tokens = self.task_max_tokens.get(task, self.default_max_tokens)
+        tier = self._tier_for_task(task)
 
         normalized_messages = self._normalize_messages(messages)
         optimized_messages = self._optimize_messages_for_tokens(
@@ -325,7 +362,7 @@ class AIService:
         )
 
         try:
-            response = self._call_provider(provider, optimized_messages, max_tokens)
+            response = self._call_provider(provider, optimized_messages, max_tokens, tier=tier)
             if response and response.strip():
                 self.last_provider_used = provider
                 if provider in self.provider_usage:
@@ -345,6 +382,25 @@ class AIService:
         if not value:
             return []
         return [p.strip().lower() for p in value.split(',') if p.strip()]
+
+    @staticmethod
+    def _normalize_tier(value, default):
+        value = str(value or '').strip().lower()
+        return value if value in ('cheap', 'strong') else default
+
+    def _tier_for_task(self, task):
+        return self.task_tiers.get(task, 'strong')
+
+    def _model_for(self, provider, tier):
+        """Resolve the model name a provider should use for a tier.
+
+        Falls back to that provider's strong model if the requested tier
+        isn't configured (e.g. a brand-new provider added to
+        provider_models without a 'cheap' entry) -- never returns an empty
+        string for a provider that has any model configured at all.
+        """
+        models = self.provider_models.get(provider) or {}
+        return models.get(tier) or models.get('strong') or ''
 
     def _detect_configured_providers(self):
         if Config.BOB_LOCAL_ONLY:
@@ -593,35 +649,38 @@ class AIService:
 
         return optimized
 
-    def _call_provider(self, provider, messages, max_tokens):
+    def _call_provider(self, provider, messages, max_tokens, tier='strong'):
         if Config.BOB_LOCAL_ONLY and provider != 'ollama':
             raise RuntimeError("External model providers are disabled by BOB_LOCAL_ONLY")
+        model = self._model_for(provider, tier)
         if provider == 'openrouter':
-            return self._call_openrouter(messages, max_tokens)
+            return self._call_openrouter(messages, max_tokens, model=model)
         if provider == 'openai':
-            return self._call_openai(messages, max_tokens)
+            return self._call_openai(messages, max_tokens, model=model)
         if provider == 'mistral':
-            return self._call_mistral(messages, max_tokens)
+            return self._call_mistral(messages, max_tokens, model=model)
         if provider == 'claude':
-            return self._call_claude(messages, max_tokens)
+            return self._call_claude(messages, max_tokens, model=model)
         if provider == 'gemini':
-            return self._call_gemini(messages, max_tokens)
+            return self._call_gemini(messages, max_tokens, model=model)
         if provider == 'ollama':
-            return self._call_ollama(messages, max_tokens)
+            return self._call_ollama(messages, max_tokens, model=model)
 
         raise ValueError(f"Unsupported provider: {provider}")
 
-    def _call_openrouter(self, messages, max_tokens):
+    def _call_openrouter(self, messages, max_tokens, model=None):
         """Delegate to OpenRouterService adapter if available."""
         if self.openrouter_service:
-            return self.openrouter_service.generate_chat(messages, max_tokens=max_tokens, temperature=0.5)
+            return self.openrouter_service.generate_chat(
+                messages, max_tokens=max_tokens, temperature=0.5, model_override=model,
+            )
 
         # Fallback to previous inline implementation if adapter isn't available
         if not Config.OPENROUTER_API_KEY:
             raise ValueError("OpenRouter chưa được cấu hình")
         raise RuntimeError("OpenRouterService not initialized")
 
-    def _call_openai(self, messages, max_tokens):
+    def _call_openai(self, messages, max_tokens, model=None):
         if not Config.OPENAI_API_KEY:
             raise ValueError("OpenAI chưa được cấu hình")
 
@@ -633,7 +692,7 @@ class AIService:
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": Config.OPENAI_MODEL,
+                    "model": model or Config.OPENAI_MODEL,
                     "messages": messages,
                     "max_tokens": max_tokens,
                     "temperature": 0.5
@@ -655,7 +714,7 @@ class AIService:
             # Attach response for status code checking
             raise e
 
-    def _call_mistral(self, messages, max_tokens):
+    def _call_mistral(self, messages, max_tokens, model=None):
         if not Config.MISTRAL_API_KEY:
             raise ValueError("Mistral chưa được cấu hình")
 
@@ -667,7 +726,7 @@ class AIService:
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": Config.MISTRAL_MODEL,
+                    "model": model or Config.MISTRAL_MODEL,
                     "messages": messages,
                     "max_tokens": max_tokens,
                     "temperature": 0.4
@@ -688,7 +747,7 @@ class AIService:
         except requests.exceptions.RequestException as e:
             raise e
 
-    def _call_claude(self, messages, max_tokens):
+    def _call_claude(self, messages, max_tokens, model=None):
         if not Config.CLAUDE_API_KEY:
             raise ValueError("Claude chưa được cấu hình")
 
@@ -703,7 +762,7 @@ class AIService:
                     "content-type": "application/json"
                 },
                 json={
-                    "model": Config.CLAUDE_MODEL,
+                    "model": model or Config.CLAUDE_MODEL,
                     "system": system_prompt,
                     "messages": provider_messages,
                     "max_tokens": max_tokens,
@@ -727,7 +786,7 @@ class AIService:
         except requests.exceptions.RequestException as e:
             raise e
 
-    def _call_gemini(self, messages, max_tokens):
+    def _call_gemini(self, messages, max_tokens, model=None):
         if not Config.GEMINI_API_KEY:
             raise ValueError("Gemini chưa được cấu hình")
 
@@ -735,7 +794,7 @@ class AIService:
 
         endpoint = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{Config.GEMINI_MODEL}:generateContent?key={Config.GEMINI_API_KEY}"
+            f"{model or Config.GEMINI_MODEL}:generateContent?key={Config.GEMINI_API_KEY}"
         )
 
         payload = {
@@ -779,7 +838,7 @@ class AIService:
         except requests.exceptions.RequestException as e:
             raise e
 
-    def _call_ollama(self, messages, max_tokens):
+    def _call_ollama(self, messages, max_tokens, model=None):
         if not Config.OLLAMA_ENABLED:
             raise ValueError("Ollama chưa được cấu hình")
 
@@ -793,7 +852,7 @@ class AIService:
                 f"{base_url}/api/chat",
                 headers={"Content-Type": "application/json"},
                 json={
-                    "model": Config.OLLAMA_MODEL,
+                    "model": model or Config.OLLAMA_MODEL,
                     "messages": messages,
                     "stream": False,
                     # Qwen3 and other reasoning models otherwise spend the
@@ -888,6 +947,8 @@ class AIService:
                 "last_provider_used": self.last_provider_used,
                 "rotation_index": 0,
                 "demo_mode": False,
+                "task_tiers": self.task_tiers,
+                "provider_models": self.provider_models,
             }
         chain = self._build_provider_chain() if self.configured_providers else []
         missing_providers = [
@@ -935,7 +996,9 @@ class AIService:
             "provider_usage": self.provider_usage,
             "last_provider_used": self.last_provider_used,
             "rotation_index": self.provider_rotation_index,
-            "demo_mode": len(self.configured_providers) == 0 or all(not self._is_provider_healthy(p) for p in self.configured_providers)
+            "demo_mode": len(self.configured_providers) == 0 or all(not self._is_provider_healthy(p) for p in self.configured_providers),
+            "task_tiers": self.task_tiers,
+            "provider_models": self.provider_models,
         }
     
     def _get_demo_response(self, messages):
