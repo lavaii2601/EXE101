@@ -606,6 +606,36 @@ BEGIN
 END;
 $$;
 
+-- Real LLM cost/token/latency observability per call -- separate from
+-- ai_usage_daily above, which only gates the Free/Premium feature-quota
+-- counters, not actual $ cost. Metadata only: never stores API keys,
+-- email bodies, or user messages. user_id/workspace_id use ON DELETE SET
+-- NULL (not CASCADE) so the cost ledger survives account/workspace
+-- deletion, matching workspace_audit_events' actor_user_id.
+CREATE TABLE IF NOT EXISTS ai_cost_log (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL,
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE SET NULL,
+    task TEXT NOT NULL,
+    tier TEXT NOT NULL DEFAULT 'strong',
+    provider TEXT NOT NULL,
+    model TEXT,
+    success BOOLEAN NOT NULL,
+    error_type TEXT,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    estimated_cost_usd NUMERIC(10,6),
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    cache_hit BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT ai_cost_log_tier_check CHECK (tier IN ('cheap', 'strong'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_cost_log_user_created
+    ON ai_cost_log (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_cost_log_task_created
+    ON ai_cost_log (task, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS workspace_memberships (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

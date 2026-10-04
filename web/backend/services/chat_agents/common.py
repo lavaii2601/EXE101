@@ -723,6 +723,7 @@ def learn_from_mentors(user_message, assistant_response, user_id, intent_result=
                     messages,
                     max_tokens=max_tokens,
                     task='analyze',
+                    user_id=user_id,
                 )
                 candidate = _mentor_candidate_from_raw(raw)
                 if not candidate:

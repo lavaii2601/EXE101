@@ -4,6 +4,7 @@ import logging
 import json
 import re
 import requests
+import time
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -11,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
 from services.openrouter_service import OpenRouterService
 from services import extractive_summary
+from models import ai_cost_log
 from models.cache import Cache
 from models import subscription as subscription_model
 from utils.user_context import get_user_db_path
@@ -221,6 +223,10 @@ class AIService:
         if Config.BOB_LOCAL_ONLY and not self.configured_providers:
             self.last_provider_used = 'bob-local'
             self.provider_usage['bob-local'] += 1
+            ai_cost_log.record_call(
+                user_id=user_id, workspace_id=workspace_id, task=task,
+                tier=self._tier_for_task(task), provider='bob-local', success=True,
+            )
             return self._get_local_response(messages)
 
         if max_tokens is None:
@@ -254,7 +260,12 @@ class AIService:
                 cache_key = f"ai::{user_id}::{workspace_id}::{h.hexdigest()}"
                 cached = Cache.get(cache_key, db_path=cache_db)
                 if cached:
-                    self.last_provider_used = cached.get('provider', self.last_provider_used)
+                    cached_provider = cached.get('provider', self.last_provider_used)
+                    self.last_provider_used = cached_provider
+                    ai_cost_log.record_call(
+                        user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                        provider=cached_provider or 'cache', success=True, cache_hit=True,
+                    )
                     return cached.get('response')
         except Exception:
             cache_db = None
@@ -262,6 +273,10 @@ class AIService:
         if not self.configured_providers:
             self.last_provider_used = 'demo'
             self.provider_usage['demo'] += 1
+            ai_cost_log.record_call(
+                user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                provider='demo', success=True,
+            )
             demo = self._get_demo_response(optimized_messages)
             try:
                 if cache_db:
@@ -282,14 +297,24 @@ class AIService:
                 print(f"⏭️  Bỏ qua {provider.upper()} (đang cooldown ~{remaining}min)")
                 continue
             
+            t0 = time.monotonic()
             try:
-                response = self._call_provider(provider, optimized_messages, max_tokens, tier=tier)
+                response, usage = self._call_provider(provider, optimized_messages, max_tokens, tier=tier)
                 if response and response.strip():
                     # Successful - mark as used
                     self.last_provider_used = provider
                     if provider in self.provider_usage:
                         self.provider_usage[provider] += 1
                     print(f"✅ {provider.upper()} responded successfully")
+                    model = self._model_for(provider, tier)
+                    ai_cost_log.record_call(
+                        user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                        provider=provider, model=model, success=True,
+                        input_tokens=(usage or {}).get('input_tokens'),
+                        output_tokens=(usage or {}).get('output_tokens'),
+                        estimated_cost_usd=self._estimate_cost_usd(provider, model, usage),
+                        latency_ms=int((time.monotonic() - t0) * 1000),
+                    )
                     try:
                         if cache_db:
                             Cache.set(cache_key, {'response': response, 'provider': provider}, ttl=3600, db_path=cache_db)
@@ -299,16 +324,16 @@ class AIService:
             except Exception as e:
                 error_msg = str(e)
                 last_error = f"{provider}: {error_msg}"
-                
+
                 # Check if it's a quota/rate limit error
                 status_code = getattr(e, 'response', None)
                 if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
                     status_code = e.response.status_code
                 else:
                     status_code = None
-                
+
                 is_quota = self._is_quota_error(error_msg, status_code)
-                
+
                 if is_quota:
                     print(f"🚫 {provider.upper()} HẾT QUOTA - chuyển sang provider khác")
                     self._mark_provider_failed(provider, error_msg, is_quota_error=True)
@@ -316,6 +341,12 @@ class AIService:
                     all_quota_errors = False
                     print(f"⚠️  {provider.upper()} lỗi - thử provider tiếp theo: {error_msg[:100]}")
                     self._mark_provider_failed(provider, error_msg, is_quota_error=False)
+                ai_cost_log.record_call(
+                    user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                    provider=provider, model=self._model_for(provider, tier), success=False,
+                    error_type='quota' if is_quota else 'error',
+                    latency_ms=int((time.monotonic() - t0) * 1000),
+                )
 
         # All providers failed or in cooldown
         healthy_count = len([p for p in self.configured_providers if self._is_provider_healthy(p)])
@@ -329,12 +360,21 @@ class AIService:
         if Config.BOB_LOCAL_ONLY:
             self.last_provider_used = 'bob-local'
             self.provider_usage['bob-local'] += 1
+            ai_cost_log.record_call(
+                user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                provider='bob-local', success=True,
+            )
             return self._get_local_response(optimized_messages)
         self.last_provider_used = 'demo'
         self.provider_usage['demo'] += 1
+        ai_cost_log.record_call(
+            user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+            provider='demo', success=True,
+        )
         return self._get_demo_response(optimized_messages)
 
-    def generate_with_provider(self, provider, messages, max_tokens=None, task='analyze'):
+    def generate_with_provider(self, provider, messages, max_tokens=None, task='analyze',
+                                user_id=None, workspace_id=None):
         """Generate one response from a specific configured provider.
 
         Used by background mentor learning so Bob can ask a particular
@@ -361,12 +401,22 @@ class AIService:
             task=task,
         )
 
+        t0 = time.monotonic()
         try:
-            response = self._call_provider(provider, optimized_messages, max_tokens, tier=tier)
+            response, usage = self._call_provider(provider, optimized_messages, max_tokens, tier=tier)
             if response and response.strip():
                 self.last_provider_used = provider
                 if provider in self.provider_usage:
                     self.provider_usage[provider] += 1
+                model = self._model_for(provider, tier)
+                ai_cost_log.record_call(
+                    user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                    provider=provider, model=model, success=True,
+                    input_tokens=(usage or {}).get('input_tokens'),
+                    output_tokens=(usage or {}).get('output_tokens'),
+                    estimated_cost_usd=self._estimate_cost_usd(provider, model, usage),
+                    latency_ms=int((time.monotonic() - t0) * 1000),
+                )
                 return response
         except Exception as e:
             status_code = None
@@ -374,6 +424,12 @@ class AIService:
                 status_code = e.response.status_code
             is_quota = self._is_quota_error(str(e), status_code)
             self._mark_provider_failed(provider, str(e), is_quota_error=is_quota)
+            ai_cost_log.record_call(
+                user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                provider=provider, model=self._model_for(provider, tier), success=False,
+                error_type='quota' if is_quota else 'error',
+                latency_ms=int((time.monotonic() - t0) * 1000),
+            )
             raise
 
         raise RuntimeError(f"{provider} không trả về nội dung")
@@ -401,6 +457,30 @@ class AIService:
         """
         models = self.provider_models.get(provider) or {}
         return models.get(tier) or models.get('strong') or ''
+
+    # USD per 1,000 tokens, seeded for the models this app configures by
+    # default. An operator-configured custom model (e.g. a new
+    # *_MODEL_CHEAP override) that isn't in this table simply gets
+    # estimated_cost_usd=NULL in the cost log rather than a guessed number
+    # -- a documented limitation, not a bug.
+    _PRICING_USD_PER_1K = {
+        ('openai', 'gpt-4o'): {'input': 0.0025, 'output': 0.01},
+        ('mistral', 'mistral-large-latest'): {'input': 0.002, 'output': 0.006},
+        ('claude', 'claude-sonnet-5'): {'input': 0.003, 'output': 0.015},
+        ('gemini', 'gemini-2.5-pro'): {'input': 0.00125, 'output': 0.005},
+    }
+
+    def _estimate_cost_usd(self, provider, model, usage):
+        prices = self._PRICING_USD_PER_1K.get((provider, model))
+        if not prices or not usage:
+            return None
+        input_tokens = usage.get('input_tokens')
+        output_tokens = usage.get('output_tokens')
+        if input_tokens is None and output_tokens is None:
+            return None
+        cost = (input_tokens or 0) / 1000.0 * prices.get('input', 0.0) \
+            + (output_tokens or 0) / 1000.0 * prices.get('output', 0.0)
+        return round(cost, 6)
 
     def _detect_configured_providers(self):
         if Config.BOB_LOCAL_ONLY:
@@ -708,8 +788,12 @@ class AIService:
             
             response.raise_for_status()
             data = response.json()
-            return data['choices'][0]['message']['content']
-            
+            usage = data.get('usage') or {}
+            return data['choices'][0]['message']['content'], {
+                'input_tokens': usage.get('prompt_tokens'),
+                'output_tokens': usage.get('completion_tokens'),
+            }
+
         except requests.exceptions.RequestException as e:
             # Attach response for status code checking
             raise e
@@ -742,8 +826,12 @@ class AIService:
             
             response.raise_for_status()
             data = response.json()
-            return data['choices'][0]['message']['content']
-            
+            usage = data.get('usage') or {}
+            return data['choices'][0]['message']['content'], {
+                'input_tokens': usage.get('prompt_tokens'),
+                'output_tokens': usage.get('completion_tokens'),
+            }
+
         except requests.exceptions.RequestException as e:
             raise e
 
@@ -781,8 +869,12 @@ class AIService:
             data = response.json()
             content_parts = data.get('content', [])
             texts = [part.get('text', '') for part in content_parts if part.get('type') == 'text']
-            return "\n".join([t for t in texts if t])
-            
+            usage = data.get('usage') or {}
+            return "\n".join([t for t in texts if t]), {
+                'input_tokens': usage.get('input_tokens'),
+                'output_tokens': usage.get('output_tokens'),
+            }
+
         except requests.exceptions.RequestException as e:
             raise e
 
@@ -833,8 +925,12 @@ class AIService:
 
             parts = candidates[0].get('content', {}).get('parts', [])
             texts = [part.get('text', '') for part in parts if part.get('text')]
-            return "\n".join(texts)
-            
+            meta = data.get('usageMetadata') or {}
+            return "\n".join(texts), {
+                'input_tokens': meta.get('promptTokenCount'),
+                'output_tokens': meta.get('candidatesTokenCount'),
+            }
+
         except requests.exceptions.RequestException as e:
             raise e
 
@@ -876,7 +972,10 @@ class AIService:
 
             response.raise_for_status()
             data = response.json()
-            return data['message']['content']
+            return data['message']['content'], {
+                'input_tokens': data.get('prompt_eval_count'),
+                'output_tokens': data.get('eval_count'),
+            }
 
         except requests.exceptions.RequestException as e:
             raise e

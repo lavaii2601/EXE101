@@ -74,7 +74,11 @@ class OpenRouterService:
                     text = content or ''
 
                 if text:
-                    return text
+                    usage = data.get('usage') or {}
+                    return text, {
+                        'input_tokens': usage.get('prompt_tokens'),
+                        'output_tokens': usage.get('completion_tokens'),
+                    }
 
             except requests.RequestException as e:
                 last_error = str(e)
