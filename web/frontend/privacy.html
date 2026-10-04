@@ -4,78 +4,62 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chính sách bảo mật - FlowMate AI</title>
+    <meta name="description" content="Chính sách bảo mật FlowMate AI: cách dữ liệu tài khoản, Gmail, Calendar và hoạt động trong ứng dụng được thu thập, sử dụng và bảo vệ.">
     <link rel="canonical" href="https://www.flowmate.pro/privacy">
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32x32.png">
-    <style>
-        :root {
-            color-scheme: light;
-            --bg: #f4fafb;
-            --panel: #ffffff;
-            --text: #173042;
-            --muted: #587181;
-            --border: #cbe7ec;
-            --brand: #0b5ed7;
-        }
-        * { box-sizing: border-box; }
-        body {
-            margin: 0;
-            background: var(--bg);
-            color: var(--text);
-            font-family: Arial, Helvetica, sans-serif;
-            line-height: 1.62;
-        }
-        main {
-            width: min(920px, calc(100% - 32px));
-            margin: 0 auto;
-            padding: 40px 0 56px;
-        }
-        article {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: clamp(22px, 4vw, 42px);
-            box-shadow: 0 16px 45px rgba(23, 32, 51, 0.08);
-        }
-        h1 {
-            margin: 0;
-            font-size: clamp(30px, 5vw, 44px);
-            line-height: 1.12;
-        }
-        h2 {
-            margin: 34px 0 10px;
-            font-size: 21px;
-        }
-        p, li { color: var(--muted); }
-        ul { padding-left: 22px; }
-        a { color: var(--brand); }
-        .meta {
-            margin: 12px 0 0;
-            color: var(--muted);
-            font-size: 14px;
-        }
-        .notice {
-            margin-top: 22px;
-            padding: 14px 16px;
-            border-radius: 8px;
-            background: #eff6ff;
-            border: 1px solid #bfdbfe;
-        }
-        .lang {
-            margin-top: 36px;
-            padding-top: 30px;
-            border-top: 1px solid var(--border);
-        }
-    </style>
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/legal.css?v=20261004-01">
 </head>
 <body>
-    <main>
-        <article>
-            <h1>Chính sách bảo mật FlowMate AI</h1>
-            <p class="meta">Có hiệu lực từ ngày 01/07/2026. URL chính thức: <a href="https://flowmate.pro/privacy">https://flowmate.pro/privacy</a></p>
+    <nav class="site-nav" aria-label="Điều hướng chính">
+        <a class="nav-brand" href="/">
+            <img class="nav-logo" src="/img/logo.png" alt="" width="36" height="36">
+            <span class="nav-brand-text">Flowmate AI</span>
+        </a>
+        <ul class="nav-links">
+            <li><a href="/">Trang chủ</a></li>
+            <li><a class="active" href="/privacy" aria-current="page">Bảo mật</a></li>
+            <li><a href="/terms">Điều khoản</a></li>
+        </ul>
+        <a class="nav-cta" href="/app">Mở ứng dụng</a>
+    </nav>
+
+    <header class="legal-hero">
+        <span class="legal-badge">Quyền riêng tư &amp; dữ liệu</span>
+        <h1>Chính sách bảo mật <span class="gradient-text">FlowMate AI</span></h1>
+        <p class="legal-lead">Thông tin rõ ràng về dữ liệu FlowMate thu thập, cách dữ liệu được sử dụng và quyền kiểm soát của bạn.</p>
+        <div class="legal-meta">
+            <span>Có hiệu lực từ ngày 01/07/2026</span>
+            <a href="https://flowmate.pro/privacy">URL chính thức</a>
+        </div>
+    </header>
+
+    <main class="legal-layout">
+        <aside class="legal-sidebar" aria-label="Mục lục chính sách bảo mật">
+            <strong class="legal-sidebar-title">Mục lục</strong>
+            <ol class="legal-toc">
+                <li><a href="#data">Dữ liệu thu thập</a></li>
+                <li><a href="#purpose">Mục đích sử dụng</a></li>
+                <li><a href="#google">Dữ liệu Google</a></li>
+                <li><a href="#bob">Xử lý của Bob</a></li>
+                <li><a href="#storage">Lưu trữ &amp; bảo vệ</a></li>
+                <li><a href="#sharing">Chia sẻ dữ liệu</a></li>
+                <li><a href="#control">Kiểm soát &amp; xóa</a></li>
+                <li><a href="#children">Trẻ em</a></li>
+                <li><a href="#changes">Thay đổi chính sách</a></li>
+                <li><a href="#contact">Liên hệ</a></li>
+            </ol>
+        </aside>
+
+        <article class="legal-article">
             <p class="notice">FlowMate AI là trợ lý quản lý email, lịch, workflow và học tập. Chính sách này áp dụng cho bản web deploy trên Railway và ứng dụng Android APK dùng cùng backend FlowMate.</p>
 
-            <h2>1. Dữ liệu FlowMate thu thập</h2>
+            <h2 id="data">1. Dữ liệu FlowMate thu thập</h2>
             <ul>
                 <li>Thông tin tài khoản đăng nhập Google: email, tên hiển thị, ảnh đại diện nếu Google trả về.</li>
                 <li>Dữ liệu Gmail cần thiết để hiển thị, tìm kiếm, tóm tắt email và nhận diện việc cần làm, deadline hoặc gợi ý lịch.</li>
@@ -85,7 +69,7 @@
                 <li>Thông tin kỹ thuật tối thiểu như session, token đăng nhập mobile, log lỗi không chứa secret để vận hành dịch vụ.</li>
             </ul>
 
-            <h2>2. Mục đích sử dụng dữ liệu</h2>
+            <h2 id="purpose">2. Mục đích sử dụng dữ liệu</h2>
             <ul>
                 <li>Cung cấp chức năng chính: đọc email, tóm tắt email, tìm email, đọc lịch, đồng bộ lịch, tạo checklist và hỗ trợ chat với Bob.</li>
                 <li>Gợi ý hành động hữu ích như deadline cần xử lý, email nên trả lời, thời gian học/làm việc phù hợp hoặc lịch có khả năng trùng.</li>
@@ -94,15 +78,15 @@
                 <li>Bảo vệ hệ thống bằng giới hạn tần suất, kiểm tra nguồn request và session bảo mật.</li>
             </ul>
 
-            <h2>3. Dữ liệu Google và quyền truy cập</h2>
+            <h2 id="google">3. Dữ liệu Google và quyền truy cập</h2>
             <p>FlowMate chỉ yêu cầu các quyền Google cần cho Gmail và Calendar. Dữ liệu Google không được bán, không dùng cho quảng cáo và không dùng để huấn luyện mô hình AI nền tảng. Khi cần AI tóm tắt hoặc phân tích, FlowMate chỉ gửi phần nội dung cần thiết cho tác vụ hiện tại đến provider AI đã cấu hình trên backend.</p>
             <p>Bạn có thể thu hồi quyền truy cập từ tài khoản Google của mình bất cứ lúc nào tại <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer">Google Account Permissions</a>.</p>
 
-            <h2>4. Xử lý cục bộ của Bob</h2>
+            <h2 id="bob">4. Xử lý cục bộ của Bob</h2>
             <p>Bob dùng bộ định tuyến ý định, quy tắc tác vụ, tra cứu knowledge TF-IDF và tóm tắt trích xuất chạy trên backend FlowMate. Nội dung chat, email và lịch không được gửi đến OpenRouter, OpenAI, Mistral, Claude, Gemini hoặc model ngôn ngữ bên ngoài.</p>
             <p>Khi bạn yêu cầu tra cứu Internet, FlowMate chỉ gửi truy vấn cần thiết đến công cụ tìm kiếm hoặc website công khai và trả lại URL nguồn. Các quy tắc hoặc sở thích bạn nói rõ có thể được lưu vào knowledge riêng của tài khoản để Bob dùng ở các lần sau.</p>
 
-            <h2>5. Lưu trữ và bảo vệ dữ liệu</h2>
+            <h2 id="storage">5. Lưu trữ và bảo vệ dữ liệu</h2>
             <ul>
                 <li>Production Railway dùng PostgreSQL cho dữ liệu ứng dụng và token OAuth đã xác thực.</li>
                 <li>Session cookie được đặt HTTP-only, SameSite=Lax và Secure trên production.</li>
@@ -110,10 +94,10 @@
                 <li>Secret như OAuth client secret, API key và database URL phải nằm trong Railway Variables, không commit vào mã nguồn.</li>
             </ul>
 
-            <h2>6. Chia sẻ dữ liệu</h2>
+            <h2 id="sharing">6. Chia sẻ dữ liệu</h2>
             <p>FlowMate chỉ chia sẻ dữ liệu với các dịch vụ cần thiết để vận hành tính năng bạn dùng: Google APIs cho Gmail/Calendar, provider AI để xử lý nội dung theo yêu cầu, công cụ tìm kiếm/trang web công khai khi bạn yêu cầu Bob tra cứu Internet hoặc hỏi thông tin cần cập nhật, Railway/PostgreSQL để host và lưu trữ hệ thống. FlowMate không bán dữ liệu cá nhân.</p>
 
-            <h2>7. Kiểm soát và xóa dữ liệu</h2>
+            <h2 id="control">7. Kiểm soát và xóa dữ liệu</h2>
             <ul>
                 <li>Bạn có thể đăng xuất hoặc ngắt Google trong ứng dụng.</li>
                 <li>Bạn có thể xóa lịch sử hoạt động trong phần Cài đặt.</li>
@@ -122,17 +106,17 @@
             </ul>
             <p>Dữ liệu đang hoạt động được xóa khi yêu cầu hoàn tất. Bản sao phục hồi thảm họa có thể còn tạm thời theo chu kỳ sao lưu; cấu hình PITR hiện tại có cửa sổ luân phiên khoảng bốn tuần. Xem chi tiết tại trang yêu cầu xóa tài khoản.</p>
 
-            <h2>8. Trẻ em</h2>
+            <h2 id="children">8. Trẻ em</h2>
             <p>FlowMate không được thiết kế để cố ý thu thập dữ liệu từ trẻ em dưới 13 tuổi. Nếu bạn cho rằng dữ liệu trẻ em đã được gửi vào hệ thống, hãy liên hệ đội vận hành để xóa.</p>
 
-            <h2>9. Thay đổi chính sách</h2>
+            <h2 id="changes">9. Thay đổi chính sách</h2>
             <p>Khi chính sách thay đổi, FlowMate sẽ cập nhật ngày hiệu lực trên trang này. Việc tiếp tục sử dụng ứng dụng sau khi cập nhật nghĩa là bạn chấp nhận phiên bản mới.</p>
 
-            <h2>10. Liên hệ</h2>
+            <h2 id="contact">10. Liên hệ</h2>
             <p>Liên hệ hỗ trợ và yêu cầu về dữ liệu: <a href="mailto:lecaoduyanh123@gmail.com">lecaoduyanh123@gmail.com</a>.</p>
 
             <section class="lang" lang="en">
-                <h1>FlowMate AI Privacy Policy</h1>
+                <h2>FlowMate AI Privacy Policy</h2>
                 <p class="meta">Effective July 1, 2026. Official URL: <a href="https://www.flowmate.pro/privacy">https://www.flowmate.pro/privacy</a></p>
                 <p>FlowMate AI helps users manage email, calendar, workflow, study tasks, and AI chat. This policy applies to the Railway web deployment and the Android APK that uses the same backend.</p>
                 <p>FlowMate collects only the account, Gmail, Calendar, chat, schedule, checklist, history, internet research queries/results, explicit user rules, and technical data needed to provide the requested features. Google data is not sold, not used for advertising, and not sent to an external language-model provider. When Bob is asked to research the public web, a limited query may be sent to search/web sources and the result is returned with source URLs.</p>
@@ -140,5 +124,18 @@
             </section>
         </article>
     </main>
+
+    <footer class="site-footer">
+        <div class="footer-brand">
+            <img src="/img/logo.png" alt="" width="28" height="28">
+            Flowmate AI
+        </div>
+        <ul class="footer-links">
+            <li><a href="/app">Mở ứng dụng</a></li>
+            <li><a class="active" href="/privacy">Chính sách bảo mật</a></li>
+            <li><a href="/terms">Điều khoản dịch vụ</a></li>
+        </ul>
+        <p class="footer-copy">&copy; 2026 Flowmate AI. All rights reserved.</p>
+    </footer>
 </body>
 </html>

@@ -4,81 +4,67 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Điều khoản dịch vụ - FlowMate AI</title>
+    <meta name="description" content="Điều khoản dịch vụ FlowMate AI: quyền, trách nhiệm và nguyên tắc sử dụng ứng dụng an toàn.">
     <link rel="canonical" href="https://www.flowmate.pro/terms">
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32x32.png">
-    <style>
-        :root {
-            color-scheme: light;
-            --bg: #f4fafb;
-            --panel: #ffffff;
-            --text: #173042;
-            --muted: #587181;
-            --border: #cbe7ec;
-            --brand: #0b5ed7;
-        }
-        * { box-sizing: border-box; }
-        body {
-            margin: 0;
-            background: var(--bg);
-            color: var(--text);
-            font-family: Arial, Helvetica, sans-serif;
-            line-height: 1.62;
-        }
-        main {
-            width: min(920px, calc(100% - 32px));
-            margin: 0 auto;
-            padding: 40px 0 56px;
-        }
-        article {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: clamp(22px, 4vw, 42px);
-            box-shadow: 0 16px 45px rgba(23, 32, 51, 0.08);
-        }
-        h1 {
-            margin: 0;
-            font-size: clamp(30px, 5vw, 44px);
-            line-height: 1.12;
-        }
-        h2 {
-            margin: 34px 0 10px;
-            font-size: 21px;
-        }
-        p, li { color: var(--muted); }
-        ul { padding-left: 22px; }
-        a { color: var(--brand); }
-        .meta {
-            margin: 12px 0 0;
-            color: var(--muted);
-            font-size: 14px;
-        }
-        .notice {
-            margin-top: 22px;
-            padding: 14px 16px;
-            border-radius: 8px;
-            background: #eff6ff;
-            border: 1px solid #bfdbfe;
-        }
-        .lang {
-            margin-top: 36px;
-            padding-top: 30px;
-            border-top: 1px solid var(--border);
-        }
-    </style>
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/legal.css?v=20261004-01">
 </head>
 <body>
-    <main>
-        <article>
-            <h1>Điều khoản dịch vụ FlowMate AI</h1>
-            <p class="meta">Có hiệu lực từ ngày 01/07/2026. URL chính thức: <a href="https://flowmate.pro/terms">https://flowmate.pro/terms</a></p>
+    <nav class="site-nav" aria-label="Điều hướng chính">
+        <a class="nav-brand" href="/">
+            <img class="nav-logo" src="/img/logo.png" alt="" width="36" height="36">
+            <span class="nav-brand-text">Flowmate AI</span>
+        </a>
+        <ul class="nav-links">
+            <li><a href="/">Trang chủ</a></li>
+            <li><a href="/privacy">Bảo mật</a></li>
+            <li><a class="active" href="/terms" aria-current="page">Điều khoản</a></li>
+        </ul>
+        <a class="nav-cta" href="/app">Mở ứng dụng</a>
+    </nav>
+
+    <header class="legal-hero">
+        <span class="legal-badge">Điều khoản &amp; trách nhiệm</span>
+        <h1>Điều khoản dịch vụ <span class="gradient-text">FlowMate AI</span></h1>
+        <p class="legal-lead">Những nguyên tắc giúp bạn hiểu rõ quyền, trách nhiệm và cách sử dụng FlowMate một cách an toàn.</p>
+        <div class="legal-meta">
+            <span>Có hiệu lực từ ngày 01/07/2026</span>
+            <a href="https://flowmate.pro/terms">URL chính thức</a>
+        </div>
+    </header>
+
+    <main class="legal-layout">
+        <aside class="legal-sidebar" aria-label="Mục lục điều khoản dịch vụ">
+            <strong class="legal-sidebar-title">Mục lục</strong>
+            <ol class="legal-toc">
+                <li><a href="#service">Dịch vụ FlowMate</a></li>
+                <li><a href="#account">Tài khoản</a></li>
+                <li><a href="#data">Dữ liệu &amp; Google APIs</a></li>
+                <li><a href="#bob">AI Bob</a></li>
+                <li><a href="#rules">Quy tắc sử dụng</a></li>
+                <li><a href="#content">Nội dung của bạn</a></li>
+                <li><a href="#third-parties">Dịch vụ bên thứ ba</a></li>
+                <li><a href="#availability">Tính khả dụng</a></li>
+                <li><a href="#warranty">Miễn trừ bảo đảm</a></li>
+                <li><a href="#liability">Giới hạn trách nhiệm</a></li>
+                <li><a href="#termination">Chấm dứt &amp; xóa</a></li>
+                <li><a href="#contact">Liên hệ</a></li>
+            </ol>
+        </aside>
+
+        <article class="legal-article">
             <p class="notice">Các điều khoản này áp dụng cho bản web FlowMate AI deploy trên Railway và ứng dụng Android APK dùng cùng backend FlowMate. Khi tiếp tục sử dụng FlowMate, bạn đồng ý với các điều khoản dưới đây và <a href="/privacy">Chính sách bảo mật</a>.</p>
 
-            <h2>1. Dịch vụ FlowMate</h2>
+            <h2 id="service">1. Dịch vụ FlowMate</h2>
             <p>FlowMate AI là công cụ hỗ trợ quản lý email, lịch, workflow, học tập và trò chuyện với trợ lý AI Bob. FlowMate giúp tổng hợp thông tin, gợi ý hành động, tạo checklist, lên lịch và hỗ trợ xử lý tác vụ dựa trên dữ liệu bạn kết nối hoặc nhập vào.</p>
 
-            <h2>2. Tài khoản và quyền truy cập</h2>
+            <h2 id="account">2. Tài khoản và quyền truy cập</h2>
             <ul>
                 <li>Bạn cần đăng nhập bằng Google hoặc phương thức được FlowMate hỗ trợ để dùng các tính năng cá nhân hóa.</li>
                 <li>Bạn chịu trách nhiệm bảo mật tài khoản, thiết bị và phiên đăng nhập của mình.</li>
@@ -86,11 +72,11 @@
                 <li>FlowMate có thể từ chối, tạm ngưng hoặc chấm dứt quyền truy cập nếu phát hiện lạm dụng, truy cập trái phép hoặc hành vi gây rủi ro cho hệ thống/người dùng khác.</li>
             </ul>
 
-            <h2>3. Dữ liệu, Google APIs và xử lý cục bộ</h2>
+            <h2 id="data">3. Dữ liệu, Google APIs và xử lý cục bộ</h2>
             <p>Việc FlowMate truy cập, sử dụng, lưu trữ và chia sẻ dữ liệu được mô tả trong <a href="/privacy">Chính sách bảo mật</a>. Khi bạn kết nối Gmail hoặc Google Calendar, bạn cũng chịu sự điều chỉnh của các điều khoản và chính sách Google liên quan đến tài khoản và API của Google.</p>
             <p>Bob xử lý định tuyến, tóm tắt trích xuất, tra cứu knowledge và dựng phản hồi bằng engine backend cục bộ, không gửi nội dung tác vụ đến provider mô hình ngôn ngữ. Khi bạn yêu cầu tra cứu Internet, FlowMate có thể gửi truy vấn giới hạn đến công cụ tìm kiếm hoặc website công khai như được mô tả trong Chính sách bảo mật.</p>
 
-            <h2>4. AI Bob và kết quả gợi ý</h2>
+            <h2 id="bob">4. AI Bob và kết quả gợi ý</h2>
             <ul>
                 <li>Bob là trợ lý AI hỗ trợ ra quyết định, không thay thế phán đoán chuyên môn của bạn.</li>
                 <li>Kết quả AI có thể chưa chính xác, thiếu ngữ cảnh hoặc lỗi thời. Bạn cần kiểm tra thông tin quan trọng trước khi dựa vào đó.</li>
@@ -98,7 +84,7 @@
                 <li>Các hành động nhạy cảm như gửi email, tạo/sửa/xóa lịch, thay đổi dữ liệu ngoài hệ thống hoặc tác vụ khó hoàn tác cần xác nhận rõ ràng từ bạn trước khi thực hiện.</li>
             </ul>
 
-            <h2>5. Quy tắc sử dụng</h2>
+            <h2 id="rules">5. Quy tắc sử dụng</h2>
             <ul>
                 <li>Không dùng FlowMate để vi phạm pháp luật, xâm phạm quyền riêng tư, quấy rối, lừa đảo, phát tán mã độc hoặc truy cập trái phép hệ thống/tài khoản của người khác.</li>
                 <li>Không cố tình phá giới hạn bảo mật, rate limit, xác thực, OAuth hoặc cơ chế bảo vệ dữ liệu.</li>
@@ -106,33 +92,33 @@
                 <li>Không dùng FlowMate cho tình huống mà lỗi hệ thống/AI có thể trực tiếp gây nguy hiểm đến tính mạng, sức khỏe hoặc thiệt hại nghiêm trọng.</li>
             </ul>
 
-            <h2>6. Nội dung của bạn</h2>
+            <h2 id="content">6. Nội dung của bạn</h2>
             <p>Bạn giữ quyền đối với nội dung bạn nhập, email/lịch bạn kết nối và dữ liệu bạn tạo trong FlowMate. Bạn cấp cho FlowMate quyền xử lý nội dung đó trong phạm vi cần thiết để cung cấp, bảo mật, vận hành và cải thiện tính năng bạn sử dụng. Bạn cam kết có quyền hợp pháp để nhập hoặc kết nối dữ liệu đó vào FlowMate.</p>
 
-            <h2>7. Dịch vụ bên thứ ba</h2>
+            <h2 id="third-parties">7. Dịch vụ bên thứ ba</h2>
             <p>FlowMate phụ thuộc vào các dịch vụ bên thứ ba như Google APIs, provider AI, Railway/PostgreSQL, công cụ tìm kiếm hoặc website công khai. Các dịch vụ này có thể có điều khoản, chính sách, giới hạn quota và thời gian gián đoạn riêng. FlowMate không kiểm soát hoàn toàn hoạt động của bên thứ ba.</p>
 
-            <h2>8. Tính khả dụng và thay đổi dịch vụ</h2>
+            <h2 id="availability">8. Tính khả dụng và thay đổi dịch vụ</h2>
             <p>FlowMate được cung cấp trên cơ sở nỗ lực hợp lý. Dịch vụ có thể thay đổi, tạm ngưng, giới hạn hoặc ngừng một phần tính năng để bảo trì, bảo mật, tuân thủ chính sách hoặc cải tiến sản phẩm. FlowMate có thể cập nhật điều khoản này bằng cách thay đổi ngày hiệu lực trên trang public này.</p>
 
-            <h2>9. Miễn trừ bảo đảm</h2>
+            <h2 id="warranty">9. Miễn trừ bảo đảm</h2>
             <p>FlowMate được cung cấp "nguyên trạng" và "khi có sẵn". Trong phạm vi pháp luật cho phép, FlowMate không bảo đảm dịch vụ luôn không lỗi, không gián đoạn, chính xác tuyệt đối hoặc phù hợp với mọi mục đích cụ thể của bạn.</p>
 
-            <h2>10. Giới hạn trách nhiệm</h2>
+            <h2 id="liability">10. Giới hạn trách nhiệm</h2>
             <p>Trong phạm vi pháp luật cho phép, FlowMate và đội vận hành không chịu trách nhiệm cho thiệt hại gián tiếp, ngẫu nhiên, đặc biệt, hệ quả, mất dữ liệu, mất lợi nhuận hoặc quyết định của bạn dựa trên kết quả AI mà chưa được kiểm tra độc lập.</p>
 
-            <h2>11. Chấm dứt sử dụng và xóa dữ liệu</h2>
+            <h2 id="termination">11. Chấm dứt sử dụng và xóa dữ liệu</h2>
             <ul>
                 <li>Bạn có thể ngắt Google, đăng xuất hoặc ngừng sử dụng FlowMate bất cứ lúc nào.</li>
                 <li>Bạn có thể xóa lịch sử hoạt động trong ứng dụng nếu tính năng đó khả dụng.</li>
                 <li>Bạn có thể xóa vĩnh viễn tài khoản trong Cài đặt hoặc dùng <a href="/account-deletion">trang yêu cầu xóa tài khoản</a>.</li>
             </ul>
 
-            <h2>12. Liên hệ</h2>
+            <h2 id="contact">12. Liên hệ</h2>
             <p>Liên hệ về điều khoản, bảo mật hoặc dữ liệu: <a href="mailto:lecaoduyanh123@gmail.com">lecaoduyanh123@gmail.com</a>.</p>
 
             <section class="lang" lang="en">
-                <h1>FlowMate AI Terms of Service</h1>
+                <h2>FlowMate AI Terms of Service</h2>
                 <p class="meta">Effective July 1, 2026. Official URL: <a href="https://www.flowmate.pro/terms">https://www.flowmate.pro/terms</a></p>
                 <p>These terms apply to the Railway web deployment and the Android APK using the same FlowMate backend. By using FlowMate, you agree to these terms and the <a href="/privacy">Privacy Policy</a>.</p>
                 <p>FlowMate AI helps users manage email, calendar, workflow, study tasks, and AI chat through Bob. Bob provides AI-generated summaries, suggestions, drafts, and action plans. AI output may be inaccurate or incomplete and should be reviewed before important decisions. FlowMate does not provide legal, financial, medical, or licensed professional advice.</p>
@@ -141,5 +127,18 @@
             </section>
         </article>
     </main>
+
+    <footer class="site-footer">
+        <div class="footer-brand">
+            <img src="/img/logo.png" alt="" width="28" height="28">
+            Flowmate AI
+        </div>
+        <ul class="footer-links">
+            <li><a href="/app">Mở ứng dụng</a></li>
+            <li><a href="/privacy">Chính sách bảo mật</a></li>
+            <li><a class="active" href="/terms">Điều khoản dịch vụ</a></li>
+        </ul>
+        <p class="footer-copy">&copy; 2026 Flowmate AI. All rights reserved.</p>
+    </footer>
 </body>
 </html>
