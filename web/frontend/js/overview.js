@@ -65,6 +65,69 @@ function buildOverviewInsight({ schedules, emails, selectedDate }) {
     return parts.join(' ');
 }
 
+function updateOverviewGreeting(name = '', selectedDate = '') {
+    const greetingEl = document.getElementById('overviewGreeting');
+    const dateLabelEl = document.getElementById('overviewDateLabel');
+    const hour = new Date().getHours();
+    const period = hour < 12
+        ? ui('buổi sáng', 'morning')
+        : (hour < 18 ? ui('buổi chiều', 'afternoon') : ui('buổi tối', 'evening'));
+    const cleanName = String(name || document.getElementById('userName')?.textContent || '')
+        .trim()
+        .replace(/^Teacher$/i, '');
+    if (greetingEl) {
+        greetingEl.textContent = currentLanguage === 'en'
+            ? `Good ${period}${cleanName ? `, ${cleanName}` : ''} 👋`
+            : `Chào ${period}${cleanName ? `, ${cleanName}` : ''} 👋`;
+    }
+    if (dateLabelEl) {
+        const value = selectedDate || document.getElementById('overviewDate')?.value || formatDateForApi(new Date());
+        const date = new Date(`${value}T00:00:00`);
+        dateLabelEl.textContent = date.toLocaleDateString(currentLanguage === 'en' ? 'en-US' : 'vi-VN', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+        });
+    }
+}
+
+function renderOverviewAttention({ schedules, emails, deadlines }) {
+    const items = [];
+    if (deadlines.length) {
+        items.push(ui(
+            `${deadlines.length} deadline cần được ưu tiên`,
+            `${deadlines.length} deadlines need priority`
+        ));
+    }
+    if (schedules.length) {
+        const first = schedules[0];
+        const range = formatScheduleRange(first.start_time, first.end_time);
+        items.push(ui(
+            `${first.title || 'Lịch tiếp theo'}${range.time ? ` · ${range.time}` : ''}`,
+            `${first.title || 'Next event'}${range.time ? ` · ${range.time}` : ''}`
+        ));
+    }
+    if (emails.length) {
+        items.push(ui(
+            `${emails.length} email quan trọng đang chờ bạn`,
+            `${emails.length} important emails are waiting`
+        ));
+    }
+    if (!items.length) {
+        items.push(ui(
+            'Mọi thứ đang trong tầm kiểm soát. Bạn chưa có việc gấp.',
+            'Everything is under control. Nothing urgent is waiting.'
+        ));
+    }
+    return items.slice(0, 3).map((item) => `
+        <li>
+            <span class="overview-attention-check" aria-hidden="true">✓</span>
+            <span>${escapeHtml(item)}</span>
+        </li>
+    `).join('');
+}
+
 function renderOverviewList(items, type) {
     if (!items.length) {
         return `<div class="overview-empty">${type === 'email'
@@ -1004,8 +1067,8 @@ async function loadOverviewPage(options = {}) {
         dateInput.value = formatDateForApi(new Date());
     }
     const selectedDate = dateInput?.value || formatDateForApi(new Date());
-    const reportDate = formatOverviewDateForReport(selectedDate);
     const isBackground = options.background === true;
+    updateOverviewGreeting('', selectedDate);
 
     if (!isBackground) clearOverviewRefreshTimer();
     if (!isBackground || !container.children.length) {
@@ -1042,8 +1105,7 @@ async function loadOverviewPage(options = {}) {
         const checklistState = normalizeOverviewChecklist(checklistData);
         const deadlines = schedules.filter((item) => getOverviewPriority(item) === ui('Deadline', 'Deadline'));
         const openTasks = schedules.filter((item) => item.status !== 'completed');
-        const meetingEmails = emails.filter((item) => item.is_meeting);
-        const insight = buildOverviewInsight({ schedules, emails, selectedDate });
+        const attentionCount = openTasks.length + emails.length;
         const refreshNote = overviewData.refreshing
             ? `<p class="overview-refresh-note">${overviewData.refresh_state === 'checking'
                 ? ui('Đang kiểm tra thay đổi mới trong nền. Bản tổng hợp hiện tại vẫn dùng được ngay.', 'Checking for changes in the background. The current overview remains available.')
@@ -1053,33 +1115,25 @@ async function loadOverviewPage(options = {}) {
         container.innerHTML = `
             <section class="overview-hero">
                 <div>
-                    <span class="overview-kicker">${ui('TÓM TẮT AI', 'AI SUMMARY')}</span>
-                    <h3>${escapeHtml(reportDate)}</h3>
-                    <p>${escapeHtml(insight)}</p>
+                    <span class="overview-kicker">${ui('TÓM TẮT CỦA BOB', "BOB'S OVERVIEW")}</span>
+                    <h3>${attentionCount
+                        ? ui(`Bạn có ${attentionCount} điều đáng chú ý.`, `You have ${attentionCount} things worth attention.`)
+                        : ui('Hôm nay trông thật nhẹ nhàng.', 'Today looks refreshingly clear.')}</h3>
+                    <ul class="overview-attention-list">${renderOverviewAttention({ schedules, emails, deadlines })}</ul>
                     ${refreshNote}
                 </div>
                 <div class="overview-score">
-                    <strong>${openTasks.length + emails.length}</strong>
-                    <span>${ui('điểm cần xem', 'items to review')}</span>
+                    <span class="overview-score-mark" aria-hidden="true">✦</span>
+                    <strong>Bob</strong>
+                    <span>${ui('đã tổng hợp', 'overview ready')}</span>
                 </div>
             </section>
 
             <div class="overview-stat-grid">
-                <article><strong>${deadlines.length}</strong><span>${ui('Deadline', 'Deadlines')}</span></article>
-                <article><strong>${emails.length}</strong><span>Email</span></article>
-                <article><strong>${openTasks.length}</strong><span>${ui('Task mở', 'Open tasks')}</span></article>
-                <article><strong>${meetingEmails.length}</strong><span>${ui('Mail họp', 'Meeting mail')}</span></article>
+                <article><span class="overview-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg></span><div><strong>${schedules.length}</strong><span>${ui('Sự kiện hôm nay', 'Events today')}</span></div></article>
+                <article><span class="overview-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/><rect x="3" y="3" width="18" height="18" rx="4"/></svg></span><div><strong>${openTasks.length}</strong><span>${ui('Việc cần làm', 'Open tasks')}</span></div></article>
+                <article><span class="overview-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><div><strong>${emails.length}</strong><span>${ui('Email quan trọng', 'Important emails')}</span></div></article>
             </div>
-
-            ${renderOverviewQuickAdd()}
-
-            ${renderOverviewCountdown(overviewData.upcoming_deadlines)}
-
-            ${renderStudentToolsPanel()}
-
-            ${renderOverviewChecklist(schedules, checklistState)}
-
-            ${renderOverviewAnalytics(analyticsData)}
 
             <div class="overview-grid">
                 <section class="overview-panel">
@@ -1097,6 +1151,16 @@ async function loadOverviewPage(options = {}) {
                     <div class="overview-list">${renderOverviewList(emails, 'email')}</div>
                 </section>
             </div>
+
+            ${renderOverviewQuickAdd()}
+
+            ${renderOverviewChecklist(schedules, checklistState)}
+
+            ${renderOverviewCountdown(overviewData.upcoming_deadlines)}
+
+            ${renderStudentToolsPanel()}
+
+            ${renderOverviewAnalytics(analyticsData)}
         `;
         bindOverviewQuickAdd(container, selectedDate);
         bindOverviewChecklist(container, selectedDate, schedules, checklistState);

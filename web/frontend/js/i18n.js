@@ -1,8 +1,8 @@
 const I18N = {
     vi: {
-        'nav.chat': 'Chat',
-        'nav.overview': 'Tổng hợp',
-        'nav.email': 'Email',
+        'nav.chat': 'Bob',
+        'nav.overview': 'Tổng quan',
+        'nav.email': 'Hộp thư',
         'nav.calendar': 'Lịch',
         'nav.history': 'Lịch sử',
         'nav.settings': 'Cài đặt',
@@ -21,15 +21,15 @@ const I18N = {
         'overview.title': 'Tổng hợp thông tin',
         'overview.subtitle': 'AI tự động gom deadline, email và task trong ngày được chọn.',
         'overview.refresh': 'Tổng hợp ngày này',
-        'email.title': 'Quản lý Email',
+        'email.title': 'Hộp thư ưu tiên',
         'email.search': 'Tìm theo người gửi, tiêu đề hoặc nội dung...',
         'email.includeRead': 'Giữ email đã đọc',
         'email.openGmail': 'Mở Gmail',
         'email.login': 'Đăng nhập / Đổi tài khoản',
         'email.logout': 'Đăng xuất Gmail',
-        'email.inbox': 'Hộp thư đến',
+        'email.inbox': 'Ưu tiên',
         'email.report': 'Báo cáo theo ngày',
-        'email.compose': 'Soạn thảo',
+        'email.compose': '+ Soạn thư',
         'settings.title': 'Cài đặt',
         'settings.subtitle': 'Quản lý tài khoản, giao diện, dữ liệu và kết nối dịch vụ.',
         'settings.languageSection': 'NGÔN NGỮ',
@@ -46,7 +46,7 @@ const I18N = {
         'filter.other': 'Khác'
     },
     en: {
-        'nav.chat': 'Chat',
+        'nav.chat': 'Bob',
         'nav.overview': 'Overview',
         'nav.email': 'Email',
         'nav.calendar': 'Calendar',
@@ -67,15 +67,15 @@ const I18N = {
         'overview.title': 'Daily overview',
         'overview.subtitle': 'AI automatically summarizes deadlines, email, and tasks for the selected day.',
         'overview.refresh': 'Summarize day',
-        'email.title': 'Email Management',
+        'email.title': 'Priority inbox',
         'email.search': 'Search sender, subject, or content...',
         'email.includeRead': 'Include read email',
         'email.openGmail': 'Open Gmail',
         'email.login': 'Sign in / Switch account',
         'email.logout': 'Sign out of Gmail',
-        'email.inbox': 'Inbox',
+        'email.inbox': 'Priority',
         'email.report': 'Daily report',
-        'email.compose': 'Compose',
+        'email.compose': '+ Compose',
         'settings.title': 'Settings',
         'settings.subtitle': 'Manage your account, appearance, data, and connected services.',
         'settings.languageSection': 'LANGUAGE',
@@ -228,6 +228,9 @@ function applyLanguage() {
     updateUserModeUI(currentUserMode);
     updateEmailFilterUI();
     updateSidebarTooltips();
+    if (typeof updateOverviewGreeting === 'function') {
+        updateOverviewGreeting();
+    }
     if (document.getElementById('authLoginStage') && !document.getElementById('authLoginStage').hidden) {
         setAuthFormMode(authFormMode);
     }

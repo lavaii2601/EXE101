@@ -314,6 +314,9 @@ function updateSidebarUserProfile(profile) {
     if (userNameEl) {
         userNameEl.textContent = name || 'Teacher';
     }
+    if (typeof updateOverviewGreeting === 'function') {
+        updateOverviewGreeting(name || '');
+    }
     
     // Update Gmail status
     const gmailStatusEl = document.getElementById('gmailStatus');

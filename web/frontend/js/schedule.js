@@ -70,9 +70,9 @@ function formatScheduleRange(startValue, endValue) {
     const end = endValue ? new Date(endValue) : null;
     if (!start || Number.isNaN(start.getTime())) {
         return {
-            date: ui('Chua xac dinh ngay', 'Date not set'),
-            time: ui('Chua xac dinh thoi gian', 'Time not set'),
-            full: ui('Chua xac dinh thoi gian', 'Time not set')
+            date: ui('Chưa xác định ngày', 'Date not set'),
+            time: ui('Chưa xác định thời gian', 'Time not set'),
+            full: ui('Chưa xác định thời gian', 'Time not set')
         };
     }
     const locale = currentLanguage === 'en' ? 'en-US' : 'vi-VN';
@@ -96,7 +96,7 @@ function updateDateTimePreview(inputOrId) {
     const preview = document.querySelector(`[data-preview-for="${input.id}"]`);
     if (!preview) return;
     const text = formatReadableDateTime(input.value);
-    preview.textContent = text || ui('Chua chon thoi gian', 'No time selected');
+    preview.textContent = text || ui('Chưa chọn thời gian.', 'No time selected.');
     preview.classList.toggle('has-value', !!text);
 }
 
@@ -109,7 +109,7 @@ function updateConfirmSchedulePreview() {
     const start = dateInput.value && startInput.value ? `${dateInput.value}T${startInput.value}` : '';
     const end = dateInput.value && endInput?.value ? `${dateInput.value}T${endInput.value}` : '';
     const range = start ? formatScheduleRange(start, end) : null;
-    preview.textContent = range ? range.full : ui('Chua chon thoi gian', 'No time selected');
+    preview.textContent = range ? range.full : ui('Chưa chọn thời gian.', 'No time selected.');
     preview.classList.toggle('has-value', !!range);
 }
 
@@ -732,7 +732,7 @@ async function handleDeleteEditSchedule() {
     const scheduleId = editForm?.dataset.scheduleId;
     const deleteButton = document.getElementById('deleteEditScheduleBtn');
     if (!scheduleId) {
-        showNotification(ui('Khong tim thay lich can xoa', 'Appointment ID is missing'), 'error');
+        showNotification(ui('Không tìm thấy lịch cần xóa', 'Appointment ID is missing'), 'error');
         return;
     }
 

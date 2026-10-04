@@ -1,0 +1,840 @@
+/* FlowMate workspace refresh — focused hierarchy, neutral surfaces, restrained AI accents. */
+:root {
+    --bg: #f8fafc;
+    --panel: #ffffff;
+    --panel-soft: #f1f5f9;
+    --text: #0f172a;
+    --text-secondary: #64748b;
+    --muted: #94a3b8;
+    --border: #e2e8f0;
+    --primary: #6366f1;
+    --primary-dark: #4f46e5;
+    --accent: #7c3aed;
+    --success: #059669;
+    --warning: #b45309;
+    --radius: 12px;
+    --shadow: 0 16px 40px rgba(15, 23, 42, 0.07);
+    --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+body {
+    font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+}
+
+button,
+input,
+textarea,
+select,
+summary {
+    font: inherit;
+}
+
+.container.workspace-app,
+.container.workspace-app.sidebar-collapsed,
+.container.workspace-app[data-current-page="chat"],
+.container.workspace-app.sidebar-collapsed[data-current-page="chat"] {
+    grid-template-columns: 252px minmax(0, 1fr);
+    background: var(--bg);
+}
+
+.assistant-panel {
+    display: none;
+}
+
+.workspace-app > .main-content {
+    max-width: none;
+    padding: 0;
+    border-right: 0;
+}
+
+.sidebar,
+.workspace-app.sidebar-collapsed .sidebar {
+    gap: 14px;
+    padding: 20px 14px 16px;
+    border-right: 1px solid var(--border);
+    background: #ffffff;
+}
+
+.sidebar-header {
+    gap: 12px;
+}
+
+.brand-mark {
+    border-radius: 11px;
+    background: linear-gradient(135deg, #06b6d4 0%, #6366f1 52%, #d946ef 100%);
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.24);
+}
+
+.brand-copy strong {
+    color: var(--text);
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+}
+
+.brand-copy small {
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.user-profile-section,
+.user-mode-picker,
+.org-workspace-switcher {
+    border-color: var(--border);
+    border-radius: 12px;
+    background: var(--bg);
+    box-shadow: none;
+}
+
+.sidebar-nav {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 2px;
+    overflow-y: auto;
+}
+
+.nav-section-label {
+    display: block;
+    margin: 13px 11px 5px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.nav-section-label[hidden] {
+    display: none;
+}
+
+.sidebar-new-chat-btn {
+    min-height: 44px;
+    margin-bottom: 2px;
+    border: 0;
+    border-radius: 12px;
+    background: var(--text);
+    color: #ffffff;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.14);
+}
+
+.sidebar-new-chat-btn:hover,
+.sidebar-new-chat-btn:focus-visible {
+    background: #1e293b;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+}
+
+.sidebar-new-chat-btn .icon {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.sidebar-new-chat-copy strong {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.sidebar-new-chat-copy small {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 10px;
+}
+
+.nav-btn,
+.workspace-app.sidebar-collapsed .nav-btn {
+    min-height: 40px;
+    padding: 9px 11px;
+    border-radius: 10px;
+    color: #475569;
+}
+
+.nav-btn .icon svg {
+    width: 19px;
+    height: 19px;
+    stroke-width: 1.8;
+}
+
+.nav-btn:hover {
+    background: #f8fafc;
+    color: var(--text);
+}
+
+.nav-btn.active {
+    background: #eef2ff;
+    color: var(--primary-dark);
+    box-shadow: none;
+}
+
+.nav-btn.active::after {
+    position: absolute;
+    right: 8px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--primary);
+    content: "";
+}
+
+.nav-label {
+    font-size: 13px;
+    font-weight: 550;
+}
+
+.sidebar-chat-history {
+    display: none;
+}
+
+.workspace-header {
+    min-height: 64px;
+    padding: 0 28px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(14px);
+}
+
+.workspace-heading strong {
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 650;
+}
+
+.workspace-heading span {
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.workspace-mode-status {
+    border-color: var(--border);
+    border-radius: 999px;
+    box-shadow: none;
+}
+
+.workspace-mode-status > span {
+    background: #eef2ff;
+    color: var(--primary-dark);
+}
+
+.section-header,
+#schedule-page .section-header,
+.settings-page-header {
+    min-height: 86px;
+    padding: 18px 30px;
+    border-bottom: 1px solid var(--border);
+}
+
+.section-header h2,
+#schedule-page .section-header h2,
+.settings-page-header h2 {
+    margin: 2px 0 0;
+    color: var(--text);
+    font-size: clamp(21px, 2vw, 26px);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+}
+
+.section-header p,
+.settings-page-header p {
+    margin: 5px 0 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.overview-kicker,
+.settings-kicker,
+.settings-section-label {
+    color: var(--primary);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+}
+
+.btn-primary,
+.email-compose-tab.tab-btn {
+    border: 0;
+    background: var(--primary);
+    color: #ffffff;
+    box-shadow: none;
+}
+
+.btn-primary:hover,
+.email-compose-tab.tab-btn:hover,
+.email-compose-tab.tab-btn.active {
+    background: var(--primary-dark);
+    color: #ffffff;
+}
+
+.btn-secondary,
+.week-nav .btn-secondary {
+    border-color: var(--border);
+    background: #ffffff;
+    color: #475569;
+}
+
+#overviewContent,
+.settings-grid,
+#historyList,
+.tab-content,
+#schedule-page #upcoming-tab {
+    padding: 22px 30px 30px;
+    background: var(--bg);
+}
+
+.overview-content {
+    gap: 16px;
+}
+
+.overview-hero,
+.overview-panel,
+.overview-stat-grid article,
+.overview-loading,
+.overview-error,
+.email-item,
+.schedule-item,
+.calendar-event,
+.history-item,
+.settings-card,
+.meeting-suggestion-card,
+.daily-report-table,
+.week-table-wrapper {
+    border-color: var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow-soft);
+}
+
+.overview-hero {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr) 118px;
+    gap: 28px;
+    padding: 25px 28px;
+    overflow: hidden;
+    border-color: #dbeafe;
+    background:
+        radial-gradient(circle at 95% 10%, rgba(217, 70, 239, 0.11), transparent 28%),
+        linear-gradient(135deg, #ffffff 0%, #f7f7ff 100%);
+}
+
+.overview-hero::before {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: linear-gradient(#06b6d4, #6366f1, #d946ef);
+    content: "";
+}
+
+.overview-hero h3 {
+    margin: 5px 0 14px;
+    font-size: clamp(19px, 2vw, 24px);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+}
+
+.overview-attention-list {
+    display: grid;
+    gap: 8px;
+    max-width: 760px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.overview-attention-list li {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: #475569;
+    font-size: 13px;
+}
+
+.overview-attention-check {
+    display: grid;
+    place-items: center;
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #eef2ff;
+    color: var(--primary);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.overview-score {
+    min-width: 105px;
+    min-height: 105px;
+    border: 1px solid #ddd6fe;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.overview-score-mark {
+    color: var(--primary);
+    font-size: 24px;
+    line-height: 1;
+}
+
+.overview-score strong {
+    padding: 0;
+    background: transparent;
+    color: var(--text);
+    font-size: 16px;
+}
+
+.overview-score span:last-child {
+    color: var(--text-secondary);
+    font-size: 10px;
+}
+
+.overview-stat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.overview-stat-grid article {
+    display: flex;
+    min-height: 86px;
+    align-items: center;
+    gap: 13px;
+    padding: 16px 18px;
+}
+
+.overview-stat-grid article div {
+    display: grid;
+    gap: 1px;
+}
+
+.overview-stat-grid strong {
+    color: var(--text);
+    font-size: 22px;
+    font-weight: 700;
+}
+
+.overview-stat-grid span {
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.overview-stat-icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    background: #eef2ff;
+    color: var(--primary);
+}
+
+.overview-stat-icon svg {
+    width: 19px;
+    height: 19px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.overview-grid {
+    gap: 12px;
+}
+
+.overview-panel-head {
+    padding: 16px 18px;
+}
+
+.overview-panel-head strong {
+    font-size: 14px;
+    font-weight: 650;
+}
+
+.overview-list-item,
+.overview-checklist-item {
+    padding: 13px 18px;
+}
+
+.overview-item-index {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.tabs {
+    align-items: center;
+    padding: 10px 30px;
+    border-bottom: 1px solid var(--border);
+}
+
+.tab-btn {
+    min-height: 36px;
+    padding: 7px 11px;
+    border-radius: 9px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.email-compose-tab {
+    margin-left: auto;
+}
+
+.email-toolbar {
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+}
+
+.email-tools-menu {
+    position: relative;
+}
+
+.email-tools-menu summary {
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #ffffff;
+    color: #475569;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    list-style: none;
+}
+
+.email-tools-menu summary::-webkit-details-marker {
+    display: none;
+}
+
+.email-tools-menu summary::after {
+    margin-left: 7px;
+    color: var(--muted);
+    content: "⌄";
+}
+
+.email-tools-menu[open] summary {
+    border-color: #c7d2fe;
+    background: #eef2ff;
+    color: var(--primary-dark);
+}
+
+.email-tools-menu-content {
+    position: absolute;
+    z-index: 60;
+    top: calc(100% + 8px);
+    right: 0;
+    display: grid;
+    width: 260px;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: var(--shadow);
+}
+
+.email-tools-menu-content > * {
+    width: 100%;
+}
+
+.email-include-read {
+    font-size: 12px;
+}
+
+.email-search-bar {
+    max-width: none;
+    margin-bottom: 12px;
+    border-radius: 12px;
+    box-shadow: none;
+}
+
+.smart-inbox-bar {
+    margin-bottom: 14px;
+}
+
+.smart-inbox-chip {
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.email-item {
+    padding: 16px 18px;
+    box-shadow: none;
+}
+
+.email-item:hover {
+    border-color: #c7d2fe;
+    background: #ffffff;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.email-item.is-read {
+    border-left-color: #cbd5e1;
+    opacity: 0.78;
+}
+
+.email-item.is-read .email-item-subject,
+.is-read .email-read-state {
+    color: #475569;
+}
+
+.email-item-summary {
+    border-left-color: var(--primary);
+    background: #f8fafc;
+}
+
+@media (min-width: 861px) {
+    #emailDetailModal {
+        align-items: stretch;
+        justify-content: flex-end;
+        padding: 0;
+        background: rgba(15, 23, 42, 0.34);
+    }
+
+    #emailDetailModal .email-detail-modal-content {
+        width: min(560px, 46vw);
+        max-width: 560px;
+        max-height: none;
+        height: 100%;
+        margin: 0;
+        border: 0;
+        border-left: 1px solid var(--border);
+        border-radius: 0;
+        box-shadow: -18px 0 50px rgba(15, 23, 42, 0.12);
+        animation: emailDrawerIn 180ms ease-out;
+    }
+
+    @keyframes emailDrawerIn {
+        from { transform: translateX(28px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+}
+
+.chat-messages {
+    background: var(--bg);
+}
+
+.chat-welcome {
+    display: grid;
+    width: min(680px, 100%);
+    margin: auto;
+    padding: 36px 24px;
+    text-align: center;
+}
+
+.chat-welcome-mark {
+    display: grid;
+    place-items: center;
+    width: 50px;
+    height: 50px;
+    margin: 0 auto 14px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #06b6d4, #6366f1 58%, #d946ef);
+    color: #ffffff;
+    font-size: 22px;
+    box-shadow: 0 12px 28px rgba(99, 102, 241, 0.23);
+}
+
+.chat-welcome h2 {
+    margin: 0;
+    color: var(--text);
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+}
+
+.chat-welcome > p {
+    margin: 5px 0 22px;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.chat-starter-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.chat-starter-grid button {
+    display: flex;
+    min-height: 58px;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #ffffff;
+    color: #334155;
+    cursor: pointer;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 550;
+}
+
+.chat-starter-grid button:hover {
+    border-color: #c7d2fe;
+    background: #f7f7ff;
+    color: var(--primary-dark);
+}
+
+.chat-starter-grid button span {
+    display: grid;
+    place-items: center;
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: #eef2ff;
+    color: var(--primary);
+}
+
+.chat-welcome > small {
+    margin-top: 18px;
+    color: var(--muted);
+    font-size: 10px;
+}
+
+.chat-input-area {
+    border-top-color: var(--border);
+    background: #ffffff;
+}
+
+.chat-input-area textarea {
+    border-color: var(--border);
+    border-radius: 12px;
+}
+
+.message-content {
+    border-radius: 14px;
+    box-shadow: none;
+}
+
+body.dark-theme {
+    --bg: #0f172a;
+    --panel: #111827;
+    --panel-soft: #1e293b;
+    --text: #f8fafc;
+    --text-secondary: #a8b4c7;
+    --muted: #718096;
+    --border: #263449;
+}
+
+body.dark-theme .sidebar,
+body.dark-theme .workspace-header,
+body.dark-theme .email-tools-menu-content,
+body.dark-theme .chat-input-area,
+body.dark-theme .chat-starter-grid button {
+    background: #111827;
+}
+
+body.dark-theme .overview-hero {
+    border-color: #312e81;
+    background:
+        radial-gradient(circle at 95% 10%, rgba(217, 70, 239, 0.09), transparent 28%),
+        linear-gradient(135deg, #111827, #15152b);
+}
+
+body.dark-theme .overview-score,
+body.dark-theme .overview-attention-check,
+body.dark-theme .overview-stat-icon {
+    border-color: #3730a3;
+    background: #1e1b4b;
+}
+
+body.dark-theme .email-tools-menu summary {
+    border-color: var(--border);
+    background: #111827;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 860px) {
+    .container.workspace-app,
+    .container.workspace-app.sidebar-collapsed,
+    .container.workspace-app[data-current-page="chat"],
+    .container.workspace-app.sidebar-collapsed[data-current-page="chat"] {
+        grid-template-columns: 1fr;
+    }
+
+    .nav-section-label,
+    .sidebar-new-chat-btn,
+    .user-profile-section,
+    .user-mode-picker,
+    .org-workspace-switcher,
+    .sidebar-footer {
+        display: none;
+    }
+
+    .section-header,
+    #schedule-page .section-header,
+    .settings-page-header {
+        padding: 14px 16px;
+    }
+
+    #overviewContent,
+    .settings-grid,
+    #historyList,
+    .tab-content,
+    #schedule-page #upcoming-tab {
+        padding: 14px;
+    }
+
+    .overview-hero {
+        grid-template-columns: 1fr;
+        padding: 20px;
+    }
+
+    .overview-score {
+        display: none;
+    }
+
+    .overview-stat-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .overview-stat-grid article {
+        min-height: 80px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 12px;
+    }
+
+    .overview-stat-icon {
+        width: 32px;
+        height: 32px;
+        flex-basis: 32px;
+    }
+
+    .email-toolbar {
+        width: 100%;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+    }
+
+    .email-tools-menu-content {
+        right: auto;
+        left: 0;
+    }
+}
+
+@media (max-width: 560px) {
+    .overview-stat-grid,
+    .chat-starter-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .overview-stat-grid article {
+        flex-direction: row;
+        align-items: center;
+    }
+
+    .tabs {
+        padding: 9px 12px;
+    }
+
+    .email-compose-tab {
+        margin-left: 0;
+    }
+}

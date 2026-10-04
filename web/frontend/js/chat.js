@@ -691,7 +691,41 @@ const BOB_AVATAR_SVG = `
     <circle cx="23.5" cy="18.5" r="2.1" fill="#1f2937"/>
 </svg>`;
 
+function renderChatWelcomeState() {
+    if (!chatMessages) return;
+    chatMessages.innerHTML = `
+        <section class="chat-welcome" aria-labelledby="chatWelcomeTitle">
+            <span class="chat-welcome-mark" aria-hidden="true">✦</span>
+            <h2 id="chatWelcomeTitle">Bob</h2>
+            <p>${ui('Mình có thể giúp gì cho bạn?', 'What can I help you with?')}</p>
+            <div class="chat-starter-grid">
+                <button type="button" data-chat-prompt="${ui('Tóm tắt ngày hôm nay của tôi', 'Summarize my day')}">
+                    <span aria-hidden="true">✦</span>${ui('Tóm tắt ngày của tôi', 'Summarize my day')}
+                </button>
+                <button type="button" data-chat-prompt="${ui('Cho tôi xem các email quan trọng', 'Show my important emails')}">
+                    <span aria-hidden="true">↗</span>${ui('Email quan trọng', 'Important emails')}
+                </button>
+                <button type="button" data-chat-prompt="${ui('Tuần này tôi có lịch gì?', "What's on my calendar this week?")}">
+                    <span aria-hidden="true">□</span>${ui('Lịch tuần này', "What's on this week?")}
+                </button>
+                <button type="button" data-chat-prompt="${ui('Tìm tất cả deadline sắp tới của tôi', 'Find my upcoming deadlines')}">
+                    <span aria-hidden="true">✓</span>${ui('Tìm deadline', 'Find my deadlines')}
+                </button>
+            </div>
+            <small>${ui('Bob hiểu ngữ cảnh từ Gmail, Lịch và công việc của bạn.', 'Bob understands your Gmail, Calendar, and tasks.')}</small>
+        </section>
+    `;
+    chatMessages.querySelectorAll('[data-chat-prompt]').forEach((button) => {
+        button.addEventListener('click', () => {
+            if (!userInput) return;
+            userInput.value = button.dataset.chatPrompt || '';
+            userInput.focus();
+        });
+    });
+}
+
 function addMessage(text, role, badge = '') {
+    chatMessages?.querySelector('.chat-welcome')?.remove();
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${role}`;
     const avatar = role === 'assistant'
@@ -713,6 +747,7 @@ async function loadChatHistory() {
             persistChatSessionId();
             persistChatSessionTitle();
             if (chatMessages) chatMessages.innerHTML = '';
+            renderChatWelcomeState();
             updateChatSessionTitle();
             await loadChatSessions();
             return;
@@ -729,6 +764,8 @@ async function loadChatHistory() {
             });
             // Scroll to the newest message after the entire history is rendered
             if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+        } else {
+            renderChatWelcomeState();
         }
         updateChatSessionTitle();
     } catch (error) {
@@ -774,7 +811,7 @@ function renderChatSessions(sessions = []) {
                 <span class="chat-session-item-title">${title}</span>
                 <span class="chat-session-item-preview">${lastMessage}</span>
                 <span class="chat-session-item-meta">${time}${time ? ' · ' : ''}${count} ${ui('tin', 'msgs')}</span>
-                <button type="button" class="chat-session-menu-btn" aria-label="${ui('Mo thao tac doan chat', 'Open chat actions')}">...</button>
+                <button type="button" class="chat-session-menu-btn" aria-label="${ui('Mở thao tác đoạn chat', 'Open chat actions')}">...</button>
             </div>
         `;
     }).join('');
@@ -808,8 +845,8 @@ function openChatSessionMenu(item, session) {
     const menu = document.createElement('div');
     menu.className = 'chat-session-menu show';
     menu.innerHTML = `
-        <button type="button" data-action="edit">${ui('Sua ten', 'Rename')}</button>
-        <button type="button" data-action="delete">${ui('Xoa ngay', 'Delete now')}</button>
+        <button type="button" data-action="edit">${ui('Sửa tên', 'Rename')}</button>
+        <button type="button" data-action="delete">${ui('Xóa ngay', 'Delete now')}</button>
     `;
     document.body.appendChild(menu);
     const rect = item.querySelector('.chat-session-menu-btn')?.getBoundingClientRect() || item.getBoundingClientRect();
@@ -832,7 +869,7 @@ function openChatSessionMenu(item, session) {
 }
 
 async function renameChatSession(sessionId, currentTitle = '') {
-    const nextTitle = window.prompt(ui('Nhap ten moi cho doan chat', 'Enter a new chat name'), currentTitle || ui('Chat', 'Chat'));
+    const nextTitle = window.prompt(ui('Nhập tên mới cho đoạn chat', 'Enter a new chat name'), currentTitle || ui('Chat', 'Chat'));
     if (nextTitle === null) return;
     const title = nextTitle.trim();
     if (!title) return;
@@ -850,15 +887,15 @@ async function renameChatSession(sessionId, currentTitle = '') {
             updateChatSessionTitle();
         }
         await loadChatSessions();
-        showNotification(ui('Da doi ten doan chat', 'Chat renamed'), 'success');
+        showNotification(ui('Đã đổi tên đoạn chat', 'Chat renamed'), 'success');
     } catch (error) {
-        showNotification(ui('Khong the doi ten doan chat', 'Unable to rename chat'), 'error');
+        showNotification(ui('Không thể đổi tên đoạn chat', 'Unable to rename chat'), 'error');
     }
 }
 
 async function deleteChatSessionNow(sessionId) {
     if (!sessionId) return;
-    if (!window.confirm(ui('Xoa doan chat nay ngay bay gio?', 'Delete this chat now?'))) return;
+    if (!window.confirm(ui('Xóa đoạn chat này ngay bây giờ?', 'Delete this chat now?'))) return;
     try {
         const response = await apiFetch(`${API_BASE}/chat/sessions/${encodeURIComponent(sessionId)}`, {
             method: 'DELETE'
@@ -874,9 +911,9 @@ async function deleteChatSessionNow(sessionId) {
             updateChatSessionTitle();
         }
         await loadChatSessions();
-        showNotification(ui('Da xoa doan chat', 'Chat deleted'), 'success');
+        showNotification(ui('Đã xóa đoạn chat', 'Chat deleted'), 'success');
     } catch (error) {
-        showNotification(ui('Khong the xoa doan chat', 'Unable to delete chat'), 'error');
+        showNotification(ui('Không thể xóa đoạn chat', 'Unable to delete chat'), 'error');
     }
 }
 
@@ -940,6 +977,7 @@ async function startNewChat() {
         await handlePageChange(chatButton);
     }
     if (chatMessages) chatMessages.innerHTML = '';
+    renderChatWelcomeState();
     if (userInput) {
         userInput.value = '';
         userInput.focus();
@@ -966,6 +1004,7 @@ async function clearConversation() {
         const data = await response.json();
         if (data.success) {
             chatMessages.innerHTML = '';
+            renderChatWelcomeState();
             showNotification(ui('✅ Lịch sử đã bị xóa', '✅ History cleared'), 'success');
         }
     } catch (error) {

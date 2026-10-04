@@ -75,6 +75,7 @@ function renderOrgWorkspaceSwitcher() {
     const statusReportsNavBtn = document.getElementById('orgStatusReportsNavBtn');
     const sharingCenterNavBtn = document.getElementById('sharingCenterNavBtn');
     const workspaceKnowledgeNavBtn = document.getElementById('orgWorkspaceKnowledgeNavBtn');
+    const businessLabel = document.getElementById('navBusinessLabel');
     const active = currentOrgWorkspace();
 
     if (nameEl) nameEl.textContent = active ? active.name : ui('Cá nhân', 'Personal');
@@ -85,6 +86,7 @@ function renderOrgWorkspaceSwitcher() {
     }
     if (iconEl) iconEl.textContent = active && active.type === 'business' ? '🏢' : '👤';
     const showBusinessNav = active && active.type === 'business' && canShowBusinessFeatures();
+    if (businessLabel) businessLabel.hidden = !showBusinessNav;
     if (membersNavBtn) {
         membersNavBtn.style.display = showBusinessNav ? '' : 'none';
     }
