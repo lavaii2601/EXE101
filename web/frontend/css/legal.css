@@ -1,11 +1,11 @@
 :root {
     color-scheme: light;
-    --primary: #0b5ed7;
-    --primary-dark: #0847a6;
-    --grad-start: #82d6e5;
-    --grad-mid: #0b5ed7;
-    --grad-end: #8bc34a;
-    --highlight: #f6c667;
+    --primary: #0058de;
+    --primary-dark: #0046b8;
+    --grad-start: #87def1;
+    --grad-mid: #0058de;
+    --grad-end: #8bc24b;
+    --highlight: #f4c364;
     --text: #173042;
     --text-secondary: #587181;
     --border: #cbe7ec;

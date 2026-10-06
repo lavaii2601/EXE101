@@ -8,10 +8,10 @@ class AppRadius {
 }
 
 const List<Color> kOrbGradient = [
-  Color(0xFF82D6E5),
-  Color(0xFF0B5ED7),
-  Color(0xFF8BC34A),
-  Color(0xFFF6C667),
+  Color(0xFF87DEF1),
+  Color(0xFF0058DE),
+  Color(0xFF8BC24B),
+  Color(0xFFF4C364),
 ];
 
 ThemeData buildAppTheme(AppColors colors) {

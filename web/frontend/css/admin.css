@@ -3,14 +3,14 @@
   --bg: #071827;
   --panel: rgba(14, 35, 53, 0.84);
   --panel-strong: #153149;
-  --line: rgba(130, 214, 229, 0.16);
+  --line: rgba(135, 222, 241, 0.16);
   --text: #f3fbfd;
   --muted: #a7c2cc;
-  --cyan: #82d6e5;
-  --violet: #0b5ed7;
-  --amber: #f6c667;
+  --cyan: #87def1;
+  --violet: #0058de;
+  --amber: #f4c364;
   --red: #ff667a;
-  --green: #8bc34a;
+  --green: #8bc24b;
 }
 
 * { box-sizing: border-box; }

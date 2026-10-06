@@ -5,7 +5,7 @@ const THEME_KEY = 'flowmate.theme';
 const ACCENT_KEY = 'flowmate.accent';
 
 export const ACCENTS = {
-  blue:   { primary: '#0B5ED7', primaryDark: '#0847A6' },
+  blue:   { primary: '#0058DE', primaryDark: '#0046B8' },
   green:  { primary: '#4F7D1C', primaryDark: '#3B6114' },
   cyan:   { primary: '#167D91', primaryDark: '#105E6D' },
   yellow: { primary: '#A56800', primaryDark: '#7E4F00' },
@@ -35,10 +35,10 @@ function buildColors(isDark, accentKey) {
       primarySoft:      `${primary}24`,
       accentText:       primary,
       danger:           '#ef4444',
-      success:          '#8BC34A',
-      warning:          '#F6C667',
+      success:          '#8BC24B',
+      warning:          '#F4C364',
       secondaryBg:      '#17384A',
-      secondaryText:    '#82D6E5',
+      secondaryText:    '#87DEF1',
       inputPlaceholder: '#74909B',
       shadow: {
         shadowColor: '#000000',

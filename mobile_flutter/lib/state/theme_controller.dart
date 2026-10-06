@@ -12,7 +12,7 @@ class AccentDef {
 }
 
 const Map<String, AccentDef> kAccents = {
-  'blue': AccentDef(Color(0xFF0B5ED7), Color(0xFF0847A6)),
+  'blue': AccentDef(Color(0xFF0058DE), Color(0xFF0046B8)),
   'green': AccentDef(Color(0xFF4F7D1C), Color(0xFF3B6114)),
   'cyan': AccentDef(Color(0xFF167D91), Color(0xFF105E6D)),
   'yellow': AccentDef(Color(0xFFA56800), Color(0xFF7E4F00)),
@@ -64,15 +64,15 @@ class AppColors {
         panelSoft: const Color(0xFF153149),
         text: const Color(0xFFF3FBFD),
         textMuted: const Color(0xFFA7C2CC),
-        border: const Color(0xFF82D6E5).withValues(alpha: 0.16),
+        border: const Color(0xFF87DEF1).withValues(alpha: 0.16),
         primary: accent.primary,
         primaryDark: accent.primaryDark,
         primarySoft: accent.primary.withValues(alpha: 0.14),
         danger: const Color(0xFFEF4444),
-        success: const Color(0xFF8BC34A),
-        warning: const Color(0xFFF6C667),
+        success: const Color(0xFF8BC24B),
+        warning: const Color(0xFFF4C364),
         secondaryBg: const Color(0xFF17384A),
-        secondaryText: const Color(0xFF82D6E5),
+        secondaryText: const Color(0xFF87DEF1),
         inputPlaceholder: const Color(0xFF74909B),
       );
     }

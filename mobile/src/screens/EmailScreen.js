@@ -1106,7 +1106,7 @@ function makeStyles(colors) {
       justifyContent: 'center',
       gap: 3,
     },
-    swipeArchiveBtn: { backgroundColor: '#0B5ED7' },
+    swipeArchiveBtn: { backgroundColor: '#0058DE' },
     swipeTrashBtn: { backgroundColor: '#dc2626' },
     swipeReadBtn: { backgroundColor: colors.primary },
     swipeActionText: { color: '#FFFFFF', fontFamily: 'Poppins_600SemiBold', fontSize: 10 },

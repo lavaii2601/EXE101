@@ -34,7 +34,7 @@ const USAGE_LABELS = {
 };
 
 const ACCENT_OPTIONS = [
-  { key: 'blue',   hex: '#0B5ED7' },
+  { key: 'blue',   hex: '#0058DE' },
   { key: 'green',  hex: '#4F7D1C' },
   { key: 'cyan',   hex: '#167D91' },
   { key: 'yellow', hex: '#A56800' },

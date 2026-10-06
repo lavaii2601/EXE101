@@ -10,11 +10,11 @@
   <meta property="og:type" content="website">
   <meta property="og:image" content="/img/android-chrome-512x512.png">
   <link rel="canonical" href="https://www.flowmate.pro/">
-  <link rel="icon" href="/favicon.ico" sizes="any">
-  <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/img/favicon-16x16.png">
-  <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
-  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/favicon.ico?v=20261006-brand" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32x32.png?v=20261006-brand">
+  <link rel="icon" type="image/png" sizes="16x16" href="/img/favicon-16x16.png?v=20261006-brand">
+  <link rel="apple-touch-icon" href="/img/apple-touch-icon.png?v=20261006-brand">
+  <link rel="manifest" href="/manifest.json?v=20261006-brand">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -22,12 +22,12 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --primary: #0B5ED7;
-      --primary-dark: #0847A6;
-      --grad-start: #82D6E5;
-      --grad-mid: #0B5ED7;
-      --grad-end: #8BC34A;
-      --highlight: #F6C667;
+      --primary: #0058DE;
+      --primary-dark: #0046B8;
+      --grad-start: #87DEF1;
+      --grad-mid: #0058DE;
+      --grad-end: #8BC24B;
+      --highlight: #F4C364;
       --text: #173042;
       --text-secondary: #587181;
       --border: #CBE7EC;
@@ -110,8 +110,7 @@
 
     /* ── HERO ── */
     .hero {
-      padding: 96px 40px 80px;
-      text-align: center;
+      padding: 72px 40px 80px;
       position: relative;
     }
 
@@ -122,6 +121,19 @@
       background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(130, 214, 229, 0.18) 0%, transparent 70%);
       pointer-events: none;
     }
+
+    .hero-inner {
+      position: relative;
+      z-index: 1;
+      width: min(1320px, 100%);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(360px, 0.82fr) minmax(520px, 1.18fr);
+      align-items: center;
+      gap: clamp(34px, 5vw, 76px);
+    }
+
+    .hero-copy { text-align: left; }
 
     .hero-badge {
       display: inline-block;
@@ -156,15 +168,15 @@
     .hero-subtitle {
       font-size: 1.125rem;
       color: var(--text-secondary);
-      max-width: 560px;
-      margin: 0 auto 36px;
+      max-width: 590px;
+      margin: 0 0 36px;
       font-weight: 400;
     }
 
     .hero-actions {
       display: flex;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       gap: 12px;
       flex-wrap: wrap;
     }
@@ -224,6 +236,36 @@
       font-weight: 700;
       border-radius: 50%;
       flex-shrink: 0;
+    }
+
+    .hero-art {
+      position: relative;
+      min-width: 0;
+      aspect-ratio: 1.2 / 1;
+      overflow: hidden;
+      border: 1px solid rgba(135, 222, 241, 0.7);
+      border-radius: 28px;
+      background: #ffffff;
+      box-shadow: 0 28px 80px rgba(0, 88, 222, 0.16);
+      isolation: isolate;
+    }
+
+    .hero-art::after {
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.64);
+      content: '';
+      pointer-events: none;
+    }
+
+    .hero-art img {
+      width: 178%;
+      max-width: none;
+      height: 100%;
+      object-fit: cover;
+      object-position: right center;
+      transform: translateX(-43.8%);
     }
 
     /* ── APP PREVIEW / FEATURE GRID ── */
@@ -434,10 +476,21 @@
     }
 
     /* ── Responsive ── */
+    @media (max-width: 980px) {
+      .hero-inner { grid-template-columns: 1fr; }
+      .hero-copy { text-align: center; }
+      .hero-subtitle { margin-right: auto; margin-left: auto; }
+      .hero-actions { justify-content: center; }
+      .hero-art { width: min(760px, 100%); margin: 0 auto; aspect-ratio: 16 / 9; }
+      .hero-art img { width: 100%; transform: none; object-fit: cover; object-position: center; }
+    }
+
     @media (max-width: 640px) {
       nav { padding: 0 20px; }
       .nav-links { display: none; }
-      .hero { padding: 64px 20px 56px; }
+      .hero { padding: 56px 20px 52px; }
+      .hero-inner { gap: 34px; }
+      .hero-art { border-radius: 20px; }
       .features, .how-it-works, .cta-section { padding: 60px 20px; }
       .steps { flex-direction: column; gap: 32px; }
       .steps::before { display: none; }
@@ -462,7 +515,7 @@
       nav > div { gap: 8px !important; }
       .nav-cta { padding: 9px 14px; }
       .lang-btn { padding-inline: 9px; }
-      .hero { padding: 68px 16px 52px; }
+      .hero { padding: 52px 16px 48px; }
       .hero h1 { font-size: clamp(2rem, 10vw, 2.55rem); }
       .hero-subtitle { font-size: 1rem; }
       .hero-actions { width: min(100%, 300px); margin-inline: auto; }
@@ -482,7 +535,7 @@
 <!-- NAV -->
 <nav>
   <a class="nav-brand" href="/">
-    <img class="nav-logo" src="/img/logo.png" alt="Flowmate AI" width="36" height="36">
+    <img class="nav-logo" src="/img/logo.png?v=20261006-brand" alt="Flowmate AI" width="36" height="36">
     <span class="nav-brand-text">Flowmate AI</span>
   </a>
 
@@ -507,6 +560,8 @@
 
 <!-- HERO -->
 <section class="hero">
+  <div class="hero-inner">
+    <div class="hero-copy">
   <div class="hero-badge">
     <span data-lang="en">AI-Powered Workspace</span>
     <span data-lang="vi">Không gian làm việc AI</span>
@@ -533,6 +588,12 @@
       <span data-lang="vi">Tìm hiểu thêm</span>
       &darr;
     </a>
+    </div>
+    </div>
+
+    <div class="hero-art" aria-label="Flowmate AI kết nối email, lịch và công việc trong một không gian">
+      <img src="/img/flowmate-workspace-hero.png?v=20261006-brand" alt="Flowmate AI — email, lịch và công việc trong một không gian AI" width="1920" height="1080">
+    </div>
   </div>
 </section>
 
@@ -638,7 +699,7 @@
 <!-- FOOTER -->
 <footer>
   <div class="footer-brand">
-    <img src="/img/logo.png" alt="" width="28" height="28">
+    <img src="/img/logo.png?v=20261006-brand" alt="" width="28" height="28">
     Flowmate AI
   </div>
   <ul class="footer-links">

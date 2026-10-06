@@ -5,9 +5,9 @@
     --text: #173042;
     --text-secondary: #587181;
     --border: #cbe7ec;
-    --primary: #0b5ed7;
-    --primary-dark: #0847a6;
-    --accent: #167d91;
+    --primary: #0058de;
+    --primary-dark: #0046b8;
+    --accent: #0d91a7;
     --warning: #a56800;
     --danger: #dc2626;
     --success: #4f7d1c;
@@ -345,7 +345,7 @@ body.workspace-ready .workspace-app {
     min-height: 52px;
     margin-top: 4px;
     border-radius: 13px;
-    background: linear-gradient(135deg, #82d6e5, #0b5ed7 55%, #8bc34a);
+    background: linear-gradient(135deg, #87def1, #0058de 55%, #8bc24b);
     box-shadow: 0 10px 26px rgba(11, 94, 215, .28);
     color: #fff;
     cursor: pointer;
@@ -782,7 +782,7 @@ button {
 }
 
 .menu-toggle:hover {
-    background: #0b5ed7;
+    background: #0058de;
     transform: translateY(-1px);
 }
 
@@ -806,7 +806,7 @@ button {
 .user-mode-picker label {
     display: block;
     margin-bottom: 7px;
-    color: #82d6e5;
+    color: #87def1;
     font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.06em;
@@ -832,7 +832,7 @@ button {
     width: 38px;
     height: 38px;
     border-radius: 11px;
-    background: #0b5ed7;
+    background: #0058de;
     color: #fff;
     font-size: 11px;
     font-weight: 900;
@@ -855,7 +855,7 @@ button {
 }
 
 .user-mode-chevron {
-    color: #82d6e5;
+    color: #87def1;
     font-size: 24px;
 }
 
@@ -1577,7 +1577,7 @@ button {
     padding: 10px 14px;
     border: 1px solid rgba(99, 102, 241, 0.24);
     border-radius: 8px;
-    background: linear-gradient(135deg, #0847a6, #0b5ed7);
+    background: linear-gradient(135deg, #0046b8, #0058de);
     color: #ffffff;
     text-align: left;
     box-shadow: 0 12px 26px rgba(37, 99, 235, 0.22);
@@ -4817,7 +4817,7 @@ select:focus {
     width: 40px;
     height: 40px;
     border-radius: 12px;
-    background: linear-gradient(135deg, #82d6e5 0%, #0b5ed7 50%, #8bc34a 76%, #f6c667 100%);
+    background: linear-gradient(135deg, #87def1 0%, #0058de 50%, #8bc24b 76%, #f4c364 100%);
     color: #fff;
     box-shadow: 0 8px 20px rgba(11, 94, 215, 0.30);
 }
@@ -5003,8 +5003,8 @@ select:focus {
 
 /* FlowMate schedule shell */
 :root {
-    --primary: #0b5ed7;
-    --primary-dark: #0847a6;
+    --primary: #0058de;
+    --primary-dark: #0046b8;
     --bg: #f4fafb;
     --border: #cbe7ec;
     --text: #173042;
@@ -5069,7 +5069,7 @@ body {
 
 .brand-mark {
     border-radius: 12px;
-    background: linear-gradient(135deg, #82d6e5 0%, #0b5ed7 50%, #8bc34a 76%, #f6c667 100%);
+    background: linear-gradient(135deg, #87def1 0%, #0058de 50%, #8bc24b 76%, #f4c364 100%);
     box-shadow: 0 6px 18px rgba(11, 94, 215, 0.28);
 }
 
@@ -6974,9 +6974,9 @@ body.dark-theme .daily-report-badge.is-meeting {
     --text-secondary: #587181;
     --muted: #78939d;
     --border: #cbe7ec;
-    --primary: #0b5ed7;
-    --primary-dark: #0847a6;
-    --accent: #167d91;
+    --primary: #0058de;
+    --primary-dark: #0046b8;
+    --accent: #0d91a7;
     --warning: #a56800;
     --danger: #dc2626;
     --success: #4f7d1c;
@@ -8309,7 +8309,7 @@ body.dark-theme .overview-checklist-source {
     padding: 3px 9px;
     border-radius: 999px;
     background: var(--primary-soft, rgba(130, 214, 229, 0.2));
-    color: var(--primary, #0b5ed7);
+    color: var(--primary, #0058de);
     font-size: 11px;
     font-weight: 600;
 }
@@ -9037,12 +9037,12 @@ body.dark-theme .schedule-source-badge.local-unsynced {
 /* Unified FlowMate UI — shared visual language with the Android app. */
 .brand-mark {
     border-radius: 13px;
-    background: linear-gradient(145deg, #82d6e5 0%, #0b5ed7 48%, #8bc34a 76%, #f6c667 100%);
+    background: linear-gradient(145deg, #87def1 0%, #0058de 48%, #8bc24b 76%, #f4c364 100%);
     box-shadow: 0 10px 24px rgba(11, 94, 215, 0.24);
 }
 
 .sidebar {
-    background: color-mix(in srgb, var(--panel) 96%, #82d6e5 4%);
+    background: color-mix(in srgb, var(--panel) 96%, #87def1 4%);
 }
 
 .sidebar-new-chat-btn {
@@ -9650,7 +9650,7 @@ body,
     gap: 7px;
     min-height: 38px;
     padding: 8px 13px;
-    border: 1px solid #82d6e5;
+    border: 1px solid #87def1;
     border-radius: 999px;
     background: linear-gradient(135deg, #f5f3ff, #eff6ff);
     color: #5b21b6;
@@ -10118,7 +10118,7 @@ body.dark-theme .subscription-modal-close {
 }
 
 .subscription-compare-card:hover {
-    border-color: #82d6e5;
+    border-color: #87def1;
     transform: translateY(-2px);
 }
 
@@ -10261,7 +10261,7 @@ body.dark-theme .subscription-modal-close {
     gap: 16px;
     margin-bottom: 20px;
     padding: 16px;
-    border: 1px solid #82d6e5;
+    border: 1px solid #87def1;
     border-radius: 14px;
     background: #f5f3ff;
 }
@@ -10721,7 +10721,7 @@ body.dark-theme .subscription-compare-card.current {
     body.dark-theme .sidebar-nav::before {
         border-color: rgba(129, 113, 253, 0.24);
         background: linear-gradient(135deg, rgba(129, 113, 253, 0.22), rgba(85, 190, 254, 0.10));
-        box-shadow: inset 3px 0 0 #82d6e5, 0 9px 24px rgba(0, 0, 0, 0.18);
+        box-shadow: inset 3px 0 0 #87def1, 0 9px 24px rgba(0, 0, 0, 0.18);
     }
 }
 

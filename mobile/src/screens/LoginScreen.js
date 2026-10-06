@@ -288,7 +288,7 @@ function makeStyles(colors) {
     orb: {
       width: 64,
       height: 64,
-      shadowColor: '#0B5ED7',
+      shadowColor: '#0058DE',
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.4,
       shadowRadius: 16,
