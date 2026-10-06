@@ -35,10 +35,18 @@
       <div>
         <p class="eyebrow">QUYỀN QUẢN TRỊ</p>
         <h2>Đăng nhập để xem dữ liệu server</h2>
-        <p>Chỉ tài khoản Google nằm trong <code>ADMIN_EMAILS</code> mới được đi tiếp đến bước xác thực thứ hai.</p>
+        <p>Chỉ tài khoản FlowMate nằm trong <code>ADMIN_EMAILS</code> mới được đi tiếp đến bước xác thực thứ hai.</p>
       </div>
       <div class="auth-actions">
-        <button id="googleLoginButton" class="button primary" type="button">Đăng nhập Google</button>
+        <label>
+          <span>Email</span>
+          <input id="adminEmailInput" type="email" autocomplete="username" placeholder="admin@flowmate.ai">
+        </label>
+        <label>
+          <span>Mật khẩu</span>
+          <input id="adminPasswordInput" type="password" autocomplete="current-password" placeholder="••••••••">
+        </label>
+        <button id="adminLoginButton" class="button primary" type="button">Đăng nhập</button>
       </div>
       <p id="authError" class="error-text"></p>
     </section>
@@ -63,7 +71,7 @@
       <div>
         <p class="eyebrow">TRUY CẬP BỊ TỪ CHỐI</p>
         <h2>Tài khoản này không có quyền quản trị</h2>
-        <p>Dashboard chỉ dành cho tài khoản Google có trong <code>ADMIN_EMAILS</code>. Nếu bạn cho rằng đây là nhầm lẫn, hãy liên hệ chủ server.</p>
+        <p>Dashboard chỉ dành cho tài khoản FlowMate có email trong <code>ADMIN_EMAILS</code>. Nếu bạn cho rằng đây là nhầm lẫn, hãy liên hệ chủ server.</p>
       </div>
       <div class="auth-actions">
         <a class="button ghost" href="/app?admin_destination=app">Quay lại ứng dụng</a>

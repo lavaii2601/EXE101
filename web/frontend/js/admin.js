@@ -153,11 +153,11 @@ function setConnection(kind, text) {
 
 function showGate(name, message = '') {
   $('dashboard').classList.add('hidden');
-  $('authPanel').classList.toggle('hidden', name !== 'google');
+  $('authPanel').classList.toggle('hidden', name !== 'login');
   $('totpPanel').classList.toggle('hidden', name !== 'totp');
   $('accessDeniedPanel').classList.toggle('hidden', name !== 'denied');
   $('adminLogoutButton').classList.add('hidden');
-  if (name === 'google') $('authError').textContent = message;
+  if (name === 'login') $('authError').textContent = message;
   if (name === 'totp') {
     $('totpError').textContent = message;
     setTimeout(() => $('totpInput').focus(), 0);
@@ -228,7 +228,7 @@ function handleAdminGate(error) {
     return true;
   }
   if (code === 'admin_google_login_required' || code === 'admin_not_configured' || error.status === 401) {
-    showGate('google', error.message);
+    showGate('login', error.message);
     setConnection('offline', code === 'admin_not_configured' ? 'Admin đang khóa' : 'Cần đăng nhập');
     return true;
   }
@@ -1121,7 +1121,7 @@ async function loadDashboard() {
     setConnection('online', 'Admin đã xác thực');
   } catch (error) {
     if (!handleAdminGate(error)) {
-      showGate('google', error.message);
+      showGate('login', error.message);
       setConnection('offline', 'Không tải được dashboard');
     }
   } finally {
@@ -1129,15 +1129,23 @@ async function loadDashboard() {
   }
 }
 
-async function loginWithGoogle() {
+async function loginWithPassword() {
   $('authError').textContent = '';
+  const email = $('adminEmailInput').value.trim();
+  const password = $('adminPasswordInput').value;
+  if (!email || !password) {
+    $('authError').textContent = 'Nhập email và mật khẩu.';
+    return;
+  }
+  $('adminLoginButton').disabled = true;
   try {
-    const response = await fetch('/api/email/auth_url?next=/admin/login', { credentials: 'include' });
-    const data = await response.json();
-    if (!response.ok || !data.auth_url) throw new Error(data.error || 'Không tạo được liên kết Google OAuth.');
-    window.location.assign(data.auth_url);
+    await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+    $('adminPasswordInput').value = '';
+    await loadDashboard();
   } catch (error) {
     $('authError').textContent = error.message;
+  } finally {
+    $('adminLoginButton').disabled = false;
   }
 }
 
@@ -1298,7 +1306,10 @@ function updateRefreshCountdown() {
 }
 
 $('refreshButton').addEventListener('click', refreshActiveTab);
-$('googleLoginButton').addEventListener('click', loginWithGoogle);
+$('adminLoginButton').addEventListener('click', loginWithPassword);
+$('adminPasswordInput').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') loginWithPassword();
+});
 $('totpVerifyButton').addEventListener('click', verifyTotp);
 $('adminLogoutButton').addEventListener('click', lockDashboard);
 $('financeCurrency').addEventListener('change', rerenderFinanceCurrency);

@@ -178,7 +178,7 @@ def _google_admin_identity():
         return None, (
             jsonify({
                 'error': 'admin_google_login_required',
-                'message': 'Đăng nhập Google bằng tài khoản quản trị để tiếp tục.',
+                'message': 'Đăng nhập bằng tài khoản quản trị để tiếp tục.',
             }),
             401,
         )
