@@ -533,6 +533,13 @@ ALTER TABLE users
 ALTER TABLE oauth_states
     ADD COLUMN IF NOT EXISTS mobile_code_challenge TEXT;
 
+-- oauth_states already existed in production before intent=link/recover was
+-- added, so the inline column in the CREATE TABLE IF NOT EXISTS block above
+-- is a no-op there -- it must also be added explicitly here, the same way
+-- mobile_code_challenge was.
+ALTER TABLE oauth_states
+    ADD COLUMN IF NOT EXISTS link_user_id TEXT;
+
 DO $$
 BEGIN
     IF NOT EXISTS (
