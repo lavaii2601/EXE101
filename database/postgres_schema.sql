@@ -103,18 +103,27 @@ CREATE TABLE IF NOT EXISTS user_identities (
     PRIMARY KEY (provider, subject)
 );
 
+-- One row per linked Google account (user_id, provider, account_email) --
+-- not one per (user_id, provider) -- so a FlowMate account can hold several
+-- Gmail/Calendar connections at once. is_active marks which one the
+-- "active slot" (utils/user_context.py's single local token-cache file)
+-- currently materializes; the partial unique index below enforces at most
+-- one active, non-revoked row per user+provider at the database level.
 CREATE TABLE IF NOT EXISTS oauth_tokens (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     provider TEXT NOT NULL DEFAULT 'google',
     account_email TEXT,
+    account_name TEXT,
+    account_picture TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
     token_json JSONB NOT NULL,
     scopes TEXT[] NOT NULL DEFAULT '{}',
     expires_at TIMESTAMPTZ,
     revoked_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT oauth_tokens_user_provider_unique UNIQUE (user_id, provider)
+    CONSTRAINT oauth_tokens_user_provider_email_unique UNIQUE (user_id, provider, account_email)
 );
 
 -- One TOTP secret per admin email, replacing a single secret shared by
@@ -189,6 +198,12 @@ CREATE TABLE IF NOT EXISTS schedules (
     calendar_event_link TEXT,
     calendar_synced_at TIMESTAMPTZ,
     calendar_sync_error TEXT,
+    -- Which linked Google account (oauth_tokens.account_email) calendar_event_id
+    -- belongs to, so a sync call never mutates/deletes an event through a
+    -- credential for a *different* now-active account than the one that
+    -- created it. NULL means "created before multi-account support" --
+    -- treated as belonging to whichever account is active (see gcal_sync.py).
+    calendar_source_account_email TEXT,
 
     status schedule_status NOT NULL DEFAULT 'pending',
     metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
@@ -217,6 +232,10 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     etag TEXT,
     google_updated_at TIMESTAMPTZ,
     raw_event JSONB NOT NULL DEFAULT '{}'::JSONB,
+    -- Which linked Google account (oauth_tokens.account_email) this cached
+    -- event was fetched from, so list views can scope to the currently
+    -- active account instead of mixing rows from every mailbox ever linked.
+    source_account_email TEXT,
 
     fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -539,6 +558,41 @@ ALTER TABLE oauth_states
 -- mobile_code_challenge was.
 ALTER TABLE oauth_states
     ADD COLUMN IF NOT EXISTS link_user_id TEXT;
+
+-- Multi-account linking (same reasoning as link_user_id above: oauth_tokens/
+-- calendar_events/schedules already exist in production, so the inline
+-- columns in their CREATE TABLE IF NOT EXISTS blocks are no-ops there).
+ALTER TABLE oauth_tokens
+    ADD COLUMN IF NOT EXISTS account_name TEXT,
+    ADD COLUMN IF NOT EXISTS account_picture TEXT,
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+
+ALTER TABLE oauth_tokens DROP CONSTRAINT IF EXISTS oauth_tokens_user_provider_unique;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'oauth_tokens_user_provider_email_unique'
+    ) THEN
+        ALTER TABLE oauth_tokens
+            ADD CONSTRAINT oauth_tokens_user_provider_email_unique
+            UNIQUE (user_id, provider, account_email);
+    END IF;
+END;
+$$;
+
+-- Enforces at most one active, non-revoked token per user+provider --
+-- the database-level backstop for the "deactivate every sibling, then
+-- activate the target" transaction in persist_google_credentials/
+-- activate_google_account (utils/user_context.py).
+CREATE UNIQUE INDEX IF NOT EXISTS oauth_tokens_one_active_per_user_provider
+    ON oauth_tokens (user_id, provider) WHERE is_active AND revoked_at IS NULL;
+
+ALTER TABLE calendar_events
+    ADD COLUMN IF NOT EXISTS source_account_email TEXT;
+
+ALTER TABLE schedules
+    ADD COLUMN IF NOT EXISTS calendar_source_account_email TEXT;
 
 DO $$
 BEGIN
