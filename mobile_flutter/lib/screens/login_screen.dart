@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../api/auth_api.dart';
 import '../api/google_auth.dart';
 import '../api/session.dart';
+import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
 import '../theme/app_theme.dart';
@@ -21,7 +22,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool isSignup = false;
   bool showPassword = false;
   bool submitting = false;
-  bool googleSubmitting = false;
+  bool recovering = false;
 
   final nameController = TextEditingController();
   final emailController = TextEditingController();
@@ -85,21 +86,28 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _handleGoogleSignIn() async {
+  // Google is no longer a login method on its own -- this is the one-time
+  // bridge for an account that only ever signed in via Google (no password
+  // set yet) to regain access. It never creates a new account; see
+  // oauth2callback's intent=recover branch.
+  Future<void> _handleRecoverViaGoogle() async {
     final t = context.read<LanguageController>().t;
     final appLinks = context.read<AppLinks>();
-    setState(() => googleSubmitting = true);
+    setState(() => recovering = true);
     try {
-      final result = await connectGoogleAccount(appLinks);
+      final result = await connectGoogleAccount(appLinks, intent: 'recover');
       if (result.connected) {
+        if (result.needsPassword && mounted) {
+          context.read<AppState>().markNeedsPassword();
+        }
         widget.onLoggedIn();
       }
     } catch (error) {
       if (mounted) {
-        _showMessage(t('Không đăng nhập được', 'Sign-in failed'), error.toString());
+        _showMessage(t('Không khôi phục được', 'Recovery failed'), error.toString());
       }
     } finally {
-      if (mounted) setState(() => googleSubmitting = false);
+      if (mounted) setState(() => recovering = false);
     }
   }
 
@@ -216,25 +224,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: _handleSubmit,
                       loading: submitting,
                     ),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        Expanded(child: Divider(color: colors.border)),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          child: Text(t('HOẶC TIẾP TỤC VỚI', 'OR CONTINUE WITH'),
-                              style: TextStyle(color: colors.textMuted, fontSize: 11, letterSpacing: 0.4)),
-                        ),
-                        Expanded(child: Divider(color: colors.border)),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    AppButton(
-                      title: 'Google',
-                      variant: AppButtonVariant.secondary,
-                      onPressed: _handleGoogleSignIn,
-                      loading: googleSubmitting,
-                    ),
                     const SizedBox(height: 20),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -252,6 +241,20 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ],
                     ),
+                    if (!isSignup) ...[
+                      const SizedBox(height: 14),
+                      TextButton(
+                        onPressed: recovering ? null : _handleRecoverViaGoogle,
+                        child: Text(
+                          recovering
+                              ? t('Đang khôi phục...', 'Recovering...')
+                              : t('Từng đăng nhập bằng Google? Khôi phục tài khoản',
+                                  'Previously signed in with Google? Recover your account'),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: colors.textMuted, fontSize: 11.5, decoration: TextDecoration.underline),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

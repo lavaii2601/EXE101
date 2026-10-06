@@ -21,24 +21,27 @@ def _missing_state():
         "code_verifier": None,
         "mobile": False,
         "mobile_code_challenge": None,
+        "link_user_id": None,
     }
 
 
-def _issued_mobile_state():
+def _issued_mobile_state(link_user_id=None):
     return {
         "found": True,
         "code_verifier": "verifier",
         "mobile": True,
         "mobile_code_challenge": None,
+        "link_user_id": link_user_id,
     }
 
 
-def _issued_mobile_state_with_challenge(challenge):
+def _issued_mobile_state_with_challenge(challenge, link_user_id=None):
     return {
         "found": True,
         "code_verifier": "verifier",
         "mobile": True,
         "mobile_code_challenge": challenge,
+        "link_user_id": link_user_id,
     }
 
 
@@ -130,10 +133,15 @@ class OAuthStateSecurityTests(unittest.TestCase):
         self.assertEqual("one-time-verifier", first["code_verifier"])
         self.assertEqual(_missing_state(), replay)
 
-    def _mock_successful_google_exchange(self):
+    def _mock_successful_google_exchange(self, existing_owner="mobile-user"):
         """Patches applied by every test that needs oauth2callback to reach
         its success path (past flow.fetch_token) instead of short-circuiting
-        early like the tests above."""
+        early like the tests above.
+
+        existing_owner is what lookup_google_identity_owner resolves to --
+        i.e. this Google identity is already linked to that FlowMate user.
+        None simulates a Google identity nobody has ever linked before.
+        """
         flow = MagicMock()
         flow.credentials = MagicMock()
         gmail_service = MagicMock()
@@ -145,7 +153,8 @@ class OAuthStateSecurityTests(unittest.TestCase):
             patch.object(email_route.oauth, "build", return_value=gmail_service),
             patch.object(email_route.oauth, "_fetch_google_userinfo", return_value={}),
             patch.object(email_route.oauth, "_fetch_google_people_profile", return_value={}),
-            patch.object(email_route.oauth, "resolve_google_user_id", return_value="mobile-user"),
+            patch.object(email_route.oauth, "lookup_google_identity_owner", return_value=existing_owner),
+            patch.object(email_route.oauth, "upsert_google_identity"),
             patch.object(email_route.oauth, "persist_google_credentials", return_value="/tmp/token"),
             patch.object(email_route.oauth, "get_user_db_path", return_value="/tmp/mobile-user.db"),
             patch.object(email_route.oauth.User, "get_or_create", return_value={}),
@@ -311,7 +320,7 @@ class MobilePkceExchangeTests(unittest.TestCase):
         with patch.object(email_route.oauth, "_build_oauth_flow", return_value=flow), \
              patch.object(email_route.oauth, "_get_flow_code_verifier", return_value=None):
             response = self.client.get(
-                "/api/email/auth_url?platform=mobile&code_challenge=" + ("a" * 43)
+                "/api/email/auth_url?intent=recover&platform=mobile&code_challenge=" + ("a" * 43)
             )
 
         self.assertEqual(200, response.status_code)
@@ -324,12 +333,183 @@ class MobilePkceExchangeTests(unittest.TestCase):
         with patch.object(email_route.oauth, "_build_oauth_flow", return_value=flow), \
              patch.object(email_route.oauth, "_get_flow_code_verifier", return_value=None):
             response = self.client.get(
-                "/api/email/auth_url?platform=mobile&code_challenge=too-short"
+                "/api/email/auth_url?intent=recover&platform=mobile&code_challenge=too-short"
             )
 
         self.assertEqual(200, response.status_code)
         state = email_route.oauth._consume_oauth_state("state-456")
         self.assertIsNone(state["mobile_code_challenge"])
+
+
+class OAuthIntentGatingTests(unittest.TestCase):
+    """Google OAuth is no longer a login mechanism on its own: /auth_url and
+    /auth require an explicit intent, 'link' requires an existing FlowMate
+    session, and oauth2callback must never mint a new account for 'recover'
+    (only resolve to one that already linked this Google identity)."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(TESTING=True, SECRET_KEY="test-secret")
+        self.app.register_blueprint(email_route.email_bp)
+        self.client = self.app.test_client()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.pg_patch = patch.object(email_route.oauth.pg, "enabled", return_value=False)
+        self.pg_patch.start()
+        self.data_dir_patch = patch.object(email_route.Config, "DATA_DIR", self.temp_dir.name)
+        self.data_dir_patch.start()
+
+    def tearDown(self):
+        self.data_dir_patch.stop()
+        self.pg_patch.stop()
+        self.temp_dir.cleanup()
+
+    def _mock_flow(self, state="state-xyz"):
+        flow = MagicMock()
+        flow.authorization_url.return_value = ("https://accounts.google.com/o/oauth2/auth", state)
+        return flow
+
+    def test_auth_url_rejects_a_missing_or_unknown_intent(self):
+        response = self.client.get("/api/email/auth_url")
+        self.assertEqual(400, response.status_code)
+        self.assertEqual("invalid_intent", response.get_json()["error"])
+
+        response = self.client.get("/api/email/auth_url?intent=login")
+        self.assertEqual(400, response.status_code)
+        self.assertEqual("invalid_intent", response.get_json()["error"])
+
+    def test_auth_url_link_requires_an_existing_session(self):
+        with patch.object(email_route.oauth, "authenticated_user_id", return_value=None):
+            response = self.client.get("/api/email/auth_url?intent=link")
+        self.assertEqual(401, response.status_code)
+        self.assertEqual("login_required", response.get_json()["error"])
+
+    def test_auth_url_link_stores_the_current_user_as_link_user_id(self):
+        flow = self._mock_flow("state-link-1")
+        with patch.object(email_route.oauth, "_build_oauth_flow", return_value=flow), \
+             patch.object(email_route.oauth, "_get_flow_code_verifier", return_value=None), \
+             patch.object(email_route.oauth, "authenticated_user_id", return_value="alice"):
+            response = self.client.get("/api/email/auth_url?intent=link")
+
+        self.assertEqual(200, response.status_code)
+        state = email_route.oauth._consume_oauth_state("state-link-1")
+        self.assertEqual("alice", state["link_user_id"])
+
+    def test_auth_url_recover_does_not_require_a_session(self):
+        flow = self._mock_flow("state-recover-1")
+        with patch.object(email_route.oauth, "_build_oauth_flow", return_value=flow), \
+             patch.object(email_route.oauth, "_get_flow_code_verifier", return_value=None):
+            response = self.client.get("/api/email/auth_url?intent=recover")
+        self.assertEqual(200, response.status_code)
+        state = email_route.oauth._consume_oauth_state("state-recover-1")
+        self.assertIsNone(state["link_user_id"])
+
+    def _mock_successful_exchange(self, existing_owner, existing_user=None):
+        flow = MagicMock()
+        flow.credentials = MagicMock()
+        gmail_service = MagicMock()
+        gmail_service.users.return_value.getProfile.return_value.execute.return_value = {
+            "emailAddress": "person@example.com"
+        }
+        return [
+            patch.object(email_route.oauth, "_build_oauth_flow", return_value=flow),
+            patch.object(email_route.oauth, "build", return_value=gmail_service),
+            patch.object(email_route.oauth, "_fetch_google_userinfo", return_value={}),
+            patch.object(email_route.oauth, "_fetch_google_people_profile", return_value={}),
+            patch.object(email_route.oauth, "lookup_google_identity_owner", return_value=existing_owner),
+            patch.object(email_route.oauth, "upsert_google_identity"),
+            patch.object(email_route.oauth, "persist_google_credentials", return_value="/tmp/token"),
+            patch.object(email_route.oauth, "get_user_db_path", return_value="/tmp/u.db"),
+            patch.object(email_route.oauth.User, "get_or_create", return_value=existing_user or {}),
+            patch.object(email_route.oauth.User, "update"),
+            patch.object(email_route.oauth.Schedule, "init_db"),
+            patch.object(email_route.oauth.History, "init_db"),
+            patch.object(email_route.oauth.Cache, "clear_pattern"),
+        ]
+
+    def test_callback_rejects_linking_a_google_account_already_owned_by_someone_else(self):
+        patches = self._mock_successful_exchange(existing_owner="bob")
+        with patch.object(
+            email_route.oauth, "_consume_oauth_state",
+            return_value=_issued_mobile_state(link_user_id="alice"),
+        ):
+            for p in patches:
+                p.start()
+            try:
+                response = self.client.get("/api/email/oauth2callback?state=s&code=fake")
+            finally:
+                for p in patches:
+                    p.stop()
+        self.assertEqual(409, response.status_code)
+        self.assertEqual("google_account_already_linked_elsewhere", response.get_json()["error"])
+
+    def test_callback_link_succeeds_when_unowned_or_owned_by_the_same_user(self):
+        for existing_owner in (None, "alice"):
+            patches = self._mock_successful_exchange(existing_owner=existing_owner)
+            with patch.object(
+                email_route.oauth, "_consume_oauth_state",
+                return_value=_issued_mobile_state(link_user_id="alice"),
+            ), patch.object(email_route.oauth, "issue_mobile_token", return_value="tok"):
+                for p in patches:
+                    p.start()
+                try:
+                    response = self.client.get("/api/email/oauth2callback?state=s&code=fake")
+                finally:
+                    for p in patches:
+                        p.stop()
+            self.assertEqual(302, response.status_code, msg=f"existing_owner={existing_owner!r}")
+            self.assertIn("access_token=", response.headers["Location"])
+
+    def test_callback_recover_rejects_a_google_identity_nobody_ever_linked(self):
+        """Recovery must never mint a new account -- that would silently
+        reintroduce Google-as-signup."""
+        patches = self._mock_successful_exchange(existing_owner=None)
+        with patch.object(
+            email_route.oauth, "_consume_oauth_state",
+            return_value=_issued_mobile_state(link_user_id=None),
+        ):
+            for p in patches:
+                p.start()
+            try:
+                response = self.client.get("/api/email/oauth2callback?state=s&code=fake")
+            finally:
+                for p in patches:
+                    p.stop()
+        self.assertEqual(404, response.status_code)
+        self.assertEqual("no_flowmate_account_for_google_identity", response.get_json()["error"])
+
+    def test_callback_recover_succeeds_for_a_previously_linked_identity(self):
+        patches = self._mock_successful_exchange(existing_owner="alice")
+        with patch.object(
+            email_route.oauth, "_consume_oauth_state",
+            return_value=_issued_mobile_state(link_user_id=None),
+        ), patch.object(email_route.oauth, "issue_mobile_token", return_value="tok"):
+            for p in patches:
+                p.start()
+            try:
+                response = self.client.get("/api/email/oauth2callback?state=s&code=fake")
+            finally:
+                for p in patches:
+                    p.stop()
+        self.assertEqual(302, response.status_code)
+        self.assertIn("access_token=", response.headers["Location"])
+
+    def test_callback_flags_needs_password_for_an_account_with_no_password_set(self):
+        patches = self._mock_successful_exchange(
+            existing_owner="alice", existing_user={"password_hash": None},
+        )
+        with patch.object(
+            email_route.oauth, "_consume_oauth_state",
+            return_value=_issued_mobile_state(link_user_id=None),
+        ), patch.object(email_route.oauth, "issue_mobile_token", return_value="tok"):
+            for p in patches:
+                p.start()
+            try:
+                response = self.client.get("/api/email/oauth2callback?state=s&code=fake")
+            finally:
+                for p in patches:
+                    p.stop()
+        self.assertEqual(302, response.status_code)
+        self.assertIn("needs_password=1", response.headers["Location"])
 
 
 if __name__ == "__main__":

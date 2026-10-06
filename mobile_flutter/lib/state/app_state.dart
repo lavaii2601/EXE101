@@ -61,6 +61,11 @@ class AppState extends ChangeNotifier {
 
   Future<void> get bootstrapCompleted => _bootstrapCompleter.future;
   bool? isAuthenticated; // null = not checked yet
+  // Set when a Google "recover" flow established a session for an account
+  // that never had a password (see api/google_auth.dart's needsPassword).
+  // _RootFlow shows a blocking SetPasswordScreen instead of MainShell while
+  // this is true -- there is no permanent skip.
+  bool needsPassword = false;
   Map<String, dynamic>? profile;
   Map<String, dynamic>? status;
   String? userMode;
@@ -310,12 +315,23 @@ class AppState extends ChangeNotifier {
     await refreshShell();
   }
 
+  void markNeedsPassword() {
+    needsPassword = true;
+    notifyListeners();
+  }
+
+  void clearNeedsPassword() {
+    needsPassword = false;
+    notifyListeners();
+  }
+
   Future<void> logout() async {
     await clearPersistedSession();
     profile = null;
     status = null;
     userMode = null;
     isAuthenticated = false;
+    needsPassword = false;
     notifyListeners();
   }
 }

@@ -5,7 +5,7 @@ import Button from '../components/Button';
 import { radius, useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { connectGoogleAccount } from '../api/googleAuth';
-import { loginWithEmail, registerWithEmail } from '../api/emailAuth';
+import { loginWithEmail, registerWithEmail, setPassword as setPasswordApi } from '../api/emailAuth';
 
 function InputRow({ icon, styles, colors, right, ...inputProps }) {
   return (
@@ -32,22 +32,49 @@ export default function LoginScreen({ onLoggedIn }) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [signingIn, setSigningIn] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [settingPassword, setSettingPassword] = useState(false);
   const isSignup = mode === 'signup';
 
-  const handleSignIn = async () => {
-    setSigningIn(true);
+  // Google is no longer a login method on its own -- this is the one-time
+  // bridge for an account that only ever signed in via Google (no password
+  // set yet) to regain access. It never creates a new account; see
+  // oauth2callback's intent=recover branch.
+  const handleRecoverViaGoogle = async () => {
+    setRecovering(true);
     try {
-      const result = await connectGoogleAccount();
+      const result = await connectGoogleAccount('recover');
       if (result.connected) {
-        onLoggedIn?.();
+        if (result.needsPassword) {
+          setNeedsPassword(true);
+        } else {
+          onLoggedIn?.();
+        }
       }
       // result.cancelled (user closed the browser) -- stay on this screen
       // quietly, no error to show.
     } catch (error) {
-      Alert.alert(t('Không đăng nhập được', 'Sign-in failed'), error.message);
+      Alert.alert(t('Không khôi phục được', 'Recovery failed'), error.message);
     } finally {
-      setSigningIn(false);
+      setRecovering(false);
+    }
+  };
+
+  const handleSetPassword = async () => {
+    if (newPassword.length < 8) {
+      Alert.alert(t('Mật khẩu quá ngắn', 'Password too short'), t('Mật khẩu phải có ít nhất 8 ký tự.', 'Password must be at least 8 characters.'));
+      return;
+    }
+    setSettingPassword(true);
+    try {
+      await setPasswordApi(newPassword);
+      onLoggedIn?.();
+    } catch (error) {
+      Alert.alert(t('Không lưu được mật khẩu', 'Could not save password'), error.data?.message || error.message);
+    } finally {
+      setSettingPassword(false);
     }
   };
 
@@ -93,6 +120,45 @@ export default function LoginScreen({ onLoggedIn }) {
       )
     );
   };
+
+  if (needsPassword) {
+    return (
+      <ScrollView style={styles.root} contentContainerStyle={styles.body}>
+        <Text style={styles.brand}>FlowMate AI</Text>
+        <View style={styles.card}>
+          <Image source={require('../../assets/logo.png')} style={styles.orb} resizeMode="contain" />
+          <Text style={styles.title}>{t('Đặt mật khẩu cho tài khoản', 'Set an account password')}</Text>
+          <Text style={styles.subtitle}>
+            {t(
+              'Tài khoản này trước đây chỉ đăng nhập bằng Google. Hãy đặt một mật khẩu FlowMate để đăng nhập trực tiếp từ lần sau.',
+              'This account previously only signed in via Google. Set a FlowMate password to sign in directly from now on.'
+            )}
+          </Text>
+          <View style={styles.field}>
+            <Text style={styles.label}>{t('Mật khẩu mới', 'New Password')}</Text>
+            <InputRow
+              icon="lock-closed-outline"
+              styles={styles}
+              colors={colors}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="••••••••"
+              secureTextEntry
+              autoCapitalize="none"
+            />
+            <Text style={styles.hint}>{t('Tối thiểu 8 ký tự.', 'Must be at least 8 characters.')}</Text>
+          </View>
+          <Button
+            title={t('Lưu mật khẩu', 'Save Password')}
+            icon="arrow-forward"
+            onPress={handleSetPassword}
+            loading={settingPassword}
+            style={styles.submitButton}
+          />
+        </View>
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.body}>
@@ -174,21 +240,6 @@ export default function LoginScreen({ onLoggedIn }) {
           style={styles.submitButton}
         />
 
-        <View style={styles.dividerRow}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>{t('Hoặc tiếp tục với', 'Or continue with')}</Text>
-          <View style={styles.dividerLine} />
-        </View>
-
-        <Button
-          title="Google"
-          icon="logo-google"
-          variant="secondary"
-          onPress={handleSignIn}
-          loading={signingIn}
-          style={styles.googleButton}
-        />
-
         <View style={styles.toggleRow}>
           <Text style={styles.toggleText}>
             {isSignup ? t('Đã có tài khoản?', 'Already have an account?') : t('Chưa có tài khoản?', "Don't have an account?")}
@@ -199,6 +250,21 @@ export default function LoginScreen({ onLoggedIn }) {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {!isSignup ? (
+          <TouchableOpacity
+            onPress={handleRecoverViaGoogle}
+            disabled={recovering}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            style={styles.recoverLinkRow}
+          >
+            <Text style={styles.recoverLink}>
+              {recovering
+                ? t('Đang khôi phục...', 'Recovering...')
+                : t('Từng đăng nhập bằng Google? Khôi phục tài khoản', 'Previously signed in with Google? Recover your account')}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     </ScrollView>
   );
@@ -256,12 +322,10 @@ function makeStyles(colors) {
       fontSize: 14,
     },
     submitButton: { width: '100%', marginTop: 22 },
-    dividerRow: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 18 },
-    dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
-    dividerText: { color: colors.textMuted, fontFamily: 'Poppins_500Medium', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 },
-    googleButton: { width: '100%', marginTop: 18 },
     toggleRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 20 },
     toggleText: { color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 13 },
     toggleLink: { color: colors.primary, fontFamily: 'Poppins_700Bold', fontSize: 13 },
+    recoverLinkRow: { marginTop: 14 },
+    recoverLink: { color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 11.5, textDecorationLine: 'underline', textAlign: 'center' },
   });
 }

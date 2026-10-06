@@ -143,6 +143,12 @@ CREATE TABLE IF NOT EXISTS oauth_states (
     -- Google). Set only by app builds updated to protect the backend->app
     -- deep-link handoff -- see oauth_exchange_codes below.
     mobile_code_challenge TEXT,
+    -- Set when /auth_url was called with intent=link: the FlowMate
+    -- user_id that was already logged in when the Google OAuth round-trip
+    -- started, so oauth2callback attaches the resulting credential to
+    -- THAT account instead of resolving/minting one from the Google
+    -- identity itself. Absent (NULL) means intent=recover.
+    link_user_id TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

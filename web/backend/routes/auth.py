@@ -172,3 +172,42 @@ def logout_all_devices():
         'success': True,
         'message': 'Đã đăng xuất khỏi tất cả thiết bị. Vui lòng đăng nhập lại.',
     })
+
+
+@auth_bp.route('/set-password', methods=['POST'])
+def set_password():
+    """First-time password setup for an account that doesn't have one yet.
+
+    Specifically for the "recover via Google" bridge: an account that only
+    ever signed in via Google (password_hash IS NULL) regains access by
+    re-proving ownership through a Google OAuth round-trip (see
+    routes/email/oauth.py's intent=recover), then must set a password here
+    before it can log in the normal way going forward. This is NOT a
+    "change password" flow -- an account that already has a password_hash
+    must use that (not yet built) flow instead, since this endpoint never
+    verifies a prior password.
+    """
+    user_id = active_authenticated_user_id()
+    if not user_id:
+        return jsonify({'success': False, 'error': 'not_authenticated'}), 401
+
+    user = User.get(user_id)
+    if (user or {}).get('password_hash'):
+        return jsonify({
+            'success': False,
+            'error': 'password_already_set',
+            'message': 'Tài khoản đã có mật khẩu.',
+        }), 409
+
+    data = request.get_json(silent=True) or {}
+    password = str(data.get('password') or '')
+    if len(password) < MIN_PASSWORD_LENGTH or len(password) > MAX_PASSWORD_LENGTH:
+        return jsonify({
+            'success': False,
+            'error': 'weak_password',
+            'message': f'Mật khẩu phải có ít nhất {MIN_PASSWORD_LENGTH} ký tự.',
+        }), 400
+
+    User.update(user_id, password_hash=generate_password_hash(password))
+    logger.info('Password set for recovered/first-time account: %s', user_id)
+    return jsonify({'success': True, 'message': 'Đã đặt mật khẩu thành công'})

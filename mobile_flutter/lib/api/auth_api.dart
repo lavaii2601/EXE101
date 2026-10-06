@@ -27,6 +27,13 @@ Future<AuthResult> loginWithEmail({required String email, required String passwo
   return AuthResult.fromJson(data as Map<String, dynamic>);
 }
 
+/// First-time password setup for an account recovered via Google (see
+/// google_auth.dart's connectGoogleAccount(intent: 'recover')) that never
+/// had one. Requires the session connectGoogleAccount already established.
+Future<void> setPassword(String password) async {
+  await apiPost('/auth/set-password', {'password': password});
+}
+
 /// Revokes every mobile access token issued for this account (bumps
 /// token_version server-side) plus the browser session -- for a user who
 /// suspects a device was lost/stolen. Includes the very token used to call

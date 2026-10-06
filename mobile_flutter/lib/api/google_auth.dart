@@ -10,7 +10,12 @@ import 'session.dart';
 class GoogleAuthResult {
   final bool connected;
   final bool cancelled;
-  const GoogleAuthResult({required this.connected, this.cancelled = false});
+  final bool needsPassword;
+  const GoogleAuthResult({
+    required this.connected,
+    this.cancelled = false,
+    this.needsPassword = false,
+  });
 }
 
 bool isGoogleAuthCallback(Uri uri) =>
@@ -42,41 +47,42 @@ String _base64ToBase64Url(String value) =>
 /// cold-started Android after the OS reclaimed the process in the browser
 /// (see the pending-verifier comment in session.dart for why that matters
 /// here specifically).
-Future<bool> consumeGoogleAuthCallback(Uri uri) async {
-  if (!isGoogleAuthCallback(uri)) return false;
+Future<({bool success, bool needsPassword})> consumeGoogleAuthCallback(Uri uri) async {
+  const failure = (success: false, needsPassword: false);
+  if (!isGoogleAuthCallback(uri)) return failure;
 
   final exchangeCode = uri.queryParameters['exchange_code'];
   if (exchangeCode != null && exchangeCode.isNotEmpty) {
     final codeVerifier = await getPendingOauthCodeVerifier();
     await clearPendingOauthCodeVerifier();
-    if (codeVerifier == null || codeVerifier.isEmpty) return false;
+    if (codeVerifier == null || codeVerifier.isEmpty) return failure;
     try {
       final data = await apiPost('/email/oauth-token-exchange', {
         'exchange_code': exchangeCode,
         'code_verifier': codeVerifier,
       });
       final accessToken = (data is Map ? data['access_token'] as String? : null) ?? '';
-      if (accessToken.isEmpty) return false;
+      if (accessToken.isEmpty) return failure;
       await setMobileSession(
         userId: (data['user_id'] ?? data['email'] ?? '').toString(),
         accessToken: accessToken,
       );
-      return true;
+      return (success: true, needsPassword: data['needs_password'] == true);
     } catch (_) {
-      return false;
+      return failure;
     }
   }
 
   // Legacy fallback, kept for a backend deploy that predates the
   // exchange-code flow: the token arrives directly in the deep link.
   final accessToken = uri.queryParameters['access_token'];
-  if (accessToken == null || accessToken.isEmpty) return false;
+  if (accessToken == null || accessToken.isEmpty) return failure;
   await clearPendingOauthCodeVerifier();
   await setMobileSession(
     userId: uri.queryParameters['user_id'] ?? '',
     accessToken: accessToken,
   );
-  return true;
+  return (success: true, needsPassword: uri.queryParameters['needs_password'] == '1');
 }
 
 /// Mirrors mobile/src/api/googleAuth.js: the app's own http client never
@@ -86,7 +92,13 @@ Future<bool> consumeGoogleAuthCallback(Uri uri) async {
 /// routes/email/oauth.py's oauth2callback). We open that URL in an external
 /// browser and wait for the redirect on the same app_links stream
 /// registered in main.dart.
-Future<GoogleAuthResult> connectGoogleAccount(AppLinks appLinks) async {
+///
+/// intent: 'link' (default) attaches a Gmail account to the CURRENTLY
+/// logged-in user -- Google can no longer sign anyone in on its own. 'recover'
+/// is the one exception: an existing account that only ever used Google (no
+/// password set yet) regains access, then must set one -- see
+/// GoogleAuthResult.needsPassword. There is no more implicit "login".
+Future<GoogleAuthResult> connectGoogleAccount(AppLinks appLinks, {String intent = 'link'}) async {
   final pkce = _generatePkcePair();
   // Written before launching the browser, not after getting a result back --
   // an external browser (unlike RN's in-app auth session) can get this
@@ -94,7 +106,7 @@ Future<GoogleAuthResult> connectGoogleAccount(AppLinks appLinks) async {
   await setPendingOauthCodeVerifier(pkce.codeVerifier);
 
   final data = await apiGet(
-    '/email/auth_url?platform=mobile&code_challenge=${Uri.encodeComponent(pkce.codeChallenge)}',
+    '/email/auth_url?intent=$intent&platform=mobile&code_challenge=${Uri.encodeComponent(pkce.codeChallenge)}',
   );
   if (data is Map &&
       ((data['access_token'] as String?)?.isNotEmpty == true ||
@@ -103,7 +115,7 @@ Future<GoogleAuthResult> connectGoogleAccount(AppLinks appLinks) async {
     await setMobileSession(
         userId: (data['user_id'] ?? data['email'] ?? '').toString(),
         accessToken: (data['access_token'] ?? '').toString());
-    return const GoogleAuthResult(connected: true);
+    return GoogleAuthResult(connected: true, needsPassword: data['needs_password'] == true);
   }
   final authUrl = data is Map ? data['auth_url'] as String? : null;
   if (authUrl == null || authUrl.isEmpty) {
@@ -134,8 +146,9 @@ Future<GoogleAuthResult> connectGoogleAccount(AppLinks appLinks) async {
   if (resultUri == null) {
     return const GoogleAuthResult(connected: false, cancelled: true);
   }
-  if (!await consumeGoogleAuthCallback(resultUri)) {
+  final result = await consumeGoogleAuthCallback(resultUri);
+  if (!result.success) {
     throw Exception('Không nhận được access token từ máy chủ.');
   }
-  return const GoogleAuthResult(connected: true);
+  return GoogleAuthResult(connected: true, needsPassword: result.needsPassword);
 }

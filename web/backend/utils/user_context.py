@@ -187,6 +187,84 @@ def resolve_google_user_id(subject, account_email):
         return identity['user_id']
 
 
+def upsert_google_identity(subject, account_email, user_id):
+    """Idempotently record that this Google subject belongs to user_id.
+
+    Used by the OAuth link/recover flows (routes/email/oauth.py), which
+    resolve ownership via lookup_google_identity_owner rather than
+    resolve_google_user_id -- that function also creates a brand-new users
+    row on a miss, which link/recover must never do (the user must already
+    exist). No-op in dev/SQLite mode, matching resolve_google_user_id's own
+    dev-mode behavior (no durable multi-identity bookkeeping there).
+    """
+    email = str(account_email or '').strip().lower()
+    external_subject = str(subject or '').strip() or (f'email:{email}' if email else '')
+    if not external_subject or not user_id or not pg.enabled():
+        return
+    with pg.connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO user_identities (provider, subject, user_id, account_email)
+            VALUES ('google', %s, %s, %s)
+            ON CONFLICT (provider, subject) DO NOTHING
+            """,
+            (external_subject, user_id, email or None),
+        )
+
+
+def lookup_google_identity_owner(subject, account_email):
+    """Read-only counterpart to resolve_google_user_id: returns the existing
+    FlowMate user_id already linked to this Google identity, or None if none
+    exists. Never inserts a users or user_identities row -- used by the
+    OAuth 'recover' flow (and the 'link' flow's already-linked-elsewhere
+    guard), which must never silently mint a new account the way the
+    regular sign-in path used to.
+    """
+    email = str(account_email or '').strip().lower()
+    external_subject = str(subject or '').strip() or (f'email:{email}' if email else '')
+    if not external_subject:
+        return None
+
+    if not pg.enabled():
+        import sqlite3
+        candidate = _stable_principal('google', external_subject)
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        try:
+            row = conn.execute(
+                'SELECT user_id FROM users WHERE user_id = ?', (candidate,)
+            ).fetchone()
+        finally:
+            conn.close()
+        return candidate if row else None
+
+    with pg.connection() as conn:
+        identity = conn.execute(
+            """
+            SELECT user_id
+            FROM user_identities
+            WHERE provider = 'google' AND subject = %s
+            """,
+            (external_subject,),
+        ).fetchone()
+        if identity:
+            return identity['user_id']
+
+        if not email:
+            return None
+        row = conn.execute(
+            """
+            SELECT user_id
+            FROM users
+            WHERE LOWER(COALESCE(gmail_email, '')) = %s
+               OR LOWER(COALESCE(email, '')) = %s
+            ORDER BY created_at ASC
+            LIMIT 1
+            """,
+            (email, email),
+        ).fetchone()
+        return row['user_id'] if row else None
+
+
 def get_current_user_id(request, session=None):
     """Resolve current user id from session (Flask session used by default).
 

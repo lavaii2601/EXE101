@@ -115,6 +115,50 @@ class PasswordAuthParityTests(unittest.TestCase):
         with self.client.session_transaction() as browser_session:
             self.assertNotIn('user_id', browser_session)
 
+    def test_set_password_requires_an_authenticated_session(self):
+        response = self.client.post('/api/auth/set-password', json={'password': 'brandnewpass1'})
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json()['error'], 'not_authenticated')
+
+    def test_set_password_rejects_an_account_that_already_has_one(self):
+        with self.client.session_transaction() as browser_session:
+            browser_session['user_id'] = 'local_test_user'
+
+        account = {'user_id': 'local_test_user', 'password_hash': generate_password_hash('existing')}
+        with patch.object(auth.User, 'get', return_value=account):
+            response = self.client.post('/api/auth/set-password', json={'password': 'brandnewpass1'})
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()['error'], 'password_already_set')
+
+    def test_set_password_rejects_a_weak_password(self):
+        with self.client.session_transaction() as browser_session:
+            browser_session['user_id'] = 'local_test_user'
+
+        account = {'user_id': 'local_test_user', 'password_hash': None}
+        with patch.object(auth.User, 'get', return_value=account):
+            response = self.client.post('/api/auth/set-password', json={'password': 'short'})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['error'], 'weak_password')
+
+    def test_set_password_succeeds_for_a_recovered_google_only_account(self):
+        with self.client.session_transaction() as browser_session:
+            browser_session['user_id'] = 'local_test_user'
+
+        account = {'user_id': 'local_test_user', 'password_hash': None}
+        with (
+            patch.object(auth.User, 'get', return_value=account),
+            patch.object(auth.User, 'update') as update,
+        ):
+            response = self.client.post('/api/auth/set-password', json={'password': 'brandnewpass1'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['success'])
+        update.assert_called_once()
+        self.assertEqual('local_test_user', update.call_args.args[0])
+        self.assertIn('password_hash', update.call_args.kwargs)
+
     def test_gmail_disconnect_keeps_the_app_session(self):
         with self.client.session_transaction() as browser_session:
             browser_session['user_id'] = 'local_test_user'
@@ -145,17 +189,25 @@ class PasswordAuthFrontendContractTests(unittest.TestCase):
             for path in sorted(glob.glob(os.path.join(js_dir, '*.js')))
         )
 
-    def test_web_exposes_the_same_password_and_google_choices_as_mobile(self):
+    def test_web_login_gate_is_password_only_with_a_google_recovery_bridge(self):
         for element_id in (
             'appAuthForm',
             'authNameInput',
             'authEmailInput',
             'authPasswordInput',
-            'authGateLoginBtn',
             'authModeToggle',
+            'authRecoverGoogleBtn',
+            'setPasswordModal',
+            'setPasswordInput',
         ):
             self.assertIn(f'id="{element_id}"', self.html)
         self.assertIn("/auth/${isSignup ? 'register' : 'login'}", self.javascript)
+        # Google OAuth is no longer offered as a login button on the gate --
+        # only the password form plus the one-time recovery link.
+        self.assertNotIn('id="authGateLoginBtn"', self.html)
+        self.assertNotIn('id="authAppleLoginBtn"', self.html)
+        self.assertIn("intent=link", self.javascript)
+        self.assertIn("intent=recover", self.javascript)
 
     def test_app_session_and_google_connection_are_checked_separately(self):
         self.assertIn("fetch(`${API_BASE}/user/profile`", self.javascript)

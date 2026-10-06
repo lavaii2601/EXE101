@@ -32,8 +32,15 @@ async function generatePkcePair() {
 }
 
 // Runs Google's OAuth consent flow and stores the resulting mobile session.
-// Shared by LoginScreen (initial sign-in) and EmailScreen (reconnect Gmail
-// from Settings) so the deep-link handling only lives in one place.
+// Shared by every "Connect Gmail" entry point (Settings, Overview, Schedule,
+// Email) plus the Login screen's recovery link, so the deep-link handling
+// only lives in one place.
+//
+// intent: 'link' (default) attaches a Gmail account to the CURRENTLY
+// logged-in user -- Google can no longer sign anyone in on its own. 'recover'
+// is the one exception: an existing account that only ever used Google (no
+// password set yet) regains access, then must set one -- see needsPassword
+// on the returned object. There is no more implicit "login" behavior.
 //
 // openAuthSessionAsync (NOT openBrowserAsync) is required: the app's own
 // fetch() never shares cookies with the system browser tab that completes
@@ -41,14 +48,14 @@ async function generatePkcePair() {
 // cookie. Instead it 302-redirects to our `flowmateai://oauth-callback?...`
 // deep link once the OAuth exchange finishes server-side, and
 // openAuthSessionAsync is the API that actually captures that redirect.
-export async function connectGoogleAccount() {
+export async function connectGoogleAccount(intent = 'link') {
   const { codeVerifier, codeChallenge } = await generatePkcePair();
   const data = await apiGet(
-    `/email/auth_url?platform=mobile&code_challenge=${encodeURIComponent(codeChallenge)}`
+    `/email/auth_url?intent=${intent}&platform=mobile&code_challenge=${encodeURIComponent(codeChallenge)}`
   );
   if (data.access_token || data.user_id) {
     setMobileSession({ userId: data.user_id || data.email, accessToken: data.access_token || '' });
-    return { connected: true };
+    return { connected: true, needsPassword: !!data.needs_password };
   }
   if (!data.auth_url) {
     throw new Error('Server không trả về đường dẫn đăng nhập Google.');
@@ -72,7 +79,7 @@ export async function connectGoogleAccount() {
       throw new Error('Không đổi được mã xác thực lấy access token.');
     }
     setMobileSession({ userId: exchanged.user_id, accessToken: exchanged.access_token });
-    return { connected: true };
+    return { connected: true, needsPassword: !!exchanged.needs_password };
   }
 
   // Legacy fallback, kept for a backend deploy that predates the
@@ -81,5 +88,5 @@ export async function connectGoogleAccount() {
     throw new Error('Không nhận được access token từ máy chủ.');
   }
   setMobileSession({ userId: queryParams.user_id, accessToken: queryParams.access_token });
-  return { connected: true };
+  return { connected: true, needsPassword: queryParams.needs_password === '1' };
 }

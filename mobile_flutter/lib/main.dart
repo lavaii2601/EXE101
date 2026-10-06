@@ -9,6 +9,7 @@ import 'api/google_auth.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_shell.dart';
+import 'screens/set_password_screen.dart';
 import 'state/app_state.dart';
 import 'state/language_controller.dart';
 import 'state/theme_controller.dart';
@@ -82,8 +83,19 @@ class _RootFlowState extends State<_RootFlow> with WidgetsBindingObserver {
       // Secure-storage bootstrap may still be reading the old session. Wait
       // before persisting the callback so it cannot overwrite the new token.
       await appState.bootstrapCompleted;
-      if (!await consumeGoogleAuthCallback(initialLink) || !mounted) return;
-      await appState.onLoggedIn();
+      final result = await consumeGoogleAuthCallback(initialLink);
+      if (!result.success || !mounted) return;
+      if (result.needsPassword) {
+        appState.markNeedsPassword();
+      }
+      // A 'link' continuation (the common case: the user was already
+      // logged in when the OS killed the app mid-flow) already has
+      // isAuthenticated == true from bootstrap()'s own independent session
+      // restore -- nothing further to do. Only a 'recover' continuation
+      // (no prior session) needs this to actually establish one.
+      if (appState.isAuthenticated != true) {
+        await appState.onLoggedIn();
+      }
     } catch (_) {
       // A malformed/stale link must never stop the normal login screen.
     }
@@ -174,6 +186,10 @@ class _RootFlowState extends State<_RootFlow> with WidgetsBindingObserver {
         );
       }
       return LoginScreen(onLoggedIn: () => appState.onLoggedIn());
+    }
+
+    if (appState.needsPassword) {
+      return const SetPasswordScreen();
     }
 
     return const MainShell();

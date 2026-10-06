@@ -393,6 +393,10 @@ async function initApp() {
                     console.log('📥 Received gmail_auth success message');
                     const authenticatedAfterOAuth = await resolveInitialAuthState();
                     if (!authenticatedAfterOAuth) return;
+                    if (ev.data.needsPassword) {
+                        showSetPasswordModal();
+                        return;
+                    }
                     if (shouldShowAdminAccessChoice()) {
                         showAdminAccessChoice();
                         return;

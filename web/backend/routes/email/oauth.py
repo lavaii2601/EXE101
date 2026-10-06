@@ -31,16 +31,17 @@ from models.user import User
 from routes.admin import is_current_user_admin
 from services.gmail_service import GmailService, get_cached_gmail_service
 from utils.google_service_cache import invalidate_cached_service
-from utils.security import issue_mobile_token
+from utils.security import authenticated_user_id, issue_mobile_token
 from utils.user_context import (
     delete_google_credentials,
     get_current_user_id,
     get_user_db_path,
     get_user_token_file,
     inspect_google_credentials,
+    lookup_google_identity_owner,
     persist_google_credentials,
     read_local_credentials,
-    resolve_google_user_id,
+    upsert_google_identity,
 )
 
 from routes.email.shared import email_bp
@@ -146,6 +147,7 @@ def _consume_oauth_state(state):
         'code_verifier': None,
         'mobile': False,
         'mobile_code_challenge': None,
+        'link_user_id': None,
     }
     if not state:
         return missing
@@ -155,7 +157,7 @@ def _consume_oauth_state(state):
                 """
                 DELETE FROM oauth_states
                 WHERE state = %s AND created_at >= NOW() - (%s * INTERVAL '1 second')
-                RETURNING code_verifier, mobile, mobile_code_challenge
+                RETURNING code_verifier, mobile, mobile_code_challenge, link_user_id
                 """,
                 (state, OAUTH_STATE_TTL_SECONDS),
             ).fetchone()
@@ -166,6 +168,7 @@ def _consume_oauth_state(state):
             'code_verifier': row['code_verifier'],
             'mobile': bool(row['mobile']),
             'mobile_code_challenge': row['mobile_code_challenge'],
+            'link_user_id': row['link_user_id'],
         }
 
     now = datetime.utcnow().timestamp()
@@ -187,6 +190,7 @@ def _consume_oauth_state(state):
         'code_verifier': record.get('code_verifier'),
         'mobile': bool(record.get('mobile')),
         'mobile_code_challenge': record.get('mobile_code_challenge'),
+        'link_user_id': record.get('link_user_id'),
     }
 
 
@@ -223,6 +227,40 @@ def _mark_oauth_mobile(state):
         }
         record = data.get(state) if isinstance(data.get(state), dict) else {'created_at': now}
         record['mobile'] = True
+        data[state] = record
+        _write_oauth_states(data)
+
+
+def _store_oauth_link_user(state, user_id):
+    """Record which already-logged-in FlowMate user started this OAuth
+    transaction (intent=link), so oauth2callback attaches the resulting
+    Google credential to that account instead of resolving/minting one
+    from the Google identity itself. Absent entirely means intent=recover.
+    """
+    if not state or not user_id:
+        return
+    if pg.enabled():
+        with pg.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO oauth_states (state, link_user_id)
+                VALUES (%s, %s)
+                ON CONFLICT (state) DO UPDATE SET link_user_id = EXCLUDED.link_user_id
+                """,
+                (state, user_id),
+            )
+        return
+
+    now = datetime.utcnow().timestamp()
+    with _oauth_state_lock:
+        data = _read_oauth_states()
+        data = {
+            key: value for key, value in data.items()
+            if isinstance(value, dict)
+            and now - float(value.get('created_at') or 0) <= OAUTH_STATE_TTL_SECONDS
+        }
+        record = data.get(state) if isinstance(data.get(state), dict) else {'created_at': now}
+        record['link_user_id'] = user_id
         data[state] = record
         _write_oauth_states(data)
 
@@ -724,7 +762,19 @@ def gmail_logout():
 
 @email_bp.route('/google-auth', methods=['POST'])
 def google_auth_native():
-    """Authenticate user from Android using Server Auth Code to get full Gmail access"""
+    """Link a Gmail account from Android using Server Auth Code.
+
+    Not called by any currently-shipped client (superseded by the
+    /auth_url + PKCE + /oauth-token-exchange flow) -- gated here as
+    defense-in-depth only, not because anything depends on it. Google can
+    no longer establish a FlowMate session on its own, so this always
+    requires an existing login and attaches to that account (no
+    'recover' variant needed for a native-only, already-dead endpoint).
+    """
+    link_user_id = authenticated_user_id()
+    if not link_user_id:
+        return jsonify({'success': False, 'error': 'login_required'}), 401
+
     data = request.get_json()
     auth_code = data.get('server_auth_code')
     email_hint = data.get('email')
@@ -749,19 +799,24 @@ def google_auth_native():
         gmail_name = userinfo.get('name', 'Teacher')
         gmail_picture = userinfo.get('picture', '')
 
-        # Resolve the immutable Google subject to the same canonical workspace
-        # id used by both browser sessions and APK Bearer tokens.
-        user_id = resolve_google_user_id(
-            userinfo.get('subject'),
-            gmail_email,
-        )
+        # Attach to the already-logged-in FlowMate user (see the
+        # login_required gate above) -- never mint/resolve an identity
+        # from the Google subject the way resolve_google_user_id does.
+        subject = userinfo.get('subject')
+        existing_owner = lookup_google_identity_owner(subject, gmail_email)
+        if existing_owner and existing_owner != link_user_id:
+            return jsonify({'success': False, 'error': 'google_account_already_linked_elsewhere'}), 409
+        user_id = link_user_id
+        upsert_google_identity(subject, gmail_email, user_id)
 
         # Save token durably for Railway and cache it locally for this worker.
         persist_google_credentials(user_id, creds, account_email=gmail_email)
 
-        # Update User in Database
+        # Update User in Database. Deliberately does not touch `email` --
+        # that's the FlowMate account's own identity (Feature A trusts it
+        # for the admin allowlist check), not whichever Gmail got linked.
         db_path = get_user_db_path(user_id)
-        User.get_or_create(user_id, name=gmail_name, email=gmail_email)
+        user = User.get_or_create(user_id, name=gmail_name, email=gmail_email)
         User.update(
             user_id,
             gmail_email=gmail_email,
@@ -770,8 +825,7 @@ def google_auth_native():
             gmail_connected=1,
             gmail_connected_at=datetime.now().isoformat(),
             avatar_url=gmail_picture,
-            name=gmail_name,
-            email=gmail_email
+            name=(gmail_name or (user.get('name') if user else gmail_name)),
         )
 
         # Initialize user-specific components
@@ -806,9 +860,41 @@ def google_auth_native():
         return jsonify({'success': False, 'error': error_message}), 500
 
 
+def _resolve_oauth_intent():
+    """Shared intent gate for /auth and /auth_url.
+
+    Google OAuth is no longer a login mechanism on its own -- FlowMate
+    accounts are email+password only. 'link' attaches a Gmail account to
+    whoever is already logged in; 'recover' lets a pre-existing
+    Google-only account (no password set yet) regain access, but never
+    creates a brand-new account. Returns (intent, user_id_or_None,
+    error_response_or_None).
+    """
+    intent = (request.args.get('intent') or '').strip().lower()
+    if intent not in ('link', 'recover'):
+        return None, None, (jsonify({
+            'error': 'invalid_intent',
+            'message': 'intent phải là link hoặc recover.',
+        }), 400)
+    if intent == 'link':
+        user_id = authenticated_user_id()
+        if not user_id:
+            return None, None, (jsonify({
+                'error': 'login_required',
+                'message': 'Đăng nhập bằng tài khoản FlowMate trước khi liên kết Gmail.',
+            }), 401)
+        return intent, user_id, None
+    return intent, None, None
+
+
 @email_bp.route('/auth', methods=['GET'])
 def gmail_auth():
-    """Initiate OAuth2 login flow."""
+    """Initiate OAuth2 flow to link a Gmail account (or recover account
+    access) -- never a login on its own, see _resolve_oauth_intent."""
+    intent, link_user_id, error_response = _resolve_oauth_intent()
+    if error_response:
+        return error_response
+
     return_to = (request.args.get('next') or '').strip()
     if return_to in {'/admin', '/admin/login'}:
         session['oauth_return_to'] = return_to
@@ -833,6 +919,8 @@ def gmail_auth():
         session.modified = True
     except Exception:
         pass
+    if intent == 'link':
+        _store_oauth_link_user(state, link_user_id)
     return redirect(auth_url)
 
 
@@ -921,12 +1009,28 @@ def oauth2callback():
         if people_profile.get('picture'):
             gmail_picture = people_profile.get('picture')
 
-        # Resolve the immutable Google subject to the same canonical workspace
-        # id used by both browser sessions and APK Bearer tokens.
-        user_id = resolve_google_user_id(
-            userinfo.get('subject'),
-            gmail_email,
-        )
+        # Attach this Google identity to a FlowMate account WITHOUT ever
+        # minting a new one from it -- resolve_google_user_id used to do
+        # that unconditionally, which is exactly the "Google is a login
+        # method" behavior this change removes.
+        subject = userinfo.get('subject')
+        link_user_id = issued_state.get('link_user_id')
+        existing_owner = lookup_google_identity_owner(subject, gmail_email)
+        if link_user_id:
+            # intent=link: attach to whoever was already logged in when
+            # this flow started.
+            if existing_owner and existing_owner != link_user_id:
+                logger.warning("Rejected linking a Google account already owned by a different user")
+                return jsonify({'error': 'google_account_already_linked_elsewhere'}), 409
+            user_id = link_user_id
+        else:
+            # intent=recover: only ever resolves to an EXISTING account --
+            # never creates one (that would silently reintroduce
+            # Google-as-signup).
+            if not existing_owner:
+                return jsonify({'error': 'no_flowmate_account_for_google_identity'}), 404
+            user_id = existing_owner
+        upsert_google_identity(subject, gmail_email, user_id)
         logger.info(f"Setting session for user: {user_id}")
 
         # Save token durably for Railway and cache it locally for this worker.
@@ -936,8 +1040,11 @@ def oauth2callback():
         # Save user info to database and initialize per-user DB
         db_path = get_user_db_path(user_id)
         user = User.get_or_create(user_id, name=gmail_name or 'Teacher', email=gmail_email)
-        # Update both Gmail-specific fields and common profile fields so frontend
-        # that reads `avatar_url`, `name`, or `email` sees up-to-date data.
+        needs_password = not bool((user or {}).get('password_hash'))
+        # Update Gmail-specific fields and avatar/name, but deliberately
+        # NOT `email` -- that's the FlowMate account's own identity
+        # (Feature A trusts it for the admin allowlist check), not
+        # whichever Gmail happens to get linked/recovered.
         User.update(
             user_id,
             gmail_email=gmail_email,
@@ -947,7 +1054,6 @@ def oauth2callback():
             gmail_connected_at=datetime.now().isoformat(),
             avatar_url=gmail_picture,
             name=(gmail_name or (user.get('name') if user else gmail_name)),
-            email=(gmail_email or (user.get('email') if user else gmail_email))
         )
 
         # Initialize per-user databases (schedules, history, cache) so related
@@ -998,6 +1104,7 @@ def oauth2callback():
                     'access_token': issue_mobile_token(user_id),
                     'user_id': user_id,
                     'email': gmail_email,
+                    'needs_password': needs_password,
                 })
                 exchange_query = urlencode({'exchange_code': exchange_code})
                 return redirect(f"{Config.MOBILE_OAUTH_REDIRECT_URL}?{exchange_query}")
@@ -1009,11 +1116,15 @@ def oauth2callback():
                 'access_token': issue_mobile_token(user_id),
                 'user_id': user_id,
                 'email': gmail_email,
+                'needs_password': '1' if needs_password else '0',
             })
             return redirect(f"{Config.MOBILE_OAUTH_REDIRECT_URL}?{token_query}")
 
         # Return HTML page that notifies the opener or redirects back to SPA
         return_to = session.pop('oauth_return_to', '/app?gmail_auth=success')
+        if needs_password:
+            separator = '&' if '?' in return_to else '?'
+            return_to = f'{return_to}{separator}needs_password=1'
         html = """<!doctype html>
 <html>
   <head>
@@ -1024,7 +1135,7 @@ def oauth2callback():
     <script>
       try {
         if (window.opener && typeof window.opener.postMessage === 'function') {
-          window.opener.postMessage({type: 'gmail_auth', status: 'success'}, window.location.origin);
+          window.opener.postMessage({type: 'gmail_auth', status: 'success', needsPassword: __NEEDS_PASSWORD__}, window.location.origin);
           window.close();
         } else {
           window.location.replace(__RETURN_TO__);
@@ -1036,7 +1147,7 @@ def oauth2callback():
     <p>Đang chuyển hướng...</p>
   </body>
 </html>
-""".replace('__RETURN_TO__', json.dumps(return_to))
+""".replace('__RETURN_TO__', json.dumps(return_to)).replace('__NEEDS_PASSWORD__', json.dumps(bool(needs_password)))
         from flask import Response
         return Response(html, mimetype='text/html')
     except Exception as e:
@@ -1046,7 +1157,12 @@ def oauth2callback():
 
 @email_bp.route('/auth_url', methods=['GET'])
 def gmail_auth_url():
-    """Return the OAuth authorization URL (JSON) so frontend can redirect."""
+    """Return the OAuth authorization URL (JSON) so frontend can redirect.
+    Never a login on its own -- see _resolve_oauth_intent."""
+    intent, link_user_id, error_response = _resolve_oauth_intent()
+    if error_response:
+        return error_response
+
     return_to = (request.args.get('next') or '').strip()
     if return_to in {'/admin', '/admin/login'}:
         session['oauth_return_to'] = return_to
@@ -1070,6 +1186,8 @@ def gmail_auth_url():
         session.modified = True
     except Exception:
         pass
+    if intent == 'link':
+        _store_oauth_link_user(state, link_user_id)
     # The mobile app's fetch() never shares cookies with the system browser
     # that completes this flow, so oauth2callback needs to know to hand the
     # result back via a deep link instead of the cookie/postMessage page.
@@ -1126,4 +1244,5 @@ def oauth_token_exchange():
         'access_token': payload.get('access_token'),
         'user_id': payload.get('user_id'),
         'email': payload.get('email'),
+        'needs_password': bool(payload.get('needs_password')),
     })

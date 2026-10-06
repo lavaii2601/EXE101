@@ -1,15 +1,11 @@
 function setupAuthGate() {
-    const loginButton = document.getElementById('authGateLoginBtn');
-    if (loginButton) loginButton.addEventListener('click', gmailLogin);
     document.getElementById('appAuthForm')?.addEventListener('submit', submitPasswordAuth);
     document.getElementById('authModeToggle')?.addEventListener('click', () => {
         setAuthFormMode(authFormMode === 'login' ? 'signup' : 'login');
     });
     document.getElementById('authPasswordToggle')?.addEventListener('click', toggleAuthPasswordVisibility);
-    document.getElementById('authAppleLoginBtn')?.addEventListener('click', () => {
-        const status = document.getElementById('authGateStatus');
-        if (status) status.textContent = ui('Đăng nhập với Apple sẽ sớm ra mắt.', 'Sign in with Apple is coming soon.');
-    });
+    document.getElementById('authRecoverGoogleBtn')?.addEventListener('click', recoverViaGoogle);
+    document.getElementById('setPasswordForm')?.addEventListener('submit', submitSetPassword);
     document.getElementById('authForgotPasswordBtn')?.addEventListener('click', () => {
         const status = document.getElementById('authGateStatus');
         if (status) status.textContent = ui('Tính năng khôi phục mật khẩu sẽ sớm ra mắt.', 'Password recovery is coming soon.');
@@ -82,7 +78,6 @@ function setPasswordAuthLoading(loading) {
         control.disabled = loading;
     });
     submit?.classList.toggle('is-loading', loading);
-    document.getElementById('authGateLoginBtn')?.toggleAttribute('disabled', loading);
     document.getElementById('authModeToggle')?.toggleAttribute('disabled', loading);
 }
 
@@ -137,8 +132,6 @@ async function submitPasswordAuth(event) {
 function showAuthGate(message = '', loading = false) {
     const gate = document.getElementById('authGate');
     const status = document.getElementById('authGateStatus');
-    const button = document.getElementById('authGateLoginBtn');
-    const label = button?.querySelector('.auth-button-label');
     document.body.classList.remove('workspace-ready');
     gate?.classList.remove('is-hidden');
     gate?.classList.remove('is-mode-stage');
@@ -149,17 +142,12 @@ function showAuthGate(message = '', loading = false) {
     if (loginStage) loginStage.hidden = false;
     if (adminChoice) adminChoice.hidden = true;
     if (status) status.textContent = message;
-    if (button) button.disabled = loading;
     document.getElementById('appAuthForm')?.querySelectorAll('input, button').forEach((control) => {
         control.disabled = loading;
     });
     const modeToggle = document.getElementById('authModeToggle');
     if (modeToggle) modeToggle.disabled = loading;
-    if (label) {
-        label.textContent = loading
-            ? ui('Đang xác thực...', 'Authenticating...')
-            : ui('Đăng nhập với Google', 'Sign in with Google');
-    }
+    document.getElementById('authRecoverGoogleBtn')?.toggleAttribute('disabled', loading);
     document.getElementById('workspaceApp')?.setAttribute('aria-hidden', 'true');
 }
 
@@ -333,6 +321,7 @@ function updateSidebarUserProfile(profile) {
 
 async function checkOAuthCallback() {
     const urlParams = new URLSearchParams(window.location.search);
+    const needsPassword = urlParams.get('needs_password') === '1';
     if (urlParams.get('gmail_auth') === 'success') {
         console.log('✅ OAuth callback detected');
         Object.keys(sessionStorage)
@@ -347,6 +336,11 @@ async function checkOAuthCallback() {
             });
             await refreshAuthButtons();
             await loadUserProfile();
+
+            if (needsPassword) {
+                showSetPasswordModal();
+                return;
+            }
 
             showNotification(ui('✅ Gmail đã kết nối thành công!', '✅ Gmail connected successfully!'), 'success');
             // Give user immediate feedback that email is being loaded.
@@ -381,7 +375,7 @@ async function refreshAuthButtons() {
         gmailLoginBtn.style.display = 'inline-block';
         gmailLoginBtn.textContent = isAuth
             ? ui('Cấp lại quyền Google', 'Reconnect Google')
-            : ui('Đăng nhập / Đổi tài khoản', 'Sign in / Switch account');
+            : ui('Kết nối Gmail', 'Connect Gmail');
         gmailLogoutBtn.style.display = isAuth ? 'inline-block' : 'none';
         if (openGmailBtn) openGmailBtn.style.display = isAuth ? 'inline-block' : 'none';
 
@@ -508,9 +502,36 @@ async function loadUserProfile() {
 }
 
 async function gmailLogin() {
+    // Always called from an already-logged-in context (Email toolbar,
+    // Settings) -- Google can no longer establish a FlowMate session on
+    // its own, so this only ever links a Gmail account to the current one.
+    try {
+        const response = await fetch(`${API_BASE}/email/auth_url?intent=link`, {
+            credentials: 'include',
+            headers: { Accept: 'application/json' }
+        });
+        const data = await response.json();
+
+        if (!response.ok || !data.auth_url) {
+            alert(ui('Lỗi: ', 'Error: ') + (data.error || ui('OAuth chưa được cấu hình', 'OAuth is not configured')));
+            return;
+        }
+
+        window.location.href = data.auth_url;
+    } catch (err) {
+        alert(ui('Lỗi: ', 'Error: ') + err.message);
+    }
+}
+
+async function recoverViaGoogle() {
+    // The ONLY remaining path where Google establishes a session on its
+    // own: an existing account that previously linked this Gmail (no
+    // password set yet) regains access, then must set one -- see
+    // checkOAuthCallback's needs_password handling. Never creates a new
+    // account (see oauth2callback's intent=recover branch).
     showAuthGate(ui('Đang chuyển đến Google...', 'Redirecting to Google...'), true);
     try {
-        const response = await fetch(`${API_BASE}/email/auth_url`, {
+        const response = await fetch(`${API_BASE}/email/auth_url?intent=recover`, {
             credentials: 'include',
             headers: { Accept: 'application/json' }
         });
@@ -518,8 +539,8 @@ async function gmailLogin() {
 
         if (!response.ok || !data.auth_url) {
             showAuthGate(ui(
-                'Không thể bắt đầu đăng nhập. Vui lòng thử lại.',
-                'Unable to start sign-in. Please try again.'
+                'Không thể bắt đầu khôi phục tài khoản. Vui lòng thử lại.',
+                'Unable to start account recovery. Please try again.'
             ));
             alert(ui('Lỗi: ', 'Error: ') + (data.error || ui('OAuth chưa được cấu hình', 'OAuth is not configured')));
             return;
@@ -532,5 +553,54 @@ async function gmailLogin() {
             'Unable to reach the server. Please try again.'
         ));
         alert(ui('Lỗi: ', 'Error: ') + err.message);
+    }
+}
+
+function showSetPasswordModal() {
+    // Deliberately no close/dismiss control -- this is a forced, one-time
+    // step after recovering a Google-only account (no permanent "skip"),
+    // matching the explicit choice to require it before continuing.
+    document.getElementById('authGate')?.classList.add('is-hidden');
+    document.getElementById('setPasswordModal')?.classList.add('show');
+    document.getElementById('setPasswordInput')?.focus();
+}
+
+async function submitSetPassword(event) {
+    event.preventDefault();
+    const input = document.getElementById('setPasswordInput');
+    const status = document.getElementById('setPasswordStatus');
+    const password = input?.value || '';
+    if (password.length < 8) {
+        if (status) status.textContent = ui('Mật khẩu phải có ít nhất 8 ký tự.', 'Password must be at least 8 characters.');
+        input?.focus();
+        return;
+    }
+
+    const submitBtn = document.getElementById('setPasswordSubmitBtn');
+    submitBtn?.classList.add('is-loading');
+    if (input) input.disabled = true;
+    if (status) status.textContent = ui('Đang lưu mật khẩu...', 'Saving password...');
+
+    try {
+        const response = await apiFetch(`${API_BASE}/auth/set-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || ui('Không thể lưu mật khẩu.', 'Could not save the password.'));
+        }
+
+        document.getElementById('setPasswordModal')?.classList.remove('show');
+        document.getElementById('authGate')?.classList.remove('is-hidden');
+        showNotification(ui('✅ Đã đặt mật khẩu thành công!', '✅ Password set successfully!'), 'success');
+        await refreshAuthButtons();
+        await loadUserProfile();
+    } catch (error) {
+        if (status) status.textContent = error.message || ui('Không thể lưu mật khẩu. Vui lòng thử lại.', 'Could not save the password. Please try again.');
+    } finally {
+        submitBtn?.classList.remove('is-loading');
+        if (input) input.disabled = false;
     }
 }

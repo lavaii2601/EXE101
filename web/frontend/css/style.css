@@ -468,6 +468,12 @@ body.workspace-ready .workspace-app {
     font-size: 12px !important;
 }
 
+.auth-recover-link {
+    display: flex;
+    justify-content: center;
+    margin: 10px auto 0 !important;
+}
+
 .auth-gate-status {
     min-height: 20px;
     margin: 14px 0 20px;
@@ -1390,6 +1396,21 @@ button {
     padding: 0;
     overflow: hidden;
     border-radius: 20px;
+}
+
+.set-password-modal-content {
+    width: min(420px, 100%);
+    padding: 30px;
+    border-radius: 20px;
+    display: grid;
+    gap: 16px;
+}
+
+.set-password-modal-header p {
+    margin: 8px 0 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.5;
 }
 
 .user-mode-close {
