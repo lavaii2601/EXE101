@@ -45,7 +45,8 @@ class CalendarEvent:
         return bool(cached and cached.get('etag') == event.get('etag'))
 
     @staticmethod
-    def upsert_google_event(user_id, event, schedule_id=None, calendar_id='primary', db_path=None):
+    def upsert_google_event(user_id, event, schedule_id=None, calendar_id='primary',
+                             source_account_email=None, db_path=None):
         if not pg.enabled() or not event or not event.get('id'):
             return False
         user_id = user_id or pg.user_id_from_db_path(db_path)
@@ -63,12 +64,14 @@ class CalendarEvent:
                 INSERT INTO calendar_events (
                     user_id, provider, calendar_id, external_event_id, schedule_id,
                     title, description, start_time, end_time, timezone, location,
-                    attendees, status, html_link, etag, google_updated_at, raw_event, fetched_at
+                    attendees, status, html_link, etag, google_updated_at, raw_event,
+                    source_account_email, fetched_at
                 )
                 VALUES (
                     %s, 'google', %s, %s, %s,
                     %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, NOW()
+                    %s, %s, %s, %s, %s, %s,
+                    %s, NOW()
                 )
                 ON CONFLICT (user_id, provider, calendar_id, external_event_id) DO UPDATE
                 SET schedule_id = COALESCE(EXCLUDED.schedule_id, calendar_events.schedule_id),
@@ -84,6 +87,7 @@ class CalendarEvent:
                     etag = EXCLUDED.etag,
                     google_updated_at = EXCLUDED.google_updated_at,
                     raw_event = EXCLUDED.raw_event,
+                    source_account_email = COALESCE(EXCLUDED.source_account_email, calendar_events.source_account_email),
                     fetched_at = NOW()
                 """,
                 (
@@ -103,6 +107,7 @@ class CalendarEvent:
                     next_etag,
                     _coerce_datetime(event.get('updated')),
                     pg.json_value(event),
+                    source_account_email or None,
                 ),
             )
         return True

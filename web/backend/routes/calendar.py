@@ -6,35 +6,22 @@ from flask import Blueprint, request, jsonify
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.calendar_service import CalendarService
 from models.cache import Cache
 from models.calendar_event import CalendarEvent
 from models.history import History
 from models.schedule import Schedule
-from utils.user_context import get_current_user_id, get_user_db_path, get_user_token_file
-from utils.google_service_cache import get_cached_service
+from utils.user_context import get_current_user_id, get_user_db_path
+from routes.schedule.gcal_sync import (
+    _active_google_account_email,
+    _calendar_account_mismatch,
+    _load_calendar_service,
+)
 
 # Configure module logger
 logger = logging.getLogger(__name__)
 
 # Google Calendar endpoints
 calendar_bp = Blueprint('calendar', __name__, url_prefix='/api/calendar')
-
-def _load_calendar_service(user_id):
-    """Return a cached CalendarService instance if credentials token exists."""
-    if not user_id or user_id == 'default':
-        return None
-    token_file = get_user_token_file(user_id)
-    if os.path.exists(token_file):
-        try:
-            return get_cached_service(
-                token_file,
-                lambda: CalendarService(token_file=token_file),
-                service_kind='calendar',
-            )
-        except Exception as e:
-            logger.error(f"Error creating CalendarService: {e}")
-    return None
 
 
 def _clear_schedule_cache(db_path):
@@ -44,15 +31,24 @@ def _clear_schedule_cache(db_path):
         logger.debug("Could not clear schedule cache", exc_info=True)
 
 
-def _delete_google_event_async(user_id, event_id, db_path):
+def _delete_google_event_async(user_id, event_id, db_path, source_account_email=None):
     if not event_id:
         return False
 
     def _bg():
         try:
-            service = _load_calendar_service(user_id)
-            if service:
-                service.delete_event(event_id=event_id)
+            mismatch = _calendar_account_mismatch(
+                source_account_email, _active_google_account_email(user_id),
+            )
+            if mismatch:
+                logger.info(
+                    "Skipping Google Calendar delete for %s: linked under a different account",
+                    event_id,
+                )
+            else:
+                service = _load_calendar_service(user_id)
+                if service:
+                    service.delete_event(event_id=event_id)
             CalendarEvent.delete_google_event(user_id, event_id, db_path=db_path)
             _clear_schedule_cache(db_path)
         except Exception:
@@ -151,6 +147,7 @@ def create_calendar_event():
                 email_body='',
                 location=location,
                 calendar_event_id=event_id,
+                calendar_source_account_email=_active_google_account_email(user_id),
                 db_path=db_path
             )
             _clear_schedule_cache(db_path)
@@ -187,13 +184,22 @@ def update_calendar_event(event_id):
         return jsonify({'error': 'not_authenticated'}), 401
     
     try:
+        local_schedule = Schedule.get_by_calendar_event_id(event_id, db_path=db_path)
+        if local_schedule and _calendar_account_mismatch(
+            local_schedule.get('calendar_source_account_email'), _active_google_account_email(user_id),
+        ):
+            return jsonify({
+                'error': 'calendar_account_mismatch',
+                'message': 'Sự kiện này được đồng bộ với một tài khoản Google khác. Chuyển lại tài khoản đó để chỉnh sửa.',
+            }), 409
+
         data = request.get_json()
         title = data.get('title')
         description = data.get('description')
         start_time = data.get('start_time')
         end_time = data.get('end_time')
         attendees = data.get('attendees')
-        
+
         success = service.update_event(
             event_id=event_id,
             title=title,
@@ -202,7 +208,7 @@ def update_calendar_event(event_id):
             end_time=end_time,
             attendees=attendees
         )
-        
+
         if not success:
             return jsonify({'error': 'Failed to update calendar event'}), 500
         
@@ -237,7 +243,10 @@ def delete_calendar_event(event_id):
             Schedule.delete(local_schedule.get('id'), db_path=db_path)
         CalendarEvent.delete_google_event(user_id, event_id, db_path=db_path)
         _clear_schedule_cache(db_path)
-        calendar_delete_pending = _delete_google_event_async(user_id, event_id, db_path)
+        calendar_delete_pending = _delete_google_event_async(
+            user_id, event_id, db_path,
+            source_account_email=(local_schedule or {}).get('calendar_source_account_email'),
+        )
 
         History.create(
             f"Xoa su kien Google Calendar: {event_id}",

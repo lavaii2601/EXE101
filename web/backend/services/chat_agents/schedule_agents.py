@@ -529,7 +529,10 @@ class ScheduleDeleteAgent:
             Schedule.delete(schedule_id, db_path=ctx.db_path)
             _clear_schedule_cache(ctx.db_path)
             if calendar_event_id:
-                _delete_calendar_event_async(ctx.user_id, calendar_event_id, ctx.db_path)
+                _delete_calendar_event_async(
+                    ctx.user_id, calendar_event_id, ctx.db_path,
+                    source_account_email=schedule.get('calendar_source_account_email'),
+                )
             History.create(
                 f"Xoa lich hen: {schedule.get('title')}",
                 "Lich hen da bi xoa qua chat",

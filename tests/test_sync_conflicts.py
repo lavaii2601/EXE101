@@ -21,6 +21,7 @@ from models.workspace_sync import WorkspaceSync  # noqa: E402
 from routes import _background as background_route  # noqa: E402
 from routes import chat as chat_route  # noqa: E402
 from routes import schedule as schedule_route  # noqa: E402
+from routes.schedule import gcal_sync  # noqa: E402
 from services.chat_agents import AgentResult  # noqa: E402
 from services.chat_agents.checklist_agents import ChecklistCreateAgent  # noqa: E402
 from services.chat_agents.common import ChatContext  # noqa: E402
@@ -153,7 +154,9 @@ class ScheduleOptimisticConcurrencyTests(unittest.TestCase):
         sql, values = executed[0]
         self.assertNotIn("updated_at", sql.lower())
         self.assertIn("user_id = %s", sql)
-        self.assertEqual(("google-event-17", 17, "alice"), values)
+        # account_email defaults to None when the caller doesn't pass one
+        # (see Schedule.attach_calendar_event_id's new account_email param).
+        self.assertEqual(("google-event-17", None, 17, "alice"), values)
 
     def test_background_google_link_publishes_revision_after_metadata_write(self):
         schedule_id = self._create(self.alice_db, "Needs Google link")
@@ -294,6 +297,98 @@ class ScheduleOptimisticConcurrencyTests(unittest.TestCase):
             ("schedule", "calendar", "overview"),
             db_path=self.alice_db,
         )
+
+
+class CalendarAccountMismatchGuardTests(unittest.TestCase):
+    """A schedule's calendar_event_id is only meaningful against the linked
+    Google account it was created under (see utils/user_context.py's
+    "active slot" design for multi-account linking). These confirm the
+    sync engine never calls update_event with a stored id that belongs to
+    a now-inactive account."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.temp_dir.name, "guard.db")
+        self.pg_patch = patch.object(schedule_module.pg, "enabled", return_value=False)
+        self.pg_patch.start()
+
+    def tearDown(self):
+        self.pg_patch.stop()
+        Schedule._initialized_dbs.discard(self.db_path)
+        self.temp_dir.cleanup()
+
+    def test_blank_stored_account_is_always_treated_as_safe(self):
+        """Every schedule created before multi-account linking existed has
+        no calendar_source_account_email -- must never be treated as a
+        mismatch, or all pre-existing single-account data would break."""
+        self.assertFalse(gcal_sync._calendar_account_mismatch('', 'active@gmail.com'))
+        self.assertFalse(gcal_sync._calendar_account_mismatch(None, 'active@gmail.com'))
+
+    def test_a_different_real_account_is_flagged_case_insensitively(self):
+        self.assertTrue(gcal_sync._calendar_account_mismatch('old@gmail.com', 'active@gmail.com'))
+        self.assertFalse(gcal_sync._calendar_account_mismatch('Active@Gmail.com', 'active@gmail.com'))
+
+    def test_sync_skips_update_event_and_records_error_for_a_different_account(self):
+        schedule_id = Schedule.create(
+            title="Standup", description="", start_time="2026-07-25T09:00:00",
+            end_time="2026-07-25T10:00:00", attendees="",
+            calendar_event_id="evt-from-account-a",
+            calendar_source_account_email="a@gmail.com",
+            db_path=self.db_path,
+        )
+        schedule = Schedule.get_by_id(schedule_id, db_path=self.db_path)
+
+        class _Service:
+            def __init__(self):
+                self.update_called = False
+
+            def update_event(self, **kwargs):
+                self.update_called = True
+                return True
+
+        service = _Service()
+        with (
+            patch.object(gcal_sync, '_calendar_auth_failure_payload', return_value=None),
+            patch.object(gcal_sync, '_load_calendar_service', return_value=service),
+            patch.object(gcal_sync.User, 'get', return_value={'gmail_email': 'b@gmail.com'}),
+        ):
+            result = gcal_sync._sync_schedule_to_calendar('user-1', schedule_id, schedule, self.db_path)
+
+        self.assertIsNone(result)
+        self.assertFalse(service.update_called)
+        updated = Schedule.get_by_id(schedule_id, db_path=self.db_path)
+        self.assertIn('tài khoản Google khác', updated['calendar_sync_error'])
+
+    def test_sync_still_updates_when_the_account_matches(self):
+        schedule_id = Schedule.create(
+            title="Standup", description="", start_time="2026-07-25T09:00:00",
+            end_time="2026-07-25T10:00:00", attendees="",
+            calendar_event_id="evt-from-account-a",
+            calendar_source_account_email="a@gmail.com",
+            db_path=self.db_path,
+        )
+        schedule = Schedule.get_by_id(schedule_id, db_path=self.db_path)
+
+        class _Service:
+            def __init__(self):
+                self.update_called = False
+
+            def update_event(self, **kwargs):
+                self.update_called = True
+                return True
+
+        service = _Service()
+        with (
+            patch.object(gcal_sync, '_calendar_auth_failure_payload', return_value=None),
+            patch.object(gcal_sync, '_load_calendar_service', return_value=service),
+            patch.object(gcal_sync.User, 'get', return_value={'gmail_email': 'a@gmail.com'}),
+        ):
+            result = gcal_sync._sync_schedule_to_calendar('user-1', schedule_id, schedule, self.db_path)
+
+        self.assertEqual(result, 'evt-from-account-a')
+        self.assertTrue(service.update_called)
+        updated = Schedule.get_by_id(schedule_id, db_path=self.db_path)
+        self.assertIsNone(updated['calendar_sync_error'])
 
 
 class ChecklistOptimisticConcurrencyTests(unittest.TestCase):

@@ -15,6 +15,7 @@ from models.cache import Cache
 from models.calendar_event import CalendarEvent
 from models.schedule import Schedule, LOCAL_TZ
 from models.sync_job import SyncJob
+from models.user import User
 from models.workspace_sync import WorkspaceSync
 from utils.user_context import (
     get_current_user_id,
@@ -59,6 +60,31 @@ def _load_calendar_service(user_id):
         except Exception as e:
             logger.warning(f"Error creating CalendarService: {e}")
     return None
+
+
+def _active_google_account_email(user_id):
+    """The linked Google account get_user_token_file currently materializes
+    for this user (see utils/user_context.py's "active slot" design) --
+    kept in sync with oauth_tokens.is_active by every link/switch/unlink
+    path (routes/email/oauth.py, routes/email/accounts.py). Used to detect
+    a stored calendar_source_account_email that belongs to a now-inactive
+    linked account before mutating its Google event through the wrong
+    credential.
+    """
+    user = User.get(user_id) or {}
+    return str(user.get('gmail_email') or '').strip().lower()
+
+
+def _calendar_account_mismatch(stored_account_email, active_account_email):
+    """True only when stored_account_email names a REAL, different account.
+    A blank stored value -- every schedule/calendar_event row created
+    before multi-account linking existed -- is always treated as belonging
+    to whichever account is active, so existing single-account data is
+    never affected by this check."""
+    stored = str(stored_account_email or '').strip().lower()
+    if not stored:
+        return False
+    return stored != str(active_account_email or '').strip().lower()
 
 
 def _google_calendar_token_status(user_id):
@@ -186,9 +212,30 @@ def _sync_schedule_to_calendar(
 
     calendar_event_id = schedule_payload.get('calendar_event_id')
     attendees = _normalize_attendees(schedule_payload.get('attendees'))
+    active_account_email = _active_google_account_email(user_id)
 
     try:
         if calendar_event_id:
+            if _calendar_account_mismatch(
+                schedule_payload.get('calendar_source_account_email'), active_account_email,
+            ):
+                # This schedule's calendar_event_id was created under a
+                # different linked account than the one now active -- that
+                # id is meaningless (or, worse, could coincidentally belong
+                # to something else) against the currently active
+                # credential. Never call update_event with it; let the user
+                # switch back or re-link to recreate it under this account.
+                logger.warning(
+                    "Skipping Google Calendar update for schedule %s: linked under a different account",
+                    schedule_id,
+                )
+                Schedule.set_calendar_sync_error(
+                    schedule_id,
+                    'Sự kiện này được đồng bộ với một tài khoản Google khác. Chuyển lại tài khoản đó hoặc tạo lại lịch để đồng bộ với tài khoản hiện tại.',
+                    db_path=db_path,
+                )
+                return None
+
             success = calendar_service.update_event(
                 event_id=calendar_event_id,
                 title=schedule_payload.get('title'),
@@ -199,6 +246,7 @@ def _sync_schedule_to_calendar(
                 location=schedule_payload.get('location', '') or ''
             )
             if success:
+                Schedule.set_calendar_sync_error(schedule_id, None, db_path=db_path)
                 return calendar_event_id
             logger.warning(
                 "Calendar update failed for schedule %s with existing event %s; keeping local edit without recreating",
@@ -219,6 +267,7 @@ def _sync_schedule_to_calendar(
             attached = Schedule.attach_calendar_event_id(
                 schedule_id,
                 new_event_id,
+                account_email=active_account_email,
                 db_path=db_path,
             )
             if attached:
@@ -320,15 +369,27 @@ def _push_unsynced_local_schedules_to_calendar(user_id, db_path, start_time, end
     }
 
 
-def _delete_calendar_event_async(user_id, calendar_event_id, db_path):
+def _delete_calendar_event_async(user_id, calendar_event_id, db_path, source_account_email=None):
     if not calendar_event_id or _calendar_auth_failure_payload(user_id):
         return False
 
     def _bg():
         try:
-            calendar_service = _load_calendar_service(user_id)
-            if calendar_service:
-                calendar_service.delete_event(event_id=calendar_event_id)
+            mismatch = _calendar_account_mismatch(
+                source_account_email, _active_google_account_email(user_id),
+            )
+            if mismatch:
+                # The local schedule/cache row is already gone (or about to
+                # be) either way -- just skip the Google-side call instead
+                # of deleting something in the wrong account's calendar.
+                logger.info(
+                    "Skipping Google Calendar delete for %s: linked under a different account",
+                    calendar_event_id,
+                )
+            else:
+                calendar_service = _load_calendar_service(user_id)
+                if calendar_service:
+                    calendar_service.delete_event(event_id=calendar_event_id)
             CalendarEvent.delete_google_event(user_id, calendar_event_id, db_path=db_path)
             _clear_schedule_cache(db_path)
         except Exception:
@@ -482,6 +543,7 @@ def _prune_stale_duplicate_after_move(user_id, db_path, schedule_id, previous_sc
 
     deleted = 0
     calendar_service = None
+    active_account_email = _active_google_account_email(user_id)
     for candidate in Schedule.get_all(limit=1000, db_path=db_path):
         candidate_id = candidate.get('id')
         candidate_google_id = candidate.get('calendar_event_id') or ''
@@ -495,6 +557,12 @@ def _prune_stale_duplicate_after_move(user_id, db_path, schedule_id, previous_sc
         if Schedule.delete(candidate_id, db_path=db_path):
             deleted += 1
             CalendarEvent.delete_google_event(user_id, candidate_google_id, db_path=db_path)
+            if _calendar_account_mismatch(candidate.get('calendar_source_account_email'), active_account_email):
+                logger.info(
+                    "Skipping Google Calendar delete for stale duplicate %s: linked under a different account",
+                    candidate_google_id,
+                )
+                continue
             try:
                 calendar_service = calendar_service or _load_calendar_service(user_id)
                 if calendar_service:
@@ -558,6 +626,7 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
         time_max=time_max,
         raise_errors=True,
     )
+    active_account_email = _active_google_account_email(user_id)
     live_google_ids = {event.get('id') for event in gcal_events if event.get('id')}
     local_schedules = Schedule.get_all(limit=1000, db_path=db_path)
     schedules_by_google_id = {
@@ -590,6 +659,10 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
             'end_time': event.get('end'),
             'attendees': ','.join(event.get('attendees') or []),
             'location': event.get('location') or '',
+            # This event came from the account whose calendar was just
+            # fetched above -- (re)stamping it here self-heals any legacy
+            # row that predates multi-account linking (blank value).
+            'calendar_source_account_email': active_account_email,
         }
         if existing_schedule:
             if _google_sync_would_overwrite_recent_edit(existing_schedule, event_payload):
@@ -600,7 +673,10 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
                 unchanged_count += 1
                 continue
             if _schedule_matches_google_payload(existing_schedule, event_payload):
-                CalendarEvent.upsert_google_event(user_id, event, schedule_id=existing_schedule.get('id'), db_path=db_path)
+                CalendarEvent.upsert_google_event(
+                    user_id, event, schedule_id=existing_schedule.get('id'),
+                    source_account_email=active_account_email, db_path=db_path,
+                )
                 unchanged_count += 1
                 continue
             Schedule.update(
@@ -608,7 +684,10 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
                 **event_payload,
                 db_path=db_path
             )
-            CalendarEvent.upsert_google_event(user_id, event, schedule_id=existing_schedule.get('id'), db_path=db_path)
+            CalendarEvent.upsert_google_event(
+                user_id, event, schedule_id=existing_schedule.get('id'),
+                source_account_email=active_account_email, db_path=db_path,
+            )
             updated_count += 1
             continue
 
@@ -622,7 +701,10 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
                 db_path=db_path
             )
             schedules_by_google_id[event_id] = {**matching_local, **event_payload, 'calendar_event_id': event_id}
-            CalendarEvent.upsert_google_event(user_id, event, schedule_id=matching_local.get('id'), db_path=db_path)
+            CalendarEvent.upsert_google_event(
+                user_id, event, schedule_id=matching_local.get('id'),
+                source_account_email=active_account_email, db_path=db_path,
+            )
             updated_count += 1
             continue
 
@@ -635,14 +717,25 @@ def _sync_google_events_range(user_id, db_path, start_time, end_time, max_result
             email_body='',
             location=event_payload['location'],
             calendar_event_id=event_id,
+            calendar_source_account_email=active_account_email,
             db_path=db_path
         )
-        CalendarEvent.upsert_google_event(user_id, event, schedule_id=schedule_id, db_path=db_path)
+        CalendarEvent.upsert_google_event(
+            user_id, event, schedule_id=schedule_id,
+            source_account_email=active_account_email, db_path=db_path,
+        )
         created_count += 1
 
     for schedule in local_schedules:
         calendar_event_id = schedule.get('calendar_event_id')
         if not calendar_event_id or calendar_event_id in live_google_ids:
+            continue
+        if _calendar_account_mismatch(schedule.get('calendar_source_account_email'), active_account_email):
+            # calendar_event_id is absent from live_google_ids because it
+            # belongs to a DIFFERENT linked account's calendar, not because
+            # it was deleted -- event_exists() below would ask the wrong
+            # account's calendar and (almost certainly) also say "no",
+            # which would wrongly delete this schedule's Google link.
             continue
 
         start_dt = _parse_dt(schedule.get('start_time'))

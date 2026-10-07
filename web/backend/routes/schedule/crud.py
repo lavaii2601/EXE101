@@ -246,7 +246,10 @@ def delete_schedule(schedule_id):
         if calendar_event_id:
             CalendarEvent.delete_google_event(user_id, calendar_event_id, db_path=db_path)
         _clear_schedule_cache(db_path)
-        calendar_delete_pending = _delete_calendar_event_async(user_id, calendar_event_id, db_path)
+        calendar_delete_pending = _delete_calendar_event_async(
+            user_id, calendar_event_id, db_path,
+            source_account_email=schedule.get('calendar_source_account_email'),
+        )
 
         History.create(
             f"Xoa lich hen: {schedule.get('title', '')}",

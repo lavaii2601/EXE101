@@ -73,6 +73,18 @@ class Schedule:
             cursor.execute('ALTER TABLE schedules ADD COLUMN location TEXT')
         except sqlite3.OperationalError:
             pass
+        # Which linked Google account (see utils/user_context.py's "active
+        # slot" design) this schedule's calendar_event_id was created
+        # under -- lets the sync engine detect a stale link after the user
+        # switches accounts instead of mutating the wrong calendar.
+        try:
+            cursor.execute('ALTER TABLE schedules ADD COLUMN calendar_source_account_email TEXT')
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute('ALTER TABLE schedules ADD COLUMN calendar_sync_error TEXT')
+        except sqlite3.OperationalError:
+            pass
 
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_schedules_start_time ON schedules(start_time)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_schedules_status_start ON schedules(status, start_time)')
@@ -83,7 +95,8 @@ class Schedule:
         Schedule._initialized_dbs.add(db_path)
 
     @staticmethod
-    def create(title, description, start_time, end_time, attendees, email_body='', location=None, calendar_event_id=None, db_path=None):
+    def create(title, description, start_time, end_time, attendees, email_body='', location=None,
+               calendar_event_id=None, calendar_source_account_email=None, db_path=None):
         """Create new schedule"""
         if pg.enabled():
             user_id = pg.user_id_from_db_path(db_path)
@@ -96,14 +109,16 @@ class Schedule:
                     """
                     INSERT INTO schedules (
                         user_id, title, description, start_time, end_time,
-                        attendees, email_body, location, calendar_event_id, status
+                        attendees, email_body, location, calendar_event_id,
+                        calendar_source_account_email, status
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending')
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending')
                     RETURNING id
                     """,
                     (
                         user_id, title, description, start_time_value, end_time_value,
-                        attendees_value, email_body, location, calendar_event_id
+                        attendees_value, email_body, location, calendar_event_id,
+                        calendar_source_account_email,
                     ),
                 ).fetchone()
                 return row['id']
@@ -113,9 +128,15 @@ class Schedule:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO schedules (title, description, start_time, end_time, attendees, email_body, location, calendar_event_id, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-        ''', (title, description, start_time, end_time, attendees, email_body, location, calendar_event_id))
+            INSERT INTO schedules (
+                title, description, start_time, end_time, attendees, email_body, location,
+                calendar_event_id, calendar_source_account_email, status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        ''', (
+            title, description, start_time, end_time, attendees, email_body, location,
+            calendar_event_id, calendar_source_account_email,
+        ))
         conn.commit()
         schedule_id = cursor.lastrowid
         conn.close()
@@ -282,7 +303,7 @@ class Schedule:
         expected_updated_at = kwargs.pop('expected_updated_at', None)
         if pg.enabled():
             user_id = pg.user_id_from_db_path(db_path)
-            allowed_fields = ['title', 'description', 'start_time', 'end_time', 'attendees', 'email_body', 'status', 'location', 'calendar_event_id']
+            allowed_fields = ['title', 'description', 'start_time', 'end_time', 'attendees', 'email_body', 'status', 'location', 'calendar_event_id', 'calendar_source_account_email']
             updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
             if not updates:
                 return False
@@ -314,7 +335,7 @@ class Schedule:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        allowed_fields = ['title', 'description', 'start_time', 'end_time', 'attendees', 'email_body', 'status', 'location', 'calendar_event_id']
+        allowed_fields = ['title', 'description', 'start_time', 'end_time', 'attendees', 'email_body', 'status', 'location', 'calendar_event_id', 'calendar_source_account_email']
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
         
         if not updates:
@@ -342,8 +363,13 @@ class Schedule:
         return cursor.rowcount > 0
 
     @staticmethod
-    def attach_calendar_event_id(schedule_id, calendar_event_id, db_path=None):
+    def attach_calendar_event_id(schedule_id, calendar_event_id, account_email=None, db_path=None):
         """Atomically attach a Google event to an as-yet unlinked schedule.
+
+        account_email records which linked Google account (see
+        utils/user_context.py's "active slot" design) this event was
+        created under, so a later sync call can detect the user has since
+        switched accounts before mutating through a stale event id.
 
         This is integration metadata, not user-authored schedule content, so
         the statement intentionally leaves ``updated_at`` untouched. The
@@ -360,12 +386,13 @@ class Schedule:
                 cur = conn.execute(
                     """
                     UPDATE schedules
-                    SET calendar_event_id = %s
+                    SET calendar_event_id = %s,
+                        calendar_source_account_email = %s
                     WHERE id = %s
                       AND user_id = %s
                       AND (calendar_event_id IS NULL OR calendar_event_id = '')
                     """,
-                    (calendar_event_id, schedule_id, user_id),
+                    (calendar_event_id, account_email or None, schedule_id, user_id),
                 )
                 return cur.rowcount > 0
 
@@ -376,16 +403,44 @@ class Schedule:
         cursor.execute(
             """
             UPDATE schedules
-            SET calendar_event_id = ?
+            SET calendar_event_id = ?,
+                calendar_source_account_email = ?
             WHERE id = ?
               AND (calendar_event_id IS NULL OR calendar_event_id = '')
             """,
-            (calendar_event_id, schedule_id),
+            (calendar_event_id, account_email or None, schedule_id),
         )
         attached = cursor.rowcount > 0
         conn.commit()
         conn.close()
         return attached
+
+    @staticmethod
+    def set_calendar_sync_error(schedule_id, error_text, db_path=None):
+        """Record (error_text set) or clear (error_text=None) why the last
+        Google Calendar sync attempt for this schedule didn't go through --
+        integration metadata, so (like attach_calendar_event_id above) this
+        deliberately leaves updated_at untouched, since bumping it would
+        make _recently_updated() treat a background sync note as a fresh
+        user edit and skip pushing to Google for its whole grace window."""
+        if pg.enabled():
+            user_id = pg.user_id_from_db_path(db_path)
+            with pg.connection() as conn:
+                conn.execute(
+                    "UPDATE schedules SET calendar_sync_error = %s WHERE id = %s AND user_id = %s",
+                    (error_text, schedule_id, user_id),
+                )
+            return
+
+        db_path = db_path or Config.DATABASE_PATH
+        Schedule.init_db(db_path=db_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "UPDATE schedules SET calendar_sync_error = ? WHERE id = ?",
+            (error_text, schedule_id),
+        )
+        conn.commit()
+        conn.close()
 
     @staticmethod
     def delete(schedule_id, db_path=None):
