@@ -43,6 +43,12 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
   String htmlBody = '';
   String? bodyError;
   late String summary;
+  // email['summary'] is pre-populated server-side with a truncated snippet
+  // fallback for every email (see routes/email/list.py's
+  // _hydrate_email_for_list), so it's non-empty long before any real AI
+  // summary exists -- summary_type is the only reliable way to tell a real
+  // AI summary ('ai_cached') from that preview placeholder.
+  late String summaryType;
   bool summarizing = false;
   String? summaryError;
   bool togglingRead = false;
@@ -52,6 +58,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
   void initState() {
     super.initState();
     summary = (widget.email['summary'] as String?) ?? '';
+    summaryType = (widget.email['summary_type'] as String?) ?? '';
     isUnread = widget.email['is_unread'] == true;
     _loadBody();
   }
@@ -103,7 +110,12 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
     try {
       final data = await apiPost('/email/summary/$id', {});
       final fetched = (data is Map ? data['summary'] as String? : null) ?? '';
-      if (mounted) setState(() => summary = fetched);
+      if (mounted) {
+        setState(() {
+          summary = fetched;
+          summaryType = 'ai_cached';
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => summaryError = error.toString());
     } finally {
@@ -156,7 +168,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
                   const SizedBox(height: 8),
                   Text(sender, style: TextStyle(color: colors.textMuted, fontSize: 13)),
                   const SizedBox(height: 20),
-                  if (summary.isNotEmpty)
+                  if (summary.isNotEmpty && summaryType == 'ai_cached')
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(14),
@@ -181,7 +193,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
                       child: Text(summaryError!, style: TextStyle(color: colors.danger, fontSize: 12.5)),
                     ),
                   AppButton(
-                    title: summary.isNotEmpty ? t('Tóm tắt lại bằng AI', 'Re-summarize with AI') : t('Tóm tắt bằng AI', 'Summarize with AI'),
+                    title: summaryType == 'ai_cached' ? t('Tóm tắt lại bằng AI', 'Re-summarize with AI') : t('Tóm tắt bằng AI', 'Summarize with AI'),
                     variant: AppButtonVariant.secondary,
                     icon: AppIcons.emailSummarize,
                     onPressed: _summarize,

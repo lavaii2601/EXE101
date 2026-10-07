@@ -376,6 +376,7 @@ async function summarizeEnhancedEmail(email, emailDiv, button) {
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error(data.error || ui('Không thể tóm tắt email', 'Unable to summarize email'));
         email.summary = data.summary;
+        email.summary_type = 'ai_cached';
         let summary = emailDiv.querySelector('.email-item-summary');
         if (!summary) {
             summary = document.createElement('div');
@@ -458,7 +459,7 @@ function renderEnhancedEmailItem(email, container) {
         ${snippetHTML}
         <div class="email-item-actions">
             <button class="email-view-detail-btn btn-secondary">${ui('Xem chi tiết', 'View details')}</button>
-            <button class="email-summary-btn">${email.summary ? ui('Xem tóm tắt AI', 'View AI summary') : ui('Tóm tắt bằng AI', 'Summarize with AI')}</button>
+            <button class="email-summary-btn">${email.summary_type === 'ai_cached' ? ui('Xem tóm tắt AI', 'View AI summary') : ui('Tóm tắt bằng AI', 'Summarize with AI')}</button>
             <button class="email-read-toggle-btn btn-secondary">${email.is_unread ? ui('Đánh dấu đã đọc', 'Mark as read') : ui('Đánh dấu chưa đọc', 'Mark as unread')}</button>
             ${orgWorkspaces.some((w) => w.type === 'business') && canShowBusinessFeatures() ? `<button class="email-share-btn btn-secondary">${ui('Chia sẻ', 'Share')}</button>` : ''}
         </div>
@@ -470,7 +471,14 @@ function renderEnhancedEmailItem(email, container) {
     });
     emailDiv.querySelector('.email-summary-btn').addEventListener('click', async (event) => {
         event.stopPropagation();
-        if (email.summary) {
+        // email.summary is already populated client-side with a truncated
+        // snippet fallback for every email (see routes/email/list.py's
+        // _hydrate_email_for_list), so it's truthy long before any real AI
+        // summary exists -- summary_type is the only reliable way to tell
+        // "a real AI summary was generated" from "just the preview text",
+        // without which this button could never actually call the AI
+        // summarize endpoint from the list view.
+        if (email.summary_type === 'ai_cached') {
             showFormattedEmailDetail(email);
             return;
         }
@@ -504,7 +512,10 @@ function buildEmailDetailMarkup(email, bodyHtml, isLoading = false) {
     const tagHTML = email.tag
         ? `<span class="email-detail-tag" style="--email-tag-color: ${tagColor}">${escapeHtml(email.tag.toUpperCase())}</span>`
         : '';
-    const summaryHTML = email.summary
+    // Only a real AI summary (summary_type === 'ai_cached'), never the
+    // truncated-snippet placeholder every email starts with -- see the
+    // matching comment on the list view's button handler above.
+    const summaryHTML = email.summary && email.summary_type === 'ai_cached'
         ? `<div class="email-detail-summary" style="--email-tag-color: ${tagColor}">
                 <strong>${ui('Tóm tắt', 'Summary')}</strong>
                 <div>${formatEmailText(email.summary)}</div>
@@ -831,6 +842,7 @@ async function handleSummarizeEmail() {
 
         if (data.success) {
             currentDetailEmail.summary = data.summary;
+            currentDetailEmail.summary_type = 'ai_cached';
             const emailDetail = document.getElementById('emailDetail');
             const bodyEl = emailDetail ? emailDetail.querySelector('.email-detail-body') : null;
             if (bodyEl) {

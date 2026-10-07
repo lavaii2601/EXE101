@@ -368,9 +368,10 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
         ? await apiPost(`/email/unified/${email.provider}/${encodeURIComponent(email.external_id || email.id)}/summary`)
         : await apiPost(`/email/summary/${email.id}`);
       email.summary = data.summary || '';
+      email.summary_type = 'ai_cached';
       setSummary(data.summary || '');
       setEmails((current) => current.map((item) => (
-        item.id === email.id ? { ...item, summary: data.summary || '' } : item
+        item.id === email.id ? { ...item, summary: data.summary || '', summary_type: 'ai_cached' } : item
       )));
       onAgentSync?.(
         ['email', 'overview', 'history'],
@@ -651,7 +652,13 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
                     <Text style={styles.subject} numberOfLines={2}>{email.subject || '(Không tiêu đề)'}</Text>
                   </View>
                 </View>
-                {email.summary ? (
+                {/* email.summary is pre-populated client-side with a
+                    truncated snippet fallback for every email (see
+                    routes/email/list.py's _hydrate_email_for_list), so it's
+                    truthy long before any real AI summary exists --
+                    summary_type is the only reliable way to tell a real AI
+                    summary from the preview placeholder. */}
+                {email.summary_type === 'ai_cached' ? (
                   <View style={styles.aiSummary}>
                     <Text style={styles.aiSummaryLabel}>AI TÓM TẮT</Text>
                     <Text style={styles.preview} numberOfLines={3}>{emailSummaryPreview(email.summary)}</Text>
@@ -663,8 +670,8 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
               <View style={styles.inlineActions}>
                 <Button title="Xem" variant="secondary" onPress={() => openEmail(email)} />
                 <Button
-                  title={email.summary ? 'Xem tóm tắt AI' : 'Tóm tắt AI'}
-                  onPress={() => email.summary ? openEmail(email) : summarizeEmail(email)}
+                  title={email.summary_type === 'ai_cached' ? 'Xem tóm tắt AI' : 'Tóm tắt AI'}
+                  onPress={() => email.summary_type === 'ai_cached' ? openEmail(email) : summarizeEmail(email)}
                   loading={summarizingId === email.id}
                 />
                 <Button
@@ -775,7 +782,9 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
               <Text style={styles.subject}>{selectedEmail.subject || '(Không tiêu đề)'}</Text>
               <Text style={styles.sender}>{selectedEmail.sender || selectedEmail.from || ''}</Text>
               <Text style={styles.body}>{emailBody || selectedEmail.snippet || 'Đang tải...'}</Text>
-              {summary ? <EmailSummaryCard value={summary} colors={colors} styles={styles} /> : null}
+              {summary && selectedEmail.summary_type === 'ai_cached' ? (
+                <EmailSummaryCard value={summary} colors={colors} styles={styles} />
+              ) : null}
               {attachments.length > 0 ? (
                 <View style={styles.attachmentList}>
                   <Text style={styles.attachmentHeader}>{`ĐÍNH KÈM (${attachments.length})`}</Text>
@@ -796,7 +805,7 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
                 </View>
               ) : null}
               <Button
-                title={summary ? 'Tóm tắt lại bằng AI' : 'Tóm tắt bằng AI'}
+                title={selectedEmail.summary_type === 'ai_cached' ? 'Tóm tắt lại bằng AI' : 'Tóm tắt bằng AI'}
                 onPress={() => summarizeEmail(selectedEmail)}
                 loading={summarizingId === selectedEmail.id}
                 style={styles.detailButton}
