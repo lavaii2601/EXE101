@@ -492,20 +492,50 @@ def persist_google_credentials(user_id, creds, account_email=''):
             raise ValueError('Google credential serialization must be a JSON object')
         scopes = list(getattr(creds, 'scopes', None) or token_info.get('scopes') or [])
         expires_at = getattr(creds, 'expiry', None)
+        account_email = str(account_email or '').strip().lower()
 
         with pg.connection() as conn:
+            if not account_email:
+                # A bare token refresh (services/gmail_service.py,
+                # services/calendar_service.py, inspect_google_credentials)
+                # has no account context of its own -- it means "refresh
+                # whichever account is currently active" for this user.
+                active = conn.execute(
+                    """
+                    SELECT account_email FROM oauth_tokens
+                    WHERE user_id = %s AND provider = 'google' AND is_active AND revoked_at IS NULL
+                    """,
+                    (user_id,),
+                ).fetchone()
+                account_email = _row_value(active, 'account_email') or ''
+
+            # Deactivate every other linked account for this user+provider
+            # before activating/upserting the target -- keeps "at most one
+            # active row per user+provider" true (also enforced by the
+            # oauth_tokens_one_active_per_user_provider partial unique index),
+            # and makes linking a second account automatically become the
+            # new active slot.
+            conn.execute(
+                """
+                UPDATE oauth_tokens
+                SET is_active = FALSE
+                WHERE user_id = %s AND provider = 'google'
+                  AND account_email IS DISTINCT FROM %s
+                """,
+                (user_id, account_email or None),
+            )
             row = conn.execute(
                 """
                 INSERT INTO oauth_tokens (
-                    user_id, provider, account_email, token_json, scopes, expires_at, revoked_at
+                    user_id, provider, account_email, token_json, scopes, expires_at, revoked_at, is_active
                 )
-                VALUES (%s, 'google', %s, %s, %s, %s, NULL)
-                ON CONFLICT (user_id, provider) DO UPDATE
-                SET account_email = COALESCE(EXCLUDED.account_email, oauth_tokens.account_email),
-                    token_json = EXCLUDED.token_json,
+                VALUES (%s, 'google', %s, %s, %s, %s, NULL, TRUE)
+                ON CONFLICT (user_id, provider, account_email) DO UPDATE
+                SET token_json = EXCLUDED.token_json,
                     scopes = EXCLUDED.scopes,
                     expires_at = EXCLUDED.expires_at,
-                    revoked_at = NULL
+                    revoked_at = NULL,
+                    is_active = TRUE
                 RETURNING token_json, scopes, updated_at, revoked_at
                 """,
                 (user_id, account_email or None, pg.json_value(token_info), scopes, expires_at),
@@ -625,7 +655,12 @@ def delete_google_credentials(user_id):
 
 
 def _restore_google_credentials_from_db(user_id, token_file):
-    """Synchronize the local JSON cache with PostgreSQL, failing closed on errors."""
+    """Synchronize the local JSON cache with PostgreSQL, failing closed on errors.
+
+    A user can now have several linked Google accounts (one oauth_tokens row
+    each) -- the local cache file always materializes whichever one is
+    is_active, never an arbitrary row among several.
+    """
     try:
         with pg.connection() as conn:
             row = conn.execute(
@@ -634,6 +669,7 @@ def _restore_google_credentials_from_db(user_id, token_file):
                 FROM oauth_tokens
                 WHERE user_id = %s
                   AND provider = 'google'
+                  AND is_active
                 """,
                 (user_id,),
             ).fetchone()
