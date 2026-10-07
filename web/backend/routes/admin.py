@@ -310,10 +310,16 @@ def _postgres_dashboard():
                 (SELECT COUNT(*) FROM users WHERE gmail_connected = TRUE) AS google_connected_users,
                 (SELECT COUNT(*) FROM oauth_tokens WHERE revoked_at IS NULL) AS oauth_active,
                 (SELECT COUNT(*) FROM oauth_tokens WHERE revoked_at IS NOT NULL) AS oauth_revoked,
+                -- Scoped to is_active (the credential get_user_token_file actually
+                -- materializes for sync/API calls) rather than every non-revoked
+                -- row: a user can now have several linked accounts, and an
+                -- expired/under-scoped secondary one that isn't even in use
+                -- isn't an actionable problem the way the active one's would be.
                 (SELECT COUNT(*) FROM oauth_tokens
-                 WHERE revoked_at IS NULL AND expires_at IS NOT NULL AND expires_at < NOW()) AS oauth_access_expired,
+                 WHERE revoked_at IS NULL AND is_active
+                   AND expires_at IS NOT NULL AND expires_at < NOW()) AS oauth_access_expired,
                 (SELECT COUNT(*) FROM oauth_tokens
-                 WHERE revoked_at IS NULL
+                 WHERE revoked_at IS NULL AND is_active
                    AND NOT (
                        scopes @> ARRAY['https://www.googleapis.com/auth/gmail.modify']::TEXT[]
                        AND scopes @> ARRAY['https://www.googleapis.com/auth/calendar.events']::TEXT[]
