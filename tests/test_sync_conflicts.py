@@ -390,6 +390,34 @@ class CalendarAccountMismatchGuardTests(unittest.TestCase):
         updated = Schedule.get_by_id(schedule_id, db_path=self.db_path)
         self.assertIsNone(updated['calendar_sync_error'])
 
+    def test_unified_merge_excludes_schedules_linked_under_a_different_account(self):
+        """get_unified_schedules must never let a live event from the
+        active account's calendar merge into a schedule known to belong to
+        a DIFFERENT account -- a coincidental title+time match (e.g. the
+        same recurring "Standup" in two different linked calendars) would
+        otherwise silently re-point that schedule's displayed
+        google_event_id at the wrong event."""
+        same_account_item = {
+            'id': 1, 'title': 'Standup', 'start_time': '2026-07-25T09:00:00',
+            'google_event_id': 'evt-b', 'calendar_source_account_email': 'b@gmail.com',
+        }
+        other_account_item = {
+            'id': 2, 'title': 'Standup', 'start_time': '2026-07-25T09:00:00',
+            'google_event_id': 'evt-a', 'calendar_source_account_email': 'a@gmail.com',
+        }
+        legacy_item = {
+            'id': 3, 'title': 'Legacy meeting', 'start_time': '2026-07-25T09:00:00',
+            'google_event_id': 'evt-legacy', 'calendar_source_account_email': None,
+        }
+
+        mergeable = gcal_sync._mergeable_local_schedules(
+            [same_account_item, other_account_item, legacy_item], 'b@gmail.com',
+        )
+
+        self.assertIn(same_account_item, mergeable)
+        self.assertIn(legacy_item, mergeable)
+        self.assertNotIn(other_account_item, mergeable)
+
 
 class ChecklistOptimisticConcurrencyTests(unittest.TestCase):
     def setUp(self):

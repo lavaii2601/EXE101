@@ -87,6 +87,21 @@ def _calendar_account_mismatch(stored_account_email, active_account_email):
     return stored != str(active_account_email or '').strip().lower()
 
 
+def _mergeable_local_schedules(local_schedules, active_account_email):
+    """Local schedule display items (see _unified_schedule_item) eligible
+    to be merge-matched against a live-fetched Google event in
+    get_unified_schedules. Excludes any item linked under a DIFFERENT,
+    now-inactive account: if the active account's calendar happens to have
+    an event with a coincidentally matching id or title+time (e.g. the
+    same recurring "Standup" in two different linked calendars), merging
+    would silently re-point this schedule's displayed google_event_id at
+    that unrelated event."""
+    return [
+        item for item in local_schedules
+        if not _calendar_account_mismatch(item.get('calendar_source_account_email'), active_account_email)
+    ]
+
+
 def _google_calendar_token_status(user_id):
     """Return token presence and whether it includes Calendar write scope."""
     if not user_id or user_id == 'default':
@@ -906,20 +921,22 @@ def get_unified_schedules():
         if cached:
             return jsonify(cached)
 
+        active_account_email = _active_google_account_email(user_id)
         local_schedules = []
         for schedule in Schedule.get_all(limit=200, db_path=db_path):
             start_dt = _parse_dt(schedule.get('start_time'))
             if start_dt and start_dt >= now:
                 local_schedules.append(_unified_schedule_item(schedule))
 
+        mergeable = _mergeable_local_schedules(local_schedules, active_account_email)
         by_google_id = {
             item['google_event_id']: item
-            for item in local_schedules
+            for item in mergeable
             if item.get('google_event_id')
         }
         by_fingerprint = {
             _event_fingerprint(item.get('title'), item.get('start_time')): item
-            for item in local_schedules
+            for item in mergeable
         }
 
         calendar_connected = _has_calendar_token(user_id)

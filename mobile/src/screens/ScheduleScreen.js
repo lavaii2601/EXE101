@@ -660,6 +660,20 @@ function scheduleFingerprint(schedule) {
   return `${title}|${startKey}`;
 }
 
+// Different linked Google accounts (see utils/user_context.py's "active
+// slot" design on the backend) can coincidentally have an event with the
+// same title+time -- e.g. the same recurring "Standup" in two different
+// calendars. Only items that name a REAL, different account conflict;
+// a raw live-fetched Google event from the backend's /unified route never
+// carries this field, so it still dedupes normally against a local
+// schedule the way it always has.
+function accountsConflict(a, b) {
+  const accountA = String(a?.calendar_source_account_email || '').trim().toLowerCase();
+  const accountB = String(b?.calendar_source_account_email || '').trim().toLowerCase();
+  if (!accountA || !accountB) return false;
+  return accountA !== accountB;
+}
+
 function dedupeSchedules(schedules = []) {
   const byGoogleId = new Map();
   const byFingerprint = new Map();
@@ -674,11 +688,15 @@ function dedupeSchedules(schedules = []) {
     if (!schedule) return;
     const googleId = schedule.calendar_event_id || schedule.google_event_id || '';
     const fingerprint = scheduleFingerprint(schedule);
-    const existing = (googleId && byGoogleId.get(googleId)) || byFingerprint.get(fingerprint);
+    const candidate = (googleId && byGoogleId.get(googleId)) || byFingerprint.get(fingerprint);
+    const existing = candidate && !accountsConflict(schedule, candidate) ? candidate : null;
     if (!existing) {
       result.push(schedule);
-      if (googleId) byGoogleId.set(googleId, schedule);
-      byFingerprint.set(fingerprint, schedule);
+      // Don't overwrite a map entry a conflict check just skipped past --
+      // keep pointing at the first-seen item so a later genuine duplicate
+      // of it still dedupes correctly.
+      if (googleId && !byGoogleId.has(googleId)) byGoogleId.set(googleId, schedule);
+      if (!byFingerprint.has(fingerprint)) byFingerprint.set(fingerprint, schedule);
       return;
     }
 
