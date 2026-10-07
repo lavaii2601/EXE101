@@ -1005,8 +1005,13 @@ def _postgres_admin_users(user_id=None):
                 ORDER BY s.current_period_end DESC NULLS LAST LIMIT 1
             ) sub ON TRUE
             LEFT JOIN LATERAL (
+                -- is_active: the credential get_user_token_file actually
+                -- serves for this user (see utils/user_context.py) -- a
+                -- scoped-but-inactive secondary linked account shouldn't
+                -- report as "calendar connected" when it isn't the one
+                -- anything syncs through.
                 SELECT BOOL_OR(
-                    revoked_at IS NULL AND scopes @> ARRAY[
+                    revoked_at IS NULL AND is_active AND scopes @> ARRAY[
                         'https://www.googleapis.com/auth/calendar.events'
                     ]::TEXT[]
                 ) AS calendar_connected
