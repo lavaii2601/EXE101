@@ -470,7 +470,7 @@ def get_user_token_file(user_id):
     return token_file
 
 
-def persist_google_credentials(user_id, creds, account_email=''):
+def persist_google_credentials(user_id, creds, account_email='', account_name='', account_picture=''):
     """Persist Google OAuth credentials to the local token cache and Postgres.
 
     Railway's filesystem is ephemeral, so the database copy is the durable
@@ -493,6 +493,8 @@ def persist_google_credentials(user_id, creds, account_email=''):
         scopes = list(getattr(creds, 'scopes', None) or token_info.get('scopes') or [])
         expires_at = getattr(creds, 'expiry', None)
         account_email = str(account_email or '').strip().lower()
+        account_name = str(account_name or '').strip()
+        account_picture = str(account_picture or '').strip()
 
         with pg.connection() as conn:
             if not account_email:
@@ -527,18 +529,27 @@ def persist_google_credentials(user_id, creds, account_email=''):
             row = conn.execute(
                 """
                 INSERT INTO oauth_tokens (
-                    user_id, provider, account_email, token_json, scopes, expires_at, revoked_at, is_active
+                    user_id, provider, account_email, token_json, scopes, expires_at,
+                    revoked_at, is_active, account_name, account_picture
                 )
-                VALUES (%s, 'google', %s, %s, %s, %s, NULL, TRUE)
+                VALUES (%s, 'google', %s, %s, %s, %s, NULL, TRUE, %s, %s)
                 ON CONFLICT (user_id, provider, account_email) DO UPDATE
                 SET token_json = EXCLUDED.token_json,
                     scopes = EXCLUDED.scopes,
                     expires_at = EXCLUDED.expires_at,
                     revoked_at = NULL,
-                    is_active = TRUE
+                    is_active = TRUE,
+                    -- A bare refresh call has no profile info of its own --
+                    -- never blank out a display name/picture a real link
+                    -- already recorded just because a later refresh omitted it.
+                    account_name = COALESCE(NULLIF(EXCLUDED.account_name, ''), oauth_tokens.account_name),
+                    account_picture = COALESCE(NULLIF(EXCLUDED.account_picture, ''), oauth_tokens.account_picture)
                 RETURNING token_json, scopes, updated_at, revoked_at
                 """,
-                (user_id, account_email or None, pg.json_value(token_info), scopes, expires_at),
+                (
+                    user_id, account_email or None, pg.json_value(token_info), scopes, expires_at,
+                    account_name or None, account_picture or None,
+                ),
             ).fetchone()
 
         if not row:
@@ -563,6 +574,70 @@ def persist_google_credentials(user_id, creds, account_email=''):
             'Could not persist Google credentials to PostgreSQL'
         ) from exc
 
+    return token_file
+
+
+def list_google_accounts(user_id):
+    """Every Google account this FlowMate user currently has linked (not
+    just the active one) -- backs the linked-accounts switcher UI."""
+    user_id = sanitize_user_id(user_id)
+    if not pg.enabled():
+        return []
+    with pg.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT account_email, account_name, account_picture, is_active,
+                   scopes, expires_at, created_at, updated_at
+            FROM oauth_tokens
+            WHERE user_id = %s AND provider = 'google' AND revoked_at IS NULL
+            ORDER BY is_active DESC, updated_at DESC
+            """,
+            (user_id,),
+        ).fetchall()
+        return pg.normalize_rows(rows)
+
+
+def activate_google_account(user_id, account_email):
+    """Switch which linked Google account is the "active slot" -- the one
+    get_user_token_file materializes into the single local token-cache file
+    every existing single-account-shaped reader (Gmail/Calendar service
+    constructors, chat agents, overview service) already reads through.
+    Those callers need zero changes for multi-account switching to work.
+    """
+    user_id = sanitize_user_id(user_id)
+    account_email = str(account_email or '').strip().lower()
+    if not account_email:
+        raise ValueError('account_email is required')
+    token_file = _user_token_path(user_id)
+    if not pg.enabled():
+        raise CredentialStoreError('Multiple linked accounts require PostgreSQL')
+
+    with pg.connection() as conn:
+        existing = conn.execute(
+            """
+            SELECT 1 FROM oauth_tokens
+            WHERE user_id = %s AND provider = 'google'
+              AND account_email = %s AND revoked_at IS NULL
+            """,
+            (user_id, account_email),
+        ).fetchone()
+        if not existing:
+            raise CredentialStoreError('No linked Google account matches that email')
+        # One statement, not "deactivate everything then activate the
+        # target" as two separate statements -- avoids a window with zero
+        # active rows if this call raced with another worker's own
+        # activate/persist for the same user.
+        conn.execute(
+            """
+            UPDATE oauth_tokens
+            SET is_active = (account_email = %s)
+            WHERE user_id = %s AND provider = 'google' AND revoked_at IS NULL
+            """,
+            (account_email, user_id),
+        )
+
+    with _credential_file_lock(token_file):
+        _restore_google_credentials_from_db(user_id, token_file)
     return token_file
 
 
@@ -627,8 +702,16 @@ def inspect_google_credentials(user_id, refresh=False):
     return status
 
 
-def delete_google_credentials(user_id):
+def delete_google_credentials(user_id, account_email=None):
+    """Revoke one linked Google account, or every linked account if
+    account_email is omitted (original behavior, still used by the plain
+    "Disconnect Gmail" button for a single-account user). Revoking the
+    currently active account auto-promotes the most-recently-updated
+    remaining one so unlinking one mailbox never drops Gmail/Calendar
+    access entirely just because more than one account was linked.
+    """
     user_id = sanitize_user_id(user_id)
+    account_email = str(account_email or '').strip().lower() or None
     token_file = _user_token_path(user_id)
     if not pg.enabled():
         _discard_local_credentials(token_file)
@@ -636,14 +719,48 @@ def delete_google_credentials(user_id):
 
     try:
         with pg.connection() as conn:
-            conn.execute(
-                """
-                UPDATE oauth_tokens
-                SET revoked_at = NOW()
-                WHERE user_id = %s AND provider = 'google'
-                """,
-                (user_id,),
-            )
+            if account_email is None:
+                conn.execute(
+                    """
+                    UPDATE oauth_tokens
+                    SET revoked_at = NOW(), is_active = FALSE
+                    WHERE user_id = %s AND provider = 'google' AND revoked_at IS NULL
+                    """,
+                    (user_id,),
+                )
+            else:
+                target = conn.execute(
+                    """
+                    SELECT is_active FROM oauth_tokens
+                    WHERE user_id = %s AND provider = 'google'
+                      AND account_email = %s AND revoked_at IS NULL
+                    """,
+                    (user_id, account_email),
+                ).fetchone()
+                was_active = bool(_row_value(target, 'is_active'))
+                conn.execute(
+                    """
+                    UPDATE oauth_tokens
+                    SET revoked_at = NOW(), is_active = FALSE
+                    WHERE user_id = %s AND provider = 'google'
+                      AND account_email = %s AND revoked_at IS NULL
+                    """,
+                    (user_id, account_email),
+                )
+                if was_active:
+                    conn.execute(
+                        """
+                        UPDATE oauth_tokens
+                        SET is_active = TRUE
+                        WHERE id = (
+                            SELECT id FROM oauth_tokens
+                            WHERE user_id = %s AND provider = 'google' AND revoked_at IS NULL
+                            ORDER BY updated_at DESC
+                            LIMIT 1
+                        )
+                        """,
+                        (user_id,),
+                    )
     except Exception as exc:
         _discard_local_credentials(token_file)
         raise CredentialStoreError(
@@ -651,6 +768,12 @@ def delete_google_credentials(user_id):
         ) from exc
 
     _discard_local_credentials(token_file)
+    if account_email is not None:
+        # Unlike the "revoke everything" path above, a replacement account
+        # may now be active -- re-materialize the local cache instead of
+        # leaving the user looking logged out of Gmail entirely.
+        with _credential_file_lock(token_file):
+            _restore_google_credentials_from_db(user_id, token_file)
     return token_file
 
 

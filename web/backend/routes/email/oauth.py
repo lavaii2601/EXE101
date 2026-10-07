@@ -810,7 +810,10 @@ def google_auth_native():
         upsert_google_identity(subject, gmail_email, user_id)
 
         # Save token durably for Railway and cache it locally for this worker.
-        persist_google_credentials(user_id, creds, account_email=gmail_email)
+        persist_google_credentials(
+            user_id, creds,
+            account_email=gmail_email, account_name=gmail_name, account_picture=gmail_picture,
+        )
 
         # Update User in Database. Deliberately does not touch `email` --
         # that's the FlowMate account's own identity (Feature A trusts it
@@ -1034,7 +1037,10 @@ def oauth2callback():
         logger.info(f"Setting session for user: {user_id}")
 
         # Save token durably for Railway and cache it locally for this worker.
-        token_file = persist_google_credentials(user_id, creds, account_email=gmail_email)
+        token_file = persist_google_credentials(
+            user_id, creds,
+            account_email=gmail_email, account_name=gmail_name, account_picture=gmail_picture,
+        )
         logger.info(f"Token saved for user: {token_file}")
 
         # Save user info to database and initialize per-user DB

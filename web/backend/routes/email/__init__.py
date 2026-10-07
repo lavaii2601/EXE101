@@ -18,6 +18,7 @@ shared `email_bp` Blueprint defined in shared.py:
 - actions.py: mark read/unread, archive, trash.
 - compose.py: send-reply.
 - report.py: summarize-by-date.
+- accounts.py: list/activate/unlink multiple linked Google accounts.
 
 Importing every submodule below is what actually registers their
 `@email_bp.route(...)` decorators; nothing else in this file does that.
@@ -78,6 +79,7 @@ from routes.email import list as _list  # noqa: F401
 from routes.email import actions  # noqa: F401
 from routes.email import compose  # noqa: F401
 from routes.email import report  # noqa: F401
+from routes.email import accounts  # noqa: F401
 
 from routes.email.smart_inbox import _smart_inbox_bucket  # noqa: F401
 from routes.email.meeting import (  # noqa: F401
