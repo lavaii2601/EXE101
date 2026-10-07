@@ -7,6 +7,7 @@ import re
 import uuid
 import sys
 import logging
+import threading
 import time
 import hashlib
 
@@ -169,6 +170,26 @@ Compress(app)
 install_workspace_sync_hooks(app)
 
 
+def _record_request_telemetry_async(status_code, latency_ms, user_id, is_login, event_kwargs):
+    """Runs admin_ops' best-effort DB writes (api_metrics_daily upsert, users
+    touch, operational_events insert) off the request/response critical
+    path. These are pure observability -- nothing downstream reads them
+    before responding to the client -- so every request was previously
+    paying for 1-2 extra synchronous DB round trips for no reason a caller
+    could ever observe. Needs its own app context since Flask's is
+    thread-local and this runs after add_security_headers returns.
+    """
+    def _bg():
+        with app.app_context():
+            admin_ops.record_request_metric(status_code, latency_ms)
+            if status_code < 400 and user_id:
+                admin_ops.touch_user(user_id, login=is_login)
+            if event_kwargs is not None:
+                admin_ops.record_event(**event_kwargs)
+
+    threading.Thread(target=_bg, daemon=True).start()
+
+
 @app.after_request
 def add_security_headers(response):
     latency_ms = int((time.monotonic() - getattr(g, 'request_started_at', time.monotonic())) * 1000)
@@ -176,7 +197,6 @@ def add_security_headers(response):
     # making an unrelated telemetry write through those mocks; production and
     # development requests still record the same metrics and activity.
     if request.path.startswith('/api/') and not app.testing:
-        admin_ops.record_request_metric(response.status_code, latency_ms)
         user_id = active_authenticated_user_id()
         is_login = request.path in {
             '/api/auth/login',
@@ -184,8 +204,7 @@ def add_security_headers(response):
             '/api/email/google-auth',
             '/api/email/oauth2callback',
         }
-        if response.status_code < 400 and user_id:
-            admin_ops.touch_user(user_id, login=is_login)
+        event_kwargs = None
         if response.status_code >= 400:
             payload = response.get_json(silent=True) or {}
             error_code = payload.get('error') if isinstance(payload, dict) else None
@@ -199,9 +218,9 @@ def add_security_headers(response):
                 event_type = 'blocked_request'
             else:
                 event_type = 'api_error'
-            admin_ops.record_event(
-                event_type,
-                str(response.status_code),
+            event_kwargs = dict(
+                event_type=event_type,
+                status=str(response.status_code),
                 user_id=user_id,
                 feature=request.endpoint or request.path,
                 latency_ms=latency_ms,
@@ -216,6 +235,7 @@ def add_security_headers(response):
                     ).hexdigest()[:16],
                 },
             )
+        _record_request_telemetry_async(response.status_code, latency_ms, user_id, is_login, event_kwargs)
     if (
         response.status_code == 401
         and request.path.startswith('/api/')
