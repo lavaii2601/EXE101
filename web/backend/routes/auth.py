@@ -212,6 +212,22 @@ def set_password():
             'message': f'Mật khẩu phải có ít nhất {MIN_PASSWORD_LENGTH} ký tự.',
         }), 400
 
-    User.update(user_id, password_hash=generate_password_hash(password))
+    updates = {'password_hash': generate_password_hash(password)}
+    email = str((user or {}).get('email') or '').strip().lower()
+    # Every caller here arrived via intent=recover, which only ever resolves
+    # to an EXISTING account already proven to own this exact gmail_email
+    # (see lookup_google_identity_owner) -- so unlike the OAuth link/recover
+    # callback itself, backfilling email from it here can't be used to claim
+    # an address someone doesn't already control. Only fills a blank value;
+    # never overwrites an email the account already has, so the user never
+    # has to type or confirm it separately to finish becoming a FlowMate
+    # password account.
+    if not email:
+        gmail_email = str((user or {}).get('gmail_email') or '').strip().lower()
+        if gmail_email:
+            updates['email'] = gmail_email
+            email = gmail_email
+
+    User.update(user_id, **updates)
     logger.info('Password set for recovered/first-time account: %s', user_id)
-    return jsonify({'success': True, 'message': 'Đã đặt mật khẩu thành công'})
+    return jsonify({'success': True, 'email': email, 'message': 'Đã đặt mật khẩu thành công'})

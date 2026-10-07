@@ -1413,6 +1413,15 @@ button {
     line-height: 1.5;
 }
 
+.set-password-account-email {
+    margin: 10px 0 0 !important;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: var(--panel-soft);
+    font-size: 13px;
+    font-weight: 600;
+}
+
 .user-mode-close {
     position: absolute;
     top: 18px;

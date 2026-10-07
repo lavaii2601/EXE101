@@ -159,6 +159,52 @@ class PasswordAuthParityTests(unittest.TestCase):
         self.assertEqual('local_test_user', update.call_args.args[0])
         self.assertIn('password_hash', update.call_args.kwargs)
 
+    def test_set_password_backfills_email_from_gmail_when_blank(self):
+        """intent=recover already proved this account owns gmail_email (see
+        lookup_google_identity_owner), so using it as the login email here
+        needs no separate step from the user -- and never overwrites an
+        email the account already has."""
+        with self.client.session_transaction() as browser_session:
+            browser_session['user_id'] = 'local_test_user'
+
+        account = {
+            'user_id': 'local_test_user',
+            'password_hash': None,
+            'email': '',
+            'gmail_email': 'Recovered@Gmail.com',
+        }
+        with (
+            patch.object(auth.User, 'get', return_value=account),
+            patch.object(auth.User, 'update') as update,
+        ):
+            response = self.client.post('/api/auth/set-password', json={'password': 'brandnewpass1'})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['email'], 'recovered@gmail.com')
+        self.assertEqual(update.call_args.kwargs.get('email'), 'recovered@gmail.com')
+
+    def test_set_password_never_overwrites_an_existing_email(self):
+        with self.client.session_transaction() as browser_session:
+            browser_session['user_id'] = 'local_test_user'
+
+        account = {
+            'user_id': 'local_test_user',
+            'password_hash': None,
+            'email': 'already-set@example.com',
+            'gmail_email': 'other@gmail.com',
+        }
+        with (
+            patch.object(auth.User, 'get', return_value=account),
+            patch.object(auth.User, 'update') as update,
+        ):
+            response = self.client.post('/api/auth/set-password', json={'password': 'brandnewpass1'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['email'], 'already-set@example.com')
+        self.assertNotIn('email', update.call_args.kwargs)
+
     def test_gmail_disconnect_keeps_the_app_session(self):
         with self.client.session_transaction() as browser_session:
             browser_session['user_id'] = 'local_test_user'

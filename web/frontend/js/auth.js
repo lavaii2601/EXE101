@@ -563,6 +563,23 @@ function showSetPasswordModal() {
     document.getElementById('authGate')?.classList.add('is-hidden');
     document.getElementById('setPasswordModal')?.classList.add('show');
     document.getElementById('setPasswordInput')?.focus();
+
+    // Shows which email this password will log in with -- the backend
+    // already uses this account's own Gmail address as its login email with
+    // no extra step from the user (see POST /auth/set-password); this just
+    // makes that visible instead of leaving it implicit. Sourced from
+    // #gmailEmail, already populated by refreshAuthButtons() (awaited right
+    // before this is called) -- no extra network call needed here.
+    const emailNode = document.getElementById('setPasswordAccountEmail');
+    const knownEmail = document.getElementById('gmailEmail')?.textContent?.trim();
+    if (emailNode) {
+        if (knownEmail) {
+            emailNode.textContent = ui(`Tài khoản đăng nhập: ${knownEmail}`, `Login account: ${knownEmail}`);
+            emailNode.hidden = false;
+        } else {
+            emailNode.hidden = true;
+        }
+    }
 }
 
 async function submitSetPassword(event) {
