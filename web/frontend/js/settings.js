@@ -392,6 +392,11 @@ async function loadSettingsPage() {
         renderSubscriptionUI(user.subscription);
         updateUserModeUI(user.user_mode || currentUserMode);
         setSettingsState(ui('Đã đồng bộ', 'Synced'));
+        if (connected) loadLinkedAccounts();
+        else {
+            const section = document.getElementById('settingsLinkedAccountsSection');
+            if (section) section.hidden = true;
+        }
     } catch (error) {
         setSettingsState(`${ui('Lỗi', 'Error')}: ${error.message}`, true);
     }
@@ -399,6 +404,96 @@ async function loadSettingsPage() {
 
 function handleSettingsGoogleAction() {
     gmailLogin();
+}
+
+// Multiple Gmail accounts can be linked to one FlowMate account (see
+// routes/email/accounts.py); this renders that list and lets the user
+// switch which one is active or unlink one, in the same Settings card as
+// the single "Connect Gmail" button above.
+async function loadLinkedAccounts() {
+    const section = document.getElementById('settingsLinkedAccountsSection');
+    const list = document.getElementById('settingsLinkedAccountsList');
+    if (!section || !list) return;
+    try {
+        const response = await apiFetch(`${API_BASE}/email/accounts`);
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'failed');
+        renderLinkedAccounts(data.accounts || []);
+        section.hidden = false;
+    } catch (error) {
+        // Not fatal -- the single-account Connect/Reconnect button above
+        // still works even if this richer list can't load right now.
+        section.hidden = true;
+    }
+}
+
+function renderLinkedAccounts(accounts) {
+    const list = document.getElementById('settingsLinkedAccountsList');
+    if (!list) return;
+    if (!accounts.length) {
+        list.innerHTML = '';
+        return;
+    }
+    list.innerHTML = accounts.map((account) => {
+        const email = account.account_email || '';
+        const name = account.account_name || email;
+        const picture = account.account_picture || 'https://www.gravatar.com/avatar/?d=mp&s=72';
+        const isActive = !!account.is_active;
+        return `
+            <li class="linked-account-item" data-account-email="${escapeHtml(email)}">
+                <img class="linked-account-avatar" src="${escapeHtml(picture)}" alt="">
+                <div class="linked-account-info">
+                    <strong>${escapeHtml(name)}</strong>
+                    <span>${escapeHtml(email)}</span>
+                </div>
+                ${isActive ? `<span class="linked-account-badge">${ui('Đang hoạt động', 'Active')}</span>` : ''}
+                <div class="linked-account-actions">
+                    ${isActive ? '' : `<button type="button" class="btn-secondary" data-activate-account="${escapeHtml(email)}">${ui('Chuyển', 'Switch')}</button>`}
+                    <button type="button" class="btn-danger" data-remove-account="${escapeHtml(email)}">${ui('Gỡ', 'Remove')}</button>
+                </div>
+            </li>
+        `;
+    }).join('');
+}
+
+async function activateLinkedAccount(accountEmail) {
+    setSettingsState(ui('Đang chuyển tài khoản...', 'Switching account...'));
+    try {
+        const response = await apiFetch(`${API_BASE}/email/accounts/activate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_email: accountEmail }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.message || data.error || 'failed');
+        renderLinkedAccounts(data.accounts || []);
+        await loadSettingsPage();
+        showNotification(ui('Đã chuyển tài khoản Gmail đang hoạt động', 'Switched the active Gmail account'), 'success');
+        // The previously-active account's inbox is now stale in every open view.
+        if (typeof refreshEmailsFromGmail === 'function') refreshEmailsFromGmail().catch(() => {});
+    } catch (error) {
+        setSettingsState(`${ui('Lỗi', 'Error')}: ${error.message}`, true);
+    }
+}
+
+async function removeLinkedAccount(accountEmail) {
+    if (!confirm(ui(
+        `Gỡ liên kết ${accountEmail}? FlowMate sẽ ngừng truy cập Gmail/Calendar của tài khoản này.`,
+        `Unlink ${accountEmail}? FlowMate will stop accessing this account's Gmail/Calendar.`
+    ))) return;
+    setSettingsState(ui('Đang gỡ tài khoản...', 'Removing account...'));
+    try {
+        const response = await apiFetch(`${API_BASE}/email/accounts/${encodeURIComponent(accountEmail)}`, {
+            method: 'DELETE',
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.message || data.error || 'failed');
+        renderLinkedAccounts(data.accounts || []);
+        await loadSettingsPage();
+        showNotification(ui('Đã gỡ tài khoản Gmail', 'Gmail account removed'), 'success');
+    } catch (error) {
+        setSettingsState(`${ui('Lỗi', 'Error')}: ${error.message}`, true);
+    }
 }
 
 async function clearAllUserHistory() {

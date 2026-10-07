@@ -331,6 +331,17 @@ async function initApp() {
         }
         const settingsGoogleBtn = document.getElementById('settingsGoogleBtn');
         if (settingsGoogleBtn) settingsGoogleBtn.addEventListener('click', handleSettingsGoogleAction);
+        const settingsAddAccountBtn = document.getElementById('settingsAddAccountBtn');
+        if (settingsAddAccountBtn) settingsAddAccountBtn.addEventListener('click', () => gmailLogin());
+        const settingsLinkedAccountsList = document.getElementById('settingsLinkedAccountsList');
+        if (settingsLinkedAccountsList) {
+            settingsLinkedAccountsList.addEventListener('click', (event) => {
+                const activateEmail = event.target.closest('[data-activate-account]')?.dataset.activateAccount;
+                const removeEmail = event.target.closest('[data-remove-account]')?.dataset.removeAccount;
+                if (activateEmail) activateLinkedAccount(activateEmail);
+                if (removeEmail) removeLinkedAccount(removeEmail);
+            });
+        }
         const settingsLogoutBtn = document.getElementById('settingsLogoutBtn');
         if (settingsLogoutBtn) settingsLogoutBtn.addEventListener('click', appLogout);
         const settingsClearDataBtn = document.getElementById('settingsClearDataBtn');

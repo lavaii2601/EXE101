@@ -4728,6 +4728,98 @@ select:focus {
     border-bottom: 0;
 }
 
+.linked-accounts-section {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+
+.linked-accounts-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.linked-accounts-add {
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+.linked-accounts-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.linked-account-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+}
+
+.linked-account-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--primary);
+}
+
+.linked-account-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.linked-account-info strong,
+.linked-account-info span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.linked-account-info strong {
+    font-size: 13px;
+}
+
+.linked-account-info span {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.linked-account-badge {
+    font-size: 10px;
+    font-weight: 700;
+    color: #0f766e;
+    background: rgba(15, 118, 110, 0.12);
+    padding: 3px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.linked-account-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.linked-account-actions button {
+    padding: 6px 10px;
+    font-size: 11px;
+}
+
 .settings-row strong,
 .settings-row span {
     display: block;
