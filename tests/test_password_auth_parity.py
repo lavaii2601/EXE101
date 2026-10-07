@@ -21,6 +21,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from config import Config
 from routes import auth, email
 from utils.security import authenticated_user_id
 
@@ -219,6 +220,43 @@ class PasswordAuthParityTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         with self.client.session_transaction() as browser_session:
             self.assertEqual(browser_session['user_id'], 'local_test_user')
+
+
+class UserModelDuplicateEmailRowTests(unittest.TestCase):
+    """A handful of real accounts have two rows for the same address -- an
+    old build could create both the raw-email user_id and the sanitized one
+    for the same Google account (see utils/user_context.py's
+    resolve_google_user_id). get_by_email used to always take the oldest
+    matching row; when that older row is a password-less leftover and the
+    password was set on the newer sanitized one, login kept resolving to the
+    wrong row and a freshly-set password looked like it silently didn't
+    work -- this reproduces that exact scenario against a real SQLite DB."""
+
+    def setUp(self):
+        import tempfile
+        from models.user import User
+
+        self.User = User
+        self.tmpdir = tempfile.mkdtemp()
+        self._original_db_path = Config.DATABASE_PATH
+        Config.DATABASE_PATH = os.path.join(self.tmpdir, 'duplicate_rows_test.db')
+        User._initialized_dbs.discard(Config.DATABASE_PATH)
+
+    def tearDown(self):
+        Config.DATABASE_PATH = self._original_db_path
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_get_by_email_prefers_the_row_with_a_password_over_the_older_one(self):
+        email = 'duplicate.legacy@gmail.com'
+        self.User.get_or_create('duplicate.legacy@gmail.com', name='Older raw-id row', email=email)
+        self.User.get_or_create('duplicate_legacy_gmail_com', name='Newer sanitized row', email=email)
+        self.User.update('duplicate_legacy_gmail_com', password_hash=generate_password_hash('brandnewpass1'))
+
+        resolved = self.User.get_by_email(email)
+
+        self.assertEqual(resolved['user_id'], 'duplicate_legacy_gmail_com')
+        self.assertIsNotNone(resolved['password_hash'])
 
 
 class PasswordAuthFrontendContractTests(unittest.TestCase):

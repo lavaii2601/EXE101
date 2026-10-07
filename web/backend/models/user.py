@@ -229,8 +229,15 @@ class User:
         """Look up a user by their login email or connected Gmail address.
 
         Used by password-based register/login, which have no user_id to key
-        off of until the account is found. Case-insensitive; returns the
-        oldest matching account if more than one row happens to match.
+        off of until the account is found. Case-insensitive. A handful of
+        legacy accounts have two rows for the same address (an old build
+        could create both the raw-email user_id and the sanitized one for
+        the same Google account -- see utils/user_context.py's
+        resolve_google_user_id) -- prefer whichever row actually has a
+        password_hash set over the oldest one. Otherwise the recover-via-
+        Google bridge's password could be saved on the sanitized row while
+        login keeps resolving to the older, password-less raw-email row,
+        making a freshly-set password look like it silently doesn't work.
         """
         email = (email or '').strip().lower()
         if not email:
@@ -247,7 +254,7 @@ class User:
                     SELECT * FROM users
                     WHERE LOWER(email) = %s
                        OR LOWER(gmail_email) = %s
-                    ORDER BY created_at ASC
+                    ORDER BY (password_hash IS NOT NULL) DESC, created_at ASC
                     LIMIT 1
                     """,
                     (email, email),
@@ -264,7 +271,7 @@ class User:
             SELECT * FROM users
             WHERE LOWER(COALESCE(email, '')) = ?
                OR LOWER(COALESCE(gmail_email, '')) = ?
-            ORDER BY created_at ASC
+            ORDER BY (password_hash IS NOT NULL) DESC, created_at ASC
             LIMIT 1
             ''',
             (email, email),
