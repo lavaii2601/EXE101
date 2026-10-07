@@ -1,7 +1,7 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import * as Crypto from 'expo-crypto';
-import { apiGet, apiPost } from './client';
+import { apiDelete, apiGet, apiPost } from './client';
 import { setMobileSession } from './session';
 
 function bytesToHex(bytes) {
@@ -89,4 +89,23 @@ export async function connectGoogleAccount(intent = 'link') {
   }
   setMobileSession({ userId: queryParams.user_id, accessToken: queryParams.access_token });
   return { connected: true, needsPassword: queryParams.needs_password === '1' };
+}
+
+// Multiple Gmail accounts can be linked to one FlowMate account (see
+// routes/email/accounts.py) -- these back the linked-accounts switcher in
+// SettingsScreen. Linking another account reuses connectGoogleAccount()
+// above with its default intent='link'.
+export async function listGoogleAccounts() {
+  const data = await apiGet('/email/accounts');
+  return data.accounts || [];
+}
+
+export async function activateGoogleAccount(accountEmail) {
+  const data = await apiPost('/email/accounts/activate', { account_email: accountEmail });
+  return data.accounts || [];
+}
+
+export async function removeGoogleAccount(accountEmail) {
+  const data = await apiDelete(`/email/accounts/${encodeURIComponent(accountEmail)}`);
+  return data.accounts || [];
 }

@@ -19,7 +19,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { getUserMode } from '../config/userModes';
 import { apiGet, apiPost } from '../api/client';
 import { PRIVACY_URL, TERMS_URL } from '../api/config';
-import { connectGoogleAccount } from '../api/googleAuth';
+import { activateGoogleAccount, connectGoogleAccount, listGoogleAccounts, removeGoogleAccount } from '../api/googleAuth';
 import { logoutAllDevices } from '../api/emailAuth';
 import PricingModal from '../components/PricingModal';
 import WorkspaceMembersScreen from './WorkspaceMembersScreen';
@@ -89,6 +89,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const [gmailAuth,      setGmailAuth]      = useState(null);
   const [gmailLoading,   setGmailLoading]   = useState(false);
   const [pricingVisible, setPricingVisible] = useState(false);
+  const [gmailAccounts,  setGmailAccounts]  = useState([]);
+  const [gmailAccountBusy, setGmailAccountBusy] = useState(null);
 
   const subscription = profile?.subscription;
   const isPremiumTier = subscription?.tier === 'premium';
@@ -116,7 +118,19 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
     }
   }, []);
 
+  const loadGmailAccounts = useCallback(async () => {
+    try {
+      setGmailAccounts(await listGoogleAccounts());
+    } catch {
+      setGmailAccounts([]);
+    }
+  }, []);
+
   useEffect(() => { loadGmailAuth(); }, [loadGmailAuth]);
+  useEffect(() => {
+    if (gmailAuth?.authenticated) loadGmailAccounts();
+    else setGmailAccounts([]);
+  }, [gmailAuth?.authenticated, loadGmailAccounts]);
   useEffect(() => {
     if (!syncEvent?.id) return;
     if (hasSyncTarget(syncEvent, ['settings', 'profile', 'providers', 'email'])) {
@@ -138,6 +152,48 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
     } finally {
       setGmailLoading(false);
     }
+  };
+
+  const switchGmailAccount = async (accountEmail) => {
+    setGmailAccountBusy(accountEmail);
+    try {
+      setGmailAccounts(await activateGoogleAccount(accountEmail));
+      onRefresh?.();
+      onAgentSync?.(['settings', 'profile', 'email', 'schedule', 'overview']);
+    } catch (error) {
+      Alert.alert(t('Không chuyển được tài khoản', 'Could not switch account'), error.message);
+    } finally {
+      setGmailAccountBusy(null);
+    }
+  };
+
+  const confirmRemoveGmailAccount = (accountEmail) => {
+    Alert.alert(
+      t('Gỡ liên kết tài khoản', 'Unlink account'),
+      t(
+        `Gỡ liên kết ${accountEmail}? FlowMate sẽ ngừng truy cập Gmail/Calendar của tài khoản này.`,
+        `Unlink ${accountEmail}? FlowMate will stop accessing this account's Gmail/Calendar.`
+      ),
+      [
+        { text: t('Hủy', 'Cancel'), style: 'cancel' },
+        {
+          text: t('Gỡ', 'Remove'),
+          style: 'destructive',
+          onPress: async () => {
+            setGmailAccountBusy(accountEmail);
+            try {
+              setGmailAccounts(await removeGoogleAccount(accountEmail));
+              await loadGmailAuth();
+              onRefresh?.();
+            } catch (error) {
+              Alert.alert(t('Không gỡ được tài khoản', 'Could not remove account'), error.message);
+            } finally {
+              setGmailAccountBusy(null);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const confirmLogout = () => {
@@ -358,6 +414,63 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
             loading={gmailLoading}
           />
         </View>
+
+        {gmailAuth?.authenticated && gmailAccounts.length > 0 && (
+          <View style={styles.linkedAccountsBlock}>
+            <View style={styles.linkedAccountsHeader}>
+              <Text style={styles.linkedAccountsTitle}>
+                {t('Tài khoản Gmail đã liên kết', 'Linked Gmail accounts')}
+              </Text>
+              <TouchableOpacity onPress={reconnectGmail} disabled={gmailLoading}>
+                <Text style={styles.linkedAccountsAdd}>+ {t('Thêm', 'Add')}</Text>
+              </TouchableOpacity>
+            </View>
+            {gmailAccounts.map((account) => {
+              const busy = gmailAccountBusy === account.account_email;
+              return (
+                <View key={account.account_email} style={styles.linkedAccountRow}>
+                  {account.account_picture ? (
+                    <Image source={{ uri: account.account_picture }} style={styles.linkedAccountAvatar} />
+                  ) : (
+                    <View style={[styles.linkedAccountAvatar, styles.linkedAccountAvatarFallback]}>
+                      <Text style={styles.linkedAccountInitial}>
+                        {(account.account_name || account.account_email || '?').charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.linkedAccountInfo}>
+                    <Text style={styles.linkedAccountName} numberOfLines={1}>
+                      {account.account_name || account.account_email}
+                    </Text>
+                    <Text style={styles.linkedAccountEmail} numberOfLines={1}>{account.account_email}</Text>
+                  </View>
+                  {account.is_active ? (
+                    <View style={styles.linkedAccountBadge}>
+                      <Text style={styles.linkedAccountBadgeText}>{t('Hoạt động', 'Active')}</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.linkedAccountBtn}
+                      disabled={busy}
+                      onPress={() => switchGmailAccount(account.account_email)}
+                    >
+                      <Text style={styles.linkedAccountBtnText}>{t('Chuyển', 'Switch')}</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={[styles.linkedAccountBtn, styles.linkedAccountBtnDanger]}
+                    disabled={busy}
+                    onPress={() => confirmRemoveGmailAccount(account.account_email)}
+                  >
+                    <Text style={[styles.linkedAccountBtnText, styles.linkedAccountBtnDangerText]}>
+                      {t('Gỡ', 'Remove')}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         <View style={styles.divider} />
 
@@ -816,6 +929,44 @@ function makeStyles(colors) {
       textTransform: 'uppercase',
     },
     divider: { height: 1, backgroundColor: colors.border },
+
+    /* Linked Gmail accounts switcher */
+    linkedAccountsBlock: { marginTop: 12, marginBottom: 4, gap: 10 },
+    linkedAccountsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    linkedAccountsTitle: { color: colors.textMuted, fontFamily: 'Poppins_600SemiBold', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 },
+    linkedAccountsAdd: { color: colors.primary, fontFamily: 'Poppins_600SemiBold', fontSize: 12 },
+    linkedAccountRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      padding: 10,
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    linkedAccountAvatar: { width: 32, height: 32, borderRadius: 16 },
+    linkedAccountAvatarFallback: { backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+    linkedAccountInitial: { color: '#fff', fontFamily: 'Poppins_700Bold', fontSize: 13 },
+    linkedAccountInfo: { flex: 1, minWidth: 0 },
+    linkedAccountName: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
+    linkedAccountEmail: { color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 11, marginTop: 1 },
+    linkedAccountBadge: {
+      backgroundColor: `${colors.success}22`,
+      borderRadius: 999,
+      paddingHorizontal: 9,
+      paddingVertical: 4,
+    },
+    linkedAccountBadgeText: { color: colors.success, fontFamily: 'Poppins_700Bold', fontSize: 10 },
+    linkedAccountBtn: {
+      borderRadius: 999,
+      paddingHorizontal: 11,
+      paddingVertical: 6,
+      backgroundColor: `${colors.primary}18`,
+    },
+    linkedAccountBtnText: { color: colors.primary, fontFamily: 'Poppins_600SemiBold', fontSize: 11 },
+    linkedAccountBtnDanger: { backgroundColor: `${colors.danger}18` },
+    linkedAccountBtnDangerText: { color: colors.danger },
+
     usageRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 12 },
     usageLabel: { width: 110, color: colors.textMuted, fontFamily: 'Poppins_500Medium', fontSize: 11 },
     usageBarTrack: { flex: 1, height: 6, borderRadius: 999, overflow: 'hidden', backgroundColor: `${colors.primary}18` },
