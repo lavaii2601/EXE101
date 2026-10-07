@@ -102,7 +102,9 @@ def register():
         'success': True,
         'user_id': user_id,
         'email': email,
-        'access_token': issue_mobile_token(user_id),
+        # A just-created account is always token_version 0 -- skips the
+        # extra lookup issue_mobile_token would otherwise do to find that out.
+        'access_token': issue_mobile_token(user_id, token_version=0),
         'message': 'Tạo tài khoản thành công',
     })
 
@@ -134,7 +136,9 @@ def login():
         'success': True,
         'user_id': user_id,
         'email': user.get('email') or email,
-        'access_token': issue_mobile_token(user_id),
+        # Reuses the row get_by_email already fetched above instead of
+        # issue_mobile_token re-querying it from scratch.
+        'access_token': issue_mobile_token(user_id, token_version=user.get('token_version')),
         'message': 'Đăng nhập thành công',
     })
 

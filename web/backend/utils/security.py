@@ -53,17 +53,24 @@ def _serializer():
     )
 
 
-def issue_mobile_token(user_id):
+def issue_mobile_token(user_id, token_version=None):
     # Embeds the account's *current* token_version so a later
     # increment_token_version() call (password change, "log out all
     # devices", suspected device loss) makes every token issued before that
     # point fail verify_mobile_token's check in active_authenticated_user_id
     # below -- without this, a signed mobile token has no revocation story
     # for its whole 30-day validity window.
-    from models.user import User
+    #
+    # token_version is optional: a caller that already has the user row in
+    # hand (register/login already fetched it; a fresh account is always
+    # version 0) passes it directly to skip a redundant round trip on the
+    # login critical path. Omit it to fall back to the original re-fetch.
+    if token_version is None:
+        from models.user import User
 
-    user = User.get(user_id)
-    version = int((user or {}).get("token_version") or 0)
+        user = User.get(user_id)
+        token_version = (user or {}).get("token_version")
+    version = int(token_version or 0)
     return _serializer().dumps({"sub": user_id, "type": "mobile", "ver": version})
 
 

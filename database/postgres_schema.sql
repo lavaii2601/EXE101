@@ -1135,6 +1135,15 @@ CREATE INDEX IF NOT EXISTS idx_users_gmail_email ON users (gmail_email);
 CREATE INDEX IF NOT EXISTS idx_users_mode ON users (user_mode);
 CREATE INDEX IF NOT EXISTS idx_user_identities_user ON user_identities (user_id);
 
+-- models/user.py's get_by_email (every /api/auth/login and /api/auth/register
+-- call) matches on LOWER(email)/LOWER(gmail_email), which a plain index on
+-- the bare column can't serve -- Postgres needs the index built on the exact
+-- expression. Without these, that lookup is a full sequential scan of
+-- `users`, growing linearly with the user base; these keep it an index scan
+-- regardless of table size.
+CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_users_gmail_email_lower ON users (LOWER(gmail_email));
+
 CREATE INDEX IF NOT EXISTS idx_oauth_tokens_expires_at ON oauth_tokens (expires_at);
 
 CREATE INDEX IF NOT EXISTS idx_schedules_user_start ON schedules (user_id, start_time DESC);

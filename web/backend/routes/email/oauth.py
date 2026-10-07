@@ -845,7 +845,7 @@ def google_auth_native():
             'success': True,
             'user_id': user_id,
             'email': gmail_email,
-            'access_token': issue_mobile_token(user_id),
+            'access_token': issue_mobile_token(user_id, token_version=(user or {}).get('token_version')),
             'message': 'Đăng nhập và cấp quyền thành công'
         })
 
@@ -1101,7 +1101,7 @@ def oauth2callback():
                 # the flow.
                 exchange_code = secrets.token_urlsafe(32)
                 _store_oauth_exchange(exchange_code, mobile_code_challenge, {
-                    'access_token': issue_mobile_token(user_id),
+                    'access_token': issue_mobile_token(user_id, token_version=(user or {}).get('token_version')),
                     'user_id': user_id,
                     'email': gmail_email,
                     'needs_password': needs_password,
@@ -1113,7 +1113,7 @@ def oauth2callback():
             # code_challenge yet -- keep working exactly as before rather
             # than breaking sign-in for whatever's already installed.
             token_query = urlencode({
-                'access_token': issue_mobile_token(user_id),
+                'access_token': issue_mobile_token(user_id, token_version=(user or {}).get('token_version')),
                 'user_id': user_id,
                 'email': gmail_email,
                 'needs_password': '1' if needs_password else '0',

@@ -237,12 +237,16 @@ class User:
             return None
 
         if pg.enabled():
+            # LOWER(email)/LOWER(gmail_email) (not LOWER(COALESCE(...))) so this
+            # matches idx_users_email_lower/idx_users_gmail_email_lower exactly --
+            # `email` is already guaranteed non-empty above, and NULL = anything
+            # is never true in SQL, so a NULL column is excluded either way.
             with pg.connection() as conn:
                 user = conn.execute(
                     """
                     SELECT * FROM users
-                    WHERE LOWER(COALESCE(email, '')) = %s
-                       OR LOWER(COALESCE(gmail_email, '')) = %s
+                    WHERE LOWER(email) = %s
+                       OR LOWER(gmail_email) = %s
                     ORDER BY created_at ASC
                     LIMIT 1
                     """,

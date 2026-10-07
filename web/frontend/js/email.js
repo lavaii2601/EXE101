@@ -95,12 +95,21 @@ let meetingSuggestionRefreshTimer = null;
 
 
 async function refreshEmailsFromGmail(page = 1) {
-    await apiFetch(`${API_BASE}/email/cache/clear`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-    });
-    await loadEmails(page, { fresh: true });
-    await scanMeetingSuggestions(true);
+    // No separate /email/cache/clear call: loadEmails(..., {fresh: true})
+    // already tells get-unread to skip reading (and then overwrite) that
+    // exact same list cache server-side, so clearing it first here was a
+    // full extra round trip for no additional effect.
+    //
+    // loadEmails (a fast, metadata-only inbox listing) and
+    // scanMeetingSuggestions (a slower full-body scan for meeting details
+    // the listing's metadata-only fetch can't see) are independent Gmail
+    // reads -- run them concurrently instead of one after the other.
+    // loadMeetingSuggestions only reads what scanMeetingSuggestions just
+    // wrote, so it still has to wait for that one specifically.
+    await Promise.all([
+        loadEmails(page, { fresh: true }),
+        scanMeetingSuggestions(true),
+    ]);
     await loadMeetingSuggestions();
 }
 
@@ -119,7 +128,13 @@ async function loadEmails(page = 1, options = {}) {
     const includeRead = includeReadCheckbox ? includeReadCheckbox.checked : true;
     currentEmailPage = page;
 
-    if (!options.silent) await refreshAuthButtons();
+    // Not awaited: refreshAuthButtons() only updates the Gmail
+    // connect/disconnect button and badge (unrelated DOM to emailsList
+    // below) via 2 of its own network round trips. Awaiting it here used to
+    // force those to finish in series before the actual inbox fetch even
+    // started, adding their full latency to every visible "Đang tải
+    // email..." wait for no reason -- the two are independent.
+    if (!options.silent) refreshAuthButtons().catch(() => {});
     let requestController;
     try {
         const search = emailSearchInput ? emailSearchInput.value.trim() : '';

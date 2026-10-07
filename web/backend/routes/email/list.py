@@ -303,7 +303,14 @@ def get_unread_emails():
         return jsonify({'error': str(e), 'error_type': type(e).__name__}), 500
 
 
-NEW_MAIL_CHECK_CACHE_TTL = 2
+# The client polls every 5s (state.js's NEW_MAIL_POLL_INTERVAL_MS) -- a TTL
+# shorter than that (this used to be 2) meant almost every single tick was
+# still a real Gmail round trip plus a credential-freshness Postgres check,
+# with the cache only ever catching several simultaneously-open tabs on the
+# same user. A TTL spanning roughly one poll interval also now absorbs every
+# other solo tick, at the cost of at most one extra interval of latency
+# before a new-mail toast appears -- an easy trade for a background notifier.
+NEW_MAIL_CHECK_CACHE_TTL = 6
 
 
 def _new_mail_check_cache_key(user_id):
