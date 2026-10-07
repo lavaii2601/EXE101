@@ -493,7 +493,7 @@ class AIService:
     _PRICING_USD_PER_1K = {
         ('openai', 'gpt-4o'): {'input': 0.0025, 'output': 0.01},
         ('mistral', 'mistral-large-latest'): {'input': 0.002, 'output': 0.006},
-        ('claude', 'claude-sonnet-5'): {'input': 0.003, 'output': 0.015},
+        ('claude', 'claude-sonnet-5-5'): {'input': 0.003, 'output': 0.015},
         ('gemini', 'gemini-2.5-pro'): {'input': 0.00125, 'output': 0.005},
     }
 

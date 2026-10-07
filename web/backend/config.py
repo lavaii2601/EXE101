@@ -84,7 +84,12 @@ class Config:
     # hand -- override via env var for a specific pinned version instead.
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
     MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
-    CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
+    # "claude-sonnet-5" (no trailing "-5") was never a real Anthropic model
+    # id -- unlike OpenAI/Mistral's aliases above, Anthropic has no such
+    # "-latest"-style alias, so every Claude call has been failing with a
+    # 400 since this was introduced (930a216), silently masked by the
+    # round-robin falling through to OpenAI until its quota ran out.
+    CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
     GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 
