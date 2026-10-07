@@ -1118,10 +1118,15 @@ def _postgres_integrations():
                 COUNT(DISTINCT user_id) AS connected_users,
                 COUNT(*) FILTER (WHERE revoked_at IS NULL) AS active_connections,
                 COUNT(*) FILTER (WHERE revoked_at IS NOT NULL) AS revoked_access,
-                COUNT(*) FILTER (WHERE revoked_at IS NULL AND expires_at < NOW()) AS expired_tokens,
-                COUNT(*) FILTER (WHERE revoked_at IS NULL AND scopes @> ARRAY[
+                -- expired_tokens/gmail_active/calendar_active are about the
+                -- health of the credential a user is actually served by (see
+                -- get_user_token_file's "active slot" design) -- scoped to
+                -- is_active so a secondary, currently-unused linked account
+                -- doesn't skew these now that one user can link several.
+                COUNT(*) FILTER (WHERE revoked_at IS NULL AND is_active AND expires_at < NOW()) AS expired_tokens,
+                COUNT(*) FILTER (WHERE revoked_at IS NULL AND is_active AND scopes @> ARRAY[
                     'https://www.googleapis.com/auth/gmail.modify']::TEXT[]) AS gmail_active,
-                COUNT(*) FILTER (WHERE revoked_at IS NULL AND scopes @> ARRAY[
+                COUNT(*) FILTER (WHERE revoked_at IS NULL AND is_active AND scopes @> ARRAY[
                     'https://www.googleapis.com/auth/calendar.events']::TEXT[]) AS calendar_active
             FROM oauth_tokens
             """
