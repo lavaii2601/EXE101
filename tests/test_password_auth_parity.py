@@ -207,19 +207,29 @@ class PasswordAuthParityTests(unittest.TestCase):
         self.assertNotIn('email', update.call_args.kwargs)
 
     def test_gmail_disconnect_keeps_the_app_session(self):
+        """Disconnecting Gmail must only unlink that data source -- it must
+        never also end the FlowMate session or drop an elevated admin TOTP
+        session, both of which are tied to the FlowMate account itself
+        (admin identity trusts users.email, not a live Google connection).
+        _clear_oauth_state runs for real here (not mocked away) so this
+        actually exercises that, instead of just asserting gmail_logout's
+        own code doesn't separately clear the session."""
         with self.client.session_transaction() as browser_session:
             browser_session['user_id'] = 'local_test_user'
+            browser_session['admin_totp_user'] = 'local_test_user'
+            browser_session['admin_totp_verified_at'] = 1234567890.0
 
         with (
             patch.object(email.oauth, 'get_user_token_file', return_value=os.path.join(os.devnull, 'missing-token.json')),
             patch.object(email.User, 'update'),
-            patch.object(email.oauth, '_clear_oauth_state'),
         ):
             response = self.client.post('/api/email/logout')
 
         self.assertEqual(response.status_code, 200)
         with self.client.session_transaction() as browser_session:
             self.assertEqual(browser_session['user_id'], 'local_test_user')
+            self.assertEqual(browser_session['admin_totp_user'], 'local_test_user')
+            self.assertEqual(browser_session['admin_totp_verified_at'], 1234567890.0)
 
 
 class UserModelDuplicateEmailRowTests(unittest.TestCase):

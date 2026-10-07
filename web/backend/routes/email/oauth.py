@@ -500,23 +500,28 @@ def _load_gmail_service(user_id):
 
 
 def _clear_oauth_state(user_id):
-    """Clear OAuth token/session so another user can sign in."""
+    """Clear this browser's Gmail-connection state -- NOT the FlowMate
+    login session.
+
+    Google is no longer a login/identity provider (the FlowMate-primary
+    account redesign): disconnecting Gmail revokes/discards the linked
+    credential and its cached session display fields, same as unlinking
+    any other data source. It must never also clear session['user_id']
+    or the admin TOTP elevation -- both are tied to the FlowMate account
+    itself (admin identity now trusts users.email, not a live Google
+    session), which this call never touches. This used to also pop
+    those two, back when Google disconnecting really did mean "this
+    browser's identity is gone".
+    """
     token_file = delete_google_credentials(user_id)
     invalidate_cached_service(token_file)
 
-    # Clear oauth session keys
     session.pop('oauth_state', None)
     session.pop('oauth_code_verifier', None)
     session.pop('oauth_user_id', None)
     session.pop('gmail_user_email', None)
     session.pop('gmail_user_name', None)
     session.pop('gmail_user_picture', None)
-    session.pop('user_id', None)
-    # A Gmail logout/account switch must also invalidate any elevated admin
-    # TOTP session.  Otherwise the same browser could retain the admin gate
-    # until its timeout after the Google identity was disconnected.
-    session.pop('admin_totp_user', None)
-    session.pop('admin_totp_verified_at', None)
     session.modified = True
 
 
