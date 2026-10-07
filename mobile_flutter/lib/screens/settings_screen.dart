@@ -32,11 +32,23 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   bool startingPayment = false;
   bool waitingForPaymentReturn = false;
   bool deletingAccount = false;
+  List<GoogleAccount> gmailAccounts = [];
+  String? gmailAccountBusy;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _loadGmailAccounts();
+  }
+
+  Future<void> _loadGmailAccounts() async {
+    try {
+      final accounts = await listGoogleAccounts();
+      if (mounted) setState(() => gmailAccounts = accounts);
+    } catch (_) {
+      if (mounted) setState(() => gmailAccounts = []);
+    }
   }
 
   @override
@@ -216,6 +228,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       final result = await connectGoogleAccount(appLinks);
       if (result.connected && mounted) {
         await context.read<AppState>().refreshShell();
+        await _loadGmailAccounts();
       }
     } catch (error) {
       if (mounted) {
@@ -223,6 +236,60 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       }
     } finally {
       if (mounted) setState(() => connectingGmail = false);
+    }
+  }
+
+  Future<void> _switchGmailAccount(String accountEmail) async {
+    final t = context.read<LanguageController>().t;
+    setState(() => gmailAccountBusy = accountEmail);
+    try {
+      final accounts = await activateGoogleAccount(accountEmail);
+      if (!mounted) return;
+      setState(() => gmailAccounts = accounts);
+      await context.read<AppState>().refreshShell();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${t('Không chuyển được tài khoản', 'Could not switch account')}: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => gmailAccountBusy = null);
+    }
+  }
+
+  Future<void> _confirmRemoveGmailAccount(String accountEmail) async {
+    final t = context.read<LanguageController>().t;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t('Gỡ liên kết tài khoản', 'Unlink account')),
+        content: Text(t(
+          'Gỡ liên kết $accountEmail? FlowMate sẽ ngừng truy cập Gmail/Calendar của tài khoản này.',
+          "Unlink $accountEmail? FlowMate will stop accessing this account's Gmail/Calendar.",
+        )),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('Hủy', 'Cancel'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('Gỡ', 'Remove'))),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => gmailAccountBusy = accountEmail);
+    try {
+      final accounts = await removeGoogleAccount(accountEmail);
+      if (!mounted) return;
+      setState(() => gmailAccounts = accounts);
+      await context.read<AppState>().refreshShell();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${t('Không gỡ được tài khoản', 'Could not remove account')}: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => gmailAccountBusy = null);
     }
   }
 
@@ -427,6 +494,30 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                     loading: connectingGmail,
                   ),
                 ],
+                if (gmailReady && gmailAccounts.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        t('Tài khoản Gmail đã liên kết', 'Linked Gmail accounts'),
+                        style: TextStyle(color: colors.textMuted, fontWeight: FontWeight.w700, fontSize: 11, letterSpacing: 0.4),
+                      ),
+                      TextButton(
+                        onPressed: connectingGmail ? null : _connectGmail,
+                        style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero),
+                        child: Text('+ ${t('Thêm', 'Add')}', style: TextStyle(color: colors.primary, fontWeight: FontWeight.w600, fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ...gmailAccounts.map((account) => _LinkedAccountRow(
+                        account: account,
+                        busy: gmailAccountBusy == account.accountEmail,
+                        onSwitch: () => _switchGmailAccount(account.accountEmail),
+                        onRemove: () => _confirmRemoveGmailAccount(account.accountEmail),
+                      )),
+                ],
               ],
             ),
             if (workspace.isBusiness && canShowBusinessFeatures)
@@ -616,6 +707,76 @@ class _Row extends StatelessWidget {
             else if (onTap != null) Icon(Icons.chevron_right, color: colors.textMuted),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _LinkedAccountRow extends StatelessWidget {
+  final GoogleAccount account;
+  final bool busy;
+  final VoidCallback onSwitch;
+  final VoidCallback onRemove;
+
+  const _LinkedAccountRow({
+    required this.account,
+    required this.busy,
+    required this.onSwitch,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.watch<ThemeController>().colors;
+    final label = account.accountName.isNotEmpty ? account.accountName : account.accountEmail;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        border: Border.all(color: colors.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: colors.primary,
+            backgroundImage: account.accountPicture.isNotEmpty ? NetworkImage(account.accountPicture) : null,
+            child: account.accountPicture.isEmpty
+                ? Text(label.isNotEmpty ? label[0].toUpperCase() : '?', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700))
+                : null,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 13)),
+                Text(account.accountEmail, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: colors.textMuted, fontSize: 11)),
+              ],
+            ),
+          ),
+          if (busy)
+            const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+          else if (account.isActive)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              decoration: BoxDecoration(color: colors.success.withValues(alpha: 0.13), borderRadius: BorderRadius.circular(999)),
+              child: Text('Active', style: TextStyle(color: colors.success, fontSize: 10, fontWeight: FontWeight.w700)),
+            )
+          else
+            TextButton(
+              onPressed: onSwitch,
+              style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), minimumSize: Size.zero),
+              child: Text('Switch', style: TextStyle(color: colors.primary, fontSize: 11, fontWeight: FontWeight.w600)),
+            ),
+          if (!busy)
+            TextButton(
+              onPressed: onRemove,
+              style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), minimumSize: Size.zero),
+              child: Text('Remove', style: TextStyle(color: colors.danger, fontSize: 11, fontWeight: FontWeight.w600)),
+            ),
+        ],
       ),
     );
   }

@@ -152,3 +152,52 @@ Future<GoogleAuthResult> connectGoogleAccount(AppLinks appLinks, {String intent 
   }
   return GoogleAuthResult(connected: true, needsPassword: result.needsPassword);
 }
+
+/// One linked Google account, as returned by GET /api/email/accounts (see
+/// routes/email/accounts.py). Backs the linked-accounts switcher in
+/// SettingsScreen -- multiple Gmail accounts can be linked to one
+/// FlowMate account (see utils/user_context.py's "active slot" design).
+class GoogleAccount {
+  final String accountEmail;
+  final String accountName;
+  final String accountPicture;
+  final bool isActive;
+  const GoogleAccount({
+    required this.accountEmail,
+    required this.accountName,
+    required this.accountPicture,
+    required this.isActive,
+  });
+
+  factory GoogleAccount.fromJson(Map<String, dynamic> json) => GoogleAccount(
+        accountEmail: (json['account_email'] as String?) ?? '',
+        accountName: (json['account_name'] as String?) ?? '',
+        accountPicture: (json['account_picture'] as String?) ?? '',
+        isActive: json['is_active'] == true,
+      );
+}
+
+List<GoogleAccount> _parseGoogleAccounts(dynamic data) {
+  final raw = (data is Map ? data['accounts'] : null) as List?;
+  if (raw == null) return const [];
+  return raw
+      .whereType<Map>()
+      .map((item) => GoogleAccount.fromJson(Map<String, dynamic>.from(item)))
+      .toList();
+}
+
+Future<List<GoogleAccount>> listGoogleAccounts() async {
+  return _parseGoogleAccounts(await apiGet('/email/accounts'));
+}
+
+Future<List<GoogleAccount>> activateGoogleAccount(String accountEmail) async {
+  return _parseGoogleAccounts(
+    await apiPost('/email/accounts/activate', {'account_email': accountEmail}),
+  );
+}
+
+Future<List<GoogleAccount>> removeGoogleAccount(String accountEmail) async {
+  return _parseGoogleAccounts(
+    await apiDelete('/email/accounts/${Uri.encodeComponent(accountEmail)}'),
+  );
+}
