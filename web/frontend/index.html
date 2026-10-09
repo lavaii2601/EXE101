@@ -1205,20 +1205,26 @@
         </div>
     </div>
     
-    <script src="/js/utils.js?v=20260905-auth-parity-01"></script>
-    <script src="/js/state.js?v=20260905-auth-parity-01"></script>
-    <script src="/js/i18n.js?v=20260905-auth-parity-01"></script>
-    <script src="/js/auth.js?v=20260905-auth-parity-01"></script>
-    <script src="/js/workspace.js?v=20260905-auth-parity-01"></script>
-    <script src="/js/workhub.js?v=20260905-auth-parity-01"></script>
-    <script src="/js/notifications.js?v=20260905-auth-parity-01"></script>
-    <script src="/js/overview.js?v=20260905-auth-parity-01"></script>
-    <script src="/js/chat.js?v=20260905-auth-parity-01"></script>
-    <script src="/js/email.js?v=20260905-auth-parity-01"></script>
-    <script src="/js/schedule.js?v=20260905-auth-parity-01"></script>
-    <script src="/js/calendar.js?v=20260905-auth-parity-01"></script>
-    <script src="/js/history.js?v=20260905-auth-parity-01"></script>
-    <script src="/js/settings.js?v=20260905-auth-parity-01"></script>
-    <script src="/js/main.js?v=20260905-auth-parity-01"></script>
+    <!-- defer: lets the browser fetch all 15 files in parallel as soon as
+         it sees them (instead of fetching+executing one at a time in
+         sequence, the default for a classic script tag), while still
+         guaranteeing they execute in this exact document order afterward --
+         later files here rely on globals/functions the earlier ones
+         define (main.js last, depending on everything above it). -->
+    <script src="/js/utils.js?v=20260905-auth-parity-01" defer></script>
+    <script src="/js/state.js?v=20260905-auth-parity-01" defer></script>
+    <script src="/js/i18n.js?v=20260905-auth-parity-01" defer></script>
+    <script src="/js/auth.js?v=20260905-auth-parity-01" defer></script>
+    <script src="/js/workspace.js?v=20260905-auth-parity-01" defer></script>
+    <script src="/js/workhub.js?v=20260905-auth-parity-01" defer></script>
+    <script src="/js/notifications.js?v=20260905-auth-parity-01" defer></script>
+    <script src="/js/overview.js?v=20260905-auth-parity-01" defer></script>
+    <script src="/js/chat.js?v=20260905-auth-parity-01" defer></script>
+    <script src="/js/email.js?v=20260905-auth-parity-01" defer></script>
+    <script src="/js/schedule.js?v=20260905-auth-parity-01" defer></script>
+    <script src="/js/calendar.js?v=20260905-auth-parity-01" defer></script>
+    <script src="/js/history.js?v=20260905-auth-parity-01" defer></script>
+    <script src="/js/settings.js?v=20260905-auth-parity-01" defer></script>
+    <script src="/js/main.js?v=20260905-auth-parity-01" defer></script>
 </body>
 </html>
