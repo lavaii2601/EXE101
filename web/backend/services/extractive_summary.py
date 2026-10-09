@@ -284,12 +284,37 @@ def _same_evidence(left, right):
     return len(left_tokens & right_tokens) / min(len(left_tokens), len(right_tokens)) >= 0.82
 
 
+MAX_DOCUMENT_LINKS = 3
+MAX_LINK_DISPLAY_CHARS = 70
+
+
+def _shorten_url(url, max_chars=MAX_LINK_DISPLAY_CHARS):
+    """Keep a URL's domain and a short slice of its path, dropping the long
+    tracking-token query strings (e.g. Atlassian/Trello's click-tracking
+    redirect links, which append a full JWT-sized token to every link in the
+    email) that would otherwise make a 'concise' summary anything but."""
+    if len(url) <= max_chars:
+        return url
+    match = re.match(r'(https?://[^/?#]+)([^?#]*)', url)
+    if not match:
+        return url[:max_chars - 1].rstrip() + '…'
+    domain, path = match.group(1), match.group(2)
+    budget = max_chars - len(domain)
+    if budget <= 1:
+        return domain + '…'
+    trimmed_path = path[:budget - 1].rstrip('/')
+    return f"{domain}{trimmed_path}…" if len(trimmed_path) < len(path) else f"{domain}{path}"
+
+
 def extract_related_documents(body, attachments=None):
-    """Keep every attachment name and explicit source URL discoverable.
+    """Keep every attachment name and a handful of source URLs discoverable.
 
     Attachment contents are not interpreted here: retaining metadata and the
     original download flow is safer than pretending a filename reveals what
-    is inside a document.
+    is inside a document. Links are capped in count and display length --
+    without it, a marketing/notification email's click-tracking redirect
+    links (often several hundred characters each) can dominate the entire
+    summary panel on their own.
     """
     documents = []
     seen = set()
@@ -301,12 +326,16 @@ def extract_related_documents(body, attachments=None):
         if key not in seen:
             seen.add(key)
             documents.append(f"Tệp đính kèm: {filename}")
+    link_count = 0
     for match in _URL_RE.findall(str(body or '')):
+        if link_count >= MAX_DOCUMENT_LINKS:
+            break
         url = match.rstrip('.,);]}')
         key = ('url', url.casefold())
         if url and key not in seen:
             seen.add(key)
-            documents.append(f"Liên kết: {url}")
+            documents.append(f"Liên kết: {_shorten_url(url)}")
+            link_count += 1
     return documents
 
 

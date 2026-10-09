@@ -8,7 +8,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / 'web' / 'backend'))
 
 from services.extractive_summary import (  # noqa: E402
+    MAX_DOCUMENT_LINKS,
+    MAX_LINK_DISPLAY_CHARS,
     clean_email_text,
+    extract_related_documents,
     summarize_one_line,
     summarize_short,
     summarize_structured,
@@ -230,6 +233,61 @@ class EmailSummaryQualityTests(unittest.TestCase):
             self.assertIn(expected, summary)
         self.assertIn('ĐIỂM CHÍNH', summary)
         self.assertIn('TÀI LIỆU', summary)
+
+
+class RelatedDocumentLinkTests(unittest.TestCase):
+    """A notification/marketing email's click-tracking redirect links (e.g.
+    Atlassian/Trello's, which append a huge JWT-style token to every link in
+    the body) must never be allowed to dominate the 'TÀI LIỆU' section --
+    see the bug report: a Trello email's summary was almost entirely raw
+    tracking URLs hundreds of characters long."""
+
+    def test_long_tracking_url_is_shortened_for_display(self):
+        tracking_url = (
+            'https://track.atlassian.com/tracking/0f383bdd-0d2f-4607-9399-04b4fe592a61'
+            '?message=' + ('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' * 10)
+        )
+        documents = extract_related_documents(f'Xem chi tiết tại {tracking_url}')
+
+        self.assertEqual(1, len(documents))
+        self.assertLessEqual(len(documents[0]), MAX_LINK_DISPLAY_CHARS + len('Liên kết: '))
+        # The domain stays recognizable even once the tracking token is cut.
+        self.assertIn('track.atlassian.com', documents[0])
+        self.assertNotIn('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' * 10, documents[0])
+
+    def test_short_url_passes_through_unshortened(self):
+        documents = extract_related_documents('Tài liệu: https://docs.example.com/spec')
+        self.assertEqual(['Liên kết: https://docs.example.com/spec'], documents)
+
+    def test_link_count_is_capped_even_when_the_email_has_many(self):
+        body = ' '.join(f'https://example.com/page{i}' for i in range(10))
+        documents = extract_related_documents(body)
+        self.assertEqual(MAX_DOCUMENT_LINKS, len(documents))
+
+    def test_attachments_are_not_counted_against_the_link_cap(self):
+        body = ' '.join(f'https://example.com/page{i}' for i in range(10))
+        attachments = [{'filename': 'report.pdf'}]
+        documents = extract_related_documents(body, attachments=attachments)
+        self.assertEqual(1 + MAX_DOCUMENT_LINKS, len(documents))
+        self.assertEqual('Tệp đính kèm: report.pdf', documents[0])
+
+    def test_a_trello_style_email_summary_stays_concise(self):
+        # Mirrors the reported bug's shape: several Atlassian tracking
+        # redirects plus an S3 image link, all appended with long tokens.
+        token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' + ('ab12' * 60)
+        body = (
+            'Cần làm: Trả lời qua email. Thời hạn: 15/10/2026. '
+            f'Liên kết: https://trello.com/images/logo-new-sm-2x.png]https://track.atlassian.com/tracking/x?message={token} '
+            f'Liên kết: https://trello-members.s3.amazonaws.com/6ab0e77dbf984f35867b657b/978b71ead12d20b0a350fd4e5c186a/30.png '
+            f'Liên kết: https://trello.com/c/M3FubT0H/24-task?x={token} '
+            f'Liên kết: https://trello.com/b/9deQPT8G/flowmate-exe201-project-management '
+            f'Liên kết: https://trello.com/c/vFuVARIY/23-another-task?y={token}'
+        )
+        summary = summarize_structured('Tóm tắt', body)
+
+        # The whole summary must stay well short of the screenshot's
+        # multi-thousand-character wall of raw tracking links.
+        self.assertLess(len(summary), 1200)
 
 
 if __name__ == '__main__':
