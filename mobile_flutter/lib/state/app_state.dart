@@ -250,6 +250,16 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> refreshShell() async {
+    // /user/profile and /status don't depend on each other -- run them
+    // concurrently instead of one after the other (mirrors mobile/App.js's
+    // refreshShell, which already fetches profile/status/agent-profile via
+    // Promise.allSettled). Each keeps its own try/catch below so one
+    // failing never short-circuits the other.
+    await Future.wait([_refreshProfile(), _refreshStatus()]);
+    notifyListeners();
+  }
+
+  Future<void> _refreshProfile() async {
     try {
       final result = await apiGet('/user/profile');
       if (result is Map<String, dynamic> && result['success'] == true) {
@@ -274,11 +284,13 @@ class AppState extends ChangeNotifier {
       // showing forever with no way out. Fail open to the login flow instead.
       isAuthenticated ??= false;
     }
+  }
+
+  Future<void> _refreshStatus() async {
     try {
       final s = await apiGet('/status');
       if (s is Map<String, dynamic>) status = s;
     } catch (_) {}
-    notifyListeners();
   }
 
   void onAgentSync(List<String> targets) {
