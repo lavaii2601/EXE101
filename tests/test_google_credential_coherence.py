@@ -343,5 +343,252 @@ class GoogleCredentialCoherenceTests(unittest.TestCase):
         self.assertTrue(status['valid'])
 
 
+class _FakeOAuthTokensTable:
+    """A real (if tiny) in-memory stand-in for the oauth_tokens table,
+    supporting the exact query shapes persist_google_credentials/
+    list_google_accounts/activate_google_account/delete_google_credentials/
+    _restore_google_credentials_from_db actually issue. Unlike
+    GoogleCredentialCoherenceTests' single-row _Connection above, the
+    multi-account functions need real multi-row SELECT/UPDATE semantics,
+    so this executes against a genuine list of row dicts rather than one
+    mutable slot."""
+
+    def __init__(self):
+        self.rows = []
+        self._next_id = 1
+
+    def _matching(self, user_id, account_email=None, active_only=False, include_revoked=False):
+        for row in self.rows:
+            if row['user_id'] != user_id or row['provider'] != 'google':
+                continue
+            if not include_revoked and row['revoked_at'] is not None:
+                continue
+            if account_email is not None and row['account_email'] != account_email:
+                continue
+            if active_only and not row['is_active']:
+                continue
+            yield row
+
+
+class _MultiAccountConnection:
+    def __init__(self, table):
+        self.table = table
+
+    def execute(self, sql, params=None):
+        statement = ' '.join(sql.split()).upper()
+        params = params or ()
+
+        if statement.startswith('SELECT ACCOUNT_EMAIL, ACCOUNT_NAME'):
+            # list_google_accounts
+            user_id = params[0]
+            rows = sorted(
+                self.table._matching(user_id),
+                key=lambda r: (not r['is_active'], -r['updated_at']),
+            )
+            return _ListResult([dict(r) for r in rows])
+
+        if statement.startswith('SELECT 1 FROM OAUTH_TOKENS'):
+            # activate_google_account's existence check
+            user_id, account_email = params
+            match = next(self.table._matching(user_id, account_email=account_email), None)
+            return _ListResult([{'?column?': 1}] if match else [])
+
+        if statement.startswith('SELECT IS_ACTIVE FROM OAUTH_TOKENS'):
+            # delete_google_credentials's was_active check
+            user_id, account_email = params
+            match = next(self.table._matching(user_id, account_email=account_email), None)
+            return _ListResult([{'is_active': match['is_active']}] if match else [])
+
+        if statement.startswith('SELECT ACCOUNT_EMAIL FROM OAUTH_TOKENS'):
+            # persist_google_credentials resolving the active account for a
+            # bare refresh call (account_email not supplied by the caller)
+            user_id = params[0]
+            match = next(self.table._matching(user_id, active_only=True), None)
+            return _ListResult([{'account_email': match['account_email']}] if match else [])
+
+        if statement.startswith('SELECT TOKEN_JSON, SCOPES, UPDATED_AT, REVOKED_AT'):
+            # _restore_google_credentials_from_db
+            user_id = params[0]
+            match = next(self.table._matching(user_id, active_only=True), None)
+            return _ListResult([dict(match)] if match else [])
+
+        if statement.startswith('UPDATE OAUTH_TOKENS SET IS_ACTIVE = (ACCOUNT_EMAIL'):
+            # activate_google_account's single flip-all statement
+            account_email, user_id = params
+            for row in self.table._matching(user_id):
+                row['is_active'] = row['account_email'] == account_email
+            return _ListResult([])
+
+        if statement.startswith('UPDATE OAUTH_TOKENS SET IS_ACTIVE = FALSE'):
+            # persist_google_credentials deactivating every sibling account
+            user_id, keep_email = params
+            for row in self.table._matching(user_id):
+                if row['account_email'] != keep_email:
+                    row['is_active'] = False
+            return _ListResult([])
+
+        if statement.startswith('UPDATE OAUTH_TOKENS SET REVOKED_AT = NOW(), IS_ACTIVE = FALSE'):
+            if len(params) == 2:
+                user_id, account_email = params
+            else:
+                (user_id,), account_email = params, None
+            for row in self.table._matching(user_id, account_email=account_email):
+                row['revoked_at'] = 'revoked-now'
+                row['is_active'] = False
+            return _ListResult([])
+
+        if statement.startswith('UPDATE OAUTH_TOKENS SET IS_ACTIVE = TRUE WHERE ID'):
+            # delete_google_credentials auto-promoting a replacement
+            (user_id,) = params
+            candidates = sorted(
+                self.table._matching(user_id), key=lambda r: r['updated_at'], reverse=True,
+            )
+            if candidates:
+                candidates[0]['is_active'] = True
+            return _ListResult([])
+
+        if statement.startswith('INSERT INTO OAUTH_TOKENS'):
+            (user_id, account_email, token_json, scopes, expires_at,
+             account_name, account_picture) = params
+            existing = next(self.table._matching(user_id, account_email=account_email, include_revoked=True), None)
+            if existing:
+                existing.update(
+                    token_json=token_json, scopes=list(scopes or []), expires_at=expires_at,
+                    revoked_at=None, is_active=True,
+                    account_name=account_name or existing.get('account_name'),
+                    account_picture=account_picture or existing.get('account_picture'),
+                    updated_at=existing['updated_at'] + 1,
+                )
+                row = existing
+            else:
+                row = {
+                    'id': self.table._next_id, 'user_id': user_id, 'provider': 'google',
+                    'account_email': account_email, 'account_name': account_name,
+                    'account_picture': account_picture, 'token_json': token_json,
+                    'scopes': list(scopes or []), 'expires_at': expires_at,
+                    'revoked_at': None, 'is_active': True, 'updated_at': self.table._next_id,
+                }
+                self.table._next_id += 1
+                self.table.rows.append(row)
+            return _ListResult([dict(row)])
+
+        raise AssertionError(f'Unexpected SQL: {statement}')
+
+
+class _ListResult:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self):
+        return list(self.rows)
+
+
+class _MultiAccountConnectionContext:
+    def __init__(self, table):
+        self.table = table
+
+    def __enter__(self):
+        return _MultiAccountConnection(self.table)
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+
+class MultiAccountLinkingTests(unittest.TestCase):
+    """Exercises the real list_google_accounts/activate_google_account/
+    delete_google_credentials/persist_google_credentials functions through
+    a full link-two-accounts/switch/unlink lifecycle -- the "Verify" item
+    from the multi-account plan that never got its own test."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.config_patch = patch.object(
+            user_context.Config, 'GMAIL_TOKEN_FILE',
+            os.path.join(self.temp_dir.name, 'gmail_token.json'),
+        )
+        self.config_patch.start()
+        self.addCleanup(self.config_patch.stop)
+        user_context._credential_versions.clear()
+
+        self.table = _FakeOAuthTokensTable()
+        self.enabled_patch = patch.object(user_context.pg, 'enabled', return_value=True)
+        self.connection_patch = patch.object(
+            user_context.pg, 'connection',
+            side_effect=lambda: _MultiAccountConnectionContext(self.table),
+        )
+        self.ensure_user_patch = patch.object(user_context.pg, 'ensure_user')
+        self.json_value_patch = patch.object(user_context.pg, 'json_value', side_effect=lambda v: v)
+        for p in (self.enabled_patch, self.connection_patch, self.ensure_user_patch, self.json_value_patch):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def _link(self, user_id, account_email, name='', picture=''):
+        user_context.persist_google_credentials(
+            user_id, _credentials(f'token-{account_email}'),
+            account_email=account_email, account_name=name, account_picture=picture,
+        )
+
+    def test_linking_a_second_account_becomes_the_new_active_slot(self):
+        self._link('worker@example.com', 'a@gmail.com', name='Account A')
+        self._link('worker@example.com', 'b@gmail.com', name='Account B')
+
+        accounts = user_context.list_google_accounts('worker@example.com')
+
+        self.assertEqual(len(accounts), 2)
+        active = [a for a in accounts if a['is_active']]
+        self.assertEqual(len(active), 1)
+        self.assertEqual(active[0]['account_email'], 'b@gmail.com')
+        # Linking B must not have erased A from the list, just deactivated it.
+        self.assertIn('a@gmail.com', {a['account_email'] for a in accounts})
+
+    def test_activate_switches_the_active_slot_and_restores_local_cache(self):
+        self._link('worker@example.com', 'a@gmail.com')
+        self._link('worker@example.com', 'b@gmail.com')
+
+        token_file = user_context.activate_google_account('worker@example.com', 'a@gmail.com')
+
+        accounts = {a['account_email']: a['is_active'] for a in user_context.list_google_accounts('worker@example.com')}
+        self.assertEqual(accounts, {'a@gmail.com': True, 'b@gmail.com': False})
+        with open(token_file, 'r', encoding='utf-8') as fh:
+            self.assertEqual(json.load(fh)['token'], 'token-a@gmail.com')
+
+    def test_activate_rejects_an_email_that_was_never_linked(self):
+        self._link('worker@example.com', 'a@gmail.com')
+
+        with self.assertRaises(user_context.CredentialStoreError):
+            user_context.activate_google_account('worker@example.com', 'never-linked@gmail.com')
+
+    def test_unlinking_the_active_account_promotes_the_other_one(self):
+        self._link('worker@example.com', 'a@gmail.com')
+        self._link('worker@example.com', 'b@gmail.com')  # b becomes active
+
+        user_context.delete_google_credentials('worker@example.com', account_email='b@gmail.com')
+
+        accounts = user_context.list_google_accounts('worker@example.com')
+        self.assertEqual(len(accounts), 1)
+        self.assertEqual(accounts[0]['account_email'], 'a@gmail.com')
+        self.assertTrue(accounts[0]['is_active'])
+
+    def test_unlinking_the_last_account_leaves_an_empty_list(self):
+        self._link('worker@example.com', 'a@gmail.com')
+
+        user_context.delete_google_credentials('worker@example.com', account_email='a@gmail.com')
+
+        self.assertEqual(user_context.list_google_accounts('worker@example.com'), [])
+
+    def test_accounts_from_a_different_user_never_cross_over(self):
+        self._link('alice@example.com', 'alice-work@gmail.com')
+        self._link('bob@example.com', 'bob-work@gmail.com')
+
+        alice_accounts = user_context.list_google_accounts('alice@example.com')
+
+        self.assertEqual(len(alice_accounts), 1)
+        self.assertEqual(alice_accounts[0]['account_email'], 'alice-work@gmail.com')
+
+
 if __name__ == '__main__':
     unittest.main()
