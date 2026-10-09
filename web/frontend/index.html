@@ -411,6 +411,17 @@
                             <label>Người nhận</label>
                             <input type="email" id="emailTo" placeholder="email@example.com" required>
                         </div>
+                        <button type="button" id="composeToggleCcBcc" class="compose-toggle-link">+ Thêm CC/BCC</button>
+                        <div id="composeCcBccGroup" class="compose-cc-bcc-group" style="display: none;">
+                            <div class="form-group">
+                                <label>CC</label>
+                                <input type="text" id="emailCc" placeholder="cc1@example.com, cc2@example.com">
+                            </div>
+                            <div class="form-group">
+                                <label>BCC</label>
+                                <input type="text" id="emailBcc" placeholder="bcc@example.com">
+                            </div>
+                        </div>
                         <div class="form-group">
                             <label>Tiêu đề</label>
                             <input type="text" id="emailSubject" placeholder="Tiêu đề email" required>
@@ -419,7 +430,12 @@
                             <label>Nội dung</label>
                             <textarea id="emailBody" placeholder="Nội dung email" rows="6" required></textarea>
                         </div>
-                        <button type="submit" class="btn-primary">Gửi email</button>
+                        <div class="form-group">
+                            <label>Tệp đính kèm</label>
+                            <input type="file" id="emailAttachments" multiple>
+                            <div id="emailAttachmentsList" class="compose-attachments-list"></div>
+                        </div>
+                        <button type="submit" class="btn-primary" id="composeSubmitBtn">Gửi email</button>
                     </form>
                 </div>
 
@@ -1033,6 +1049,7 @@
             <div id="emailDetail"></div>
             <div class="modal-actions">
                 <button id="summarizeBtn" class="btn-secondary">Tóm tắt</button>
+                <button id="forwardEmailBtn" class="btn-secondary">Chuyển tiếp</button>
                 <button id="replyBtn" class="btn-primary">Trả lời tự động</button>
             </div>
         </div>

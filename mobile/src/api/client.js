@@ -51,11 +51,15 @@ function handleUnauthorized(data = {}) {
 async function request(path, options = {}) {
   const accessToken = getMobileAccessToken();
   const workspaceId = getCurrentWorkspaceId();
+  // A FormData body (email attachment uploads) must NOT get a hardcoded
+  // 'application/json' Content-Type -- RN's fetch needs to set its own
+  // multipart/form-data boundary header instead.
+  const isFormData = options.body instanceof FormData;
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       // No X-User-Id here: this app always authenticates with a real Bearer
       // token, so the header would be redundant identity at best and, if
       // MOBILE_USER_HEADER_ENABLED were ever accidentally left on in some
@@ -96,6 +100,15 @@ export function apiPost(path, body = {}) {
   return request(path, {
     method: 'POST',
     body: JSON.stringify(body)
+  });
+}
+
+// For multipart/form-data uploads (email attachments) -- formData is sent
+// as-is, see request()'s isFormData branch for why no Content-Type is set.
+export function apiPostForm(path, formData) {
+  return request(path, {
+    method: 'POST',
+    body: formData
   });
 }
 

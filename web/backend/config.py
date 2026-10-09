@@ -230,7 +230,10 @@ class Config:
     )
     RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", 180))
     AI_RATE_LIMIT_PER_MINUTE = int(os.getenv("AI_RATE_LIMIT_PER_MINUTE", 30))
-    MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", 1024 * 1024))
+    # 20MB: email attachment uploads (routes/email/compose.py) need headroom
+    # above Gmail's own ~18MB raw-attachment budget; every other endpoint in
+    # the app sends far less than this, so raising the global cap is safe.
+    MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", 20 * 1024 * 1024))
     ALLOWED_ORIGINS = [
         item.strip()
         for item in os.getenv(

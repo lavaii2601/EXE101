@@ -165,6 +165,16 @@ async function loadEmails(page = 1, options = {}) {
             } catch {
                 errorData = {};
             }
+            if (response.status === 401 && errorData.error === 'not_authenticated') {
+                emailsList.innerHTML = `
+                    <div style="padding: 30px; text-align: center; background: #FFF3E0; border-radius: 8px; margin: 20px;">
+                        <p style="font-size: 16px; color: #E65100; margin-bottom: 15px;">${ui('⚠️ Chưa đăng nhập Gmail', '⚠️ Gmail not connected')}</p>
+                        <button id="loginPromptBtn" class="btn-primary">${ui('Đăng nhập Gmail', 'Sign in to Gmail')}</button>
+                    </div>
+                `;
+                document.getElementById('loginPromptBtn').addEventListener('click', gmailLogin);
+                return;
+            }
             const detail = errorData.error || errorData.message || response.statusText || ui('Không rõ lỗi', 'Unknown error');
             const type = errorData.error_type ? ` (${errorData.error_type})` : '';
             throw new Error(`HTTP ${response.status}: ${detail}${type}`);
@@ -890,6 +900,9 @@ async function handleAutoReply() {
 
         if (data.success) {
             // Pre-fill the compose form with the AI-generated reply for review before sending
+            resetComposeState();
+            composeMode = 'reply';
+            composeInReplyToId = currentDetailEmail.id;
             const senderEmail = (currentDetailEmail.sender.match(/<(.+?)>/) || [null, currentDetailEmail.sender])[1];
             document.getElementById('emailTo').value = senderEmail || '';
             document.getElementById('emailSubject').value = currentDetailEmail.subject.startsWith('Re:')
@@ -917,30 +930,157 @@ async function handleAutoReply() {
     }
 }
 
+// Pre-fill the compose form to forward the currently open email, including
+// a note that its own attachments will be re-attached automatically (the
+// actual re-attaching happens server-side in routes/email/forward.py so the
+// files never have to round-trip through this browser tab).
+function handleForwardEmail() {
+    if (!currentDetailEmail) return;
+    resetComposeState();
+    composeMode = 'forward';
+    composeForwardMessageId = currentDetailEmail.id;
+
+    const quoted = `\n\n---------- Forwarded message ---------\n`
+        + `${ui('Từ', 'From')}: ${currentDetailEmail.sender || ''}\n`
+        + `${ui('Ngày', 'Date')}: ${currentDetailEmail.date || ''}\n`
+        + `${ui('Tiêu đề', 'Subject')}: ${currentDetailEmail.subject || ''}\n\n`
+        + `${currentDetailEmail.body || currentDetailEmail.summary || ''}`;
+
+    document.getElementById('emailTo').value = '';
+    document.getElementById('emailSubject').value = (currentDetailEmail.subject || '').toLowerCase().startsWith('fwd:')
+        ? currentDetailEmail.subject
+        : `Fwd: ${currentDetailEmail.subject || ''}`;
+    document.getElementById('emailBody').value = quoted;
+
+    const attachments = Array.isArray(currentDetailEmail.attachments) ? currentDetailEmail.attachments : [];
+    if (attachments.length) {
+        const list = document.getElementById('emailAttachmentsList');
+        if (list) {
+            const names = attachments.map(a => escapeHtml(a.filename || ui('tệp đính kèm', 'attachment'))).join(', ');
+            list.innerHTML = `<p class="compose-forward-original-attachments">${ui('Sẽ tự động kèm theo', 'Will be attached automatically')}: ${names}</p>`;
+        }
+    }
+
+    closeModalWindow();
+    const composeTabBtn = document.querySelector('#emails-page [data-tab="compose"]');
+    if (composeTabBtn) handleTabChange(composeTabBtn);
+    const submitBtn = document.getElementById('composeSubmitBtn');
+    if (submitBtn) submitBtn.textContent = ui('Chuyển tiếp', 'Forward');
+}
+
+function toggleComposeCcBcc() {
+    const group = document.getElementById('composeCcBccGroup');
+    const toggleBtn = document.getElementById('composeToggleCcBcc');
+    if (!group || !toggleBtn) return;
+    const show = group.style.display === 'none';
+    group.style.display = show ? 'block' : 'none';
+    toggleBtn.textContent = show ? ui('- Ẩn CC/BCC', '- Hide CC/BCC') : ui('+ Thêm CC/BCC', '+ Add CC/BCC');
+}
+
+function renderComposeAttachments() {
+    const list = document.getElementById('emailAttachmentsList');
+    if (!list) return;
+    list.innerHTML = composeAttachments.map((file, index) => `
+        <span class="compose-attachment-chip">
+            ${escapeHtml(file.name)} (${formatFileSize(file.size)})
+            <button type="button" class="compose-attachment-remove" data-index="${index}" aria-label="${ui('Xóa tệp', 'Remove file')}">&times;</button>
+        </span>
+    `).join('');
+    list.querySelectorAll('.compose-attachment-remove').forEach((removeBtn) => {
+        removeBtn.addEventListener('click', () => {
+            composeAttachments.splice(Number(removeBtn.dataset.index), 1);
+            renderComposeAttachments();
+        });
+    });
+}
+
+function handleAttachmentsSelected(e) {
+    const files = Array.from(e.target.files || []);
+    for (const file of files) {
+        if (!composeAttachments.some(existing => existing.name === file.name && existing.size === file.size)) {
+            composeAttachments.push(file);
+        }
+    }
+    // Read from composeAttachments at submit time instead of input.files, so
+    // clear the native input now -- lets the same filename be re-picked
+    // later (e.g. after removing it) and still fire a 'change' event.
+    e.target.value = '';
+    renderComposeAttachments();
+}
+
+function resetComposeState() {
+    composeMode = 'new';
+    composeInReplyToId = '';
+    composeForwardMessageId = '';
+    composeAttachments = [];
+    renderComposeAttachments();
+    const ccBccGroup = document.getElementById('composeCcBccGroup');
+    if (ccBccGroup) ccBccGroup.style.display = 'none';
+    const toggleBtn = document.getElementById('composeToggleCcBcc');
+    if (toggleBtn) toggleBtn.textContent = ui('+ Thêm CC/BCC', '+ Add CC/BCC');
+    const ccInput = document.getElementById('emailCc');
+    const bccInput = document.getElementById('emailBcc');
+    if (ccInput) ccInput.value = '';
+    if (bccInput) bccInput.value = '';
+    const submitBtn = document.getElementById('composeSubmitBtn');
+    if (submitBtn) submitBtn.textContent = ui('Gửi email', 'Send email');
+}
+
 // COMPOSE
 async function handleComposeSubmit(e) {
     e.preventDefault();
-    
+
     const to = document.getElementById('emailTo').value.trim();
     const subject = document.getElementById('emailSubject').value.trim();
     const body = document.getElementById('emailBody').value.trim();
-    
+    const cc = document.getElementById('emailCc')?.value.trim() || '';
+    const bcc = document.getElementById('emailBcc')?.value.trim() || '';
+    const isForward = composeMode === 'forward';
+    const endpoint = isForward ? 'forward' : 'send-reply';
+
+    const formData = new FormData();
+    formData.set('to', to);
+    formData.set('subject', subject);
+    formData.set('body', body);
+    if (cc) formData.set('cc', cc);
+    if (bcc) formData.set('bcc', bcc);
+    if (isForward) {
+        formData.set('message_id', composeForwardMessageId);
+    } else if (composeInReplyToId) {
+        formData.set('in_reply_to_id', composeInReplyToId);
+    }
+    for (const file of composeAttachments) {
+        formData.append('attachments', file, file.name);
+    }
+
+    const submitBtn = document.getElementById('composeSubmitBtn');
+    const originalText = submitBtn ? submitBtn.textContent : '';
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = ui('⏳ Đang gửi...', '⏳ Sending...');
+    }
+
     try {
-        const response = await apiFetch(`${API_BASE}/email/send-reply`, {
+        const response = await apiFetch(`${API_BASE}/email/${endpoint}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ to, subject, body })
+            body: formData,
         });
-        
+
         const data = await response.json();
         if (data.success) {
             showNotification(ui('✅ Email đã gửi', '✅ Email sent'), 'success');
             composeForm.reset();
+            resetComposeState();
         } else {
             showNotification(ui('❌ Lỗi: ', '❌ Error: ') + (data.error || ui('Không thể gửi email', 'Unable to send email')), 'error');
         }
     } catch (error) {
         showNotification(ui('❌ Lỗi: ', '❌ Error: ') + error.message, 'error');
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = isForward ? ui('Chuyển tiếp', 'Forward') : originalText;
+        }
     }
 }
 

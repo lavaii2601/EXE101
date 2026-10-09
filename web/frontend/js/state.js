@@ -45,6 +45,14 @@ let currentWeekStart; // set in initApp() (main.js) — see hazard note in the s
 // calling getMonday() here at top-level parse time would be fragile/order-
 // dependent. initApp() runs after every script has loaded (DOMContentLoaded).
 let currentDetailEmail = null;
+// Compose form state (email.js's handleComposeSubmit/handleForwardEmail) --
+// 'new' | 'reply' | 'forward'. composeAttachments holds File objects picked
+// via the attachments input, read at submit time instead of the native
+// input's own FileList (see handleAttachmentsSelected for why).
+let composeMode = 'new';
+let composeInReplyToId = '';
+let composeForwardMessageId = '';
+let composeAttachments = [];
 let currentUserMode = 'worker';
 let pendingUserMode = '';
 let userModeRequired = false;

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_links/app_links.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/client.dart';
@@ -120,32 +121,37 @@ class _EmailScreenState extends State<EmailScreen> {
   Future<void> _load() async {
     setState(() => loading = true);
     try {
-      final auth = await apiGet('/email/auth-status');
+      final smartBucketParam =
+          smartBucket.isNotEmpty ? '&smart_bucket=$smartBucket' : '';
+      final query =
+          'max_results=20&include_read=$includeRead&filter=$filter&search=${Uri.encodeQueryComponent(searchKeyword)}$smartBucketParam';
+      // auth-status and the cache-only inbox fetch are independent reads --
+      // run them concurrently (mirrors mobile/EmailScreen.js's loadEmails)
+      // instead of blocking the real data fetch behind the auth check's own
+      // round trip, which can include a live Google token refresh.
+      final authFuture = apiGet('/email/auth-status');
+      var data = await apiGet('/email/get-unread?$query&cache_only=true');
+      final auth = await authFuture;
       final isAuthed = auth is Map && auth['authenticated'] == true;
       setState(() => authenticated = isAuthed);
-      if (isAuthed) {
-        final smartBucketParam =
-            smartBucket.isNotEmpty ? '&smart_bucket=$smartBucket' : '';
-        final query =
-            'max_results=20&include_read=$includeRead&filter=$filter&search=${Uri.encodeQueryComponent(searchKeyword)}$smartBucketParam';
-        var data = await apiGet('/email/get-unread?$query&cache_only=true');
-        var items = (data is Map)
+      if (!isAuthed) {
+        setState(() => emails = []);
+        return;
+      }
+      var items = (data is Map)
+          ? ((data['emails'] as List?) ?? (data['items'] as List?) ?? [])
+          : [];
+      // Freshly-connected accounts have nothing cached yet -- fall back to a
+      // live Gmail fetch once so the inbox isn't misleadingly empty.
+      final needsRefresh = data is Map &&
+          (data['cache_miss'] == true || data['needs_refresh'] == true);
+      if (items.isEmpty && needsRefresh) {
+        data = await apiGet('/email/get-unread?$query&fresh=true');
+        items = (data is Map)
             ? ((data['emails'] as List?) ?? (data['items'] as List?) ?? [])
             : [];
-        // Freshly-connected accounts have nothing cached yet -- fall back to a
-        // live Gmail fetch once so the inbox isn't misleadingly empty.
-        final needsRefresh = data is Map &&
-            (data['cache_miss'] == true || data['needs_refresh'] == true);
-        if (items.isEmpty && needsRefresh) {
-          data = await apiGet('/email/get-unread?$query&fresh=true');
-          items = (data is Map)
-              ? ((data['emails'] as List?) ?? (data['items'] as List?) ?? [])
-              : [];
-        }
-        setState(() => emails = items);
-      } else {
-        setState(() => emails = []);
       }
+      setState(() => emails = items);
     } catch (_) {
       setState(() => authenticated = false);
     } finally {
@@ -199,11 +205,30 @@ class _EmailScreenState extends State<EmailScreen> {
       await _toggleRead(email);
     }
     if (!mounted) return;
-    Navigator.push(
+    final result = await Navigator.push<Map<String, dynamic>>(
         context,
         MaterialPageRoute(
             builder: (_) =>
                 EmailDetailScreen(email: email, onToggleRead: _toggleRead)));
+    // EmailDetailScreen's "Chuyển tiếp" button pops with this signal instead
+    // of opening the compose sheet itself -- the sheet lives here so it can
+    // also be reused by the plain "new email" FAB.
+    if (result?['action'] == 'forward' && mounted) {
+      final forwarded = result!['email'] as Map<String, dynamic>;
+      final subject = (forwarded['subject'] as String?) ?? '';
+      final quoted = '\n\n---------- Forwarded message ---------\n'
+          'Từ: ${forwarded['sender'] ?? forwarded['from'] ?? ''}\n'
+          'Ngày: ${forwarded['date'] ?? ''}\n'
+          'Tiêu đề: $subject\n\n'
+          '${forwarded['body'] ?? forwarded['summary'] ?? forwarded['snippet'] ?? ''}';
+      _openComposeSheet(
+        initialSubject:
+            subject.toLowerCase().startsWith('fwd:') ? subject : 'Fwd: $subject',
+        initialBody: quoted,
+        mode: 'forward',
+        forwardMessageId: forwarded['id']?.toString(),
+      );
+    }
   }
 
   void _onSearchChanged(String value) {
@@ -463,12 +488,22 @@ class _EmailScreenState extends State<EmailScreen> {
     });
   }
 
-  void _openComposeSheet() {
-    final toController = TextEditingController();
-    final subjectController = TextEditingController();
-    final bodyController = TextEditingController();
+  void _openComposeSheet({
+    String initialTo = '',
+    String initialSubject = '',
+    String initialBody = '',
+    String mode = 'new', // 'new' | 'forward'
+    String? forwardMessageId,
+  }) {
+    final toController = TextEditingController(text: initialTo);
+    final ccController = TextEditingController();
+    final bccController = TextEditingController();
+    final subjectController = TextEditingController(text: initialSubject);
+    final bodyController = TextEditingController(text: initialBody);
     bool sending = false;
+    bool showCcBcc = false;
     String? error;
+    final attachments = <PlatformFile>[];
 
     showModalBottomSheet(
       context: context,
@@ -493,13 +528,34 @@ class _EmailScreenState extends State<EmailScreen> {
                 sending = true;
                 error = null;
               });
+              final isForward = mode == 'forward';
               try {
-                await apiPost('/email/send-reply',
-                    {'to': to, 'subject': subject, 'body': body});
+                final fields = <String, String>{
+                  'to': to,
+                  'subject': subject,
+                  'body': body,
+                  if (ccController.text.trim().isNotEmpty)
+                    'cc': ccController.text.trim(),
+                  if (bccController.text.trim().isNotEmpty)
+                    'bcc': bccController.text.trim(),
+                  if (isForward && forwardMessageId != null)
+                    'message_id': forwardMessageId,
+                };
+                await apiPostMultipart(
+                  isForward ? '/email/forward' : '/email/send-reply',
+                  fields: fields,
+                  attachments: attachments
+                      .where((file) => file.path != null)
+                      .map((file) => ComposeAttachment(
+                          filename: file.name, path: file.path))
+                      .toList(),
+                );
                 if (sheetContext.mounted) Navigator.pop(sheetContext);
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(t('Đã gửi email', 'Email sent'))));
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(isForward
+                          ? t('Đã chuyển tiếp email', 'Email forwarded')
+                          : t('Đã gửi email', 'Email sent'))));
                   _load();
                 }
               } catch (e) {
@@ -509,6 +565,22 @@ class _EmailScreenState extends State<EmailScreen> {
                       '${t('Không gửi được email', 'Could not send email')}: $e';
                 });
               }
+            }
+
+            Future<void> pickAttachments() async {
+              final result = await FilePicker.platform.pickFiles(
+                allowMultiple: true,
+                withData: false,
+              );
+              if (result == null) return;
+              setSheetState(() {
+                for (final file in result.files) {
+                  if (!attachments.any((existing) =>
+                      existing.path != null && existing.path == file.path)) {
+                    attachments.add(file);
+                  }
+                }
+              });
             }
 
             return Padding(
@@ -528,7 +600,10 @@ class _EmailScreenState extends State<EmailScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(t('Soạn email mới', 'New email'),
+                          Text(
+                              mode == 'forward'
+                                  ? t('Chuyển tiếp email', 'Forward email')
+                                  : t('Soạn email mới', 'New email'),
                               style: TextStyle(
                                   color: colors.text,
                                   fontWeight: FontWeight.w700,
@@ -545,6 +620,33 @@ class _EmailScreenState extends State<EmailScreen> {
                           controller: toController,
                           hint: 'name@company.com',
                           keyboardType: TextInputType.emailAddress),
+                      GestureDetector(
+                        onTap: () =>
+                            setSheetState(() => showCcBcc = !showCcBcc),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Text(
+                              showCcBcc
+                                  ? t('- Ẩn CC/BCC', '- Hide CC/BCC')
+                                  : t('+ Thêm CC/BCC', '+ Add CC/BCC'),
+                              style: TextStyle(
+                                  color: colors.primary,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12.5)),
+                        ),
+                      ),
+                      if (showCcBcc) ...[
+                        AppField(
+                            label: 'CC',
+                            controller: ccController,
+                            hint: 'cc1@example.com, cc2@example.com',
+                            keyboardType: TextInputType.emailAddress),
+                        AppField(
+                            label: 'BCC',
+                            controller: bccController,
+                            hint: 'bcc@example.com',
+                            keyboardType: TextInputType.emailAddress),
+                      ],
                       AppField(
                           label: t('Tiêu đề', 'Subject'),
                           controller: subjectController,
@@ -554,6 +656,31 @@ class _EmailScreenState extends State<EmailScreen> {
                           controller: bodyController,
                           hint: t('Nội dung email', 'Email body'),
                           multiline: true),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: AppButton(
+                          title: t('Đính kèm tệp', 'Attach file'),
+                          variant: AppButtonVariant.secondary,
+                          onPressed: pickAttachments,
+                        ),
+                      ),
+                      if (attachments.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: attachments
+                                .map((file) => Chip(
+                                      label: Text(file.name,
+                                          style: const TextStyle(
+                                              fontSize: 12)),
+                                      onDeleted: () => setSheetState(
+                                          () => attachments.remove(file)),
+                                    ))
+                                .toList(),
+                          ),
+                        ),
                       if (error != null) ...[
                         Padding(
                           padding: const EdgeInsets.only(bottom: 10),
@@ -564,7 +691,9 @@ class _EmailScreenState extends State<EmailScreen> {
                       ] else
                         const SizedBox(height: 6),
                       AppButton(
-                          title: t('Gửi email', 'Send email'),
+                          title: mode == 'forward'
+                              ? t('Chuyển tiếp', 'Forward')
+                              : t('Gửi email', 'Send email'),
                           icon: AppIcons.emailSend,
                           onPressed: submit,
                           loading: sending),

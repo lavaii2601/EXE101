@@ -9,7 +9,8 @@ import Screen from '../components/Screen';
 import SegmentedControl from '../components/SegmentedControl';
 import PricingModal from '../components/PricingModal';
 import * as FileSystem from 'expo-file-system/legacy';
-import { apiGet, apiPost } from '../api/client';
+import * as DocumentPicker from 'expo-document-picker';
+import { apiGet, apiPost, apiPostForm } from '../api/client';
 import { API_BASE } from '../api/config';
 import { getMobileAccessToken } from '../api/session';
 import { connectGoogleAccount } from '../api/googleAuth';
@@ -145,7 +146,15 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [emailBody, setEmailBody] = useState('');
   const [summary, setSummary] = useState('');
-  const [compose, setCompose] = useState({ to: '', subject: '', body: '' });
+  const [compose, setCompose] = useState({
+    to: '', subject: '', body: '', cc: '', bcc: '',
+    // mode: 'new' | 'reply' | 'forward' -- picks /email/send-reply vs
+    // /email/forward in sendEmail(), and whether inReplyToId/forwardMessageId
+    // is sent so the backend can thread the reply or re-attach the original.
+    mode: 'new', inReplyToId: '', forwardMessageId: '',
+    attachments: [], // expo-document-picker assets: {uri, name, mimeType, size}
+  });
+  const [showCcBcc, setShowCcBcc] = useState(false);
   const [reportDate, setReportDate] = useState('');
   const [report, setReport] = useState(null);
   const [summarizingId, setSummarizingId] = useState('');
@@ -399,7 +408,9 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
         to: senderEmail,
         subject: String(email.subject || '').startsWith('Re:') ? email.subject : `Re: ${email.subject || ''}`,
         body: data.reply || '',
+        cc: '', bcc: '', mode: 'reply', inReplyToId: email.id, forwardMessageId: '', attachments: [],
       });
+      setShowCcBcc(false);
       setSelectedEmail(null);
       setMode('compose');
       Alert.alert('Đã tạo bản nháp', 'Vui lòng kiểm tra nội dung trước khi gửi.');
@@ -409,6 +420,48 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
     } finally {
       setLoading(false);
     }
+  };
+
+  // Pre-fill compose to forward an email -- the original's own attachments
+  // are re-attached server-side (routes/email/compose.py's forward_email),
+  // never round-tripped through this device.
+  const forwardEmail = (email = selectedEmail) => {
+    if (!email) return;
+    const quoted = `\n\n---------- Forwarded message ---------\n`
+      + `Từ: ${email.sender || email.from || ''}\n`
+      + `Ngày: ${email.date || ''}\n`
+      + `Tiêu đề: ${email.subject || ''}\n\n`
+      + `${email.body || email.summary || email.snippet || ''}`;
+    setCompose({
+      to: '',
+      subject: String(email.subject || '').toLowerCase().startsWith('fwd:') ? email.subject : `Fwd: ${email.subject || ''}`,
+      body: quoted,
+      cc: '', bcc: '', mode: 'forward', inReplyToId: '', forwardMessageId: email.id, attachments: [],
+    });
+    setShowCcBcc(false);
+    setSelectedEmail(null);
+    setMode('compose');
+  };
+
+  const pickAttachments = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ multiple: true, copyToCacheDirectory: true });
+      if (result.canceled) return;
+      const picked = result.assets || [];
+      setCompose((c) => ({
+        ...c,
+        attachments: [
+          ...c.attachments,
+          ...picked.filter((file) => !c.attachments.some((existing) => existing.uri === file.uri)),
+        ],
+      }));
+    } catch (error) {
+      Alert.alert('Không chọn được tệp', error.message);
+    }
+  };
+
+  const removeAttachment = (uri) => {
+    setCompose((c) => ({ ...c, attachments: c.attachments.filter((file) => file.uri !== uri) }));
   };
 
   const toggleReadStatus = async (email) => {
@@ -500,9 +553,33 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
     }
     setLoading(true);
     try {
-      await apiPost('/email/send-reply', compose);
-      setCompose({ to: '', subject: '', body: '' });
-      Alert.alert('Đã gửi email');
+      const isForward = compose.mode === 'forward';
+      const formData = new FormData();
+      formData.append('to', compose.to);
+      formData.append('subject', compose.subject);
+      formData.append('body', compose.body);
+      if (compose.cc) formData.append('cc', compose.cc);
+      if (compose.bcc) formData.append('bcc', compose.bcc);
+      if (isForward) {
+        formData.append('message_id', compose.forwardMessageId);
+      } else if (compose.inReplyToId) {
+        formData.append('in_reply_to_id', compose.inReplyToId);
+      }
+      compose.attachments.forEach((file) => {
+        formData.append('attachments', {
+          uri: file.uri,
+          name: file.name || 'attachment',
+          type: file.mimeType || 'application/octet-stream',
+        });
+      });
+
+      await apiPostForm(`/email/${isForward ? 'forward' : 'send-reply'}`, formData);
+      setCompose({
+        to: '', subject: '', body: '', cc: '', bcc: '',
+        mode: 'new', inReplyToId: '', forwardMessageId: '', attachments: [],
+      });
+      setShowCcBcc(false);
+      Alert.alert(isForward ? 'Đã chuyển tiếp email' : 'Đã gửi email');
       onAgentSync?.(['email', 'overview', 'history'], { source: 'email_screen' });
     } catch (error) {
       Alert.alert('Không gửi được email', error.message);
@@ -702,9 +779,39 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
   const renderCompose = () => (
     <Card>
       <Field label="Người nhận" value={compose.to}      onChangeText={(to)      => setCompose((c) => ({ ...c, to }))}      placeholder="email@example.com" keyboardType="email-address" />
+      <TouchableOpacity onPress={() => setShowCcBcc((v) => !v)} style={styles.ccBccToggle}>
+        <Text style={styles.ccBccToggleText}>{showCcBcc ? '- Ẩn CC/BCC' : '+ Thêm CC/BCC'}</Text>
+      </TouchableOpacity>
+      {showCcBcc ? (
+        <>
+          <Field label="CC" value={compose.cc} onChangeText={(cc) => setCompose((c) => ({ ...c, cc }))} placeholder="cc1@example.com, cc2@example.com" keyboardType="email-address" />
+          <Field label="BCC" value={compose.bcc} onChangeText={(bcc) => setCompose((c) => ({ ...c, bcc }))} placeholder="bcc@example.com" keyboardType="email-address" />
+        </>
+      ) : null}
       <Field label="Tiêu đề"    value={compose.subject} onChangeText={(subject) => setCompose((c) => ({ ...c, subject }))} placeholder="Tiêu đề email" />
       <Field label="Nội dung"   value={compose.body}    onChangeText={(body)    => setCompose((c) => ({ ...c, body }))}    placeholder="Nội dung email" multiline />
-      <Button title="Gửi email" onPress={sendEmail} loading={loading} />
+      <Button title="Đính kèm tệp" variant="secondary" onPress={pickAttachments} style={styles.attachButton} />
+      {compose.attachments.length ? (
+        <View style={styles.composeAttachmentsList}>
+          {compose.attachments.map((file) => (
+            <View key={file.uri} style={styles.attachmentRow}>
+              <View style={styles.attachmentInfo}>
+                <Text style={styles.attachmentName} numberOfLines={1}>{file.name}</Text>
+                <Text style={styles.attachmentMeta}>{formatFileSize(file.size)}</Text>
+              </View>
+              <TouchableOpacity onPress={() => removeAttachment(file.uri)}>
+                <Ionicons name="close-circle" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      <Button
+        title={compose.mode === 'forward' ? 'Chuyển tiếp' : 'Gửi email'}
+        onPress={sendEmail}
+        loading={loading}
+        style={styles.sendComposeButton}
+      />
     </Card>
   );
 
@@ -808,6 +915,12 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
                 title={selectedEmail.summary_type === 'ai_cached' ? 'Tóm tắt lại bằng AI' : 'Tóm tắt bằng AI'}
                 onPress={() => summarizeEmail(selectedEmail)}
                 loading={summarizingId === selectedEmail.id}
+                style={styles.detailButton}
+              />
+              <Button
+                title="Chuyển tiếp"
+                variant="secondary"
+                onPress={() => forwardEmail(selectedEmail)}
                 style={styles.detailButton}
               />
               <Button
@@ -1240,6 +1353,11 @@ function makeStyles(colors) {
     attachmentInfo: { flex: 1, minWidth: 0 },
     attachmentName: { color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 12 },
     attachmentMeta: { marginTop: 2, color: colors.textMuted, fontFamily: 'Poppins_400Regular', fontSize: 11 },
+    ccBccToggle: { marginBottom: 12 },
+    ccBccToggleText: { color: colors.primary, fontFamily: 'Poppins_600SemiBold', fontSize: 12 },
+    attachButton: { marginBottom: 10 },
+    composeAttachmentsList: { gap: 8, marginBottom: 12 },
+    sendComposeButton: { marginTop: 4 },
     applyButton:  { marginBottom: 12 },
     loadMoreButton: { marginTop: 4 },
     scanningBanner: {

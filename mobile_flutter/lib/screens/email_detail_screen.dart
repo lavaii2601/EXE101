@@ -199,6 +199,23 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
                     onPressed: _summarize,
                     loading: summarizing,
                   ),
+                  const SizedBox(height: 10),
+                  AppButton(
+                    title: t('Chuyển tiếp', 'Forward'),
+                    variant: AppButtonVariant.secondary,
+                    onPressed: () => Navigator.pop(context, {
+                      'action': 'forward',
+                      // body/widget.email['body'] can differ: _loadBody()
+                      // fetches the full content into this screen's own
+                      // state, separate from the snippet-only map the list
+                      // originally passed in -- use whichever is richer so
+                      // the forwarded quote isn't just the list snippet.
+                      'email': {
+                        ...email,
+                        if (body.isNotEmpty) 'body': body,
+                      },
+                    }),
+                  ),
                   const SizedBox(height: 22),
                   Divider(color: colors.border),
                   const SizedBox(height: 18),

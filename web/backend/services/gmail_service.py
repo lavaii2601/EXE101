@@ -245,7 +245,7 @@ class GmailService:
                         'format': format_type
                     }
                     if lazy:
-                        request_kwargs['metadataHeaders'] = ['Subject', 'From', 'Date']
+                        request_kwargs['metadataHeaders'] = ['Subject', 'From', 'Date', 'Message-ID', 'References']
                     batch.add(
                         self.service.users().messages().get(**request_kwargs),
                         request_id=message_id,
@@ -375,7 +375,7 @@ class GmailService:
                 'format': format_type
             }
             if lazy:
-                request_kwargs['metadataHeaders'] = ['Subject', 'From', 'Date']
+                request_kwargs['metadataHeaders'] = ['Subject', 'From', 'Date', 'Message-ID', 'References']
             message = self.service.users().messages().get(**request_kwargs).execute(
                 num_retries=GMAIL_INTERACTIVE_READ_RETRIES
             )
@@ -404,6 +404,12 @@ class GmailService:
             # who an action item actually belongs to.
             to = header_value('To', '')
             cc = header_value('Cc', '')
+            # RFC822 Message-ID/References (distinct from Gmail's own numeric
+            # `id`/`threadId`) -- needed to set In-Reply-To/References on a
+            # reply so it threads correctly in every mail client, not just
+            # Gmail's own threadId-based grouping.
+            rfc_message_id = header_value('Message-ID', '')
+            references = header_value('References', '')
             snippet = message.get('snippet', '') or ''
             if lazy:
                 body, html_body = "", ""
@@ -422,6 +428,8 @@ class GmailService:
                 'date': date,
                 'to': to,
                 'cc': cc,
+                'rfc_message_id': rfc_message_id,
+                'references': references,
                 'body': body,
                 'html_body': html_body,
                 'attachments': attachments,
@@ -571,17 +579,45 @@ class GmailService:
         text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
         return text.strip()
     
-    def send_email(self, to, subject, body):
-        """Send email reply"""
+    def send_email(
+        self,
+        to,
+        subject,
+        body,
+        cc=None,
+        bcc=None,
+        attachments=None,
+        thread_id=None,
+        in_reply_to=None,
+        references=None,
+        raise_errors=False,
+    ):
+        """Send an email, optionally as a threaded reply (thread_id +
+        in_reply_to/references) and/or with file attachments.
+
+        attachments: iterable of {filename, mime_type, data (bytes)}.
+        in_reply_to/references: the original message's RFC822 Message-ID
+        header (gmail_service._parse_message's 'rfc_message_id'/'references'),
+        not Gmail's own numeric message id -- required for the reply to show
+        up threaded in other mail clients, not just Gmail's own UI.
+        """
         try:
-            message = self._create_message(to, subject, body)
+            message = self._create_message(
+                to, subject, body,
+                cc=cc, bcc=bcc, attachments=attachments,
+                in_reply_to=in_reply_to, references=references,
+            )
+            if thread_id:
+                message['threadId'] = thread_id
             self.service.users().messages().send(
                 userId='me',
                 body=message
             ).execute(num_retries=GMAIL_EXECUTE_RETRIES)
             return True
         except Exception as e:
-            print(f"Error sending email: {str(e)}")
+            logger.error(f"Error sending email: {str(e)}")
+            if raise_errors:
+                raise
             return False
     
     def mark_as_read(self, message_id):
@@ -637,14 +673,43 @@ class GmailService:
             return False
     
     @staticmethod
-    def _create_message(to, subject, body):
-        """Create message for Gmail API"""
+    def _create_message(to, subject, body, cc=None, bcc=None, attachments=None, in_reply_to=None, references=None):
+        """Build a Gmail API 'raw' message, plain text-only when there are no
+        attachments (MIMEText) or multipart/mixed when there are (MIMEMultipart)
+        -- Gmail accepts either, but a plain MIMEText keeps the common case
+        simple and matches what this already sent before attachments existed."""
         import base64
+        from email.encoders import encode_base64
+        from email.mime.base import MIMEBase
+        from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
-        
-        message = MIMEText(body)
+
+        attachments = list(attachments or [])
+        if attachments:
+            message = MIMEMultipart()
+            message.attach(MIMEText(body))
+            for item in attachments:
+                mime_type = str(item.get('mime_type') or '').strip()
+                if '/' not in mime_type:
+                    mime_type = 'application/octet-stream'
+                part = MIMEBase(*mime_type.split('/', 1))
+                part.set_payload(item.get('data') or b'')
+                encode_base64(part)
+                filename = str(item.get('filename') or 'attachment').replace('\r', '').replace('\n', '')
+                part.add_header('Content-Disposition', 'attachment', filename=filename)
+                message.attach(part)
+        else:
+            message = MIMEText(body)
+
         message['to'] = to
         message['subject'] = subject
-        
+        if cc:
+            message['cc'] = cc
+        if bcc:
+            message['bcc'] = bcc
+        if in_reply_to:
+            message['In-Reply-To'] = in_reply_to
+            message['References'] = references or in_reply_to
+
         raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
         return {'raw': raw_message}

@@ -1248,29 +1248,14 @@ async function handlePageChange(btn) {
     } else if (page === 'overview') {
         loadOverviewPage().catch(err => console.error('Overview load error:', err));
     } else if (page === 'emails') {
-        // Check Gmail auth status first to avoid 401 errors
-        try {
-            const authResp = await apiFetch(`${API_BASE}/email/auth-status`);
-            if (authResp.status === 401) {
-                const emailsList = document.getElementById('emailsList');
-                if (emailsList) emailsList.innerHTML = `<div style="padding:20px;text-align:center;">${ui('Vui lòng đăng nhập Gmail để xem email.', 'Please sign in to Gmail to view email.')}<br><br><button class="btn-primary" id="promptLoginBtn">${ui('Đăng nhập Gmail', 'Sign in to Gmail')}</button></div>`;
-                const btnLogin = document.getElementById('promptLoginBtn');
-                if (btnLogin) btnLogin.addEventListener('click', gmailLogin);
-                return;
-            }
-            const authData = await authResp.json();
-            if (!authData || !authData.authenticated) {
-                const emailsList = document.getElementById('emailsList');
-                if (emailsList) emailsList.innerHTML = `<div style="padding:20px;text-align:center;">${ui('Vui lòng đăng nhập Gmail để xem email.', 'Please sign in to Gmail to view email.')}<br><br><button class="btn-primary" id="promptLoginBtn">${ui('Đăng nhập Gmail', 'Sign in to Gmail')}</button></div>`;
-                const btnLogin = document.getElementById('promptLoginBtn');
-                if (btnLogin) btnLogin.addEventListener('click', gmailLogin);
-                return;
-            }
-        } catch (err) {
-            console.error('Auth check failed:', err);
-            // Fallback to attempting to load emails — loadEmails will handle errors
-        }
-
+        // Previously this awaited a separate /email/auth-status call (which
+        // can itself trigger a live Google token refresh) before ever
+        // starting loadEmails -- that forced every single Email tab click
+        // to pay a full extra round trip on the critical path. loadEmails
+        // already renders the same "please sign in to Gmail" prompt itself
+        // once it discovers not_authenticated (see its !response.ok
+        // handling below), so the pre-check was redundant for the common
+        // case of an already-connected user and only slowed it down.
         loadEmails(1, { cacheOnly: true })
             .then(() => loadMeetingSuggestions())
             .catch(err => console.error('Email load error:', err));

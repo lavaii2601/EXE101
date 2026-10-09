@@ -144,6 +144,10 @@ Future<dynamic> _request(String path,
       throw ArgumentError('Unsupported method $method');
   }
 
+  return _decodeResponse(response);
+}
+
+dynamic _decodeResponse(http.Response response) {
   dynamic data = {};
   if (response.body.isNotEmpty) {
     try {
@@ -175,3 +179,51 @@ Future<dynamic> apiPut(String path, [Map<String, dynamic> body = const {}]) =>
 Future<dynamic> apiPatch(String path, [Map<String, dynamic> body = const {}]) =>
     _request(path, method: 'PATCH', body: body);
 Future<dynamic> apiDelete(String path) => _request(path, method: 'DELETE');
+
+/// One file to upload via apiPostMultipart -- `path` for a real on-disk file
+/// (file_picker's PlatformFile.path on mobile) or `bytes` when only in-memory
+/// data is available (e.g. web, or a picker result with withData: true).
+class ComposeAttachment {
+  final String filename;
+  final String? path;
+  final List<int>? bytes;
+  ComposeAttachment({required this.filename, this.path, this.bytes});
+}
+
+// multipart/form-data upload (email attachments) -- the plain-JSON apiPost
+// above can't carry file bytes, and a FormData-equivalent here needs an
+// http.MultipartRequest instead of the shared _request()'s json-only body.
+Future<dynamic> apiPostMultipart(
+  String path, {
+  required Map<String, String> fields,
+  List<ComposeAttachment> attachments = const [],
+}) async {
+  final accessToken = getMobileAccessToken();
+  final workspaceId = getCurrentWorkspaceId();
+  final uri = Uri.parse('$kApiBase$path');
+  final request = http.MultipartRequest('POST', uri)
+    ..headers.addAll({
+      'Accept': 'application/json',
+      if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
+      if (workspaceId.isNotEmpty) 'X-Workspace-Id': workspaceId,
+    })
+    ..fields.addAll(fields);
+
+  for (final attachment in attachments) {
+    if (attachment.bytes != null) {
+      request.files.add(http.MultipartFile.fromBytes(
+        'attachments', attachment.bytes!,
+        filename: attachment.filename,
+      ));
+    } else if (attachment.path != null) {
+      request.files.add(await http.MultipartFile.fromPath(
+        'attachments', attachment.path!,
+        filename: attachment.filename,
+      ));
+    }
+  }
+
+  final streamed = await _httpClient.send(request).timeout(_kRequestTimeout);
+  final response = await http.Response.fromStream(streamed);
+  return _decodeResponse(response);
+}

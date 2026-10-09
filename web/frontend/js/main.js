@@ -164,6 +164,18 @@ async function initApp() {
         if (replyBtn) {
             replyBtn.addEventListener('click', handleAutoReply);
         }
+        const forwardEmailBtn = document.getElementById('forwardEmailBtn');
+        if (forwardEmailBtn) {
+            forwardEmailBtn.addEventListener('click', handleForwardEmail);
+        }
+        const composeToggleCcBcc = document.getElementById('composeToggleCcBcc');
+        if (composeToggleCcBcc) {
+            composeToggleCcBcc.addEventListener('click', toggleComposeCcBcc);
+        }
+        const emailAttachmentsInput = document.getElementById('emailAttachments');
+        if (emailAttachmentsInput) {
+            emailAttachmentsInput.addEventListener('change', handleAttachmentsSelected);
+        }
         const emailDetailCloseBtn = emailDetailModal
             ? emailDetailModal.querySelector('.email-detail-close')
             : null;

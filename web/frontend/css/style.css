@@ -4480,6 +4480,55 @@ select:focus {
     color: var(--primary);
 }
 
+.compose-toggle-link {
+    margin-bottom: 14px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--primary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.compose-cc-bcc-group {
+    margin-bottom: 4px;
+}
+
+.compose-attachments-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.compose-attachment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fafbfc;
+    color: var(--text);
+    font-size: 12px;
+}
+
+.compose-attachment-remove {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.compose-forward-original-attachments {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
 .email-detail-modal-content .modal-actions {
     display: flex;
     flex: 0 0 auto;
