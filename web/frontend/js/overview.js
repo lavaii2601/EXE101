@@ -825,7 +825,7 @@ function renderStudySummarizerBody() {
         <p>${ui('Dán bài giảng, ghi chú hoặc tài liệu học tập để Bob tóm tắt các ý chính.', 'Paste lecture notes or study material for Bob to summarize the key points.')}</p>
         <input type="text" id="studentSummaryTitle" placeholder="${ui('Tiêu đề (không bắt buộc)', 'Title (optional)')}" style="width:100%; margin-top:8px; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--panel); color:var(--text);">
         <textarea id="studentSummaryContent" class="student-tools-textarea" placeholder="${ui('Dán nội dung vào đây...', 'Paste content here...')}"></textarea>
-        ${!isCurrentUserPremium() ? `<p class="student-tools-quota-note">${ui('Free: 5 lượt/ngày. Premium: không giới hạn.', 'Free: 5/day. Premium: unlimited.')}</p>` : ''}
+        ${!isCurrentUserPremium() ? `<p class="student-tools-quota-note">${ui('Free: 5 lượt/ngày. Premium: 50 lượt/ngày.', 'Free: 5/day. Premium: 50/day.')}</p>` : ''}
         <div id="studentSummaryResult"></div>
         <div class="student-tools-actions">
             <button type="button" class="btn-secondary" onclick="closeStudentToolsModal()">${ui('Đóng', 'Close')}</button>

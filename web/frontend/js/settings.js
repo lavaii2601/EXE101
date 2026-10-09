@@ -95,9 +95,9 @@ function renderSubscriptionUI(subscription = null) {
     }
     if (details) {
         details.innerHTML = isPremium
-            ? `<span>${ui('Tóm tắt email AI không giới hạn', 'Unlimited AI email summaries')}</span>
+            ? `<span>${ui('Tóm tắt email AI: 100 lượt/ngày', 'AI email summaries: 100 per day')}</span>
                <span>${ui('Xử lý nhiều bước và phản hồi AI nâng cao', 'Multi-step processing and advanced AI responses')}</span>`
-            : `<span>${ui('Chat và soạn trả lời AI không giới hạn', 'Unlimited chat and AI reply drafting')}</span>
+            : `<span>${ui('Chat và soạn trả lời AI: 30 lượt/ngày', 'Chat and AI reply drafting: 30 per day')}</span>
                <span>${ui('Tóm tắt email AI: 10 lượt/ngày', 'AI email summaries: 10 per day')}</span>`;
     }
     if (button) {

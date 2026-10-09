@@ -9,9 +9,9 @@ import { apiPost } from '../api/client';
 // models/entitlements.py -- the single source of truth for these numbers)
 // has loaded. Keep this in sync with FEATURE_TABLE there if it ever changes.
 const FALLBACK_FEATURES = [
-  { key: 'chat', label: 'Chat với Bob (AI)', free: 'Không giới hạn', premium: 'Không giới hạn' },
-  { key: 'compose', label: 'Soạn trả lời AI', free: 'Không giới hạn', premium: 'Không giới hạn' },
-  { key: 'email_summary', label: 'Tóm tắt email AI', free: '10 lượt/ngày', premium: 'Không giới hạn' },
+  { key: 'chat', label: 'Chat với Bob (AI)', free: '30 lượt/ngày', premium: '300 lượt/ngày' },
+  { key: 'compose', label: 'Soạn trả lời AI', free: '30 lượt/ngày', premium: '300 lượt/ngày' },
+  { key: 'email_summary', label: 'Tóm tắt email AI', free: '10 lượt/ngày', premium: '100 lượt/ngày' },
   { key: 'multi_step', label: 'Xử lý nhiều bước trong 1 câu hỏi', free: 'Chưa hỗ trợ', premium: 'Có', free_locked: true },
   { key: 'ai_quality', label: 'Chất lượng phản hồi AI', free: 'Tiêu chuẩn', premium: 'Nâng cao (ưu tiên mô hình tốt hơn, phản hồi chi tiết hơn)' },
   { key: 'chat_retention', label: 'Lưu trữ đoạn chat', free: '30 ngày', premium: '365 ngày' },

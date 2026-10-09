@@ -888,7 +888,7 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, use
             <Text style={styles.itemMeta}>Dán bài giảng, ghi chú hoặc tài liệu học tập để Bob tóm tắt các ý chính.</Text>
             <Field label="Tiêu đề (không bắt buộc)" value={summaryTitle} onChangeText={setSummaryTitle} placeholder="Ví dụ: Bài giảng chương 3" />
             <Field label="Nội dung" value={summaryContent} onChangeText={setSummaryContent} placeholder="Dán nội dung vào đây..." multiline inputStyle={styles.summaryTextarea} />
-            {!isPremium ? <Text style={styles.studentUpsellText}>Free: 5 lượt/ngày. Premium: không giới hạn.</Text> : null}
+            {!isPremium ? <Text style={styles.studentUpsellText}>Free: 5 lượt/ngày. Premium: 50 lượt/ngày.</Text> : null}
             <Button title="Tóm tắt" onPress={submitStudySummary} loading={summaryLoading} style={styles.detailButton} />
             {summaryResult ? (
               <View style={styles.summaryResultBox}>

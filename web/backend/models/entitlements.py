@@ -16,7 +16,12 @@ FREE_LIMITS = {
 }
 
 PREMIUM_LIMITS = {
-    "email_summary_daily": None,  # None = unlimited
+    # Matches admin_ops.DEFAULT_CONTROLS['quotas']['plus']['email_summary']
+    # -- the number utils/quota.py's enforce_ai_quota actually enforces.
+    # This dict is display/feature-gating data only (nothing here is read
+    # for enforcement), but it must still say what's true: Premium email
+    # summaries are a higher cap, not unlimited.
+    "email_summary_daily": 100,
     "chat_retention_days": 365,
     "analytics_unlocked": True,
     "multi_step_tools": True,
@@ -41,7 +46,8 @@ STUDENT_FREE_LIMITS = {
 }
 
 STUDENT_PREMIUM_LIMITS = {
-    "study_summary_daily": None,  # None = unlimited
+    # Matches admin_ops.DEFAULT_CONTROLS['quotas']['plus']['study_summary'].
+    "study_summary_daily": 50,
     "gpa_persist": True,
     "checklist_subject_grouping": True,
     "deadline_countdown_full_list": True,
@@ -67,22 +73,26 @@ def student_context(user_id):
 
 FEATURE_TABLE = [
     {
+        # Chat and reply-drafting both run through routes/chat.py's
+        # send_message(), gated by the same 'bob_chat' quota action --
+        # neither is actually unlimited on either plan. Numbers match
+        # admin_ops.DEFAULT_CONTROLS['quotas']['bob_chat'].
         "key": "chat",
         "label": "Chat với Bob (AI)",
-        "free": "Không giới hạn",
-        "premium": "Không giới hạn",
+        "free": "30 lượt/ngày",
+        "premium": "300 lượt/ngày",
     },
     {
         "key": "compose",
         "label": "Soạn trả lời AI",
-        "free": "Không giới hạn",
-        "premium": "Không giới hạn",
+        "free": "30 lượt/ngày",
+        "premium": "300 lượt/ngày",
     },
     {
         "key": "email_summary",
         "label": "Tóm tắt email AI",
         "free": "10 lượt/ngày",
-        "premium": "Không giới hạn",
+        "premium": "100 lượt/ngày",
     },
     {
         "key": "multi_step",
