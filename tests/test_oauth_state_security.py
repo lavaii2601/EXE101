@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 from flask import Flask
 
@@ -13,6 +14,15 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from routes import email as email_route  # noqa: E402
+
+
+def _error_from_redirect(response):
+    """oauth2callback failures redirect back into the app (web: /app?...,
+    mobile: the flowmateai:// deep link) instead of returning bare JSON --
+    see _oauth_error_redirect. Pull the error code out of that Location."""
+    assert response.status_code == 302, f"expected a redirect, got {response.status_code}"
+    query = parse_qs(urlparse(response.headers["Location"]).query)
+    return query.get("error", [None])[0]
 
 
 def _missing_state():
@@ -66,8 +76,7 @@ class OAuthStateSecurityTests(unittest.TestCase):
                 "/api/email/oauth2callback?state=attacker-state&code=fake"
             )
 
-        self.assertEqual(400, response.status_code)
-        self.assertEqual("invalid_oauth_state", response.get_json()["error"])
+        self.assertEqual("invalid_oauth_state", _error_from_redirect(response))
         flow.fetch_token.assert_not_called()
 
     def test_matching_browser_session_proves_issued_state(self):
@@ -88,8 +97,7 @@ class OAuthStateSecurityTests(unittest.TestCase):
                 "/api/email/oauth2callback?state=browser-state&code=fake"
             )
 
-        self.assertEqual(400, response.status_code)
-        self.assertEqual("token_fetch_failed", response.get_json()["error"])
+        self.assertEqual("token_fetch_failed", _error_from_redirect(response))
         flow.fetch_token.assert_called_once()
 
     def test_consumed_mobile_state_cannot_be_replayed(self):
@@ -110,8 +118,8 @@ class OAuthStateSecurityTests(unittest.TestCase):
                 "/api/email/oauth2callback?state=mobile-state&code=fake"
             )
 
-        self.assertEqual("token_fetch_failed", first.get_json()["error"])
-        self.assertEqual("invalid_oauth_state", replay.get_json()["error"])
+        self.assertEqual("token_fetch_failed", _error_from_redirect(first))
+        self.assertEqual("invalid_oauth_state", _error_from_redirect(replay))
         flow.fetch_token.assert_called_once()
 
     def test_local_state_consume_is_atomic_and_preserves_mobile_flag(self):
@@ -439,8 +447,12 @@ class OAuthIntentGatingTests(unittest.TestCase):
             finally:
                 for p in patches:
                     p.stop()
-        self.assertEqual(409, response.status_code)
-        self.assertEqual("google_account_already_linked_elsewhere", response.get_json()["error"])
+        self.assertEqual("google_account_already_linked_elsewhere", _error_from_redirect(response))
+        # The conflicting Google address rides along so the client can show
+        # a specific "X is already linked elsewhere" message instead of a
+        # generic one -- see _oauth_error_redirect's email param.
+        query = parse_qs(urlparse(response.headers["Location"]).query)
+        self.assertEqual("person@example.com", query.get("email", [None])[0])
 
     def test_callback_link_succeeds_when_unowned_or_owned_by_the_same_user(self):
         for existing_owner in (None, "alice"):
@@ -474,8 +486,7 @@ class OAuthIntentGatingTests(unittest.TestCase):
             finally:
                 for p in patches:
                     p.stop()
-        self.assertEqual(404, response.status_code)
-        self.assertEqual("no_flowmate_account_for_google_identity", response.get_json()["error"])
+        self.assertEqual("no_flowmate_account_for_google_identity", _error_from_redirect(response))
 
     def test_callback_recover_succeeds_for_a_previously_linked_identity(self):
         patches = self._mock_successful_exchange(existing_owner="alice")

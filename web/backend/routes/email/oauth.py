@@ -932,6 +932,30 @@ def gmail_auth():
     return redirect(auth_url)
 
 
+def _oauth_error_redirect(error_code, is_mobile_flow=False, email=''):
+    """Every oauth2callback failure must land the user back on a page they
+    recognize, not a raw JSON blob. This endpoint is only ever reached via a
+    full top-level browser navigation (Google's own redirect), never a
+    fetch()/XHR call a JS error handler could catch -- a bare jsonify()
+    response here used to leave the tab (or the mobile system-browser view)
+    stuck showing unreadable JSON with no link or button back into the app,
+    which looked exactly like the flow had hung at the consent step.
+
+    ``email`` (the Google account that triggered the error, when known) lets
+    the client show a specific, actionable message -- e.g. the
+    already-linked-elsewhere modal naming exactly which address conflicted.
+    """
+    params = {'error': error_code}
+    if email:
+        params['email'] = email
+    if is_mobile_flow:
+        return redirect(f"{Config.MOBILE_OAUTH_REDIRECT_URL}?{urlencode(params)}")
+    return_to = session.pop('oauth_return_to', None) or '/app'
+    separator = '&' if '?' in return_to else '?'
+    params['gmail_auth'] = 'error'
+    return redirect(f"{return_to}{separator}{urlencode(params)}")
+
+
 @email_bp.route('/oauth2callback', methods=['GET'])
 def oauth2callback():
     """Handle redirect from Google and store credentials."""
@@ -945,13 +969,15 @@ def oauth2callback():
     state = request_state or session_state
     if not state:
         logger.error("OAuth state not found in session")
-        return jsonify({'error': 'flow_not_initialized', 'message': 'OAuth state expired or missing'}), 400
+        # Neither the mobile-ness nor the intended return_to is known yet at
+        # this point -- best effort is the web redirect default.
+        return _oauth_error_redirect('flow_not_initialized')
 
     try:
         flow = _build_oauth_flow(state=state)
     except Exception as e:
         logger.error(f"Failed to build OAuth flow: {e}")
-        return jsonify({'error': str(e)}), 503
+        return _oauth_error_redirect('oauth_flow_unavailable')
 
     # A callback is valid only when its state is backed by the browser session
     # that started it or by a shared state row issued for a mobile/cross-worker
@@ -960,10 +986,7 @@ def oauth2callback():
     session_matches = bool(session_state and session_state == state)
     if not session_matches and not issued_state['found']:
         logger.warning("Rejected unknown or replayed OAuth state")
-        return jsonify({
-            'error': 'invalid_oauth_state',
-            'message': 'OAuth state is invalid, expired, or already used',
-        }), 400
+        return _oauth_error_redirect('invalid_oauth_state', is_mobile_flow=issued_state['mobile'])
 
     is_mobile_flow = issued_state['mobile']
     session_code_verifier = (
@@ -985,7 +1008,7 @@ def oauth2callback():
         creds = flow.credentials
     except Exception as e:
         logger.error(f"Failed to fetch token: {e}")
-        return jsonify({'error': 'token_fetch_failed', 'message': str(e)}), 400
+        return _oauth_error_redirect('token_fetch_failed', is_mobile_flow=is_mobile_flow)
 
     # Clear transient OAuth state only after a successful token exchange.
     if session_state == state:
@@ -1029,14 +1052,18 @@ def oauth2callback():
             # this flow started.
             if existing_owner and existing_owner != link_user_id:
                 logger.warning("Rejected linking a Google account already owned by a different user")
-                return jsonify({'error': 'google_account_already_linked_elsewhere'}), 409
+                return _oauth_error_redirect(
+                    'google_account_already_linked_elsewhere',
+                    is_mobile_flow=is_mobile_flow,
+                    email=gmail_email,
+                )
             user_id = link_user_id
         else:
             # intent=recover: only ever resolves to an EXISTING account --
             # never creates one (that would silently reintroduce
             # Google-as-signup).
             if not existing_owner:
-                return jsonify({'error': 'no_flowmate_account_for_google_identity'}), 404
+                return _oauth_error_redirect('no_flowmate_account_for_google_identity', is_mobile_flow=is_mobile_flow)
             user_id = existing_owner
         upsert_google_identity(subject, gmail_email, user_id)
         logger.info(f"Setting session for user: {user_id}")
@@ -1163,7 +1190,7 @@ def oauth2callback():
         return Response(html, mimetype='text/html')
     except Exception as e:
         logger.error(f"OAuth callback error: {e}", exc_info=True)
-        return jsonify({'error': 'callback_error', 'message': str(e)}), 500
+        return _oauth_error_redirect('callback_error', is_mobile_flow=is_mobile_flow)
 
 
 @email_bp.route('/auth_url', methods=['GET'])
