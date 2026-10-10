@@ -86,11 +86,21 @@ class Config:
     MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
     # "claude-sonnet-5" (no trailing "-5") was never a real Anthropic model
     # id -- unlike OpenAI/Mistral's aliases above, Anthropic has no such
-    # "-latest"-style alias, so every Claude call has been failing with a
-    # 400 since this was introduced (930a216), silently masked by the
-    # round-robin falling through to OpenAI until its quota ran out.
+    # "-latest"-style alias, so every Claude call was failing with a 400
+    # since this was introduced (930a216). Fixed to a real id below, but a
+    # separate, still-unresolved problem remains: the configured
+    # CLAUDE_API_KEY's account itself is out of credits (confirmed via a
+    # direct API call -- "Your credit balance is too low to access the
+    # Anthropic API"), which is not something a model id change can fix.
+    # Round-robin falls through to OpenAI/Gemini in the meantime.
     CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
+    # gemini-2.5-pro is deprecated ("no longer available to new users") and
+    # the configured GEMINI_API_KEY's project has zero quota on any "pro"
+    # tier model regardless of name (confirmed via direct API calls against
+    # several candidates) -- only the flash tier actually has quota, so both
+    # GEMINI_MODEL and GEMINI_MODEL_CHEAP (which falls back to this) need to
+    # point at a flash model, not a pro one, for Gemini to work at all.
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 
     # OpenRouter's own model selection -- previously referenced via getattr()

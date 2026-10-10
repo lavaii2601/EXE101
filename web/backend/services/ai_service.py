@@ -494,7 +494,10 @@ class AIService:
         ('openai', 'gpt-4o'): {'input': 0.0025, 'output': 0.01},
         ('mistral', 'mistral-large-latest'): {'input': 0.002, 'output': 0.006},
         ('claude', 'claude-sonnet-5-5'): {'input': 0.003, 'output': 0.015},
-        ('gemini', 'gemini-2.5-pro'): {'input': 0.00125, 'output': 0.005},
+        # gemini-2.5-pro is deprecated (config.py's GEMINI_MODEL now defaults
+        # to gemini-3.8-flash); no confirmed per-1K pricing for the new model
+        # is available, so its usage correctly falls back to the documented
+        # estimated_cost_usd=NULL above rather than guessing a number.
     }
 
     def _estimate_cost_usd(self, provider, model, usage):
