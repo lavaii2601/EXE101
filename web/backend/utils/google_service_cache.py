@@ -10,7 +10,21 @@ _cache = {}
 
 
 def _service_cache_key(token_file, service_kind):
-    return (os.path.abspath(os.fspath(token_file)), str(service_kind or 'default'))
+    # Including the calling thread's id keeps each gthread worker thread on
+    # its own GmailService/CalendarService instance -- and therefore its own
+    # underlying httplib2 Http object and SSL/socket state. httplib2 is not
+    # safe for concurrent use of the same instance from multiple threads;
+    # sharing one across threads (the previous behavior) let two concurrent
+    # requests for the same user corrupt that connection's C-level state,
+    # crashing the whole worker process ("double free or corruption") and
+    # taking every other in-flight request on it down too. Each thread still
+    # reuses its own instance across requests, so the warm-connection intent
+    # below is preserved -- it just no longer crosses thread boundaries.
+    return (
+        os.path.abspath(os.fspath(token_file)),
+        str(service_kind or 'default'),
+        threading.get_ident(),
+    )
 
 
 def get_cached_service(token_file, factory, service_kind='default'):
