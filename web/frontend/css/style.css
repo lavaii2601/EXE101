@@ -1433,6 +1433,55 @@ button {
     background: var(--panel-soft);
 }
 
+.gmail-link-conflict-modal-content {
+    width: min(440px, 100%);
+    padding: 32px;
+    border-radius: 20px;
+    text-align: center;
+}
+
+.gmail-link-conflict-icon {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 16px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #FFF3E0;
+    font-size: 26px;
+}
+
+.gmail-link-conflict-modal-content h2 {
+    margin: 0 0 10px;
+    font-size: 18px;
+}
+
+.gmail-link-conflict-modal-content p {
+    margin: 0 0 10px;
+    color: var(--text-secondary);
+    font-size: 13.5px;
+    line-height: 1.55;
+}
+
+#gmailLinkConflictMessage {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.gmail-link-conflict-hint {
+    margin-bottom: 0 !important;
+}
+
+.gmail-link-conflict-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 22px;
+}
+
+.gmail-link-conflict-actions button {
+    flex: 1;
+}
+
 .user-mode-modal-header {
     max-width: none;
     padding: 28px 72px 24px 30px;
@@ -4056,18 +4105,24 @@ select:focus {
 }
 
 .modal {
-    display: none;
+    display: grid;
+    place-items: center;
     position: fixed;
     inset: 0;
     z-index: 1400;
     padding: 30px;
     background: rgba(15, 23, 42, 0.5);
     overflow: auto;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
 }
 
 .modal.show {
-    display: grid !important;
-    place-items: center;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
 }
 
 .modal-content {
@@ -4075,6 +4130,12 @@ select:focus {
     max-height: 88vh;
     overflow: auto;
     padding: 22px;
+    transform: scale(0.96) translateY(8px);
+    transition: transform 0.18s ease;
+}
+
+.modal.show .modal-content {
+    transform: scale(1) translateY(0);
 }
 
 .close {

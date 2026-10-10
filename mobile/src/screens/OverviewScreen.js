@@ -9,6 +9,7 @@ import Field from '../components/Field';
 import Screen from '../components/Screen';
 import { apiGet, apiPost, apiPut } from '../api/client';
 import { connectGoogleAccount } from '../api/googleAuth';
+import { useGoogleAuthErrorModal } from '../components/GoogleAuthConflictModal';
 import { useTheme } from '../theme/ThemeContext';
 
 export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, userMode, subscription, userName, gmailConnected }) {
@@ -18,6 +19,7 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, use
   const isPremium = !!(subscription?.is_premium || subscription?.tier === 'premium');
   const greeting = buildGreeting(String(userName || '').trim());
   const [connectingGmail, setConnectingGmail] = useState(false);
+  const { modal: googleAuthErrorModal, showError: showGoogleAuthError } = useGoogleAuthErrorModal();
 
   const handleConnectGmail = useCallback(async () => {
     setConnectingGmail(true);
@@ -26,7 +28,7 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, use
       if (!result.connected) return;
       onAgentSync?.(['profile', 'settings', 'email', 'schedule', 'overview', 'calendar']);
     } catch (error) {
-      Alert.alert('Không kết nối được Google', error.message);
+      showGoogleAuthError(error, { onRetry: handleConnectGmail });
     } finally {
       setConnectingGmail(false);
     }
@@ -948,6 +950,7 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, use
           </Card>
         </Screen>
       </Modal>
+      {googleAuthErrorModal}
     </Screen>
   );
 }

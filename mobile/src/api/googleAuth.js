@@ -12,6 +12,20 @@ function base64ToBase64Url(base64) {
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+// Keep in sync with web/frontend/js/auth.js's GMAIL_AUTH_ERROR_MESSAGES and
+// routes/email/oauth.py's _oauth_error_redirect error codes.
+const GMAIL_AUTH_ERROR_MESSAGES = {
+  google_account_already_linked_elsewhere:
+    'Tài khoản Google này đã được liên kết với một tài khoản FlowMate khác. Hãy đăng xuất khỏi tài khoản đó trên Google hoặc dùng một tài khoản Google khác.',
+  no_flowmate_account_for_google_identity:
+    'Không tìm thấy tài khoản FlowMate nào từng liên kết với tài khoản Google này.',
+  token_fetch_failed: 'Không thể hoàn tất xác thực với Google. Vui lòng thử lại.',
+  invalid_oauth_state: 'Phiên liên kết Google đã hết hạn hoặc đã được dùng. Vui lòng thử lại.',
+  flow_not_initialized: 'Không tìm thấy phiên liên kết Google. Vui lòng thử lại.',
+  oauth_flow_unavailable: 'Google OAuth hiện chưa khả dụng. Vui lòng thử lại sau.',
+  callback_error: 'Có lỗi xảy ra khi liên kết tài khoản Google. Vui lòng thử lại.',
+};
+
 // RFC 7636 PKCE, generated app-side and applied to the backend->app deep-link
 // handoff below -- distinct from (and in addition to) the PKCE
 // google-auth-oauthlib already does server-side for its own exchange with
@@ -68,6 +82,22 @@ export async function connectGoogleAccount(intent = 'link') {
   }
   const { queryParams } = Linking.parse(result.url);
 
+  if (queryParams?.error) {
+    // oauth2callback failed server-side and redirected back to this deep
+    // link with an error code instead of exchange_code/access_token (see
+    // _oauth_error_redirect) -- surface a specific message instead of
+    // falling through to the generic "no access token" error below.
+    const conflictEmail = queryParams.email || '';
+    const message = queryParams.error === 'google_account_already_linked_elsewhere' && conflictEmail
+      ? `Tài khoản Google ${conflictEmail} đã được liên kết với một tài khoản FlowMate khác. Hãy đăng xuất khỏi tài khoản đó trên Google hoặc dùng một tài khoản Google khác.`
+      : (GMAIL_AUTH_ERROR_MESSAGES[queryParams.error] || 'Không thể liên kết tài khoản Google. Vui lòng thử lại.');
+    const error = new Error(message);
+    // Lets callers offer a "Thử tài khoản khác" retry action specifically
+    // for this error instead of a plain dismiss -- see alertGoogleAuthError.
+    error.code = queryParams.error;
+    throw error;
+  }
+
   if (queryParams?.exchange_code) {
     // The deep link carried only a one-time code, not the real token --
     // redeem it by proving we hold the matching verifier.
@@ -109,3 +139,4 @@ export async function removeGoogleAccount(accountEmail) {
   const data = await apiDelete(`/email/accounts/${encodeURIComponent(accountEmail)}`);
   return data.accounts || [];
 }
+

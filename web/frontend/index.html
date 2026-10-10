@@ -1025,6 +1025,20 @@
         </div>
     </div>
 
+    <div id="gmailLinkConflictModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="gmailLinkConflictTitle">
+        <div class="modal-content gmail-link-conflict-modal-content">
+            <span class="close" data-modal="gmailLinkConflictModal">&times;</span>
+            <div class="gmail-link-conflict-icon" aria-hidden="true">⚠️</div>
+            <h2 id="gmailLinkConflictTitle">Tài khoản Google đã được liên kết</h2>
+            <p id="gmailLinkConflictMessage">Tài khoản Google này đã được liên kết với một tài khoản FlowMate khác.</p>
+            <p class="gmail-link-conflict-hint">Bạn có thể đăng xuất khỏi tài khoản Google đó, hoặc chọn một tài khoản Google khác để liên kết.</p>
+            <div class="gmail-link-conflict-actions">
+                <button type="button" class="btn-secondary" data-modal="gmailLinkConflictModal">Đóng</button>
+                <button type="button" class="btn-primary" id="gmailLinkConflictRetryBtn">Thử tài khoản khác</button>
+            </div>
+        </div>
+    </div>
+
     <div id="createOrgWorkspaceModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="createOrgWorkspaceTitle">
         <div class="modal-content">
             <span class="close" data-modal="createOrgWorkspaceModal">&times;</span>

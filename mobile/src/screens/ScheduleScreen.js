@@ -9,6 +9,7 @@ import Screen from '../components/Screen';
 import SegmentedControl from '../components/SegmentedControl';
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '../api/client';
 import { connectGoogleAccount } from '../api/googleAuth';
+import { useGoogleAuthErrorModal } from '../components/GoogleAuthConflictModal';
 import { useTheme } from '../theme/ThemeContext';
 import { filterNewMeetingSuggestions, setPendingAgentNotice } from '../state/agentNotices';
 
@@ -25,6 +26,7 @@ const initialForm = {
 export default function ScheduleScreen({ onAgentSync, syncEvent }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { modal: googleAuthErrorModal, showError: showGoogleAuthError } = useGoogleAuthErrorModal();
 
   const [mode, setMode] = useState('list');
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getMonday(new Date()));
@@ -142,7 +144,7 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
       await loadSchedules({ syncGoogle: true });
       onAgentSync?.(['profile', 'settings', 'email', 'schedule', 'calendar', 'overview']);
     } catch (error) {
-      Alert.alert('Không kết nối được Google Calendar', error.message);
+      showGoogleAuthError(error, { title: 'Không kết nối được Google Calendar', onRetry: connectCalendar });
     } finally {
       setLoading(false);
     }
@@ -607,6 +609,7 @@ export default function ScheduleScreen({ onAgentSync, syncEvent }) {
           </Card>
         </Screen>
       </Modal>
+      {googleAuthErrorModal}
     </>
   );
 }

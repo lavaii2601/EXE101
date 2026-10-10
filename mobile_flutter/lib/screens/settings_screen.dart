@@ -232,7 +232,11 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${t('Kết nối Gmail thất bại', 'Failed to connect Gmail')}: $error')));
+        await showGoogleAuthErrorDialog(
+          context, error,
+          title: t('Kết nối Gmail thất bại', 'Failed to connect Gmail'),
+          onRetry: _connectGmail,
+        );
       }
     } finally {
       if (mounted) setState(() => connectingGmail = false);

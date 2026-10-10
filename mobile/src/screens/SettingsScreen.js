@@ -22,6 +22,7 @@ import { PRIVACY_URL, TERMS_URL } from '../api/config';
 import { activateGoogleAccount, connectGoogleAccount, listGoogleAccounts, removeGoogleAccount } from '../api/googleAuth';
 import { logoutAllDevices } from '../api/emailAuth';
 import PricingModal from '../components/PricingModal';
+import { useGoogleAuthErrorModal } from '../components/GoogleAuthConflictModal';
 import WorkspaceMembersScreen from './WorkspaceMembersScreen';
 import WorkHubScreen from './WorkHubScreen';
 import StatusReportsScreen from './StatusReportsScreen';
@@ -68,6 +69,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const { language, setLanguage, t } = useLanguage();
   const orgWorkspace = useOrgWorkspace();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { modal: googleAuthErrorModal, showError: showGoogleAuthError } = useGoogleAuthErrorModal();
   // Business-workspace collaboration (Thành viên/Công việc/Báo cáo/Chia sẻ)
   // is scoped to the "worker" and "business" user modes -- switching to
   // another mode (student, freelancer, mentor, teacher, creator) hides
@@ -148,7 +150,10 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
       onRefresh?.();
       onAgentSync?.(['settings', 'profile', 'email', 'schedule', 'overview']);
     } catch (error) {
-      Alert.alert(t('Không mở được Google OAuth', 'Could not open Google OAuth'), error.message);
+      showGoogleAuthError(error, {
+        title: t('Không mở được Google OAuth', 'Could not open Google OAuth'),
+        onRetry: reconnectGmail,
+      });
     } finally {
       setGmailLoading(false);
     }
@@ -847,6 +852,7 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         onRefresh={onRefresh}
         onClose={() => setPricingVisible(false)}
       />
+      {googleAuthErrorModal}
       <WorkspaceMembersScreen visible={membersVisible} onClose={() => setMembersVisible(false)} syncEvent={syncEvent} />
       <WorkHubScreen visible={workHubVisible} onClose={() => setWorkHubVisible(false)} syncEvent={syncEvent} />
       <StatusReportsScreen visible={statusReportsVisible} onClose={() => setStatusReportsVisible(false)} syncEvent={syncEvent} />

@@ -3,7 +3,12 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:app_links/app_links.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../state/theme_controller.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_button.dart';
 import 'client.dart';
 import 'session.dart';
 
@@ -18,6 +23,18 @@ class GoogleAuthResult {
   });
 }
 
+/// Thrown when oauth2callback redirects back with an error code (see
+/// _oauth_error_redirect) instead of a token. `code` lets callers offer a
+/// "Thử tài khoản khác" retry specifically for
+/// google_account_already_linked_elsewhere -- see showGoogleAuthErrorDialog.
+class GoogleAuthError implements Exception {
+  final String code;
+  final String message;
+  const GoogleAuthError(this.code, this.message);
+  @override
+  String toString() => message;
+}
+
 bool isGoogleAuthCallback(Uri uri) =>
     uri.scheme == 'flowmateai' && uri.host == 'oauth-callback';
 
@@ -26,6 +43,20 @@ String _bytesToHex(List<int> bytes) =>
 
 String _base64ToBase64Url(String value) =>
     value.replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+
+// Keep in sync with web/frontend/js/auth.js's GMAIL_AUTH_ERROR_MESSAGES and
+// routes/email/oauth.py's _oauth_error_redirect error codes.
+const Map<String, String> _kGmailAuthErrorMessages = {
+  'google_account_already_linked_elsewhere':
+      'Tài khoản Google này đã được liên kết với một tài khoản FlowMate khác. Hãy đăng xuất khỏi tài khoản đó trên Google hoặc dùng một tài khoản Google khác.',
+  'no_flowmate_account_for_google_identity':
+      'Không tìm thấy tài khoản FlowMate nào từng liên kết với tài khoản Google này.',
+  'token_fetch_failed': 'Không thể hoàn tất xác thực với Google. Vui lòng thử lại.',
+  'invalid_oauth_state': 'Phiên liên kết Google đã hết hạn hoặc đã được dùng. Vui lòng thử lại.',
+  'flow_not_initialized': 'Không tìm thấy phiên liên kết Google. Vui lòng thử lại.',
+  'oauth_flow_unavailable': 'Google OAuth hiện chưa khả dụng. Vui lòng thử lại sau.',
+  'callback_error': 'Có lỗi xảy ra khi liên kết tài khoản Google. Vui lòng thử lại.',
+};
 
 /// RFC 7636 PKCE, generated app-side and applied to the backend->app
 /// deep-link handoff (distinct from, and in addition to, the PKCE
@@ -146,6 +177,18 @@ Future<GoogleAuthResult> connectGoogleAccount(AppLinks appLinks, {String intent 
   if (resultUri == null) {
     return const GoogleAuthResult(connected: false, cancelled: true);
   }
+  final errorCode = resultUri.queryParameters['error'];
+  if (errorCode != null && errorCode.isNotEmpty) {
+    // oauth2callback failed server-side and redirected back to this deep
+    // link with an error code instead of exchange_code/access_token (see
+    // _oauth_error_redirect) -- surface a specific message instead of
+    // falling through to consumeGoogleAuthCallback's generic failure path.
+    final conflictEmail = resultUri.queryParameters['email'] ?? '';
+    final message = errorCode == 'google_account_already_linked_elsewhere' && conflictEmail.isNotEmpty
+        ? 'Tài khoản Google $conflictEmail đã được liên kết với một tài khoản FlowMate khác. Hãy đăng xuất khỏi tài khoản đó trên Google hoặc dùng một tài khoản Google khác.'
+        : (_kGmailAuthErrorMessages[errorCode] ?? 'Không thể liên kết tài khoản Google. Vui lòng thử lại.');
+    throw GoogleAuthError(errorCode, message);
+  }
   final result = await consumeGoogleAuthCallback(resultUri);
   if (!result.success) {
     throw Exception('Không nhận được access token từ máy chủ.');
@@ -200,4 +243,130 @@ Future<List<GoogleAccount>> removeGoogleAccount(String accountEmail) async {
   return _parseGoogleAccounts(
     await apiDelete('/email/accounts/${Uri.encodeComponent(accountEmail)}'),
   );
+}
+
+/// Shared error presenter for every connectGoogleAccount() caller. Any
+/// other Google-auth error keeps the plain system AlertDialog -- only
+/// already-linked-elsewhere gets the styled, animated card (below), since
+/// it's the one case with a meaningful "Thử tài khoản khác" retry action:
+/// Google always re-prompts account selection (prompt=select_account
+/// server-side), so simply restarting the flow lets the user pick a
+/// different account. Mirrors mobile/src/api/googleAuth.js's
+/// alertGoogleAuthError and web/frontend's gmailLinkConflictModal (same
+/// copy, same two actions).
+Future<void> showGoogleAuthErrorDialog(
+  BuildContext context,
+  Object error, {
+  String title = 'Không kết nối được Google',
+  Future<void> Function()? onRetry,
+}) {
+  final message = error is GoogleAuthError ? error.message : error.toString();
+  final canRetry = error is GoogleAuthError &&
+      error.code == 'google_account_already_linked_elsewhere' &&
+      onRetry != null;
+
+  if (!canRetry) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Đóng'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // showGeneralDialog (not showDialog/AlertDialog) so transitionBuilder can
+  // drive a real fade+scale entrance/exit instead of Material's default
+  // dialog transition -- matches the fade+scale timing web/frontend's
+  // gmailLinkConflictModal and the RN GoogleAuthConflictModal both use.
+  return showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Dismiss',
+    barrierColor: Colors.black54,
+    transitionDuration: const Duration(milliseconds: 200),
+    pageBuilder: (dialogContext, animation, secondaryAnimation) {
+      return _GoogleAuthConflictCard(message: message, onRetry: onRetry);
+    },
+    transitionBuilder: (dialogContext, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+      return FadeTransition(
+        opacity: curved,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
+
+class _GoogleAuthConflictCard extends StatelessWidget {
+  final String message;
+  final Future<void> Function() onRetry;
+  const _GoogleAuthConflictCard({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.watch<ThemeController>().colors;
+    return Dialog(
+      backgroundColor: colors.panel,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.card)),
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(color: Color(0xFFFFF3E0), shape: BoxShape.circle),
+              child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFE65100), size: 26),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Tài khoản Google đã được liên kết',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colors.text, fontWeight: FontWeight.w700, fontSize: 17),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colors.textMuted, fontSize: 13.5, height: 1.5),
+            ),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    title: 'Đóng',
+                    variant: AppButtonVariant.secondary,
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: AppButton(
+                    title: 'Thử tài khoản khác',
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      onRetry();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

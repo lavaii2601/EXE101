@@ -18,6 +18,7 @@ function setupAuthGate() {
     document.getElementById('adminOpenDashboardBtn')?.addEventListener('click', () => {
         window.location.assign('/admin');
     });
+    setupGmailLinkConflictModal();
     setAuthFormMode('login');
     showAuthGate(ui('Đang kiểm tra phiên đăng nhập...', 'Checking your sign-in session...'), true);
 }
@@ -319,9 +320,60 @@ function updateSidebarUserProfile(profile) {
     }
 }
 
+// Keep in sync with routes/email/oauth.py's _oauth_error_redirect error codes.
+const GMAIL_AUTH_ERROR_MESSAGES = {
+    google_account_already_linked_elsewhere: ui(
+        'Tài khoản Google này đã được liên kết với một tài khoản FlowMate khác. Hãy đăng xuất khỏi tài khoản đó trên Google hoặc dùng một tài khoản Google khác.',
+        'This Google account is already linked to a different FlowMate account. Sign out of it on Google or use a different Google account.'
+    ),
+    no_flowmate_account_for_google_identity: ui(
+        'Không tìm thấy tài khoản FlowMate nào từng liên kết với tài khoản Google này.',
+        'No FlowMate account has ever linked this Google account.'
+    ),
+    token_fetch_failed: ui(
+        'Không thể hoàn tất xác thực với Google. Vui lòng thử lại.',
+        'Could not complete authentication with Google. Please try again.'
+    ),
+    invalid_oauth_state: ui(
+        'Phiên liên kết Google đã hết hạn hoặc đã được dùng. Vui lòng thử lại.',
+        'The Google linking session expired or was already used. Please try again.'
+    ),
+    flow_not_initialized: ui(
+        'Không tìm thấy phiên liên kết Google. Vui lòng thử lại.',
+        'No Google linking session was found. Please try again.'
+    ),
+    oauth_flow_unavailable: ui(
+        'Google OAuth hiện chưa khả dụng. Vui lòng thử lại sau.',
+        'Google OAuth is currently unavailable. Please try again later.'
+    ),
+    callback_error: ui(
+        'Có lỗi xảy ra khi liên kết tài khoản Google. Vui lòng thử lại.',
+        'Something went wrong linking your Google account. Please try again.'
+    ),
+};
+
 async function checkOAuthCallback() {
     const urlParams = new URLSearchParams(window.location.search);
     const needsPassword = urlParams.get('needs_password') === '1';
+    if (urlParams.get('gmail_auth') === 'error') {
+        console.log('❌ OAuth callback error detected');
+        const errorCode = urlParams.get('error') || '';
+        const conflictEmail = urlParams.get('email') || '';
+        window.history.replaceState({}, document.title, window.location.pathname);
+        // The already-linked-elsewhere case gets its own modal with a
+        // concrete next step (try a different account) instead of a toast
+        // that disappears before the user can act on it -- see
+        // showGmailLinkConflictModal.
+        if (errorCode === 'google_account_already_linked_elsewhere') {
+            showGmailLinkConflictModal(conflictEmail);
+            return;
+        }
+        showNotification(
+            `❌ ${GMAIL_AUTH_ERROR_MESSAGES[errorCode] || ui('Không thể liên kết tài khoản Google. Vui lòng thử lại.', 'Could not link the Google account. Please try again.')}`,
+            'error'
+        );
+        return;
+    }
     if (urlParams.get('gmail_auth') === 'success') {
         console.log('✅ OAuth callback detected');
         Object.keys(sessionStorage)
@@ -580,6 +632,44 @@ function showSetPasswordModal() {
             emailNode.hidden = true;
         }
     }
+}
+
+// Shown when oauth2callback rejects linking a Google account because it's
+// already attached to a different FlowMate account (see
+// GMAIL_AUTH_ERROR_MESSAGES/_oauth_error_redirect). A plain toast here used
+// to disappear before the user could read or act on it; this modal stays
+// open and offers a concrete next step.
+function showGmailLinkConflictModal(email) {
+    const messageNode = document.getElementById('gmailLinkConflictMessage');
+    if (messageNode) {
+        messageNode.textContent = email
+            ? ui(
+                `Tài khoản Google ${email} đã được liên kết với một tài khoản FlowMate khác.`,
+                `The Google account ${email} is already linked to a different FlowMate account.`
+            )
+            : ui(
+                'Tài khoản Google này đã được liên kết với một tài khoản FlowMate khác.',
+                'This Google account is already linked to a different FlowMate account.'
+            );
+    }
+    document.getElementById('gmailLinkConflictModal')?.classList.add('show');
+}
+
+function closeGmailLinkConflictModal() {
+    document.getElementById('gmailLinkConflictModal')?.classList.remove('show');
+}
+
+function setupGmailLinkConflictModal() {
+    document.getElementById('gmailLinkConflictModal')?.querySelectorAll('[data-modal="gmailLinkConflictModal"]').forEach((el) => {
+        el.addEventListener('click', closeGmailLinkConflictModal);
+    });
+    document.getElementById('gmailLinkConflictRetryBtn')?.addEventListener('click', () => {
+        closeGmailLinkConflictModal();
+        // Google always re-prompts account selection (prompt=select_account
+        // in gmail_auth_url), so simply restarting the link flow is enough
+        // to let the user pick a different account.
+        gmailLogin();
+    });
 }
 
 async function submitSetPassword(event) {

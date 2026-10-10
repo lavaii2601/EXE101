@@ -14,6 +14,7 @@ import { apiGet, apiPost, apiPostForm } from '../api/client';
 import { API_BASE } from '../api/config';
 import { getMobileAccessToken } from '../api/session';
 import { connectGoogleAccount } from '../api/googleAuth';
+import { useGoogleAuthErrorModal } from '../components/GoogleAuthConflictModal';
 import { useOrgWorkspace } from '../state/OrgWorkspaceContext';
 import { radius, useTheme } from '../theme/ThemeContext';
 
@@ -131,6 +132,7 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const orgWorkspace = useOrgWorkspace();
+  const { modal: googleAuthErrorModal, showError: showGoogleAuthError } = useGoogleAuthErrorModal();
 
   const [mode, setMode] = useState('inbox');
   const [source, setSource] = useState('all');
@@ -316,7 +318,7 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
       onAuthChanged?.();
       onAgentSync?.(['profile', 'settings', 'email'], { source: 'email_screen' });
     } catch (error) {
-      Alert.alert('Không mở được Gmail OAuth', error.message);
+      showGoogleAuthError(error, { title: 'Không mở được Gmail OAuth', onRetry: login });
     }
   };
 
@@ -1000,6 +1002,7 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
         reason="email_summary"
         onClose={() => setPricingVisible(false)}
       />
+      {googleAuthErrorModal}
     </>
   );
 }
