@@ -387,6 +387,42 @@ def _knowledge_fallback_response(workspace_context, target_language='vi'):
     return "\n".join(lines)
 
 
+_WORKSPACE_DATA_SOURCES = frozenset({'email', 'calendar', 'history', 'profile'})
+
+
+def _workspace_data_fallback_response(workspace_context, workspace_sources, language='vi'):
+    """Render the real email/calendar/history/profile data _build_workspace_
+    context already gathered (see _intent_sources), verbatim, when no AI
+    provider could synthesize an answer from it and no web/knowledge-specific
+    renderer applies either.
+
+    Without this, _local_freeform_response fell straight through to the
+    generic "I don't have enough information" message for any request that
+    wasn't a greeting/capabilities question/web-research/knowledge-base hit
+    -- even when real tab data had already been successfully pulled moments
+    earlier, discarding it and telling the user Bob had nothing. An
+    "overview"-style request is exactly this case: it has no web or
+    knowledge-base hit of its own, so it always hit that dead end whenever
+    every configured AI provider happened to fail or get rejected for that
+    one request (confirmed happening in production -- Claude/Gemini errors).
+    """
+    data_sources = set(workspace_sources or ()) & _WORKSPACE_DATA_SOURCES
+    context = str(workspace_context or '').strip()
+    if not data_sources or not context:
+        return None
+    if language == 'en':
+        preamble = (
+            "The AI reasoning model is temporarily unavailable, so here is the raw "
+            "data Bob already pulled from your workspace:"
+        )
+    else:
+        preamble = (
+            "Model suy luận AI hiện tạm thời không phản hồi được, dưới đây là dữ liệu "
+            "thực tế Bob đã lấy được từ các mục trong workspace của bạn:"
+        )
+    return f"{preamble}\n\n{context}"
+
+
 def _local_freeform_response(user_message, workspace_context, workspace_sources):
     """Compose a deterministic answer from local knowledge and web evidence."""
     language = detect_prompt_language(user_message)
@@ -414,6 +450,11 @@ def _local_freeform_response(user_message, workspace_context, workspace_sources)
         )
     if any(term in normalized for term in ('ban lam duoc gi', 'giup duoc gi', 'what can you do', 'capabilities')):
         return tool_catalog.build_capabilities_summary(), 'bob-local', True
+
+    workspace_answer = _workspace_data_fallback_response(workspace_context, workspace_sources, language)
+    if workspace_answer:
+        return workspace_answer, 'workspace', True
+
     if language == 'en':
         return (
             "I don't yet have enough local knowledge or source data to answer this reliably. "

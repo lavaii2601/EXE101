@@ -47,6 +47,57 @@ _SUFFIXES = (
 # (no explicit action verb), casual shorthand, and near-miss wording against
 # a neighboring intent, since the first ten already cover direct requests.
 _CORES = {
+    "overview.daily_brief": (
+        "tong hop cong viec hom nay cho toi",
+        "hom nay toi can uu tien nhung gi",
+        "cho minh xem overview trong ngay",
+        "gom email lich deadline va task hom nay",
+        "bao cao nhanh tinh hinh ngay nay",
+        "give me my daily work overview",
+        "brief me on today's email calendar and tasks",
+        "what needs my attention today",
+        "show my work dashboard for today",
+        "summarize today's priorities",
+        "sang nay co viec gi dang cho minh",
+        "nhin tong quan lich va hop thu hom nay giup",
+        "toi nen bat dau tu viec nao trong ngay",
+        "catch me up on everything for today",
+        "daily brief please",
+    ),
+    "internet.research": (
+        "tim kiem tren internet thong tin nay",
+        "tra cuu web va dua nguon cho toi",
+        "tim thong tin moi nhat tren mang",
+        "xac minh dieu nay bang nguon public",
+        "nghien cuu online chu de nay",
+        "search the web and cite sources",
+        "look this up online for me",
+        "find the latest public information",
+        "browse the internet to verify this",
+        "research this topic using public sources",
+        "google giup minh thong tin nay",
+        "kiem nguon tham khao tren web",
+        "tim link dang tin cay ve chu de nay",
+        "find current sources for this claim",
+        "check online whether this is true",
+    ),
+    "knowledge.lookup": (
+        "tim trong kho kien thuc cua toi",
+        "tra cuu tai lieu noi bo da luu",
+        "Bob da hoc gi ve quy trinh nay",
+        "tim ghi chu trong workspace knowledge",
+        "xem tai lieu cong ty noi gi ve viec nay",
+        "search my saved knowledge base",
+        "look this up in our internal documents",
+        "what do my stored notes say about this",
+        "find this in the workspace knowledge",
+        "search the documents I imported",
+        "kiem trong tai lieu toi da nap",
+        "mo lai kien thuc da luu ve hop dong",
+        "tim quy dinh nay trong kho noi bo",
+        "consult our saved company knowledge",
+        "use the internal knowledge base for this",
+    ),
     "schedule.create": (
         "tao lich hop voi sep luc 3 gio chieu mai",
         "nhac toi goi khach hang vao 9 gio sang thu hai",
@@ -253,6 +304,31 @@ _CORES = {
     ),
 }
 
+# Negative examples are just as important as action examples: without a
+# trained catch-all class, any sentence containing words such as "email",
+# "calendar" or "deadline" is forced toward a workspace action even when the
+# user is asking a general question.  This class is used by the classifier
+# only and is intentionally not exported as RAG training knowledge.
+_CLASSIFIER_ONLY_CORES = {
+    "chat.freeform": (
+        "xin chao Bob ban khoe khong",
+        "cam on ban rat nhieu",
+        "email marketing hoat dong nhu the nao",
+        "giai thich thuat toan lap lich CPU",
+        "deadline co nghia la gi",
+        "ban nghi gi ve lam viec tu xa",
+        "who founded Facebook",
+        "what is an event driven architecture",
+        "explain how calendar algorithms work",
+        "give me a productivity tip",
+        "so sanh PostgreSQL va MySQL",
+        "viet mot doan gioi thieu ngan",
+        "how are you today",
+        "toi dang cam thay hoi met",
+        "ke cho toi mot cau chuyen vui",
+    ),
+}
+
 
 def generate_training_cases(intent, count=CASES_PER_INTENT):
     """Return exactly ``count`` unique labelled phrases for one intent."""
@@ -277,6 +353,15 @@ def generate_training_cases(intent, count=CASES_PER_INTENT):
 def iter_labelled_cases(count_per_intent=CASES_PER_INTENT):
     for intent in TOOL_NAMES:
         for phrase in generate_training_cases(intent, count=count_per_intent):
+            yield {"text": phrase, "intent": intent}
+    for intent, cores in _CLASSIFIER_ONLY_CORES.items():
+        cases = [
+            f"{prefix} {core}, {suffix}".strip()
+            for core in cores
+            for prefix in _PREFIXES
+            for suffix in _SUFFIXES
+        ]
+        for phrase in cases[:count_per_intent]:
             yield {"text": phrase, "intent": intent}
 
 

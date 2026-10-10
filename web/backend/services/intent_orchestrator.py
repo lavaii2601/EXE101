@@ -88,10 +88,10 @@ class IntentOrchestrator:
     _EXPLICIT_WEB_RESEARCH_TERMS = (
         "tim kiem tren internet", "tim tren internet", "tra cuu internet",
         "kiem tren internet", "internet", "tren mang", "len mang", "tim tren mang",
-        "tim kiem tren mang", "tim kiem web", "tra cuu web",
-        "search web", "web search", "search the web", "browse the web",
+        "tim kiem tren mang", "tim kiem web", "tra cuu web", "tim tren web", "kiem tren web",
+        "search web", "web search", "search the web", "search online", "browse the web",
         "research online", "google", "nguon public", "public sources",
-        "nguon tham khao", "link tham khao",
+        "nguon cong khai", "nguon tham khao", "link tham khao",
     )
 
     def detect(self, message):
@@ -131,10 +131,19 @@ class IntentOrchestrator:
                 "knowledge_question": True,
             }
 
+        if self._is_overview_request(text):
+            intent = "overview.daily_brief"
+            confidence = 0.94
+            refresh_targets = ["overview", "email", "schedule", "history"]
+        elif self._is_internal_knowledge_lookup(text):
+            intent = "knowledge.lookup"
+            confidence = 0.92
+            refresh_targets = []
+
         # Explicit state-changing email verbs take precedence over modifiers
         # such as "latest"; "mark the latest 3 emails unread" is not a
         # request to summarize those emails.
-        if self._is_email_mark_read(text):
+        elif self._is_email_mark_read(text):
             intent = "email.mark_read"
             confidence = 0.8
             date_window = self._email_date_window(text)
@@ -187,12 +196,6 @@ class IntentOrchestrator:
             confidence = 0.86
             entities["limit"] = self._limit_from_text(text, default=8, maximum=100)
             refresh_targets = ["history"]
-        elif self._is_schedule_create(text):
-            intent = "schedule.create"
-            confidence = 0.88
-            entities["schedule"] = self.extract_schedule(message)
-            requires_confirmation = True
-            refresh_targets = ["schedule", "calendar", "overview", "history"]
         elif self._is_schedule_update(text):
             intent = "schedule.update"
             confidence = 0.8
@@ -202,6 +205,12 @@ class IntentOrchestrator:
         elif self._is_schedule_delete(text):
             intent = "schedule.delete"
             confidence = 0.8
+            requires_confirmation = True
+            refresh_targets = ["schedule", "calendar", "overview", "history"]
+        elif self._is_schedule_create(text):
+            intent = "schedule.create"
+            confidence = 0.88
+            entities["schedule"] = self.extract_schedule(message)
             requires_confirmation = True
             refresh_targets = ["schedule", "calendar", "overview", "history"]
         elif self._is_schedule_lookup(text):
@@ -313,7 +322,7 @@ class IntentOrchestrator:
         "cac viec can", "list cong viec",
         "things to do", "my tasks", "task list", "list of tasks",
         "today's activities", "todays activities", "things i need to do",
-        "stuff i need to do",
+        "stuff i need to do", "dau viec", "danh sach can lam",
     )
 
     TIME_HINT_PATTERN = re.compile(
@@ -647,7 +656,7 @@ class IntentOrchestrator:
             "workflow_assisted": True,
         }
 
-    def _detect_via_training(self, message, min_confidence=0.65):
+    def _detect_via_training(self, message, min_confidence=0.55):
         try:
             from services.training_intent_classifier import training_intent_classifier
             match = training_intent_classifier.classify(message)
@@ -694,6 +703,16 @@ class IntentOrchestrator:
         elif intent == "schedule.suggest_plan":
             base["requires_confirmation"] = False
             base["refresh_targets"] = ["schedule", "calendar", "overview", "history"]
+        elif intent == "overview.daily_brief":
+            base["requires_confirmation"] = False
+            base["refresh_targets"] = ["overview", "email", "schedule", "history"]
+        elif intent == "internet.research":
+            base["requires_confirmation"] = False
+            base["refresh_targets"] = []
+            base["research_requested"] = True
+        elif intent == "knowledge.lookup":
+            base["requires_confirmation"] = False
+            base["refresh_targets"] = []
         elif intent == "email.latest_summary":
             base["requires_confirmation"] = False
             base["entities"] = {"count": self._latest_email_count(text)}
@@ -728,6 +747,8 @@ class IntentOrchestrator:
                 return None
             base["entities"] = {"items": items[:50]}
             base["refresh_targets"] = ["overview", "history"]
+        elif intent == "chat.freeform":
+            base["requires_confirmation"] = False
         else:
             return None
         return base
@@ -1043,6 +1064,12 @@ class IntentOrchestrator:
             # straight from the raw message via the day-plan engine, same
             # as the rule-based path.
             refresh_targets = ["schedule", "calendar", "overview", "history"]
+        elif intent == "overview.daily_brief":
+            refresh_targets = ["overview", "email", "schedule", "history"]
+        elif intent == "internet.research":
+            refresh_targets = []
+        elif intent == "knowledge.lookup":
+            refresh_targets = []
         else:
             return {
                 "intent": "chat.freeform",
@@ -1373,6 +1400,72 @@ class IntentOrchestrator:
         # latest-summary behavior without stealing "mark latest unread".
         return has_email and has_latest
 
+    _OVERVIEW_TERMS = (
+        "tong hop ngay", "tong quan hom nay", "tong quan trong ngay",
+        "overview hom nay", "daily overview", "daily brief", "work overview",
+        "hom nay can lam gi", "hom nay co gi", "uu tien hom nay",
+        "today's priorities", "todays priorities", "what needs my attention today",
+        "work dashboard for today", "dashboard hom nay", "everything for today",
+        "brief dau ngay", "morning brief", "buc tranh cong viec hom nay",
+        "toan bo viec", "uu tien trong ngay",
+    )
+
+    def _is_overview_request(self, text):
+        if self._contains_word(text, self._OVERVIEW_TERMS):
+            return True
+        has_summary = self._contains_word(
+            text, ("tong hop", "tong quan", "brief", "overview", "buc tranh", "dashboard")
+        )
+        if not has_summary:
+            return False
+        # "overview" by itself is this app's own screen name (the Tổng hợp/
+        # Overview tab), not a generic word that could mean something else
+        # in an unrelated sentence -- unlike "brief"/"dashboard", it needs no
+        # cross-domain confirmation below. A plain "tóm tắt overview" (or
+        # "tổng quan"/"tổng hợp" paired with a day reference or a summarize
+        # verb) was falling through to chat.freeform, which pulls none of
+        # the overview/email/schedule/history context this intent injects --
+        # Bob then correctly reported it had received no information at all.
+        if self._contains_word(text, ("overview",)):
+            return True
+        has_day_reference = self._contains_word(text, ("hom nay", "trong ngay", "today"))
+        has_summarize_verb = self._contains_word(
+            text, ("tom tat", "summarize", "cho xem", "cho toi xem")
+        )
+        if self._contains_word(text, ("tong hop", "tong quan")) and (has_day_reference or has_summarize_verb):
+            return True
+        has_cross_domain = sum(
+            self._contains_word(text, group)
+            for group in (
+                ("email", "mail", "inbox", "hop thu"),
+                ("lich", "calendar", "meeting"),
+                ("deadline", "task", "checklist", "viec"),
+            )
+        ) >= 2
+        return has_cross_domain
+
+    _INTERNAL_KNOWLEDGE_OBJECTS = (
+        "kho kien thuc", "tai lieu noi bo", "workspace knowledge",
+        "internal knowledge", "internal documents", "saved knowledge",
+        "stored notes", "saved notes", "tai lieu da luu", "tai lieu da nap",
+        "tai lieu da nhap", "documents i imported", "imported documents",
+        "workspace documents", "company knowledge base",
+    )
+
+    def _is_internal_knowledge_lookup(self, text):
+        has_source = self._contains_word(text, self._INTERNAL_KNOWLEDGE_OBJECTS)
+        has_lookup = self._contains_word(
+            text,
+            (
+                "tim", "kiem", "tra cuu", "xem", "co noi", "search", "find",
+                "look up", "look through", "consult", "what do",
+            ),
+        )
+        learned_question = self._contains_word(
+            text, ("bob da hoc gi", "bob da hoc duoc", "bob biet gi")
+        )
+        return learned_question or (has_source and has_lookup)
+
     def _latest_email_count(self, text):
         email_word = r"(?:e-?mails?|gmails?|mails?|thu|hop thu)"
         latest_word = (
@@ -1443,7 +1536,11 @@ class IntentOrchestrator:
         en_pattern = rf"\b(?:{en_marker_alt})\s+(?:to\s+)?(?:{action_alt})\b"
         return re.search(en_pattern, text) is not None
 
-    _SCHEDULE_WORDS = ("lich", "su kien", "hen", "hop", "meeting", "appointment", "calendar", "call", "event")
+    _SCHEDULE_WORDS = (
+        "lich", "su kien", "hen", "hop", "cuoc goi", "nhac nho",
+        "meeting", "appointment", "calendar", "call", "event", "review",
+        "demo", "maintenance", "reminder",
+    )
     _SCHEDULE_CREATE_ACTIONS = (
         "tao", "dat", "book", "them", "add", "create", "nhac toi", "remind",
         "set up", "arrange", "plan", "schedule",
@@ -1456,7 +1553,10 @@ class IntentOrchestrator:
         "doi", "sua", "cap nhat", "thay doi", "chuyen",
         "change", "update", "reschedule", "move", "postpone", "shift",
     )
-    _SCHEDULE_DELETE_ACTIONS = ("xoa", "huy", "bo lich", "cancel", "delete")
+    _SCHEDULE_DELETE_ACTIONS = (
+        "xoa", "huy", "bo lich", "bo khoi lich", "cancel", "delete",
+        "remove", "take off",
+    )
 
     def _is_schedule_create(self, text):
         # "schedule" needs a word boundary -- a plain substring check would
@@ -1499,11 +1599,18 @@ class IntentOrchestrator:
     def _is_schedule_lookup(self, text):
         if self._is_negated_action(text, self._SCHEDULE_CREATE_NEGATION_ACTIONS):
             return False
+        if re.search(
+            r"\b(?:la gi|nghia la gi|what is|what does|how does|algorithm|definition|meaning)\b",
+            text,
+        ):
+            return False
         if self._contains_word(text, (
             "lich tuan", "lich hom", "hom nay co lich", "co lich gi", "calendar",
             "meeting tuan", "su kien tuan", "appointments",
             "my schedule", "my calendar", "my meetings",
-            "upcoming meetings", "upcoming events",
+            "upcoming meetings", "upcoming events", "meeting sap toi", "su kien sap",
+            "mo lich", "xem lich", "liet ke meeting", "lich co trong", "lich co trong khong",
+            "free next", "am i free", "meetings are coming up",
         )):
             return True
         # "do i have"/"what's on my" are too generic on their own (could be
@@ -1521,25 +1628,46 @@ class IntentOrchestrator:
         # before this rule runs, so an action verb can't be present here.
         return has_schedule_word and self._explicit_date_from_text(text) is not None
 
-    _EMAIL_MARK_ACTIONS = ("danh dau", "mark")
+    _EMAIL_MARK_ACTIONS = (
+        "danh dau", "mark", "chuyen", "set", "clear", "restore", "keep",
+        "bo trang thai", "bat lai", "de", "update",
+    )
 
     def _is_email_mark_read(self, text):
+        clear_unread = bool(re.search(
+            r"\b(?:clear|remove)\s+(?:the\s+)?unread(?:\s+(?:flag|status))?\b",
+            text,
+        )) or "bo trang thai chua doc" in text
+        seen_already = bool(re.search(r"\bxem\b.{0,40}\broi\b", text))
+        unbold = "het in dam" in text
         if self._is_negated_action(text, self._EMAIL_MARK_ACTIONS):
             return False
-        if not self._contains_word(text, self._EMAIL_MARK_ACTIONS):
+        if not (
+            self._contains_word(text, self._EMAIL_MARK_ACTIONS)
+            or clear_unread or unbold
+        ):
             return False
-        has_read = self._contains_word(text, ("da doc", "read"))
+        has_read = self._contains_word(
+            text, ("da doc", "da xem", "xem roi", "read", "het in dam", "clear unread")
+        ) or clear_unread or seen_already or unbold
         has_unread = self._contains_word(text, ("chua doc", "unread"))
-        return has_read and not has_unread
+        return has_read and (not has_unread or clear_unread)
 
     def _is_email_mark_unread(self, text):
+        if re.search(
+            r"\b(?:clear|remove)\s+(?:the\s+)?unread(?:\s+(?:flag|status))?\b",
+            text,
+        ) or "bo trang thai chua doc" in text:
+            return False
         if self._is_negated_action(text, self._EMAIL_MARK_ACTIONS):
             return False
         if not self._contains_word(text, self._EMAIL_MARK_ACTIONS):
             return False
         return self._contains_word(text, ("chua doc", "unread"))
 
-    _EMAIL_LOOKUP_ACTIONS = ("tim", "kiem", "check", "find", "search")
+    _EMAIL_LOOKUP_ACTIONS = (
+        "tim", "kiem", "luc", "check", "find", "search", "look for",
+    )
 
     def _is_email_lookup(self, text):
         if self._is_negated_action(text, self._EMAIL_LOOKUP_ACTIONS):
@@ -1549,7 +1677,10 @@ class IntentOrchestrator:
             ("email", "gmail", "hop thu", "thu chua doc", "mail"),
         )
         has_lookup_action = self._contains_word(text, self._EMAIL_LOOKUP_ACTIONS)
-        return has_email_object and has_lookup_action
+        has_locator_question = self._contains_word(
+            text, ("nam dau", "o dau", "where is", "where are")
+        )
+        return has_email_object and (has_lookup_action or has_locator_question)
 
     _HISTORY_LOOKUP_ACTIONS = ("xem", "cho xem", "check", "show")
 
@@ -1565,7 +1696,9 @@ class IntentOrchestrator:
             return True
         return any(term in text for term in (
             "da lam gi", "lam gi roi", "vua lam gi", "nhung gi da lam",
-            "what did i do", "what have i done", "what i did",
+            "thao tac da", "hanh dong da", "bob da xu ly", "da thuc hien",
+            "what did i do", "what have i done", "what i did", "what has bob done",
+            "actions completed", "previous flowmate operations", "activity log",
         ))
 
     DAY_PLAN_SIGNAL = (
@@ -1573,6 +1706,8 @@ class IntentOrchestrator:
         "tao lich tu cac hoat dong", "xep gium lich", "xep giup lich",
         "suggest a schedule", "suggest times", "plan my day", "schedule my day",
         "arrange my day", "plan out my day", "organize my day",
+        "goi y gio", "khung gio", "time slots", "fit in", "fit into",
+        "len lich trong ngay", "help fit",
     )
 
     _DAY_PLAN_ACTIONS = ("goi y", "sap xep", "xep", "suggest", "arrange", "plan", "organize")
@@ -1639,12 +1774,18 @@ class IntentOrchestrator:
             item.pop("_input_order", None)
         return items
 
-    _MODE_UPDATE_ACTIONS = ("doi che do", "chuyen che do", "set mode", "change mode")
+    _MODE_UPDATE_ACTIONS = (
+        "doi che do", "chuyen che do", "set mode", "change mode", "thiet lap",
+        "dung ho so", "use profile",
+    )
 
     def _is_mode_update(self, text):
         if self._is_negated_action(text, self._MODE_UPDATE_ACTIONS):
             return False
-        if not any(term in text for term in ("doi che do", "chuyen che do", "set mode", "mode", "che do lam viec")):
+        if not any(term in text for term in (
+            "doi che do", "chuyen che do", "set mode", "mode", "che do lam viec",
+            "dung ho so", "use profile", "thiet lap bob", "kieu",
+        )):
             return False
         return self._mode_from_text(text) is not None
 

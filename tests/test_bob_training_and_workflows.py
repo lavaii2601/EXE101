@@ -42,7 +42,9 @@ class BobTrainingCorpusTests(unittest.TestCase):
             self.assertEqual(CASES_PER_INTENT, len(set(cases)), intent)
 
     def test_total_case_and_compact_document_counts(self):
-        self.assertEqual(len(TOOL_NAMES) * CASES_PER_INTENT, len(list(iter_labelled_cases())))
+        # One additional classifier-only negative class (chat.freeform)
+        # prevents domain words in general questions from becoming actions.
+        self.assertEqual((len(TOOL_NAMES) + 1) * CASES_PER_INTENT, len(list(iter_labelled_cases())))
         batches_per_intent = CASES_PER_INTENT // 50
         self.assertEqual(len(TOOL_NAMES) * batches_per_intent, len(build_rag_training_documents(batch_size=50)))
 
@@ -411,6 +413,55 @@ Use these external sources only for public web facts.
             with self.subTest(prompt=prompt):
                 result = orchestrator.detect_with_ai(prompt, ai_service=None)
                 self.assertEqual("chat.freeform", result["intent"])
+
+
+class BobWorkspaceDataFallbackTests(unittest.TestCase):
+    """_build_workspace_context (see _intent_sources) can successfully pull
+    real email/calendar/history/profile data for an "overview"-style
+    request even when every configured AI provider then fails or is
+    rejected for that one request -- a real, observed production condition
+    (Claude/Gemini errors). _local_freeform_response must surface that
+    already-gathered data instead of discarding it and claiming Bob has no
+    information at all."""
+
+    def test_gathered_workspace_data_is_shown_instead_of_the_no_info_message(self):
+        from services.chat_agents.freeform_agent import _local_freeform_response
+
+        workspace_context = (
+            "EMAIL GẦN ĐÂY\n1. Người gửi: Alice\n   Tiêu đề: Báo cáo tuần\n\n"
+            "LỊCH\nKhông có sự kiện hôm nay."
+        )
+        response, provider, grounded = _local_freeform_response(
+            "tóm tắt overview",
+            workspace_context,
+            {"email", "calendar", "history", "profile"},
+        )
+        self.assertEqual("workspace", provider)
+        self.assertTrue(grounded)
+        self.assertIn("Báo cáo tuần", response)
+        self.assertNotIn("chưa có đủ kiến thức", response)
+
+    def test_no_gathered_data_still_gives_the_honest_no_info_message(self):
+        from services.chat_agents.freeform_agent import _local_freeform_response
+
+        response, provider, grounded = _local_freeform_response(
+            "tóm tắt overview", "", set(),
+        )
+        self.assertEqual("bob-local", provider)
+        self.assertFalse(grounded)
+        self.assertIn("chưa có đủ kiến thức", response)
+
+    def test_internet_and_knowledge_sources_alone_do_not_trigger_the_raw_dump(self):
+        """A pure web-research or knowledge-base answer already has its own
+        dedicated renderer (checked first) -- the raw workspace-data dump
+        must not also fire for those and double up the response."""
+        from services.chat_agents.freeform_agent import _local_freeform_response
+
+        response, provider, grounded = _local_freeform_response(
+            "tra cuu tren internet", "some unrelated context", {"internet"},
+        )
+        self.assertEqual("bob-local", provider)
+        self.assertFalse(grounded)
 
 
 if __name__ == "__main__":

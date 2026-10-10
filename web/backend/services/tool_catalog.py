@@ -37,6 +37,33 @@ class Tool:
 
 
 CATALOG = {
+    "overview.daily_brief": Tool(
+        name="overview.daily_brief",
+        description=(
+            "muon xem tong quan/tong hop hom nay gom email, lich, deadline, "
+            "task va checklist"
+        ),
+        is_write=False,
+        user_label="Tổng hợp công việc trong ngày",
+    ),
+    "internet.research": Tool(
+        name="internet.research",
+        description=(
+            "muon tra cuu/tim kiem tren Internet hoac can thong tin cong khai "
+            "moi, co nguon URL"
+        ),
+        is_write=False,
+        user_label="Tra cứu Internet có nguồn",
+    ),
+    "knowledge.lookup": Tool(
+        name="knowledge.lookup",
+        description=(
+            "muon tim trong kho kien thuc/tai lieu noi bo da luu cua ca nhan "
+            "hoac workspace"
+        ),
+        is_write=False,
+        user_label="Tra cứu kho kiến thức đã lưu",
+    ),
     "schedule.create": Tool(
         name="schedule.create",
         description="muon tao lich hen/su kien/nhac nho moi",

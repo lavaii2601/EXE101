@@ -17,6 +17,12 @@ def _features(text):
 class TrainingIntentClassifier:
     """Balanced multinomial Naive Bayes classifier with no ML dependency."""
 
+    # The per-feature log margin becomes more conservative as balanced intent
+    # classes are added.  This calibration keeps confidence comparable with
+    # the original twelve-class corpus while the classifier still requires a
+    # clear lead over the runner-up.
+    _CONFIDENCE_MARGIN_SCALE = 1.35
+
     def __init__(self, cases=None):
         self._counts = defaultdict(Counter)
         self._totals = Counter()
@@ -59,7 +65,7 @@ class TrainingIntentClassifier:
         # conservative confidence: the trained fallback only routes when the
         # vocabulary provides a clear lead over the runner-up.
         margin = max(0.0, best_score - second_score) / max(1, len(features))
-        confidence = 1.0 - math.exp(-margin)
+        confidence = 1.0 - math.exp(-margin * self._CONFIDENCE_MARGIN_SCALE)
         return {
             "intent": best_intent,
             "confidence": round(confidence, 4),
