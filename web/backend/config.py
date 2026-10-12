@@ -145,7 +145,13 @@ class Config:
     AI_OVERVIEW_BRIEF_MAX_TOKENS = int(os.getenv("AI_OVERVIEW_BRIEF_MAX_TOKENS", 260))
     AI_MEETING_CONFIRM_MAX_TOKENS = int(os.getenv("AI_MEETING_CONFIRM_MAX_TOKENS", 220))
 
-    AI_TASK_PROVIDERS_CHAT = os.getenv("AI_TASK_PROVIDERS_CHAT", "")
+    # Bob's Chat tab (FreeformChatAgent, task='chat') always tries OpenAI
+    # first now -- see _build_provider_chain's task_overrides handling,
+    # which inserts this at the front of the chain but still falls back to
+    # the rest of configured_providers (Claude/Gemini) if OpenAI is down or
+    # unhealthy. OpenAI has been the one consistently reliable provider
+    # (Claude is out of credits, Gemini only recently fixed to flash tier).
+    AI_TASK_PROVIDERS_CHAT = os.getenv("AI_TASK_PROVIDERS_CHAT", "openai")
     AI_TASK_PROVIDERS_SUMMARY = os.getenv("AI_TASK_PROVIDERS_SUMMARY", "")
     AI_TASK_PROVIDERS_REPLY = os.getenv("AI_TASK_PROVIDERS_REPLY", "")
     AI_TASK_PROVIDERS_ANALYZE = os.getenv("AI_TASK_PROVIDERS_ANALYZE", "")

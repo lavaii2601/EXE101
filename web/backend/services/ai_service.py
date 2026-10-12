@@ -558,11 +558,21 @@ class AIService:
             if provider not in ordered:
                 ordered.append(provider)
         
-        # Task-specific overrides (if configured)
+        # Task-specific overrides (if configured). Bubble to the front like
+        # prefer_quality below does -- the "remaining healthy providers" loop
+        # above already added every healthy provider to `ordered`, so an
+        # override provider is virtually always already present somewhere in
+        # the list; only inserting when *absent* (the previous behavior)
+        # made this a no-op in every normal case, since you'd only ever
+        # configure an override to a provider you already have credentials
+        # for. This went unnoticed because every *_MODEL task override
+        # defaulted to unset/empty until AI_TASK_PROVIDERS_CHAT got one.
         task_overrides = self.task_provider_overrides.get(task, [])
-        for provider in task_overrides:
-            if provider in healthy_providers and provider not in ordered:
-                ordered.insert(0, provider)  # Prioritize task-specific providers
+        for provider in reversed(task_overrides):
+            if provider in healthy_providers:
+                if provider in ordered:
+                    ordered.remove(provider)
+                ordered.insert(0, provider)
 
         # Premium quality preference: bubble the stronger providers to the
         # front without dropping anything from the fallback chain.

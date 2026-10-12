@@ -308,5 +308,39 @@ class AICostLogNoOpTests(unittest.TestCase):
             ai_cost_log.record_call(provider='openai', success=True)  # must not raise
 
 
+class AIServiceChatProviderPriorityTests(unittest.TestCase):
+    """Bob's Chat tab (task='chat') tries OpenAI first when it's healthy and
+    configured, falling back to the rest of the normal chain otherwise --
+    Claude is out of credits and Gemini was only recently fixed, so OpenAI
+    is the one provider that's actually been reliable. See config.py's
+    AI_TASK_PROVIDERS_CHAT and _build_provider_chain's task_overrides
+    handling, which this exercises directly rather than re-deriving."""
+
+    def test_openai_is_tried_first_even_when_round_robin_would_pick_another(self):
+        service = ai_service_module.AIService()
+        service.configured_providers = ['claude', 'openai', 'gemini']
+        service.provider_rotation_index = 0  # round-robin alone would pick 'claude'
+        chain = service._build_provider_chain(task='chat')
+        self.assertEqual('openai', chain[0])
+        self.assertEqual({'claude', 'openai', 'gemini'}, set(chain))
+
+    def test_openai_in_cooldown_still_falls_back_to_the_rest_of_the_chain(self):
+        from datetime import datetime
+        service = ai_service_module.AIService()
+        service.configured_providers = ['claude', 'openai', 'gemini']
+        service.provider_health = {'openai': {'failed_at': datetime.now()}}
+        chain = service._build_provider_chain(task='chat')
+        self.assertNotIn('openai', chain)
+        self.assertTrue(chain)
+        self.assertTrue(set(chain) <= {'claude', 'gemini'})
+
+    def test_other_tasks_are_unaffected_by_the_chat_override(self):
+        service = ai_service_module.AIService()
+        service.configured_providers = ['claude', 'openai', 'gemini']
+        service.provider_rotation_index = 0
+        chain = service._build_provider_chain(task='summary')
+        self.assertEqual('claude', chain[0])
+
+
 if __name__ == '__main__':
     unittest.main()
