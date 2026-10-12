@@ -25,6 +25,105 @@ bool _htmlLooksRenderable(String html) {
   return tableCount < 3;
 }
 
+// Mirrors the exact section headers services/extractive_summary.py's
+// summarize_structured() and ai_service.py's _EMAIL_SUMMARY_SYSTEM_PROMPT
+// both emit, and the equivalent parser in web (utils.js) and RN
+// (EmailScreen.js) -- so AI-generated and local-fallback summaries render
+// through the same labelled-sections card on every platform.
+const Map<String, IconData> _summarySectionIcons = {
+  'TÓM TẮT': Icons.auto_awesome_outlined,
+  'ĐIỂM CHÍNH': Icons.list_alt_outlined,
+  'CẦN LÀM': Icons.check_box_outlined,
+  'THỜI HẠN': Icons.schedule_outlined,
+  'TÀI LIỆU': Icons.attach_file_outlined,
+};
+
+const Map<String, List<String>> _summarySectionLabels = {
+  'TÓM TẮT': ['Tóm tắt', 'Summary'],
+  'ĐIỂM CHÍNH': ['Điểm chính', 'Key points'],
+  'CẦN LÀM': ['Cần làm', 'Action items'],
+  'THỜI HẠN': ['Thời hạn', 'Deadlines'],
+  'TÀI LIỆU': ['Tài liệu', 'Documents'],
+};
+
+class _EmailSummarySection {
+  final String? title;
+  final String body;
+  const _EmailSummarySection(this.title, this.body);
+}
+
+List<_EmailSummarySection> _parseEmailSummarySections(String summary) {
+  final text = summary.trim();
+  if (text.isEmpty) return [];
+  final blocks = text.split(RegExp(r'\n{2,}'));
+  final sections = <_EmailSummarySection>[];
+  for (final block in blocks) {
+    final lines = block.split('\n');
+    final firstLine = lines.first.trim();
+    if (_summarySectionLabels.containsKey(firstLine)) {
+      sections.add(_EmailSummarySection(firstLine, lines.skip(1).join('\n').trim()));
+    } else if (sections.isNotEmpty) {
+      // A stray blank line inside one section's own body must not be
+      // mistaken for the start of a new, untitled section.
+      final last = sections.removeLast();
+      sections.add(_EmailSummarySection(last.title, '${last.body}\n\n$block'.trim()));
+    } else {
+      sections.add(_EmailSummarySection(null, block.trim()));
+    }
+  }
+  return sections.where((section) => section.body.isNotEmpty).toList();
+}
+
+Widget _buildEmailSummarySections(String summary, AppColors colors, String Function(String, [String?]) t) {
+  final sections = _parseEmailSummarySections(summary);
+  if (sections.isEmpty) {
+    return Text(summary, style: TextStyle(color: colors.text, fontSize: 13.5, height: 1.5));
+  }
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: sections.map((section) {
+      final title = section.title;
+      final icon = title != null ? _summarySectionIcons[title] : null;
+      final labels = title != null ? _summarySectionLabels[title] : null;
+      final lines = section.body.split('\n').where((line) => line.trim().isNotEmpty).toList();
+      final isBulletList = lines.isNotEmpty && lines.every((line) => line.trim().startsWith('-'));
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (title != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) Icon(icon, size: 14, color: colors.primary),
+                    if (icon != null) const SizedBox(width: 5),
+                    Text(
+                      labels != null ? t(labels[0], labels[1]) : title,
+                      style: TextStyle(color: colors.text, fontWeight: FontWeight.w700, fontSize: 11.5),
+                    ),
+                  ],
+                ),
+              ),
+            if (isBulletList)
+              ...lines.map((line) => Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(
+                      '•  ${line.trim().replaceFirst(RegExp(r'^[-•]\s*'), '')}',
+                      style: TextStyle(color: colors.text, fontSize: 13.5, height: 1.5),
+                    ),
+                  ))
+            else
+              Text(section.body, style: TextStyle(color: colors.text, fontSize: 13.5, height: 1.5)),
+          ],
+        ),
+      );
+    }).toList(),
+  );
+}
+
 /// Full-content view for a single email, pushed when a row is tapped in
 /// EmailScreen. Fetches the full body on-demand (the list only ever carries
 /// a snippet) and offers an on-demand AI summary via /email/summary/<id>.
@@ -183,7 +282,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
                         children: [
                           Text(t('AI TÓM TẮT', 'AI SUMMARY'), style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1)),
                           const SizedBox(height: 6),
-                          Text(summary, style: TextStyle(color: colors.text, fontSize: 13.5, height: 1.5)),
+                          _buildEmailSummarySections(summary, colors, t),
                         ],
                       ),
                     ),

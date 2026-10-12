@@ -12,6 +12,7 @@
   "dependencies": {
     "@expo-google-fonts/poppins": "^0.4.1",
     "@expo/vector-icons": "^15.0.2",
+    "@native-html/render": "^1.0.3",
     "@react-native-community/datetimepicker": "9.1.0",
     "expo": "~56.0.17",
     "expo-crypto": "~56.0.4",

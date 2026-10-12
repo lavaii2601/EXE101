@@ -139,7 +139,10 @@ class Config:
     AI_MAX_SYSTEM_PROMPT_CHARS = int(os.getenv("AI_MAX_SYSTEM_PROMPT_CHARS", 12000))
     AI_DEFAULT_MAX_TOKENS = int(os.getenv("AI_DEFAULT_MAX_TOKENS", 220))
     AI_AGENT_MAX_TOKENS = int(os.getenv("AI_AGENT_MAX_TOKENS", 700))
-    AI_SUMMARY_MAX_TOKENS = int(os.getenv("AI_SUMMARY_MAX_TOKENS", 180))
+    # 320 (not 180): summarize_email_polished's AI path writes up to 3
+    # sections (TÓM TẮT + CẦN LÀM + THỜI HẠN bullets), longer than the
+    # single short sentence this tier used to bound.
+    AI_SUMMARY_MAX_TOKENS = int(os.getenv("AI_SUMMARY_MAX_TOKENS", 320))
     AI_REPLY_MAX_TOKENS = int(os.getenv("AI_REPLY_MAX_TOKENS", 220))
     AI_ANALYZE_MAX_TOKENS = int(os.getenv("AI_ANALYZE_MAX_TOKENS", 180))
     AI_OVERVIEW_BRIEF_MAX_TOKENS = int(os.getenv("AI_OVERVIEW_BRIEF_MAX_TOKENS", 260))

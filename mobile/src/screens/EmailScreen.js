@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Linking as RNLinking, Modal, PanResponder, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Linking as RNLinking, Modal, PanResponder, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import RenderHTML from '@native-html/render';
 import { Ionicons } from '@expo/vector-icons';
 import Button from '../components/Button';
 import Card from '../components/Card';
@@ -94,6 +95,42 @@ function emailSummaryPreview(value) {
   return sections[0]?.lines.join(' ') || String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+// html_body is already allow-list sanitized server-side (services/
+// email_html_sanitizer.py); this just guards against rendering an
+// effectively-empty HTML shell (e.g. a tracking-pixel-only message) as
+// if it were real content instead of falling back to the plain-text body.
+function emailHtmlBodyIsRenderable(html) {
+  const visibleText = String(html || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&[a-zA-Z#0-9]+;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return visibleText.length >= 20;
+}
+
+// @native-html/render is new to this codebase -- a render-time crash on
+// some unusual real-world email markup would otherwise take down the
+// whole screen. This boundary degrades to the plain-text body instead.
+class EmailHtmlBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error) {
+    console.warn('RenderHTML failed, falling back to plain text', error);
+  }
+
+  render() {
+    if (this.state.hasError) return this.props.fallback || null;
+    return this.props.children;
+  }
+}
+
 function EmailSummaryCard({ value, colors, styles }) {
   const sections = parseEmailSummary(value);
   if (!sections.length) return null;
@@ -147,6 +184,8 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
   const [loading, setLoading] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [emailBody, setEmailBody] = useState('');
+  const [emailHtmlBody, setEmailHtmlBody] = useState('');
+  const { width: windowWidth } = useWindowDimensions();
   const [summary, setSummary] = useState('');
   const [compose, setCompose] = useState({
     to: '', subject: '', body: '', cc: '', bcc: '',
@@ -336,11 +375,13 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
   const openEmail = async (email) => {
     setSelectedEmail(email);
     setEmailBody('');
+    setEmailHtmlBody('');
     setSummary(email.summary || '');
     setAttachments([]);
     try {
       const data = await apiGet(`/email/get-email-body/${email.id}`);
       setEmailBody(data.body || '');
+      setEmailHtmlBody(data.email?.html_body || '');
       setAttachments(Array.isArray(data.email?.attachments) ? data.email.attachments : []);
     } catch (error) {
       setEmailBody(error.message);
@@ -890,7 +931,20 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
             <Card>
               <Text style={styles.subject}>{selectedEmail.subject || '(Không tiêu đề)'}</Text>
               <Text style={styles.sender}>{selectedEmail.sender || selectedEmail.from || ''}</Text>
-              <Text style={styles.body}>{emailBody || selectedEmail.snippet || 'Đang tải...'}</Text>
+              {emailHtmlBody && emailHtmlBodyIsRenderable(emailHtmlBody) ? (
+                <EmailHtmlBoundary fallback={<Text style={styles.body}>{emailBody || selectedEmail.snippet || ''}</Text>}>
+                  <View style={styles.bodyHtmlCard}>
+                    <RenderHTML
+                      source={{ html: emailHtmlBody }}
+                      contentWidth={Math.max(windowWidth - 96, 200)}
+                      baseStyle={styles.bodyHtmlBase}
+                      tagsStyles={{ a: { color: '#1a73e8' } }}
+                    />
+                  </View>
+                </EmailHtmlBoundary>
+              ) : (
+                <Text style={styles.body}>{emailBody || selectedEmail.snippet || 'Đang tải...'}</Text>
+              )}
               {summary && selectedEmail.summary_type === 'ai_cached' ? (
                 <EmailSummaryCard value={summary} colors={colors} styles={styles} />
               ) : null}
@@ -1322,6 +1376,16 @@ function makeStyles(colors) {
     },
     reportButton: { marginTop: 10, alignSelf: 'flex-start' },
     body:    { marginTop: 14, color: colors.text, fontFamily: 'Poppins_400Regular', lineHeight: 21 },
+    // Raw HTML email bodies assume a white reading surface and often set
+    // their own inline colors -- mirrors how Gmail/the web + Flutter
+    // clients render email bodies: a fixed white card regardless of theme.
+    bodyHtmlCard: {
+      marginTop: 14,
+      padding: 14,
+      borderRadius: radius.card,
+      backgroundColor: '#ffffff',
+    },
+    bodyHtmlBase: { color: '#1a1a1a', fontSize: 14, lineHeight: 20 },
     summaryCard: {
       marginTop: 14,
       padding: 14,

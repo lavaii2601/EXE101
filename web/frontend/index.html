@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css?v=20261006-brand-01">
+    <link rel="stylesheet" href="/css/style.css?v=20261012-email-ai-format-01">
     <link rel="stylesheet" href="/css/workspace-redesign.css?v=20261006-brand-01">
 </head>
 <body>
@@ -1242,20 +1242,26 @@
          guaranteeing they execute in this exact document order afterward --
          later files here rely on globals/functions the earlier ones
          define (main.js last, depending on everything above it). -->
-    <script src="/js/utils.js?v=20260905-auth-parity-01" defer></script>
-    <script src="/js/state.js?v=20260905-auth-parity-01" defer></script>
-    <script src="/js/i18n.js?v=20260905-auth-parity-01" defer></script>
-    <script src="/js/auth.js?v=20260905-auth-parity-01" defer></script>
-    <script src="/js/workspace.js?v=20260905-auth-parity-01" defer></script>
-    <script src="/js/workhub.js?v=20260905-auth-parity-01" defer></script>
-    <script src="/js/notifications.js?v=20260905-auth-parity-01" defer></script>
-    <script src="/js/overview.js?v=20260905-auth-parity-01" defer></script>
-    <script src="/js/chat.js?v=20260905-auth-parity-01" defer></script>
-    <script src="/js/email.js?v=20260905-auth-parity-01" defer></script>
-    <script src="/js/schedule.js?v=20260905-auth-parity-01" defer></script>
-    <script src="/js/calendar.js?v=20260905-auth-parity-01" defer></script>
-    <script src="/js/history.js?v=20260905-auth-parity-01" defer></script>
-    <script src="/js/settings.js?v=20260905-auth-parity-01" defer></script>
-    <script src="/js/main.js?v=20260905-auth-parity-01" defer></script>
+    <!-- Client-side sanitizer pass on top of the backend's own allow-list
+         sanitizer (services/email_html_sanitizer.py) before any raw email
+         HTML body is ever handed to innerHTML -- defense in depth, since
+         this is the one client (unlike flutter_html/react-native-render-
+         html) that runs a real browser with a real JS engine. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js" defer></script>
+    <script src="/js/utils.js?v=20261012-email-ai-format-01" defer></script>
+    <script src="/js/state.js?v=20261012-email-ai-format-01" defer></script>
+    <script src="/js/i18n.js?v=20261012-email-ai-format-01" defer></script>
+    <script src="/js/auth.js?v=20261012-email-ai-format-01" defer></script>
+    <script src="/js/workspace.js?v=20261012-email-ai-format-01" defer></script>
+    <script src="/js/workhub.js?v=20261012-email-ai-format-01" defer></script>
+    <script src="/js/notifications.js?v=20261012-email-ai-format-01" defer></script>
+    <script src="/js/overview.js?v=20261012-email-ai-format-01" defer></script>
+    <script src="/js/chat.js?v=20261012-email-ai-format-01" defer></script>
+    <script src="/js/email.js?v=20261012-email-ai-format-01" defer></script>
+    <script src="/js/schedule.js?v=20261012-email-ai-format-01" defer></script>
+    <script src="/js/calendar.js?v=20261012-email-ai-format-01" defer></script>
+    <script src="/js/history.js?v=20261012-email-ai-format-01" defer></script>
+    <script src="/js/settings.js?v=20261012-email-ai-format-01" defer></script>
+    <script src="/js/main.js?v=20261012-email-ai-format-01" defer></script>
 </body>
 </html>

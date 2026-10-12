@@ -216,6 +216,121 @@ function formatEmailText(text) {
 }
 
 
+// -- Raw HTML email body rendering -----------------------------------
+// The backend already allow-list-sanitizes html_body (services/
+// email_html_sanitizer.py) before it ever reaches a client, but this is
+// the one client with a real browser + JS engine behind innerHTML
+// (unlike flutter_html/react-native-render-html, which can't execute
+// script at all) -- DOMPurify is a second, independent sanitizer pass
+// right before render. If it failed to load (CDN hiccup), we render the
+// plain-text body instead of ever trusting unsanitized HTML to innerHTML.
+function sanitizeEmailHtmlForRender(html) {
+    if (!html || typeof window.DOMPurify === 'undefined') return '';
+    try {
+        return window.DOMPurify.sanitize(html, {
+            ALLOWED_TAGS: [
+                'a', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'p', 'br', 'div', 'span',
+                'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'hr',
+                'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'img', 'font',
+                'pre', 'code', 'small', 'sub', 'sup',
+            ],
+            ALLOWED_ATTR: [
+                'href', 'title', 'src', 'alt', 'width', 'height', 'color', 'size', 'face',
+                'colspan', 'rowspan', 'align', 'valign', 'border', 'cellpadding', 'cellspacing', 'style',
+            ],
+            ALLOWED_URI_REGEXP: /^(?:https?|mailto):/i,
+        }).trim();
+    } catch (error) {
+        return '';
+    }
+}
+
+function emailHtmlBodyIsRenderable(html) {
+    const visibleText = String(html || '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&[a-zA-Z#0-9]+;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return visibleText.length >= 20;
+}
+
+
+// -- Structured AI/extractive email summary rendering -----------------
+// Mirrors the exact section headers services/extractive_summary.py's
+// summarize_structured() and ai_service.py's _EMAIL_SUMMARY_SYSTEM_PROMPT
+// both emit, so AI-generated and local-fallback summaries render through
+// the same card UI without the caller needing to know which one ran.
+const EMAIL_SUMMARY_SECTION_ORDER = ['TÓM TẮT', 'ĐIỂM CHÍNH', 'CẦN LÀM', 'THỜI HẠN', 'TÀI LIỆU'];
+const EMAIL_SUMMARY_SECTION_META = {
+    'TÓM TẮT': { icon: '📝', vi: 'Tóm tắt', en: 'Summary' },
+    'ĐIỂM CHÍNH': { icon: '📌', vi: 'Điểm chính', en: 'Key points' },
+    'CẦN LÀM': { icon: '✅', vi: 'Cần làm', en: 'Action items' },
+    'THỜI HẠN': { icon: '⏰', vi: 'Thời hạn', en: 'Deadlines' },
+    'TÀI LIỆU': { icon: '📎', vi: 'Tài liệu', en: 'Documents' },
+};
+
+function parseEmailSummarySections(summaryText) {
+    const text = String(summaryText || '').replace(/\r\n/g, '\n').trim();
+    if (!text) return [];
+    const blocks = text.split(/\n{2,}/);
+    const sections = [];
+    blocks.forEach((block) => {
+        const lines = block.split('\n');
+        const firstLine = (lines[0] || '').trim();
+        if (EMAIL_SUMMARY_SECTION_ORDER.includes(firstLine)) {
+            sections.push({ title: firstLine, body: lines.slice(1).join('\n').trim() });
+        } else if (sections.length) {
+            // A stray blank line inside one section's own body must not be
+            // mistaken for the start of a new, untitled section.
+            sections[sections.length - 1].body += `\n\n${block}`;
+        } else {
+            sections.push({ title: null, body: block });
+        }
+    });
+    return sections.filter((section) => section.body);
+}
+
+function emailSummaryOverviewText(summaryText) {
+    const sections = parseEmailSummarySections(summaryText);
+    const overview = sections.find((section) => section.title === 'TÓM TẮT') || sections[0];
+    return overview ? overview.body.replace(/\s+/g, ' ').trim() : '';
+}
+
+function formatEmailSummaryBodyHtml(body) {
+    const lines = String(body || '').split('\n').map((line) => line.trim()).filter(Boolean);
+    if (!lines.length) return '';
+    const isBulletList = lines.every((line) => line.startsWith('-'));
+    const linkify = (escaped) => escaped.replace(
+        /(https?:\/\/[^\s<]+)/gi,
+        '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+    );
+    if (isBulletList) {
+        const items = lines.map((line) => `<li>${linkify(escapeHtml(line.replace(/^-\s*/, '')))}</li>`).join('');
+        return `<ul class="email-summary-list">${items}</ul>`;
+    }
+    return `<p>${linkify(escapeHtml(body.trim())).replace(/\n/g, '<br>')}</p>`;
+}
+
+function renderEmailSummaryCard(summaryText) {
+    const sections = parseEmailSummarySections(summaryText);
+    if (!sections.length) return '';
+    return sections.map(({ title, body }) => {
+        const meta = title && EMAIL_SUMMARY_SECTION_META[title];
+        const bodyHtml = formatEmailSummaryBodyHtml(body);
+        if (!meta) {
+            return `<div class="email-summary-section email-summary-section--plain">${bodyHtml}</div>`;
+        }
+        return `<div class="email-summary-section">
+            <div class="email-summary-section-title">
+                <span class="email-summary-section-icon" aria-hidden="true">${meta.icon}</span>
+                <span>${ui(meta.vi, meta.en)}</span>
+            </div>
+            ${bodyHtml}
+        </div>`;
+    }).join('');
+}
+
+
 function formatDateForApi(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }

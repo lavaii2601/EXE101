@@ -60,6 +60,25 @@ QUOTA_ERROR_KEYWORDS = [
     'capacity', 'throttled', 'exceeded your current quota'
 ]
 
+# Keep in sync with the section headers the summary-card UI parses on
+# every platform (web buildEmailSummarySections/RN/Flutter equivalents)
+# and with extractive_summary.summarize_structured's own header strings,
+# so AI-generated and local-fallback summaries render identically.
+_EMAIL_SUMMARY_SYSTEM_PROMPT = (
+    "Bạn là Bob, trợ lý tóm tắt email cho FlowMate. Viết tóm tắt THẬT NGẮN GỌN "
+    "và dễ hiểu, CHỈ dựa trên nội dung email được cung cấp -- không bịa thêm chi "
+    "tiết, số liệu hay thời hạn không có trong email. Nếu email chỉ là thông báo/"
+    "quảng cáo/OTP tự động, nói rõ điều đó trong TÓM TẮT và bỏ qua các mục khác.\n\n"
+    "Trả lời ĐÚNG định dạng sau, không thêm mục nào khác ngoài 3 mục này, không "
+    "thêm ký tự markdown (không **, không #):\n\n"
+    "TÓM TẮT\n<1-2 câu ngắn, tóm ý chính của email>\n\n"
+    "CẦN LÀM\n<mỗi hành động một dòng bắt đầu bằng '-'; bỏ hẳn mục này (không viết "
+    "tiêu đề) nếu email không yêu cầu người nhận làm gì>\n\n"
+    "THỜI HẠN\n<mỗi mốc thời gian một dòng bắt đầu bằng '-'; bỏ hẳn mục này nếu "
+    "email không nêu deadline/thời điểm cụ thể>"
+)
+
+
 class AIService:
     # Premium users get responses routed through these providers first (when
     # configured and healthy) before falling back to the normal round-robin
@@ -1179,15 +1198,21 @@ class AIService:
         return extractive_summary.summarize_short('', email_content)
 
     def summarize_email_polished(self, email_data, user_id=None):
-        """Create a structured, accurate and action-oriented email summary.
+        """Create a concise, accurate, action-oriented email summary.
 
-        Local extractive summarization (services/extractive_summary.py):
-        ranks sentences already in the email by word-frequency importance
-        and reassembles the same 4-section report from verbatim source
-        text -- no LLM/API call, no token cost. Because nothing is
-        generated, only selected, it can never state a fact that isn't
-        literally in the source (the trade-off: it can't paraphrase/
-        synthesize a new sentence the way an LLM summary could).
+        Tries a real AI-generated summary first -- an LLM can synthesize
+        one short overview sentence instead of only being able to pick an
+        existing sentence verbatim, which is what makes it more concise
+        than the extractive version. Grounded strictly in the email's own
+        content via the prompt; attachments/links are always assembled
+        deterministically (extract_related_documents), never AI-generated,
+        so a hallucinated URL can never appear in the TÀI LIỆU section.
+
+        Falls back to the fully local extractive summarizer (services/
+        extractive_summary.py, no LLM/API call) if no provider is
+        configured, the call fails, or the model ignores the section-
+        header format the summary-card UI parses -- so this feature keeps
+        working even when every AI provider is down.
         """
         email_data = email_data or {}
         subject = str(email_data.get('subject', '') or '').strip()
@@ -1196,6 +1221,12 @@ class AIService:
         to = str(email_data.get('to', '') or '').strip()
         body = str(email_data.get('body', '') or email_data.get('snippet', '') or '').strip()
         attachments = email_data.get('attachments') or []
+
+        if self.configured_providers:
+            ai_summary = self._ai_email_summary(subject, sender, to, cc, body, attachments, user_id=user_id)
+            if ai_summary:
+                return ai_summary
+
         return extractive_summary.summarize_structured(
             subject,
             body,
@@ -1204,6 +1235,41 @@ class AIService:
             cc=cc,
             attachments=attachments,
         )
+
+    def _ai_email_summary(self, subject, sender, to, cc, body, attachments, user_id=None):
+        """AI half of summarize_email_polished. Returns None on any failure
+        or unusable (demo/wrong-format) output so the caller falls back."""
+        content = str(body or '').strip()
+        if not content:
+            return None
+        user_content = (
+            f"Tiêu đề: {subject or '(không có)'}\n"
+            f"Người gửi: {sender or 'Không xác định'}\n"
+            + (f"Đến: {to}\n" if to else '')
+            + (f"CC: {cc}\n" if cc else '')
+            + f"\nNội dung email:\n{content[:6000]}"
+        )
+        try:
+            candidate = self.generate_response(
+                [
+                    {"role": "system", "content": _EMAIL_SUMMARY_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content},
+                ],
+                task='summary',
+                user_id=user_id,
+            )
+        except Exception:
+            logger.warning("AI email summary failed, using local fallback", exc_info=True)
+            return None
+
+        text = str(candidate or '').strip()
+        if not text or 'TÓM TẮT' not in text or self.last_provider_used not in self.configured_providers:
+            return None
+
+        documents = extractive_summary.extract_related_documents(body, attachments=attachments)
+        if documents:
+            text = text.rstrip() + "\n\nTÀI LIỆU\n" + "\n".join(f"- {item}" for item in documents)
+        return text
 
     def generate_reply(self, context, user_choice, user_id=None):
         """Create a bounded, deterministic email reply without a model."""

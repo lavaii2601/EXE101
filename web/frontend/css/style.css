@@ -4246,6 +4246,55 @@ select:focus {
     line-height: 1.55;
 }
 
+.email-detail-summary-label {
+    margin-bottom: 10px;
+    color: var(--email-tag-color);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.email-summary-section {
+    margin-top: 12px;
+}
+
+.email-summary-section:first-of-type {
+    margin-top: 0;
+}
+
+.email-summary-section-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    color: var(--text);
+    font-size: 12.5px;
+    font-weight: 700;
+}
+
+.email-summary-section-icon {
+    font-size: 13px;
+    line-height: 1;
+}
+
+.email-summary-section p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.55;
+}
+
+.email-summary-list {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--text-secondary);
+    line-height: 1.55;
+}
+
+.email-summary-list li {
+    margin-bottom: 3px;
+}
+
 .email-detail-meta {
     display: grid;
     gap: 8px;
@@ -4296,6 +4345,40 @@ select:focus {
     text-decoration: underline;
     text-underline-offset: 2px;
     overflow-wrap: anywhere;
+}
+
+/* Raw HTML email bodies (sanitized -- see email_html_sanitizer.py +
+   sanitizeEmailHtmlForRender) assume a white reading surface and often
+   set their own inline colors, which win over our theme the same way
+   they would in a real browser tab -- fighting that to force dark-mode
+   text is unreliable, so this mirrors how Gmail/Outlook (and this app's
+   own Flutter client) render email bodies: a fixed white card regardless
+   of the app's theme. */
+.email-detail-body--rich {
+    padding: 16px;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #1a1a1a;
+    overflow-x: auto;
+}
+
+.email-detail-body--rich img,
+.email-detail-body--rich table {
+    max-width: 100%;
+    height: auto;
+}
+
+.email-detail-body--rich table {
+    border-collapse: collapse;
+}
+
+.email-detail-body--rich td,
+.email-detail-body--rich th {
+    padding: 4px 8px;
+}
+
+.email-detail-body--rich a {
+    color: #1a73e8;
 }
 
 .daily-report {

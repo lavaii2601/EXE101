@@ -342,5 +342,83 @@ class AIServiceChatProviderPriorityTests(unittest.TestCase):
         self.assertEqual('claude', chain[0])
 
 
+class EmailSummaryAITests(unittest.TestCase):
+    """summarize_email_polished (the Email tab's 'Tóm tắt' feature) tries a
+    real AI-generated summary first, but must fall back to the fully local
+    extractive summarizer whenever the AI call fails, is unconfigured, or
+    returns something unusable (the demo-mode sentinel, or text that
+    ignores the TÓM TẮT/CẦN LÀM/THỜI HẠN format the summary-card UI
+    parses) -- this feature must keep working even when every AI provider
+    is down, exactly like every other 'AI first, deterministic fallback'
+    path in this codebase."""
+
+    def setUp(self):
+        self.service = ai_service_module.AIService()
+        self.email = {
+            'subject': 'Duyệt ngân sách Q4',
+            'sender': 'ceo@example.com',
+            'to': 'me@example.com',
+            'body': (
+                'Ngân sách Q4 đã tăng lên 250 triệu đồng. '
+                'Vui lòng xác nhận trước 17:00 ngày 25/09/2026.'
+            ),
+            'attachments': [],
+        }
+
+    def test_uses_ai_summary_when_provider_configured_and_well_formed(self):
+        ai_text = "TÓM TẮT\nNgân sách Q4 tăng lên 250 triệu đồng.\n\nTHỜI HẠN\n- 17:00 ngày 25/09/2026"
+        with patch.object(self.service, 'configured_providers', ['openai']), \
+             patch.object(self.service, 'generate_response', return_value=ai_text) as generate:
+            self.service.last_provider_used = 'openai'
+            result = self.service.summarize_email_polished(self.email)
+        generate.assert_called_once()
+        self.assertIn('Ngân sách Q4 tăng lên 250 triệu đồng.', result)
+        self.assertNotIn('ĐIỂM CHÍNH', result)  # AI prompt omits this section for conciseness
+
+    def test_ai_summary_keeps_deterministic_links_section(self):
+        email = dict(self.email)
+        email['body'] = email['body'] + ' Xem chi tiết tại https://example.com/budget-report'
+        ai_text = "TÓM TẮT\nNgân sách Q4 tăng lên 250 triệu đồng."
+        with patch.object(self.service, 'configured_providers', ['openai']), \
+             patch.object(self.service, 'generate_response', return_value=ai_text):
+            self.service.last_provider_used = 'openai'
+            result = self.service.summarize_email_polished(email)
+        self.assertIn('TÀI LIỆU', result)
+        self.assertIn('example.com/budget-report', result)
+
+    def test_falls_back_to_extractive_when_no_provider_configured(self):
+        with patch.object(self.service, 'configured_providers', []), \
+             patch.object(self.service, 'generate_response') as generate:
+            result = self.service.summarize_email_polished(self.email)
+        generate.assert_not_called()
+        self.assertIn('250 triệu đồng', result)  # verbatim extractive evidence
+
+    def test_falls_back_to_extractive_when_ai_call_raises(self):
+        with patch.object(self.service, 'configured_providers', ['openai']), \
+             patch.object(self.service, 'generate_response', side_effect=RuntimeError('boom')):
+            result = self.service.summarize_email_polished(self.email)
+        self.assertIn('250 triệu đồng', result)
+
+    def test_rejects_demo_fallback_sentinel_even_if_well_formed(self):
+        """generate_response never raises for provider exhaustion -- it
+        silently degrades to the demo-mode canned response instead. That
+        text could coincidentally contain 'TÓM TẮT' and must still not be
+        trusted as a real AI answer."""
+        ai_text = "TÓM TẮT\nMột câu trả lời demo không liên quan."
+        with patch.object(self.service, 'configured_providers', ['openai']), \
+             patch.object(self.service, 'generate_response', return_value=ai_text):
+            self.service.last_provider_used = 'demo'
+            result = self.service.summarize_email_polished(self.email)
+        self.assertIn('250 triệu đồng', result)
+        self.assertNotIn('Một câu trả lời demo không liên quan', result)
+
+    def test_rejects_ai_output_missing_required_header(self):
+        with patch.object(self.service, 'configured_providers', ['openai']), \
+             patch.object(self.service, 'generate_response', return_value='Ngân sách đã tăng.'):
+            self.service.last_provider_used = 'openai'
+            result = self.service.summarize_email_polished(self.email)
+        self.assertIn('250 triệu đồng', result)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -393,7 +393,7 @@ async function summarizeEnhancedEmail(email, emailDiv, button) {
             summary.className = 'email-item-summary';
             emailDiv.querySelector('.email-item-snippet')?.before(summary);
         }
-        summary.textContent = data.summary;
+        summary.textContent = emailSummaryOverviewText(data.summary);
         button.textContent = ui('Xem tóm tắt AI', 'View AI summary');
         showNotification(
             data.cache_hit ? ui('Đã tải tóm tắt AI', 'AI summary loaded') : ui('Đã tạo tóm tắt AI', 'AI summary created'),
@@ -445,10 +445,16 @@ function renderEnhancedEmailItem(email, container) {
     const smartBucketHTML = email.smart_bucket
         ? `<span class="email-smart-badge email-smart-badge-${escapeHtml(email.smart_bucket)}">${escapeHtml(smartBucketLabels[email.smart_bucket] || email.smart_bucket)}</span>`
         : '';
-    const normalizedSummary = String(email.summary || '').replace(/\s+/g, ' ').trim();
+    // A real AI summary is now a multi-section "TÓM TẮT\n...\n\nCẦN LÀM\n..."
+    // string -- this compact list-row preview only ever shows the one-line
+    // overview sentence (the full structured card is in the detail view),
+    // or the dumped raw sections would run together into an unreadable blob.
+    const normalizedSummary = email.summary_type === 'ai_cached'
+        ? emailSummaryOverviewText(email.summary)
+        : String(email.summary || '').replace(/\s+/g, ' ').trim();
     const normalizedSnippet = String(email.snippet || '').replace(/\s+/g, ' ').trim();
     const summaryHTML = normalizedSummary
-        ? `<div class="email-item-summary">${escapeHtml(email.summary)}</div>`
+        ? `<div class="email-item-summary">${escapeHtml(normalizedSummary)}</div>`
         : '';
     const snippetHTML = normalizedSnippet && normalizedSnippet !== normalizedSummary
         ? `<div class="email-item-snippet">${escapeHtml(email.snippet)}</div>`
@@ -508,7 +514,7 @@ function renderEnhancedEmailItem(email, container) {
     container.appendChild(emailDiv);
 }
 
-function buildEmailDetailMarkup(email, bodyHtml, isLoading = false) {
+function buildEmailDetailMarkup(email, bodyHtml, isLoading = false, isRichHtml = false) {
     const tagColors = {
         education: '#4CAF50',
         business: '#2196F3',
@@ -525,10 +531,14 @@ function buildEmailDetailMarkup(email, bodyHtml, isLoading = false) {
     // Only a real AI summary (summary_type === 'ai_cached'), never the
     // truncated-snippet placeholder every email starts with -- see the
     // matching comment on the list view's button handler above.
+    // renderEmailSummaryCard parses the TÓM TẮT/CẦN LÀM/THỜI HẠN/TÀI LIỆU
+    // sections (identical format whether a real AI call or the local
+    // extractive fallback produced them) into labelled blocks instead of
+    // one unstructured wall of text.
     const summaryHTML = email.summary && email.summary_type === 'ai_cached'
         ? `<div class="email-detail-summary" style="--email-tag-color: ${tagColor}">
-                <strong>${ui('Tóm tắt', 'Summary')}</strong>
-                <div>${formatEmailText(email.summary)}</div>
+                <div class="email-detail-summary-label">${ui('AI tóm tắt', 'AI summary')}</div>
+                ${renderEmailSummaryCard(email.summary)}
            </div>`
         : '';
     const attachments = Array.isArray(email.attachments) ? email.attachments : [];
@@ -582,7 +592,7 @@ function buildEmailDetailMarkup(email, bodyHtml, isLoading = false) {
             <div><span>${ui('Từ', 'From')}</span><strong>${escapeHtml(email.sender || ui('Không xác định', 'Unknown'))}</strong></div>
             <div><span>${ui('Ngày', 'Date')}</span><strong>${escapeHtml(email.date || ui('Không xác định', 'Unknown'))}</strong></div>
         </div>
-        <div class="email-detail-body${isLoading ? ' email-detail-loading' : ''}">${bodyHtml}</div>
+        <div class="email-detail-body${isLoading ? ' email-detail-loading' : ''}${isRichHtml ? ' email-detail-body--rich' : ''}">${bodyHtml}</div>
         ${isLoading ? '' : attachmentsHTML}
     `;
 }
@@ -614,19 +624,31 @@ async function showFormattedEmailDetail(email) {
             const response = await apiFetch(`${API_BASE}/email/get-email-body/${email.id}`);
             const data = await response.json();
             email.body = data.success ? data.body : ui('Không thể tải nội dung.', 'Unable to load content.');
+            email.html_body = data.success ? (data.email?.html_body || '') : '';
             email.attachments = data.success && Array.isArray(data.email?.attachments)
                 ? data.email.attachments
                 : [];
         } catch (error) {
             email.body = `Lỗi: ${error.message}`;
+            email.html_body = '';
             email.attachments = [];
         }
     }
 
     if (currentDetailEmail !== email || !emailDetailModal.classList.contains('show')) return;
+    // Render the email's own HTML formatting (already allow-list sanitized
+    // server-side; sanitizeEmailHtmlForRender runs an independent second
+    // pass client-side) when there's one worth showing -- this is what
+    // makes a rich message look like it does in Gmail instead of
+    // flattened plain text. Falls back to the plain-text body otherwise
+    // (plain-text-only emails, or when DOMPurify didn't load).
+    const sanitizedHtml = email.html_body ? sanitizeEmailHtmlForRender(email.html_body) : '';
+    const useRichHtml = sanitizedHtml && emailHtmlBodyIsRenderable(sanitizedHtml);
     emailDetail.innerHTML = buildEmailDetailMarkup(
         email,
-        formatEmailText(email.body || ui('Email không có nội dung.', 'This email has no content.'))
+        useRichHtml ? sanitizedHtml : formatEmailText(email.body || ui('Email không có nội dung.', 'This email has no content.')),
+        false,
+        useRichHtml
     );
 }
 
@@ -856,10 +878,14 @@ async function handleSummarizeEmail() {
             const emailDetail = document.getElementById('emailDetail');
             const bodyEl = emailDetail ? emailDetail.querySelector('.email-detail-body') : null;
             if (bodyEl) {
+                // Re-summarizing replaces any card already shown from the
+                // initial render -- otherwise a second summary stacks on
+                // top of the first instead of updating it.
+                emailDetail.querySelector('.email-detail-summary')?.remove();
                 const summaryEl = document.createElement('div');
                 summaryEl.className = 'email-detail-summary';
                 summaryEl.style.setProperty('--email-tag-color', '#2196F3');
-                summaryEl.innerHTML = `<strong>${ui('Tóm tắt', 'Summary')}</strong><div>${formatEmailText(data.summary)}</div>`;
+                summaryEl.innerHTML = `<div class="email-detail-summary-label">${ui('AI tóm tắt', 'AI summary')}</div>${renderEmailSummaryCard(data.summary)}`;
                 bodyEl.parentNode.insertBefore(summaryEl, bodyEl);
             }
             showNotification(ui('✅ Đã tóm tắt email', '✅ Email summarized'), 'success');

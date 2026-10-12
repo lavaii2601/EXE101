@@ -18,6 +18,7 @@ from google_auth_httplib2 import AuthorizedHttp
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from config import Config
+from services.email_html_sanitizer import sanitize_email_html
 from utils.google_service_cache import get_cached_service
 from utils.user_context import (
     persist_google_credentials,
@@ -416,7 +417,7 @@ class GmailService:
             else:
                 text_plain, text_html = self._get_email_body_parts(payload)
                 body = text_plain or (self._html_to_text(text_html) if text_html else "") or "Email body unavailable"
-                html_body = self._sanitize_html_body(text_html)
+                html_body = sanitize_email_html(text_html)
             attachments = [] if lazy else self._get_attachments(payload)
             label_ids = message.get('labelIds', []) or []
 
@@ -476,16 +477,6 @@ class GmailService:
         except Exception as e:
             print(f"Error extracting email body parts: {str(e)}")
         return text_plain, text_html
-
-    @staticmethod
-    def _sanitize_html_body(html_content):
-        """Strip scripts/styles/comments before an HTML body ever reaches a client renderer."""
-        if not html_content:
-            return ''
-        text = re.sub(r'(?is)<!--.*?-->', '', html_content)
-        text = re.sub(r'(?is)<script.*?</script>', '', text)
-        text = re.sub(r'(?is)<style.*?</style>', '', text)
-        return text.strip()
 
     def _get_email_body(self, payload):
         """Extract a plain-text email body from payload (legacy helper, still
