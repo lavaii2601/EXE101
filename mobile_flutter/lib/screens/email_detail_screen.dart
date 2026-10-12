@@ -60,8 +60,16 @@ List<_EmailSummarySection> _parseEmailSummarySections(String summary) {
   for (final block in blocks) {
     final lines = block.split('\n');
     final firstLine = lines.first.trim();
-    if (_summarySectionLabels.containsKey(firstLine)) {
-      sections.add(_EmailSummarySection(firstLine, lines.skip(1).join('\n').trim()));
+    // Case-insensitive: the backend always emits exact uppercase headers,
+    // but an AI call that drifts on casing (e.g. "Cần làm") must still be
+    // recognized as its section instead of silently glomming onto
+    // whichever section came before it.
+    final matchedHeader = _summarySectionLabels.keys.firstWhere(
+      (header) => header.toUpperCase() == firstLine.toUpperCase(),
+      orElse: () => '',
+    );
+    if (matchedHeader.isNotEmpty) {
+      sections.add(_EmailSummarySection(matchedHeader, lines.skip(1).join('\n').trim()));
     } else if (sections.isNotEmpty) {
       // A stray blank line inside one section's own body must not be
       // mistaken for the start of a new, untitled section.

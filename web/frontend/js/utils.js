@@ -277,8 +277,15 @@ function parseEmailSummarySections(summaryText) {
     blocks.forEach((block) => {
         const lines = block.split('\n');
         const firstLine = (lines[0] || '').trim();
-        if (EMAIL_SUMMARY_SECTION_ORDER.includes(firstLine)) {
-            sections.push({ title: firstLine, body: lines.slice(1).join('\n').trim() });
+        // Case-insensitive: the backend always emits exact uppercase
+        // headers, but an AI call that drifts on casing (e.g. "Cần làm")
+        // must still be recognized as its section instead of silently
+        // glomming onto whichever section came before it.
+        const matchedHeader = EMAIL_SUMMARY_SECTION_ORDER.find(
+            (header) => header.toUpperCase() === firstLine.toUpperCase()
+        );
+        if (matchedHeader) {
+            sections.push({ title: matchedHeader, body: lines.slice(1).join('\n').trim() });
         } else if (sections.length) {
             // A stray blank line inside one section's own body must not be
             // mistaken for the start of a new, untitled section.

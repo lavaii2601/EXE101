@@ -386,6 +386,40 @@ class EmailSummaryAITests(unittest.TestCase):
         self.assertIn('TÀI LIỆU', result)
         self.assertIn('example.com/budget-report', result)
 
+    def test_model_hallucinated_documents_section_is_discarded_not_duplicated(self):
+        """The prompt tells the model never to add its own TÀI LIỆU section,
+        but that's an instruction, not a guarantee. If it disobeys anyway,
+        its fabricated version must be dropped entirely -- never merged
+        alongside the real one -- or a fabricated link could reach the UI."""
+        email = dict(self.email)
+        email['body'] = email['body'] + ' Xem chi tiết tại https://example.com/budget-report'
+        ai_text = (
+            "TÓM TẮT\nNgân sách Q4 tăng lên 250 triệu đồng.\n\n"
+            "TÀI LIỆU\n- Liên kết: https://fake-phishing-site.example/claim"
+        )
+        with patch.object(self.service, 'configured_providers', ['openai']), \
+             patch.object(self.service, 'generate_response', return_value=ai_text):
+            self.service.last_provider_used = 'openai'
+            result = self.service.summarize_email_polished(email)
+        self.assertNotIn('fake-phishing-site', result)
+        self.assertIn('example.com/budget-report', result)
+        self.assertEqual(1, result.count('TÀI LIỆU'))
+
+    def test_model_hallucinated_documents_section_dropped_with_no_real_replacement(self):
+        """Same as above, but when there are no real attachments/links to
+        append -- the fake section must simply disappear, not survive
+        because "there was nothing to replace it with"."""
+        ai_text = (
+            "TÓM TẮT\nNgân sách Q4 tăng lên 250 triệu đồng.\n\n"
+            "TÀI LIỆU\n- Liên kết: https://fake-phishing-site.example/claim"
+        )
+        with patch.object(self.service, 'configured_providers', ['openai']), \
+             patch.object(self.service, 'generate_response', return_value=ai_text):
+            self.service.last_provider_used = 'openai'
+            result = self.service.summarize_email_polished(self.email)
+        self.assertNotIn('fake-phishing-site', result)
+        self.assertEqual(0, result.count('TÀI LIỆU'))
+
     def test_falls_back_to_extractive_when_no_provider_configured(self):
         with patch.object(self.service, 'configured_providers', []), \
              patch.object(self.service, 'generate_response') as generate:

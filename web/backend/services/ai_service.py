@@ -75,8 +75,20 @@ _EMAIL_SUMMARY_SYSTEM_PROMPT = (
     "CẦN LÀM\n<mỗi hành động một dòng bắt đầu bằng '-'; bỏ hẳn mục này (không viết "
     "tiêu đề) nếu email không yêu cầu người nhận làm gì>\n\n"
     "THỜI HẠN\n<mỗi mốc thời gian một dòng bắt đầu bằng '-'; bỏ hẳn mục này nếu "
-    "email không nêu deadline/thời điểm cụ thể>"
+    "email không nêu deadline/thời điểm cụ thể>\n\n"
+    "KHÔNG tự thêm mục TÀI LIỆU hay danh sách file/liên kết -- hệ thống sẽ tự "
+    "thêm mục đó từ dữ liệu thật, không phải từ bạn."
 )
+
+
+def _strip_summary_section(text, header):
+    """Remove one "HEADER\\n...body..." block from a section-formatted
+    summary, by exact header match on a block's own first line. Used to
+    defend against the model disobeying _EMAIL_SUMMARY_SYSTEM_PROMPT's
+    instruction not to add its own TÀI LIỆU section."""
+    blocks = re.split(r'\n{2,}', text.strip())
+    kept = [block for block in blocks if block.split('\n', 1)[0].strip() != header]
+    return '\n\n'.join(kept).strip()
 
 
 class AIService:
@@ -1265,6 +1277,13 @@ class AIService:
         text = str(candidate or '').strip()
         if not text or 'TÓM TẮT' not in text or self.last_provider_used not in self.configured_providers:
             return None
+
+        # The prompt tells the model never to add its own TÀI LIỆU section --
+        # attachments/links must only ever come from extract_related_documents
+        # below, never from the model -- but an instruction isn't a guarantee.
+        # Strip any section the model produced anyway before appending the
+        # real one, so a hallucinated link/file name can never reach the UI.
+        text = _strip_summary_section(text, 'TÀI LIỆU')
 
         documents = extractive_summary.extract_related_documents(body, attachments=attachments)
         if documents:

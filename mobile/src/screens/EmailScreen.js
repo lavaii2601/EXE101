@@ -111,6 +111,9 @@ function emailHtmlBodyIsRenderable(html) {
 // @native-html/render is new to this codebase -- a render-time crash on
 // some unusual real-world email markup would otherwise take down the
 // whole screen. This boundary degrades to the plain-text body instead.
+// React never resets a caught error on its own; the call site below must
+// pass key={selectedEmail.id} so opening a different email after one that
+// crashed remounts a fresh instance instead of being stuck on the fallback.
 class EmailHtmlBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -932,7 +935,10 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
               <Text style={styles.subject}>{selectedEmail.subject || '(Không tiêu đề)'}</Text>
               <Text style={styles.sender}>{selectedEmail.sender || selectedEmail.from || ''}</Text>
               {emailHtmlBody && emailHtmlBodyIsRenderable(emailHtmlBody) ? (
-                <EmailHtmlBoundary fallback={<Text style={styles.body}>{emailBody || selectedEmail.snippet || ''}</Text>}>
+                <EmailHtmlBoundary
+                  key={selectedEmail.id}
+                  fallback={<Text style={styles.body}>{emailBody || selectedEmail.snippet || ''}</Text>}
+                >
                   <View style={styles.bodyHtmlCard}>
                     <RenderHTML
                       source={{ html: emailHtmlBody }}
