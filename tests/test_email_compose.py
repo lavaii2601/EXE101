@@ -217,6 +217,71 @@ class SendEmailTests(unittest.TestCase):
             service.send_email('to@example.com', 'Hi', 'Body', raise_errors=True)
 
 
+class GetAttachmentTests(unittest.TestCase):
+    """get_attachment's local walk over messages.get()'s own payload (used
+    to enrich the result with a real filename/mime_type) is enrichment
+    only, never a gate on the download itself -- confirmed live against
+    flowmate.pro that a real, already-known attachmentId can fail to find
+    an exact match when the message is re-fetched fresh, even though the
+    very call that handed out that id came from this same kind of walk
+    moments earlier. Gmail's attachments.get() call already scopes
+    attachment_id to messageId server-side, so a local walk miss must not
+    block a download that would otherwise succeed."""
+
+    def _service_with_mock_api(self):
+        service = GmailService.__new__(GmailService)
+        service.service = MagicMock()
+        service.last_error = None
+        service.last_error_status = None
+        service.last_error_reason = None
+        return service
+
+    @staticmethod
+    def _b64(data):
+        return base64.urlsafe_b64encode(data).decode().rstrip('=')
+
+    def test_downloads_successfully_even_when_local_walk_finds_no_match(self):
+        service = self._service_with_mock_api()
+        service.service.users().messages().get().execute.return_value = {
+            'payload': {'parts': [{
+                'filename': 'other.pdf',
+                'mimeType': 'application/pdf',
+                'body': {'attachmentId': 'some-other-id', 'size': 100},
+            }]},
+        }
+        service.service.users().messages().attachments().get().execute.return_value = {
+            'data': self._b64(b'pdf bytes here'),
+        }
+        result = service.get_attachment('msg-1', 'the-requested-id')
+        self.assertIsNotNone(result)
+        self.assertEqual(b'pdf bytes here', result['data'])
+        self.assertEqual('attachment', result['filename'])  # generic fallback, no local match
+        self.assertEqual('application/octet-stream', result['mime_type'])
+
+    def test_uses_the_real_filename_when_the_local_walk_does_match(self):
+        service = self._service_with_mock_api()
+        service.service.users().messages().get().execute.return_value = {
+            'payload': {'parts': [{
+                'filename': 'invoice.pdf',
+                'mimeType': 'application/pdf',
+                'body': {'attachmentId': 'att-1', 'size': 100},
+            }]},
+        }
+        service.service.users().messages().attachments().get().execute.return_value = {
+            'data': self._b64(b'pdf bytes'),
+        }
+        result = service.get_attachment('msg-1', 'att-1')
+        self.assertEqual('invoice.pdf', result['filename'])
+        self.assertEqual('application/pdf', result['mime_type'])
+
+    def test_returns_none_when_the_live_download_call_itself_fails(self):
+        service = self._service_with_mock_api()
+        service.service.users().messages().get().execute.return_value = {'payload': {}}
+        service.service.users().messages().attachments().get().execute.side_effect = RuntimeError('boom')
+        self.assertIsNone(service.get_attachment('msg-1', 'att-1'))
+        self.assertEqual('boom', service.last_error)
+
+
 class SendReplyRouteTests(unittest.TestCase):
     def setUp(self):
         self.app = Flask(__name__)

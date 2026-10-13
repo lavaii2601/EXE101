@@ -565,7 +565,20 @@ class GmailService:
         )
 
     def get_attachment(self, message_id, attachment_id):
-        """Fetch one attachment after verifying it belongs to the message."""
+        """Fetch one attachment's bytes by message_id + attachment_id.
+
+        Looks up the part's filename/mime_type via the message's own part
+        list for a nicer download name, but that lookup is enrichment
+        only, not a prerequisite for the download to succeed: Gmail's own
+        attachments.get() call already scopes attachment_id to messageId
+        server-side (a mismatched pair fails there on its own), and in
+        practice the attachmentId a client holds doesn't always find an
+        exact walk match against a fresh messages.get() response for the
+        same message -- confirmed live (a real, unrelated received
+        email's own attachment 404'd here even though the very call that
+        handed out that id came from this same walk moments earlier), not
+        just a theoretical edge case. A miss here must not block the
+        actual download."""
         try:
             message = self.service.users().messages().get(
                 userId='me',
@@ -578,9 +591,7 @@ class GmailService:
                     if item.get('id') == attachment_id
                 ),
                 None
-            )
-            if not attachment:
-                return None
+            ) or {'id': attachment_id, 'filename': 'attachment', 'mime_type': 'application/octet-stream'}
 
             result = self.service.users().messages().attachments().get(
                 userId='me',

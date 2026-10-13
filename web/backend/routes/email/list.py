@@ -421,13 +421,7 @@ def get_email_attachment(email_id, attachment_id):
 
     attachment = service.get_attachment(email_id, attachment_id)
     if not attachment:
-        # TEMP DIAGNOSTIC -- remove before merging.
-        return jsonify({
-            'error': 'Attachment not found',
-            'debug_last_error': service.last_error,
-            'debug_last_error_status': service.last_error_status,
-            'debug_last_error_reason': service.last_error_reason,
-        }), 404
+        return jsonify({'error': 'Attachment not found'}), 404
 
     filename = str(attachment.get('filename') or 'attachment')
     filename = os.path.basename(filename.replace('\\', '/')).replace('\r', '').replace('\n', '')
