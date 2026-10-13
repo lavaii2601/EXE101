@@ -261,7 +261,13 @@ def add_security_headers(response):
         response.headers['X-Request-Id'] = correlation_id
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        "img-src 'self' data: https://*.googleusercontent.com; "
+        # https: (not just *.googleusercontent.com) -- email body images
+        # come from whatever domain each individual sender's own CDN/image
+        # host happens to be, which is unbounded by nature. Can't execute
+        # script, so this is a much smaller policy relaxation than script-src
+        # would be; see the DOMPurify/CSP fix in a recent commit for why
+        # that one got vendored locally instead of a CSP exception.
+        "img-src 'self' data: https:; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "script-src 'self' 'unsafe-inline'; "
