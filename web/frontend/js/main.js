@@ -176,6 +176,7 @@ async function initApp() {
         if (emailAttachmentsInput) {
             emailAttachmentsInput.addEventListener('change', handleAttachmentsSelected);
         }
+        setupComposeRichTextEditor();
         const emailDetailCloseBtn = emailDetailModal
             ? emailDetailModal.querySelector('.email-detail-close')
             : null;

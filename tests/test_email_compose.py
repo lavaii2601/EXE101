@@ -117,6 +117,67 @@ class CreateMessageTests(unittest.TestCase):
         self.assertEqual(1, len(attachment_parts))
         self.assertEqual('application/octet-stream', attachment_parts[0].get_content_type())
 
+    def test_body_html_adds_a_plain_text_alternative(self):
+        sent = GmailService._create_message(
+            'to@example.com', 'Hi', 'Plain fallback',
+            body_html='<p>Rich <b>fallback</b></p>',
+        )
+        parsed = _decode_raw(sent)
+        self.assertEqual('multipart/alternative', parsed.get_content_type())
+        plain_parts = [p for p in parsed.walk() if p.get_content_type() == 'text/plain']
+        html_parts = [p for p in parsed.walk() if p.get_content_type() == 'text/html']
+        self.assertEqual(1, len(plain_parts))
+        self.assertEqual(1, len(html_parts))
+        self.assertIn('Plain fallback', plain_parts[0].get_payload(decode=True).decode())
+        self.assertIn('<b>fallback</b>', html_parts[0].get_payload(decode=True).decode())
+
+    def test_no_body_html_keeps_the_original_plain_only_shape(self):
+        sent = GmailService._create_message('to@example.com', 'Hi', 'Just text')
+        parsed = _decode_raw(sent)
+        self.assertEqual('text/plain', parsed.get_content_type())
+
+    def test_inline_image_gets_content_id_and_inline_disposition(self):
+        sent = GmailService._create_message(
+            'to@example.com', 'Hi', 'See image',
+            body_html='<p>Look: <img src="cid:logo123"></p>',
+            inline_images=[{
+                'filename': 'logo.png',
+                'mime_type': 'image/png',
+                'data': b'fake-png-bytes',
+                'content_id': 'logo123',
+            }],
+        )
+        parsed = _decode_raw(sent)
+        self.assertEqual('multipart/related', parsed.get_content_type())
+        image_parts = [p for p in parsed.walk() if p.get_content_type() == 'image/png']
+        self.assertEqual(1, len(image_parts))
+        self.assertEqual('<logo123>', image_parts[0].get('Content-ID'))
+        self.assertEqual('inline', image_parts[0].get_content_disposition())
+        self.assertEqual(b'fake-png-bytes', image_parts[0].get_payload(decode=True))
+        # The alternative part (plain+html) must still be nested one level in.
+        self.assertTrue(any(p.get_content_type() == 'multipart/alternative' for p in parsed.walk()))
+
+    def test_inline_images_and_regular_attachments_nest_correctly_together(self):
+        sent = GmailService._create_message(
+            'to@example.com', 'Hi', 'Body',
+            body_html='<p>Inline: <img src="cid:pic1"></p>',
+            inline_images=[{
+                'filename': 'pic.png', 'mime_type': 'image/png',
+                'data': b'inline-bytes', 'content_id': 'pic1',
+            }],
+            attachments=[{
+                'filename': 'report.pdf', 'mime_type': 'application/pdf', 'data': b'pdf-bytes',
+            }],
+        )
+        parsed = _decode_raw(sent)
+        self.assertEqual('multipart/mixed', parsed.get_content_type())
+        attachment_parts = [p for p in parsed.walk() if p.get_filename() == 'report.pdf']
+        self.assertEqual(1, len(attachment_parts))
+        self.assertEqual('attachment', attachment_parts[0].get_content_disposition())
+        inline_parts = [p for p in parsed.walk() if p.get_filename() == 'pic.png']
+        self.assertEqual(1, len(inline_parts))
+        self.assertEqual('inline', inline_parts[0].get_content_disposition())
+
 
 class SendEmailTests(unittest.TestCase):
     """GmailService.send_email wires _create_message's output (plus
@@ -279,6 +340,87 @@ class SendReplyRouteTests(unittest.TestCase):
                 'to': 'friend@example.com', 'subject': 'Hi', 'body': 'Hello',
             })
         self.assertEqual(401, response.status_code)
+
+    def test_body_html_is_sanitized_before_being_forwarded(self):
+        service = MagicMock()
+        service.send_email.return_value = True
+        with self._patched(service):
+            response = self.client.post('/api/email/send-reply', json={
+                'to': 'friend@example.com', 'subject': 'Hi', 'body': 'Hello',
+                'body_html': '<p>Hi <b>there</b></p><script>alert(1)</script>',
+            })
+        self.assertEqual(200, response.status_code)
+        kwargs = service.send_email.call_args.kwargs
+        self.assertIn('<b>there</b>', kwargs['body_html'])
+        self.assertNotIn('<script', kwargs['body_html'])
+        self.assertNotIn('alert(1)', kwargs['body_html'])
+
+    def test_image_only_message_derives_a_plain_text_fallback(self):
+        """No typed body text, only an embedded image -- must not be
+        rejected as "missing email details", and the plain-text
+        alternative part must not end up empty."""
+        service = MagicMock()
+        service.send_email.return_value = True
+        with self._patched(service):
+            response = self.client.post('/api/email/send-reply', json={
+                'to': 'friend@example.com', 'subject': 'Hi',
+                'body_html': '<p>Xem ảnh đính kèm</p>',
+            })
+        self.assertEqual(200, response.status_code)
+        plain_body = service.send_email.call_args.args[2]
+        self.assertIn('Xem ảnh đính kèm', plain_body)
+
+    def test_inline_images_are_forwarded_with_matching_content_ids(self):
+        service = MagicMock()
+        service.send_email.return_value = True
+        with self._patched(service):
+            response = self.client.post(
+                '/api/email/send-reply',
+                content_type='multipart/form-data',
+                data={
+                    'to': 'friend@example.com', 'subject': 'Hi',
+                    'body_html': '<p>Look: <img src="cid:pic1"></p>',
+                    'inline_images': (self._fake_file(b'png-bytes'), 'pic.png'),
+                    'inline_image_ids': 'pic1',
+                },
+            )
+        self.assertEqual(200, response.status_code)
+        kwargs = service.send_email.call_args.kwargs
+        self.assertEqual(1, len(kwargs['inline_images']))
+        self.assertEqual('pic1', kwargs['inline_images'][0]['content_id'])
+        self.assertEqual(b'png-bytes', kwargs['inline_images'][0]['data'])
+
+    def test_mismatched_inline_image_ids_count_is_rejected(self):
+        service = MagicMock()
+        with self._patched(service):
+            response = self.client.post(
+                '/api/email/send-reply',
+                content_type='multipart/form-data',
+                data={
+                    'to': 'friend@example.com', 'subject': 'Hi', 'body': 'Hello',
+                    'inline_images': (self._fake_file(b'png-bytes'), 'pic.png'),
+                    # no matching inline_image_ids entry
+                },
+            )
+        self.assertEqual(400, response.status_code)
+        service.send_email.assert_not_called()
+
+    def test_combined_attachment_and_inline_image_budget_is_enforced(self):
+        service = MagicMock()
+        with self._patched(service, patch.object(email_route.compose, 'MAX_ATTACHMENT_BYTES_TOTAL', 10)):
+            response = self.client.post(
+                '/api/email/send-reply',
+                content_type='multipart/form-data',
+                data={
+                    'to': 'friend@example.com', 'subject': 'Hi', 'body': 'Hello',
+                    'attachments': (self._fake_file(b'123456'), 'a.txt'),
+                    'body_html': '<p>x</p>',
+                    'inline_images': (self._fake_file(b'123456'), 'pic.png'),
+                    'inline_image_ids': 'pic1',
+                },
+            )
+        self.assertEqual(400, response.status_code)
+        service.send_email.assert_not_called()
 
     @staticmethod
     def _fake_file(data):

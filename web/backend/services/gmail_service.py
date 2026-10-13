@@ -629,11 +629,26 @@ class GmailService:
         in_reply_to=None,
         references=None,
         raise_errors=False,
+        body_html=None,
+        inline_images=None,
     ):
         """Send an email, optionally as a threaded reply (thread_id +
-        in_reply_to/references) and/or with file attachments.
+        in_reply_to/references), with file attachments, and/or a rich-text
+        HTML body.
 
         attachments: iterable of {filename, mime_type, data (bytes)}.
+        body_html: optional; when given, sent as the HTML alternative with
+        `body` kept as the plain-text fallback for clients that don't
+        render HTML. Already allow-list sanitized (see routes/email/
+        compose.py) before it ever reaches here -- a composer UI only
+        produces safe formatting tags, but this is the one place that
+        actually leaves FlowMate as a real email, so the same backend
+        allow-list applies to outgoing content too.
+        inline_images: optional iterable of {filename, mime_type, data,
+        content_id} -- content_id must match a cid:<content_id> reference
+        already present in body_html (the composer is responsible for
+        that); each becomes an inline MIME part instead of a downloadable
+        attachment.
         in_reply_to/references: the original message's RFC822 Message-ID
         header (gmail_service._parse_message's 'rfc_message_id'/'references'),
         not Gmail's own numeric message id -- required for the reply to show
@@ -644,6 +659,7 @@ class GmailService:
                 to, subject, body,
                 cc=cc, bcc=bcc, attachments=attachments,
                 in_reply_to=in_reply_to, references=references,
+                body_html=body_html, inline_images=inline_images,
             )
             if thread_id:
                 message['threadId'] = thread_id
@@ -711,11 +727,16 @@ class GmailService:
             return False
     
     @staticmethod
-    def _create_message(to, subject, body, cc=None, bcc=None, attachments=None, in_reply_to=None, references=None):
-        """Build a Gmail API 'raw' message, plain text-only when there are no
-        attachments (MIMEText) or multipart/mixed when there are (MIMEMultipart)
-        -- Gmail accepts either, but a plain MIMEText keeps the common case
-        simple and matches what this already sent before attachments existed."""
+    def _create_message(to, subject, body, cc=None, bcc=None, attachments=None, in_reply_to=None,
+                         references=None, body_html=None, inline_images=None):
+        """Build a Gmail API 'raw' message, nested only as deep as what was
+        actually provided needs:
+
+            mixed( related( alternative(text, html), inline_image... ), attachment... )
+
+        A plain MIMEText (today's original shape, still the common case)
+        when there's no HTML body, no inline images, and no attachments.
+        """
         import base64
         from email.encoders import encode_base64
         from email.mime.base import MIMEBase
@@ -723,21 +744,44 @@ class GmailService:
         from email.mime.text import MIMEText
 
         attachments = list(attachments or [])
-        if attachments:
-            message = MIMEMultipart()
-            message.attach(MIMEText(body))
-            for item in attachments:
-                mime_type = str(item.get('mime_type') or '').strip()
-                if '/' not in mime_type:
-                    mime_type = 'application/octet-stream'
-                part = MIMEBase(*mime_type.split('/', 1))
-                part.set_payload(item.get('data') or b'')
-                encode_base64(part)
-                filename = str(item.get('filename') or 'attachment').replace('\r', '').replace('\n', '')
-                part.add_header('Content-Disposition', 'attachment', filename=filename)
-                message.attach(part)
+        inline_images = list(inline_images or [])
+
+        def build_part(item, disposition):
+            mime_type = str(item.get('mime_type') or '').strip()
+            if '/' not in mime_type:
+                mime_type = 'application/octet-stream'
+            part = MIMEBase(*mime_type.split('/', 1))
+            part.set_payload(item.get('data') or b'')
+            encode_base64(part)
+            filename = str(item.get('filename') or 'attachment').replace('\r', '').replace('\n', '')
+            if disposition == 'inline':
+                content_id = str(item.get('content_id') or '').strip()
+                part.add_header('Content-ID', f'<{content_id}>')
+            part.add_header('Content-Disposition', disposition, filename=filename)
+            return part
+
+        if body_html:
+            body_part = MIMEMultipart('alternative')
+            body_part.attach(MIMEText(body or '', 'plain'))
+            body_part.attach(MIMEText(body_html, 'html'))
         else:
-            message = MIMEText(body)
+            body_part = MIMEText(body or '')
+
+        if inline_images:
+            content_root = MIMEMultipart('related')
+            content_root.attach(body_part)
+            for item in inline_images:
+                content_root.attach(build_part(item, 'inline'))
+        else:
+            content_root = body_part
+
+        if attachments:
+            message = MIMEMultipart('mixed')
+            message.attach(content_root)
+            for item in attachments:
+                message.attach(build_part(item, 'attachment'))
+        else:
+            message = content_root
 
         message['to'] = to
         message['subject'] = subject

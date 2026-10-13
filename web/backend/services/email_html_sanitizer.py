@@ -48,7 +48,15 @@ ALLOWED_ATTRS = {
     'table': ['border', 'cellpadding', 'cellspacing'],
     '*': ['style', 'align'],
 }
-ALLOWED_PROTOCOLS = ['http', 'https', 'mailto']
+# 'cid' matters for both directions: on receive, _rewrite_inline_image_refs
+# (gmail_service.py) already turns every *resolvable* cid: into a real URL
+# before this ever runs, so any cid: still present here is one with no
+# matching attachment -- harmless either way, since a browser can't
+# resolve a bare cid: scheme regardless. On send (routes/email/compose.py),
+# the composer's own trusted inline-image flow needs its cid:<content_id>
+# placeholders to survive sanitization so they still match the inline
+# image part Gmail attaches alongside the HTML.
+ALLOWED_PROTOCOLS = ['http', 'https', 'mailto', 'cid']
 # No 'position'/'behavior'/'float'/etc -- layout/escape-prone properties a
 # sender has no legitimate formatting reason to need in an email body.
 ALLOWED_CSS_PROPERTIES = [

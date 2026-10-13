@@ -53,6 +53,12 @@ let composeMode = 'new';
 let composeInReplyToId = '';
 let composeForwardMessageId = '';
 let composeAttachments = [];
+// Images inserted directly into the rich-text body (paste or the toolbar's
+// insert-image button), as opposed to composeAttachments' downloadable
+// files -- {file: File, contentId: string}, where contentId matches the
+// cid:<contentId> src rewritten into body_html at submit time (see
+// serializeComposeBodyForSubmit).
+let composeInlineImages = [];
 let currentUserMode = 'worker';
 let pendingUserMode = '';
 let userModeRequired = false;

@@ -942,7 +942,7 @@ async function handleAutoReply() {
             document.getElementById('emailSubject').value = currentDetailEmail.subject.startsWith('Re:')
                 ? currentDetailEmail.subject
                 : `Re: ${currentDetailEmail.subject}`;
-            document.getElementById('emailBody').value = data.reply;
+            setComposeBodyPlainText(data.reply);
 
             closeModalWindow();
 
@@ -984,7 +984,7 @@ function handleForwardEmail() {
     document.getElementById('emailSubject').value = (currentDetailEmail.subject || '').toLowerCase().startsWith('fwd:')
         ? currentDetailEmail.subject
         : `Fwd: ${currentDetailEmail.subject || ''}`;
-    document.getElementById('emailBody').value = quoted;
+    setComposeBodyPlainText(quoted);
 
     const attachments = Array.isArray(currentDetailEmail.attachments) ? currentDetailEmail.attachments : [];
     if (attachments.length) {
@@ -1009,6 +1009,117 @@ function toggleComposeCcBcc() {
     const show = group.style.display === 'none';
     group.style.display = show ? 'block' : 'none';
     toggleBtn.textContent = show ? ui('- Ẩn CC/BCC', '- Hide CC/BCC') : ui('+ Thêm CC/BCC', '+ Add CC/BCC');
+}
+
+// -- Rich-text compose body (#emailBody is a contenteditable div, not a
+// textarea) ------------------------------------------------------------
+function setupComposeRichTextEditor() {
+    const editor = document.getElementById('emailBody');
+    const toolbar = document.querySelector('.compose-rich-toolbar');
+    const imagePicker = document.getElementById('emailInlineImagePicker');
+    const insertImageBtn = document.getElementById('composeInsertImageBtn');
+    if (!editor || !toolbar) return;
+
+    // mousedown (not click) + preventDefault keeps the editor's current
+    // selection/focus intact when a toolbar button is pressed -- without
+    // this, clicking a button blurs the editor first and execCommand has
+    // no selection left to act on.
+    toolbar.querySelectorAll('[data-cmd]').forEach((btn) => {
+        btn.addEventListener('mousedown', (event) => event.preventDefault());
+        btn.addEventListener('click', () => {
+            editor.focus();
+            document.execCommand(btn.dataset.cmd, false, null);
+        });
+    });
+
+    if (insertImageBtn && imagePicker) {
+        insertImageBtn.addEventListener('mousedown', (event) => event.preventDefault());
+        insertImageBtn.addEventListener('click', () => imagePicker.click());
+        imagePicker.addEventListener('change', (event) => {
+            const file = (event.target.files || [])[0];
+            if (file) insertImageFileIntoComposeBody(file);
+            event.target.value = '';
+        });
+    }
+
+    editor.addEventListener('paste', (event) => {
+        const items = Array.from(event.clipboardData?.items || []);
+        const imageItem = items.find((item) => item.type.startsWith('image/'));
+        if (imageItem) {
+            event.preventDefault();
+            const file = imageItem.getAsFile();
+            if (file) insertImageFileIntoComposeBody(file);
+            return;
+        }
+        // Text/HTML paste: this is a real, live contenteditable DOM in an
+        // authenticated session, not an inert preview -- letting the
+        // browser's default paste insert a source page's raw HTML
+        // untouched (onerror=, etc.) would be a genuine self-XSS vector
+        // the moment that markup renders, independent of the backend's
+        // own sanitize-on-send pass. Sanitize with the same DOMPurify
+        // pass used for rendering received email bodies before it ever
+        // reaches the editor's DOM.
+        const html = event.clipboardData?.getData('text/html');
+        if (!html) return; // plain-text paste has no tags to worry about
+        event.preventDefault();
+        const sanitized = sanitizeEmailHtmlForRender(html);
+        editor.focus();
+        if (sanitized) {
+            document.execCommand('insertHTML', false, sanitized);
+        } else {
+            document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
+        }
+    });
+}
+
+function generateInlineImageId() {
+    const random = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).replace(/[^a-zA-Z0-9-]/g, '');
+    return `${random}@flowmate`;
+}
+
+function insertImageFileIntoComposeBody(file) {
+    if (!file.type || !file.type.startsWith('image/')) return;
+    const editor = document.getElementById('emailBody');
+    if (!editor) return;
+    const contentId = generateInlineImageId();
+    composeInlineImages.push({ file, contentId });
+
+    const reader = new FileReader();
+    reader.onload = () => {
+        editor.focus();
+        // data: preview only, for the user to see what they just inserted
+        // -- serializeComposeBodyForSubmit rewrites this to cid:<id> (what
+        // the backend actually expects) right before the form is sent.
+        const html = `<img src="${reader.result}" data-content-id="${contentId}" alt="${escapeHtml(file.name)}">`;
+        if (!document.execCommand('insertHTML', false, html)) {
+            editor.insertAdjacentHTML('beforeend', html);
+        }
+    };
+    reader.readAsDataURL(file);
+}
+
+// Used wherever compose previously did emailBody.value = someString (AI
+// reply draft, forward quote) -- a contenteditable div needs '\n' turned
+// into real line breaks, since unlike a textarea it won't render them.
+function setComposeBodyPlainText(text) {
+    const editor = document.getElementById('emailBody');
+    if (!editor) return;
+    editor.innerHTML = escapeHtml(text || '').replace(/\n/g, '<br>');
+}
+
+// The editor's own innerHTML has data: URLs for inline images (so the user
+// can see a live preview while composing) -- the backend needs cid:<id>
+// references instead, matching the separately-uploaded image file's
+// Content-ID, so rewrite a clone rather than mutate what's on screen.
+function serializeComposeBodyForSubmit() {
+    const editor = document.getElementById('emailBody');
+    if (!editor) return { html: '', text: '' };
+    const clone = editor.cloneNode(true);
+    clone.querySelectorAll('img[data-content-id]').forEach((img) => {
+        img.setAttribute('src', `cid:${img.dataset.contentId}`);
+        img.removeAttribute('data-content-id');
+    });
+    return { html: clone.innerHTML.trim(), text: (editor.innerText || '').trim() };
 }
 
 function renderComposeAttachments() {
@@ -1047,6 +1158,9 @@ function resetComposeState() {
     composeInReplyToId = '';
     composeForwardMessageId = '';
     composeAttachments = [];
+    composeInlineImages = [];
+    const editor = document.getElementById('emailBody');
+    if (editor) editor.innerHTML = '';
     renderComposeAttachments();
     const ccBccGroup = document.getElementById('composeCcBccGroup');
     if (ccBccGroup) ccBccGroup.style.display = 'none';
@@ -1066,7 +1180,7 @@ async function handleComposeSubmit(e) {
 
     const to = document.getElementById('emailTo').value.trim();
     const subject = document.getElementById('emailSubject').value.trim();
-    const body = document.getElementById('emailBody').value.trim();
+    const { html: bodyHtml, text: bodyText } = serializeComposeBodyForSubmit();
     const cc = document.getElementById('emailCc')?.value.trim() || '';
     const bcc = document.getElementById('emailBcc')?.value.trim() || '';
     const isForward = composeMode === 'forward';
@@ -1075,13 +1189,21 @@ async function handleComposeSubmit(e) {
     const formData = new FormData();
     formData.set('to', to);
     formData.set('subject', subject);
-    formData.set('body', body);
+    formData.set('body', bodyText);
     if (cc) formData.set('cc', cc);
     if (bcc) formData.set('bcc', bcc);
     if (isForward) {
         formData.set('message_id', composeForwardMessageId);
-    } else if (composeInReplyToId) {
-        formData.set('in_reply_to_id', composeInReplyToId);
+    } else {
+        // Forward's note field is plain text only today (routes/email/
+        // forward.py doesn't accept body_html/inline images) -- formatting
+        // and inserted images only apply to new compose/reply sends.
+        if (bodyHtml) formData.set('body_html', bodyHtml);
+        for (const { file, contentId } of composeInlineImages) {
+            formData.append('inline_images', file, file.name);
+            formData.append('inline_image_ids', contentId);
+        }
+        if (composeInReplyToId) formData.set('in_reply_to_id', composeInReplyToId);
     }
     for (const file of composeAttachments) {
         formData.append('attachments', file, file.name);

@@ -87,6 +87,15 @@ class EmailHtmlSanitizerTests(unittest.TestCase):
         result = sanitize_email_html('<a href="https://example.com">ok</a>')
         self.assertIn('href="https://example.com"', result)
 
+    def test_keeps_cid_image_reference(self):
+        """cid: is allowed on both ends: a composed outgoing email's own
+        trusted inline-image placeholder must survive (routes/email/
+        compose.py matches it to the inline attachment it just uploaded),
+        and an unmatched one on an incoming email is harmless either way
+        -- a browser can't resolve a bare cid: scheme regardless."""
+        result = sanitize_email_html('<img src="cid:logo123@flowmate">')
+        self.assertIn('cid:logo123@flowmate', result)
+
     def test_keeps_basic_formatting(self):
         result = sanitize_email_html('<p style="color:red; font-weight:bold">Hello <b>world</b></p>')
         self.assertIn('color:red', result)
