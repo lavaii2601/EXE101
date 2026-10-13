@@ -585,13 +585,21 @@ class GmailService:
                 id=message_id,
                 format='full'
             ).execute(num_retries=GMAIL_EXECUTE_RETRIES)
-            attachment = next(
-                (
-                    item for item in self._get_attachments(message.get('payload', {}) or {})
-                    if item.get('id') == attachment_id
-                ),
-                None
-            ) or {'id': attachment_id, 'filename': 'attachment', 'mime_type': 'application/octet-stream'}
+            candidates = self._get_attachments(message.get('payload', {}) or {})
+            attachment = next((item for item in candidates if item.get('id') == attachment_id), None)
+            if attachment is None and len(candidates) == 1:
+                # No exact id match, but there's exactly one attachment
+                # part in this message at all -- almost certainly the same
+                # one the caller meant, just under a different id token
+                # this particular fetch happened to return (see the id
+                # instability this method's docstring explains). Using its
+                # real filename/mime_type here is what keeps e.g. an
+                # inline <img>'s src?preview=1 actually inline instead of
+                # forcing a download, since the route's preview check is
+                # keyed on mime_type.
+                attachment = dict(candidates[0])
+            if attachment is None:
+                attachment = {'id': attachment_id, 'filename': 'attachment', 'mime_type': 'application/octet-stream'}
 
             result = self.service.users().messages().attachments().get(
                 userId='me',

@@ -240,7 +240,13 @@ class GetAttachmentTests(unittest.TestCase):
     def _b64(data):
         return base64.urlsafe_b64encode(data).decode().rstrip('=')
 
-    def test_downloads_successfully_even_when_local_walk_finds_no_match(self):
+    def test_falls_back_to_the_sole_candidate_when_the_id_does_not_exactly_match(self):
+        """The id this method was handed doesn't exactly match anything
+        in a fresh walk, but there's only one attachment part in the
+        message at all -- almost certainly the same one under a
+        different id token, so its real filename/mime_type should still
+        be used (load-bearing for e.g. an inline <img>'s preview=1
+        staying inline instead of forcing a download)."""
         service = self._service_with_mock_api()
         service.service.users().messages().get().execute.return_value = {
             'payload': {'parts': [{
@@ -255,7 +261,28 @@ class GetAttachmentTests(unittest.TestCase):
         result = service.get_attachment('msg-1', 'the-requested-id')
         self.assertIsNotNone(result)
         self.assertEqual(b'pdf bytes here', result['data'])
-        self.assertEqual('attachment', result['filename'])  # generic fallback, no local match
+        self.assertEqual('other.pdf', result['filename'])
+        self.assertEqual('application/pdf', result['mime_type'])
+
+    def test_downloads_successfully_with_generic_metadata_when_truly_ambiguous(self):
+        """No exact id match, and more than one attachment part exists --
+        can't safely guess which one was meant, so the download still
+        succeeds (the real attachment_id is used regardless) but with
+        generic fallback metadata rather than a possibly-wrong filename."""
+        service = self._service_with_mock_api()
+        service.service.users().messages().get().execute.return_value = {
+            'payload': {'parts': [
+                {'filename': 'a.pdf', 'mimeType': 'application/pdf', 'body': {'attachmentId': 'id-a', 'size': 10}},
+                {'filename': 'b.pdf', 'mimeType': 'application/pdf', 'body': {'attachmentId': 'id-b', 'size': 10}},
+            ]},
+        }
+        service.service.users().messages().attachments().get().execute.return_value = {
+            'data': self._b64(b'pdf bytes here'),
+        }
+        result = service.get_attachment('msg-1', 'the-requested-id')
+        self.assertIsNotNone(result)
+        self.assertEqual(b'pdf bytes here', result['data'])
+        self.assertEqual('attachment', result['filename'])
         self.assertEqual('application/octet-stream', result['mime_type'])
 
     def test_uses_the_real_filename_when_the_local_walk_does_match(self):
