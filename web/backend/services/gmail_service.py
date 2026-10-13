@@ -554,7 +554,7 @@ class GmailService:
             attachment_id = by_content_id.get(content_id)
             if not attachment_id:
                 return match.group(0)
-            url = f"/email/attachment/{message_id}/{attachment_id}?preview=1"
+            url = f"/api/email/attachment/{message_id}/{attachment_id}?preview=1"
             return f'{match.group(1)}{url}{match.group(3)}'
 
         return re.sub(

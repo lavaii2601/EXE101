@@ -59,7 +59,10 @@ class InlineImageAttachmentExtractionTests(unittest.TestCase):
 
 class InlineImageRewriteTests(unittest.TestCase):
     """_rewrite_inline_image_refs turns src="cid:xxx" into a fetchable
-    /email/attachment/<message_id>/<attachment_id> URL -- without it, an
+    /api/email/attachment/<message_id>/<attachment_id> URL (the /api
+    prefix every other client-facing route uses -- routes/email/shared.py
+    registers this blueprint with url_prefix='/api/email', and the
+    frontend always calls through API_BASE='/api') -- without it, an
     inline-embedded image (very common for signatures/logos) is just a
     broken icon, since sanitize_email_html correctly drops bare cid:
     sources (they have no legitimate meaning to a web client)."""
@@ -68,7 +71,7 @@ class InlineImageRewriteTests(unittest.TestCase):
         html = '<img src="cid:logo123@mail.gmail.com">'
         attachments = [{'id': 'att-1', 'content_id': 'logo123@mail.gmail.com'}]
         result = GmailService._rewrite_inline_image_refs(html, 'msg-1', attachments)
-        self.assertEqual('<img src="/email/attachment/msg-1/att-1?preview=1">', result)
+        self.assertEqual('<img src="/api/email/attachment/msg-1/att-1?preview=1">', result)
 
     def test_unmatched_cid_is_left_untouched(self):
         html = '<img src="cid:unknown@mail.gmail.com">'
@@ -94,7 +97,7 @@ class InlineImageRewriteTests(unittest.TestCase):
         attachments = [{'id': 'att-1', 'content_id': 'logo123@mail.gmail.com'}]
         rewritten = GmailService._rewrite_inline_image_refs(html, 'msg-1', attachments)
         sanitized = sanitize_email_html(rewritten)
-        self.assertIn('/email/attachment/msg-1/att-1?preview=1', sanitized)
+        self.assertIn('/api/email/attachment/msg-1/att-1?preview=1', sanitized)
 
 
 if __name__ == '__main__':
