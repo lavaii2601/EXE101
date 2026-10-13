@@ -593,6 +593,7 @@ class GmailService:
             return attachment
         except Exception as e:
             logger.warning(f"Error downloading Gmail attachment {message_id}: {e}")
+            self._remember_error(e)
             return None
 
     @staticmethod
