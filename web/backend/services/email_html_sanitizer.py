@@ -17,8 +17,21 @@ gmail_service.py, which left onerror=/onclick=/javascript: hrefs
 completely untouched -- safe only by accident, since nothing rendered that
 HTML to a client before.
 """
+import re
+
 import bleach
 from bleach.css_sanitizer import CSSSanitizer
+
+# bleach.clean() strips a disallowed TAG but keeps its inner text (so a
+# disallowed <div class="weird">hello</div> correctly becomes just
+# "hello") -- but <head>/<style>/<script>/<title> are opaque-content
+# elements whose "text" (CSS rules, JS source, page title) was never part
+# of the message a reader should see. Left to bleach alone, a real HTML
+# newsletter's <head><style>...hundreds of CSS rules...</style></head>
+# (common -- most ESP templates inline their CSS this way) would dump
+# that raw CSS as the first thing visible in the rendered email body.
+# Stripped here, before bleach ever sees them, tag and all.
+_OPAQUE_BLOCK_RE = re.compile(r'(?is)<(head|style|script|title)\b[^>]*>.*?</\1>')
 
 ALLOWED_TAGS = [
     'a', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'p', 'br', 'div', 'span',
@@ -57,8 +70,9 @@ def sanitize_email_html(html_content):
     if not html_content:
         return ''
     try:
+        without_opaque_blocks = _OPAQUE_BLOCK_RE.sub('', str(html_content))
         cleaned = bleach.clean(
-            str(html_content),
+            without_opaque_blocks,
             tags=ALLOWED_TAGS,
             attributes=ALLOWED_ATTRS,
             protocols=ALLOWED_PROTOCOLS,

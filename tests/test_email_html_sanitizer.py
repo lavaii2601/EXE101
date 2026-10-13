@@ -24,6 +24,35 @@ class EmailHtmlSanitizerTests(unittest.TestCase):
         self.assertNotIn('<script', result)
         self.assertIn('hello', result)
 
+    def test_script_tag_content_is_discarded_not_unwrapped(self):
+        """A disallowed tag normally keeps its inner text when unwrapped
+        (bleach's default) -- but <script>'s "text" is JS source, not
+        message content, so it must disappear with the tag, not leak out
+        as a visible wall of code."""
+        result = sanitize_email_html('<script>var x = 1; alert(x);</script><p>hello</p>')
+        self.assertNotIn('alert', result)
+        self.assertIn('hello', result)
+
+    def test_style_tag_content_is_discarded_not_unwrapped(self):
+        """Same as script, but for a <head><style> block -- a real,
+        common shape for HTML newsletter templates. Left unwrapped, the
+        raw CSS rules would be the first thing a reader sees."""
+        html = (
+            '<html><head><style>body { margin:0; color:#000; } '
+            '.deviceWidth { width:300px !important; }</style></head>'
+            '<body><p>Hello <b>world</b></p></body></html>'
+        )
+        result = sanitize_email_html(html)
+        self.assertNotIn('margin', result)
+        self.assertNotIn('deviceWidth', result)
+        self.assertIn('Hello', result)
+        self.assertIn('<b>world</b>', result)
+
+    def test_title_tag_content_is_discarded(self):
+        result = sanitize_email_html('<head><title>Secret internal subject line</title></head><p>hi</p>')
+        self.assertNotIn('Secret internal subject line', result)
+        self.assertIn('hi', result)
+
     def test_strips_event_handler_attributes(self):
         result = sanitize_email_html('<img src="https://x.com/a.png" onerror="alert(1)">')
         self.assertNotIn('onerror', result)
