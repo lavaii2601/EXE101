@@ -412,13 +412,14 @@ class GmailService:
             rfc_message_id = header_value('Message-ID', '')
             references = header_value('References', '')
             snippet = message.get('snippet', '') or ''
+            attachments = [] if lazy else self._get_attachments(payload)
             if lazy:
                 body, html_body = "", ""
             else:
                 text_plain, text_html = self._get_email_body_parts(payload)
                 body = text_plain or (self._html_to_text(text_html) if text_html else "") or "Email body unavailable"
+                text_html = self._rewrite_inline_image_refs(text_html, message_id, attachments)
                 html_body = sanitize_email_html(text_html)
-            attachments = [] if lazy else self._get_attachments(payload)
             label_ids = message.get('labelIds', []) or []
 
             return {
@@ -496,7 +497,15 @@ class GmailService:
             return f"Error reading email: {str(e)[:100]}"
 
     def _get_attachments(self, payload):
-        """Return downloadable attachment metadata from a Gmail MIME payload."""
+        """Return downloadable attachment metadata from a Gmail MIME payload.
+
+        Includes a part's Content-ID (stripped of the angle brackets Gmail
+        wraps it in) when present -- an inline image a sender's HTML
+        references as src="cid:xxx" is still a regular attachment part as
+        far as the API is concerned, just one with that extra header. See
+        _rewrite_inline_image_refs, which is what actually turns those
+        cid: references into a URL the client can fetch.
+        """
         attachments = []
 
         def walk(part):
@@ -504,11 +513,17 @@ class GmailService:
             attachment_id = body.get('attachmentId')
             filename = str(part.get('filename') or '').strip()
             if attachment_id and filename:
+                content_id = ''
+                for header in part.get('headers', []) or []:
+                    if str(header.get('name', '')).lower() == 'content-id':
+                        content_id = str(header.get('value', '')).strip().strip('<>')
+                        break
                 attachments.append({
                     'id': attachment_id,
                     'filename': filename,
                     'mime_type': part.get('mimeType') or 'application/octet-stream',
                     'size': int(body.get('size') or 0),
+                    'content_id': content_id,
                 })
 
             for child in part.get('parts', []) or []:
@@ -516,6 +531,38 @@ class GmailService:
 
         walk(payload or {})
         return attachments
+
+    @staticmethod
+    def _rewrite_inline_image_refs(html_content, message_id, attachments):
+        """Replace src="cid:xxx" references with a fetchable attachment
+        URL before sanitizing -- sanitize_email_html only allows http(s)/
+        relative URLs (a bare cid: has no legitimate web meaning and is
+        dropped), so an inline-embedded image would otherwise just show as
+        a broken icon instead of rendering like it does in Gmail."""
+        if not html_content:
+            return html_content
+        by_content_id = {
+            a['content_id']: a['id']
+            for a in attachments
+            if a.get('content_id') and a.get('id')
+        }
+        if not by_content_id:
+            return html_content
+
+        def replace(match):
+            content_id = match.group(2)
+            attachment_id = by_content_id.get(content_id)
+            if not attachment_id:
+                return match.group(0)
+            url = f"/email/attachment/{message_id}/{attachment_id}?preview=1"
+            return f'{match.group(1)}{url}{match.group(3)}'
+
+        return re.sub(
+            r'(src\s*=\s*["\'])cid:([^"\']+)(["\'])',
+            replace,
+            html_content,
+            flags=re.IGNORECASE,
+        )
 
     def get_attachment(self, message_id, attachment_id):
         """Fetch one attachment after verifying it belongs to the message."""

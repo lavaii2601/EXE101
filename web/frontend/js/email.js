@@ -502,7 +502,13 @@ function renderEnhancedEmailItem(email, container) {
         // without which this button could never actually call the AI
         // summarize endpoint from the list view.
         if (email.summary_type === 'ai_cached') {
-            showFormattedEmailDetail(email);
+            // The detail view no longer auto-shows a summary just because
+            // one exists from an earlier session (see buildEmailDetailMarkup)
+            // -- "Xem tóm tắt AI" means show it, so explicitly ask for it.
+            // The backend returns the already-cached text instantly, no new
+            // AI call/token spend.
+            await showFormattedEmailDetail(email);
+            await handleSummarizeEmail();
             return;
         }
         await summarizeEnhancedEmail(email, emailDiv, event.currentTarget);
@@ -535,19 +541,14 @@ function buildEmailDetailMarkup(email, bodyHtml, isLoading = false, isRichHtml =
     const tagHTML = email.tag
         ? `<span class="email-detail-tag" style="--email-tag-color: ${tagColor}">${escapeHtml(email.tag.toUpperCase())}</span>`
         : '';
-    // Only a real AI summary (summary_type === 'ai_cached'), never the
-    // truncated-snippet placeholder every email starts with -- see the
-    // matching comment on the list view's button handler above.
-    // renderEmailSummaryCard parses the TÓM TẮT/CẦN LÀM/THỜI HẠN/TÀI LIỆU
-    // sections (identical format whether a real AI call or the local
-    // extractive fallback produced them) into labelled blocks instead of
-    // one unstructured wall of text.
-    const summaryHTML = email.summary && email.summary_type === 'ai_cached'
-        ? `<div class="email-detail-summary" style="--email-tag-color: ${tagColor}">
-                <div class="email-detail-summary-label">${ui('AI tóm tắt', 'AI summary')}</div>
-                ${renderEmailSummaryCard(email.summary)}
-           </div>`
-        : '';
+    // Never auto-shown on open, even when a summary was already generated
+    // in an earlier session (email.summary_type === 'ai_cached' carried
+    // over from the list fetch) -- opening an email is for reading the
+    // real message, not a second opinion next to it. The summary card
+    // (same renderEmailSummaryCard markup) only ever appears after the
+    // user explicitly asks for it via handleSummarizeEmail, which inserts
+    // it dynamically; see that function instead of here.
+    const summaryHTML = '';
     const attachments = Array.isArray(email.attachments) ? email.attachments : [];
     const previewTypes = new Set([
         'application/pdf',

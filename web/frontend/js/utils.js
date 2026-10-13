@@ -238,7 +238,13 @@ function sanitizeEmailHtmlForRender(html) {
                 'href', 'title', 'src', 'alt', 'width', 'height', 'color', 'size', 'face',
                 'colspan', 'rowspan', 'align', 'valign', 'border', 'cellpadding', 'cellspacing', 'style',
             ],
-            ALLOWED_URI_REGEXP: /^(?:https?|mailto):/i,
+            // https:/mailto: for normal links, or a root-relative path
+            // (one leading '/' not followed by a second one, so a
+            // protocol-relative "//evil.com" -- an attacker-chosen host --
+            // still doesn't match) for inline-image src values the backend
+            // rewrote from cid: references to /email/attachment/... (see
+            // gmail_service.py's _rewrite_inline_image_refs).
+            ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|\/(?!\/))/i,
         }).trim();
     } catch (error) {
         return '';
