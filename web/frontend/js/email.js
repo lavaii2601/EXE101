@@ -1110,16 +1110,23 @@ function setComposeBodyPlainText(text) {
 // The editor's own innerHTML has data: URLs for inline images (so the user
 // can see a live preview while composing) -- the backend needs cid:<id>
 // references instead, matching the separately-uploaded image file's
-// Content-ID, so rewrite a clone rather than mutate what's on screen.
+// Content-ID. Done as a string replace on a clone's serialized markup,
+// not img.setAttribute('src', ...) DOM mutation -- setting an <img>'s src
+// makes the browser actually attempt to load it immediately, even on a
+// detached clone, and a bare cid: scheme is always CSP-blocked; harmless,
+// but a wasted request and console noise for a value only ever used as a
+// plain string below.
 function serializeComposeBodyForSubmit() {
     const editor = document.getElementById('emailBody');
     if (!editor) return { html: '', text: '' };
-    const clone = editor.cloneNode(true);
-    clone.querySelectorAll('img[data-content-id]').forEach((img) => {
-        img.setAttribute('src', `cid:${img.dataset.contentId}`);
-        img.removeAttribute('data-content-id');
+    const html = editor.cloneNode(true).innerHTML.replace(/<img\b[^>]*>/gi, (imgTag) => {
+        const match = imgTag.match(/\sdata-content-id="([^"]*)"/i);
+        if (!match) return imgTag;
+        return imgTag
+            .replace(/\ssrc="[^"]*"/i, ` src="cid:${match[1]}"`)
+            .replace(/\sdata-content-id="[^"]*"/i, '');
     });
-    return { html: clone.innerHTML.trim(), text: (editor.innerText || '').trim() };
+    return { html: html.trim(), text: (editor.innerText || '').trim() };
 }
 
 function renderComposeAttachments() {
