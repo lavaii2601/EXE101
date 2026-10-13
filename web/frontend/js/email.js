@@ -449,9 +449,16 @@ function renderEnhancedEmailItem(email, container) {
     // string -- this compact list-row preview only ever shows the one-line
     // overview sentence (the full structured card is in the detail view),
     // or the dumped raw sections would run together into an unreadable blob.
+    // Only a real AI summary gets its own box here: email.summary is
+    // pre-populated for EVERY email with a snippet-derived placeholder
+    // (routes/email/list.py's _hydrate_email_for_list) purely so the
+    // summary_type check below has something to compare against -- it was
+    // never meant to be displayed on its own, and since it's a separately
+    // re-compacted (not byte-identical) copy of the same snippet, showing
+    // it next to snippetHTML just duplicated the same sentence twice.
     const normalizedSummary = email.summary_type === 'ai_cached'
         ? emailSummaryOverviewText(email.summary)
-        : String(email.summary || '').replace(/\s+/g, ' ').trim();
+        : '';
     const normalizedSnippet = String(email.snippet || '').replace(/\s+/g, ' ').trim();
     const summaryHTML = normalizedSummary
         ? `<div class="email-item-summary">${escapeHtml(normalizedSummary)}</div>`

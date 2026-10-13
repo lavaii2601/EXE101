@@ -166,7 +166,11 @@ function adminDestinationStorageKey() {
 }
 
 function shouldShowAdminAccessChoice() {
-    if (!lastAuthStatus?.authenticated || !lastAuthStatus?.is_admin) return false;
+    // app_authenticated (the FlowMate password-login session), not
+    // authenticated (that field reflects the separate, linked Gmail/
+    // Google connection) -- an admin who hasn't connected Gmail yet must
+    // still see this choice instead of it being silently skipped.
+    if (!lastAuthStatus?.app_authenticated || !lastAuthStatus?.is_admin) return false;
 
     const key = adminDestinationStorageKey();
     const params = new URLSearchParams(window.location.search);
@@ -206,32 +210,51 @@ function showModeSelectionStage() {
 }
 
 async function resolveInitialAuthState() {
-    let profileData = null;
-    try {
-        const profileResponse = await fetch(`${API_BASE}/user/profile`, {
+    // These two checks are independent (different endpoints, different
+    // concerns -- FlowMate app login vs. the linked Google/Gmail
+    // connection) and were previously awaited one after the other, which
+    // just adds their latencies together. /email/auth-status alone can
+    // take several seconds (it synchronously refreshes the Google OAuth
+    // token when expired), so running both at once roughly halves how
+    // long every page load spends on "Checking your sign-in session...".
+    const [profileResult, googleResult] = await Promise.allSettled([
+        fetch(`${API_BASE}/user/profile`, {
             credentials: 'include',
             headers: { Accept: 'application/json' }
-        });
-        profileData = await profileResponse.json().catch(() => null);
-        isAuthenticated = !!(profileResponse.ok && profileData?.success && profileData?.user);
-    } catch (error) {
-        console.error('Initial auth check failed:', error);
+        }),
+        fetch(`${API_BASE}/email/auth-status`, {
+            credentials: 'include',
+            headers: { Accept: 'application/json' }
+        }),
+    ]);
+
+    let profileData = null;
+    if (profileResult.status === 'fulfilled') {
+        profileData = await profileResult.value.json().catch(() => null);
+        isAuthenticated = !!(profileResult.value.ok && profileData?.success && profileData?.user);
+    } else {
+        console.error('Initial auth check failed:', profileResult.reason);
         isAuthenticated = false;
     }
 
-    try {
-        const response = await fetch(`${API_BASE}/email/auth-status`, {
-            credentials: 'include',
-            headers: { Accept: 'application/json' }
-        });
-        const googleStatus = await response.json();
-        lastAuthStatus = {
-            ...googleStatus,
-            app_authenticated: isAuthenticated,
-            user_id: profileData?.user?.user_id || googleStatus.user_id,
-        };
-    } catch (error) {
-        console.warn('Google auth status check failed:', error);
+    if (googleResult.status === 'fulfilled') {
+        try {
+            const googleStatus = await googleResult.value.json();
+            lastAuthStatus = {
+                ...googleStatus,
+                app_authenticated: isAuthenticated,
+                user_id: profileData?.user?.user_id || googleStatus.user_id,
+            };
+        } catch (error) {
+            console.warn('Google auth status check failed:', error);
+            lastAuthStatus = {
+                authenticated: false,
+                app_authenticated: isAuthenticated,
+                user_id: profileData?.user?.user_id || '',
+            };
+        }
+    } else {
+        console.warn('Google auth status check failed:', googleResult.reason);
         lastAuthStatus = {
             authenticated: false,
             app_authenticated: isAuthenticated,
