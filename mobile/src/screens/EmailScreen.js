@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Linking as RNLinking, Modal, PanResponder, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import RenderHTML from '@native-html/render';
+import { RichText, Toolbar, useEditorBridge } from '@10play/tentap-editor';
 import { Ionicons } from '@expo/vector-icons';
 import Button from '../components/Button';
 import Card from '../components/Card';
@@ -164,6 +165,104 @@ function EmailSummaryCard({ value, colors, styles }) {
   );
 }
 
+function generateInlineImageId() {
+  const random = Math.random().toString(36).slice(2);
+  return `${Date.now()}-${random}@flowmate`;
+}
+
+// Seeds ComposeRichEditor's initialContent for a plain-text draft (AI
+// reply suggestion, forward quote) -- the editor treats a bare string as
+// literal text including '\n' characters, not line breaks, so this
+// escapes it and converts those to real <br> tags first.
+function htmlFromPlainText(text) {
+  const escaped = String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return escaped.replace(/\n/g, '<br>');
+}
+
+// Rich-text compose body: a WebView-hosted editor (RN has no native
+// contenteditable equivalent), so its content lives inside that WebView,
+// not in React state the way a controlled TextInput's would. A plain
+// ref-forwarded imperative API (getSubmitData/reset/setContent) keeps the
+// parent's sendEmail/draftReply/forwardEmail flows simple instead of
+// needing to reach into the editor bridge directly. initialContent is
+// only read once at mount, so EmailScreen renders this with key={mode}
+// (see renderCompose) to force a fresh editor -- carrying the right
+// starting content -- whenever compose mode changes (new/reply/forward).
+const ComposeRichEditor = forwardRef(function ComposeRichEditor({ initialHtml }, ref) {
+  const editor = useEditorBridge({
+    initialContent: initialHtml || '',
+    avoidIosKeyboard: true,
+  });
+  // {dataUri, name, mimeType, contentId, localUri} per inserted image --
+  // the data: URI is the exact string passed to editor.setImage, so a
+  // plain string replace at submit time (not DOM/attribute inspection,
+  // which this editor's API doesn't expose anyway) turns it into
+  // cid:<contentId>, matching the inline attachment uploaded alongside it.
+  const insertedImagesRef = useRef([]);
+  const [insertingImage, setInsertingImage] = useState(false);
+
+  const insertImage = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
+      if (result.canceled) return;
+      const file = result.assets?.[0];
+      if (!file) return;
+      setInsertingImage(true);
+      const mimeType = file.mimeType || 'image/jpeg';
+      const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
+      const dataUri = `data:${mimeType};base64,${base64}`;
+      const contentId = generateInlineImageId();
+      insertedImagesRef.current.push({ dataUri, name: file.name || 'image', mimeType, contentId, localUri: file.uri });
+      editor.setImage(dataUri);
+    } catch (error) {
+      Alert.alert('Không chèn được ảnh', error.message);
+    } finally {
+      setInsertingImage(false);
+    }
+  };
+
+  useImperativeHandle(ref, () => ({
+    getSubmitData: async () => {
+      let html = await editor.getHTML();
+      const text = await editor.getText();
+      for (const img of insertedImagesRef.current) {
+        html = html.split(img.dataUri).join(`cid:${img.contentId}`);
+      }
+      return {
+        html,
+        text,
+        inlineImages: insertedImagesRef.current.map(({ localUri, name, mimeType, contentId }) => (
+          { localUri, name, mimeType, contentId }
+        )),
+      };
+    },
+  }), [editor]);
+
+  return (
+    <View>
+      <View style={styles_ComposeRichEditor.editorHost}>
+        <RichText editor={editor} />
+      </View>
+      <Toolbar editor={editor} />
+      <Button
+        title="Chèn ảnh"
+        variant="secondary"
+        onPress={insertImage}
+        loading={insertingImage}
+        style={styles_ComposeRichEditor.insertImageButton}
+      />
+    </View>
+  );
+});
+
+const styles_ComposeRichEditor = StyleSheet.create({
+  editorHost: { minHeight: 160, maxHeight: 320, borderWidth: 1, borderColor: '#d0d5dd', borderRadius: 10, overflow: 'hidden' },
+  insertImageButton: { marginTop: 8 },
+});
+
 export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNavigate, syncEvent }) {
   // Business-workspace collaboration ("Chia sẻ" into a Business workspace)
   // is scoped to the "worker" and "business" user modes, matching
@@ -204,6 +303,14 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
     mode: 'new', inReplyToId: '', forwardMessageId: '',
     attachments: [], // expo-document-picker assets: {uri, name, mimeType, size}
   });
+  // ComposeRichEditor's content lives inside its WebView, not in this
+  // state -- composeInitialHtml only seeds it (initialContent is read
+  // once at mount), and composeEditorSeed is bumped as a React key
+  // whenever that seed needs to take effect (AI reply draft, forward
+  // quote, post-send reset), forcing a fresh editor instance.
+  const composeEditorRef = useRef(null);
+  const [composeInitialHtml, setComposeInitialHtml] = useState('');
+  const [composeEditorSeed, setComposeEditorSeed] = useState(0);
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [reportDate, setReportDate] = useState('');
   const [report, setReport] = useState(null);
@@ -464,6 +571,8 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
         body: data.reply || '',
         cc: '', bcc: '', mode: 'reply', inReplyToId: email.id, forwardMessageId: '', attachments: [],
       });
+      setComposeInitialHtml(htmlFromPlainText(data.reply || ''));
+      setComposeEditorSeed((seed) => seed + 1);
       setShowCcBcc(false);
       setSelectedEmail(null);
       setMode('compose');
@@ -492,6 +601,8 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
       body: quoted,
       cc: '', bcc: '', mode: 'forward', inReplyToId: '', forwardMessageId: email.id, attachments: [],
     });
+    setComposeInitialHtml(htmlFromPlainText(quoted));
+    setComposeEditorSeed((seed) => seed + 1);
     setShowCcBcc(false);
     setSelectedEmail(null);
     setMode('compose');
@@ -601,23 +712,33 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
   };
 
   const sendEmail = async () => {
-    if (!compose.to || !compose.subject || !compose.body) {
+    const isForward = compose.mode === 'forward';
+    const editorData = await composeEditorRef.current?.getSubmitData();
+    const bodyText = (editorData?.text || '').trim();
+    if (!compose.to || !compose.subject || !(bodyText || editorData?.html)) {
       Alert.alert('Thiếu thông tin', 'Vui lòng điền người nhận, tiêu đề và nội dung.');
       return;
     }
     setLoading(true);
     try {
-      const isForward = compose.mode === 'forward';
       const formData = new FormData();
       formData.append('to', compose.to);
       formData.append('subject', compose.subject);
-      formData.append('body', compose.body);
+      // Forward's note field is plain text only today (routes/email/
+      // forward.py doesn't accept body_html/inline images) -- formatting
+      // and inserted images only apply to new compose/reply sends.
+      formData.append('body', bodyText);
       if (compose.cc) formData.append('cc', compose.cc);
       if (compose.bcc) formData.append('bcc', compose.bcc);
       if (isForward) {
         formData.append('message_id', compose.forwardMessageId);
-      } else if (compose.inReplyToId) {
-        formData.append('in_reply_to_id', compose.inReplyToId);
+      } else {
+        if (editorData?.html) formData.append('body_html', editorData.html);
+        (editorData?.inlineImages || []).forEach((img) => {
+          formData.append('inline_images', { uri: img.localUri, name: img.name || 'image', type: img.mimeType || 'image/jpeg' });
+          formData.append('inline_image_ids', img.contentId);
+        });
+        if (compose.inReplyToId) formData.append('in_reply_to_id', compose.inReplyToId);
       }
       compose.attachments.forEach((file) => {
         formData.append('attachments', {
@@ -632,6 +753,8 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
         to: '', subject: '', body: '', cc: '', bcc: '',
         mode: 'new', inReplyToId: '', forwardMessageId: '', attachments: [],
       });
+      setComposeInitialHtml('');
+      setComposeEditorSeed((seed) => seed + 1);
       setShowCcBcc(false);
       Alert.alert(isForward ? 'Đã chuyển tiếp email' : 'Đã gửi email');
       onAgentSync?.(['email', 'overview', 'history'], { source: 'email_screen' });
@@ -849,7 +972,8 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
         </>
       ) : null}
       <Field label="Tiêu đề"    value={compose.subject} onChangeText={(subject) => setCompose((c) => ({ ...c, subject }))} placeholder="Tiêu đề email" />
-      <Field label="Nội dung"   value={compose.body}    onChangeText={(body)    => setCompose((c) => ({ ...c, body }))}    placeholder="Nội dung email" multiline />
+      <Text style={styles.composeBodyLabel}>Nội dung</Text>
+      <ComposeRichEditor key={composeEditorSeed} ref={composeEditorRef} initialHtml={composeInitialHtml} />
       <Button title="Đính kèm tệp" variant="secondary" onPress={pickAttachments} style={styles.attachButton} />
       {compose.attachments.length ? (
         <View style={styles.composeAttachmentsList}>
@@ -1444,6 +1568,7 @@ function makeStyles(colors) {
     ccBccToggleText: { color: colors.primary, fontFamily: 'Poppins_600SemiBold', fontSize: 12 },
     attachButton: { marginBottom: 10 },
     composeAttachmentsList: { gap: 8, marginBottom: 12 },
+    composeBodyLabel: { color: colors.textMuted, fontFamily: 'Poppins_600SemiBold', fontSize: 12, marginBottom: 6 },
     sendComposeButton: { marginTop: 4 },
     applyButton:  { marginBottom: 12 },
     loadMoreButton: { marginTop: 4 },
