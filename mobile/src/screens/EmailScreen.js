@@ -190,6 +190,12 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
   const [emailHtmlBody, setEmailHtmlBody] = useState('');
   const { width: windowWidth } = useWindowDimensions();
   const [summary, setSummary] = useState('');
+  // Whether "Tóm tắt bằng AI" was explicitly pressed for the email
+  // currently open -- the summary card only ever renders when this is
+  // true, never just because the email happens to carry summary_type:
+  // 'ai_cached' over from an earlier session's list fetch. Opening an
+  // email is for reading the real message, not a second opinion next to it.
+  const [summaryRequested, setSummaryRequested] = useState(false);
   const [compose, setCompose] = useState({
     to: '', subject: '', body: '', cc: '', bcc: '',
     // mode: 'new' | 'reply' | 'forward' -- picks /email/send-reply vs
@@ -379,7 +385,8 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
     setSelectedEmail(email);
     setEmailBody('');
     setEmailHtmlBody('');
-    setSummary(email.summary || '');
+    setSummary('');
+    setSummaryRequested(false);
     setAttachments([]);
     try {
       const data = await apiGet(`/email/get-email-body/${email.id}`);
@@ -425,6 +432,7 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
       email.summary = data.summary || '';
       email.summary_type = 'ai_cached';
       setSummary(data.summary || '');
+      setSummaryRequested(true);
       setEmails((current) => current.map((item) => (
         item.id === email.id ? { ...item, summary: data.summary || '', summary_type: 'ai_cached' } : item
       )));
@@ -794,7 +802,13 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
                 <Button title="Xem" variant="secondary" onPress={() => openEmail(email)} />
                 <Button
                   title={email.summary_type === 'ai_cached' ? 'Xem tóm tắt AI' : 'Tóm tắt AI'}
-                  onPress={() => email.summary_type === 'ai_cached' ? openEmail(email) : summarizeEmail(email)}
+                  // Always go through summarizeEmail, even when already
+                  // cached -- the detail view no longer auto-shows a
+                  // summary just because one exists (openEmail resets
+                  // it), so "Xem tóm tắt AI" must explicitly ask for it.
+                  // The backend returns the cached text instantly either
+                  // way, no new AI call.
+                  onPress={() => summarizeEmail(email)}
                   loading={summarizingId === email.id}
                 />
                 <Button
@@ -951,7 +965,7 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
               ) : (
                 <Text style={styles.body}>{emailBody || selectedEmail.snippet || 'Đang tải...'}</Text>
               )}
-              {summary && selectedEmail.summary_type === 'ai_cached' ? (
+              {summary && summaryRequested ? (
                 <EmailSummaryCard value={summary} colors={colors} styles={styles} />
               ) : null}
               {attachments.length > 0 ? (
