@@ -1395,10 +1395,27 @@ class IntentOrchestrator:
             ))
             or re.search(r"\blast\s+(?:e-?mails?|mails?|message|messages)\b", text) is not None
         )
+        # "tom tat tat ca email hom nay" / "liet ke email trong ngay" etc. --
+        # no "latest/recent" wording at all, but an explicit day/week
+        # reference (the same one _email_date_window below also extracts,
+        # so the agent scopes to exactly that range instead of just the
+        # most recent mail) combined with a summarize-ish verb is just as
+        # clear a request. Without this, that phrasing matched no intent
+        # here, fell through to chat.freeform, and -- because it still
+        # mentions "email" -- tripped FreeformChatAgent's "I don't
+        # understand this as an actionable request" branch instead of
+        # actually summarizing anything. A bare "tat ca"/"toan bo" with no
+        # date reference is deliberately NOT enough on its own (too
+        # open-ended -- could mean the whole inbox) and still falls
+        # through to chat.freeform.
+        has_date_reference = self._email_date_window(text) is not None
+        has_summarize_verb = any(
+            term in text for term in ("tom tat", "summarize", "liet ke", "danh sach", "cho xem", "cho toi xem")
+        )
         # State-changing mark/read rules run before this predicate, so bare
         # requests such as "show latest email" can retain the established
         # latest-summary behavior without stealing "mark latest unread".
-        return has_email and has_latest
+        return has_email and (has_latest or (has_date_reference and has_summarize_verb))
 
     _OVERVIEW_TERMS = (
         "tong hop ngay", "tong quan hom nay", "tong quan trong ngay",
@@ -1466,7 +1483,15 @@ class IntentOrchestrator:
         )
         return learned_question or (has_source and has_lookup)
 
+    # Kept in sync with _summarize_latest_emails'/EmailLatestSummaryAgent's
+    # own min(count, 50) cap in services/chat_agents/email_agents.py --
+    # "tat ca"/"toan bo" has no literal number to parse, so this is what
+    # "every email [today/this week/...]" resolves to.
+    _ALL_EMAILS_COUNT = 50
+
     def _latest_email_count(self, text):
+        if any(term in text for term in ("tat ca", "toan bo", "all emails", "all the emails", "every email")):
+            return self._ALL_EMAILS_COUNT
         email_word = r"(?:e-?mails?|gmails?|mails?|thu|hop thu)"
         latest_word = (
             r"(?:moi nhat|gan nhat|gan day|vua nhan|moi nhan|latest|newest|"

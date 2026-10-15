@@ -102,6 +102,41 @@ class BobWorkflowTests(unittest.TestCase):
         self.assertEqual(37, self.orchestrator._latest_email_count("tom tat 37 email moi nhat"))
         self.assertEqual(75, self.orchestrator._limit_from_text("xem 75 hoat dong", maximum=100))
 
+    def test_summarize_all_emails_today_routes_to_latest_summary_not_freeform(self):
+        """Regression: this phrasing has no "moi nhat/gan day" wording at
+        all (just "tat ca" + a day reference), so it previously matched no
+        intent here and fell through to chat.freeform -- which, because it
+        still mentions "email", tripped FreeformChatAgent's "I don't
+        understand this as an actionable request" branch instead of
+        actually summarizing anything (the user-reported bug: asking to
+        summarize today's emails showed nothing useful)."""
+        result = self.orchestrator.detect("tóm tắt tất cả email trong ngày hôm nay")
+        self.assertEqual("email.latest_summary", result["intent"])
+        self.assertEqual(50, result["entities"]["count"])
+        today = datetime.now().date().isoformat()
+        self.assertEqual(
+            {"start": today, "end": today},
+            result["entities"].get("date_window"),
+        )
+
+    def test_summarize_all_emails_this_week_also_routes_correctly(self):
+        result = self.orchestrator.detect("liệt kê toàn bộ email tuần này")
+        self.assertEqual("email.latest_summary", result["intent"])
+        self.assertEqual(50, result["entities"]["count"])
+        self.assertIsNotNone(result["entities"].get("date_window"))
+
+    def test_bare_all_emails_with_no_date_reference_still_falls_through(self):
+        """"Tat ca" alone, with no day/week reference, is deliberately not
+        enough on its own -- it's too open-ended (could mean the whole
+        inbox) to confidently treat as this intent."""
+        result = self.orchestrator.detect("tóm tắt tất cả email")
+        self.assertNotEqual("email.latest_summary", result["intent"])
+
+    def test_existing_latest_n_emails_phrasing_is_unaffected(self):
+        result = self.orchestrator.detect("tóm tắt 5 email mới nhất")
+        self.assertEqual("email.latest_summary", result["intent"])
+        self.assertEqual(5, result["entities"]["count"])
+
     def test_facebook_knowledge_question_is_not_mistaken_for_book_action(self):
         questions = (
             "Người sáng lập Facebook là ai?",
