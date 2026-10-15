@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'config.dart';
 import 'nav_key.dart';
 import 'session.dart';
@@ -172,6 +174,30 @@ dynamic _decodeResponse(http.Response response) {
 }
 
 Future<dynamic> apiGet(String path) => _request(path, method: 'GET');
+
+// Raw-bytes GET (e.g. an email attachment download) -- the JSON-decoding
+// apiGet above would corrupt binary content: response.body decodes as
+// UTF-8 text, so any byte sequence that isn't valid UTF-8 (the overwhelming
+// majority of real files) comes back mangled. bodyBytes is the untouched
+// Uint8List the server actually sent.
+Future<Uint8List> apiGetBytes(String path) async {
+  final accessToken = getMobileAccessToken();
+  final workspaceId = getCurrentWorkspaceId();
+  final headers = {
+    if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
+    if (workspaceId.isNotEmpty) 'X-Workspace-Id': workspaceId,
+  };
+  final uri = Uri.parse('$kApiBase$path');
+  final response =
+      await _httpClient.get(uri, headers: headers).timeout(_kRequestTimeout);
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    if (response.statusCode == 401) _handleUnauthorized({});
+    throw ApiException(
+        'HTTP ${response.statusCode}', response.statusCode, {});
+  }
+  return response.bodyBytes;
+}
+
 Future<dynamic> apiPost(String path, [Map<String, dynamic> body = const {}]) =>
     _request(path, method: 'POST', body: body);
 Future<dynamic> apiPut(String path, [Map<String, dynamic> body = const {}]) =>
@@ -187,7 +213,9 @@ class ComposeAttachment {
   final String filename;
   final String? path;
   final List<int>? bytes;
-  ComposeAttachment({required this.filename, this.path, this.bytes});
+  final String? mimeType;
+  ComposeAttachment(
+      {required this.filename, this.path, this.bytes, this.mimeType});
 }
 
 // multipart/form-data upload (email attachments) -- the plain-JSON apiPost
@@ -197,6 +225,18 @@ Future<dynamic> apiPostMultipart(
   String path, {
   required Map<String, String> fields,
   List<ComposeAttachment> attachments = const [],
+  // Inline (cid:-referenced) images for a rich-text body -- kept as a
+  // separate field name/list from `attachments` since the backend treats
+  // them differently (matched up with `inlineImageIds`, below, instead of
+  // appearing as a downloadable attachment on the sent message).
+  List<ComposeAttachment> inlineImages = const [],
+  // Index-aligned with inlineImages. http.MultipartRequest.fields is a
+  // plain Map and can't hold repeated keys, so each id is sent as its own
+  // filename-less MultipartFile part instead -- Werkzeug/Flask routes a
+  // multipart part with no filename into request.form (as a repeatable
+  // field via getlist), not request.files, exactly like a repeated normal
+  // form field would arrive.
+  List<String> inlineImageIds = const [],
 }) async {
   final accessToken = getMobileAccessToken();
   final workspaceId = getCurrentWorkspaceId();
@@ -221,6 +261,30 @@ Future<dynamic> apiPostMultipart(
         filename: attachment.filename,
       ));
     }
+  }
+  for (final image in inlineImages) {
+    // The outgoing MIME part's Content-Type drives whether receiving mail
+    // clients render this as an inline image at all -- http.MultipartFile
+    // defaults to application/octet-stream when none is given, which a real
+    // mail client won't display inline, so this must be set explicitly.
+    final contentType =
+        image.mimeType != null ? MediaType.parse(image.mimeType!) : null;
+    if (image.bytes != null) {
+      request.files.add(http.MultipartFile.fromBytes(
+        'inline_images', image.bytes!,
+        filename: image.filename,
+        contentType: contentType,
+      ));
+    } else if (image.path != null) {
+      request.files.add(await http.MultipartFile.fromPath(
+        'inline_images', image.path!,
+        filename: image.filename,
+        contentType: contentType,
+      ));
+    }
+  }
+  for (final id in inlineImageIds) {
+    request.files.add(http.MultipartFile.fromString('inline_image_ids', id));
   }
 
   final streamed = await _httpClient.send(request).timeout(_kRequestTimeout);

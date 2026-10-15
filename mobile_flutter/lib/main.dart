@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_quill/flutter_quill.dart' show FlutterQuillLocalizations;
 import 'package:provider/provider.dart';
 import 'api/client.dart';
 import 'api/nav_key.dart';
@@ -42,6 +44,15 @@ class FlowMateApp extends StatelessWidget {
             title: 'FlowMate AI',
             debugShowCheckedModeBanner: false,
             theme: buildAppTheme(theme.colors),
+            // Required by flutter_quill's toolbar/editor widgets (the rich-
+            // text compose editor) -- without this delegate registered they
+            // throw at runtime looking up FlutterQuillLocalizations.
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              FlutterQuillLocalizations.delegate,
+            ],
             home: const _RootFlow(),
           );
         },

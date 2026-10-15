@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +8,22 @@ import '../config/app_icons.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
 import '../widgets/app_button.dart';
+
+/// Mirrors mobile/src/utils (and web's equivalent) well enough for a simple
+/// attachment-size label -- no need for a package just for this.
+String _formatFileSize(dynamic rawSize) {
+  final bytes = rawSize is num ? rawSize.toDouble() : double.tryParse('$rawSize') ?? 0;
+  if (bytes <= 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  var value = bytes;
+  var unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  final formatted = unitIndex == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(1);
+  return '$formatted ${units[unitIndex]}';
+}
 
 /// Whether an HTML email body is safe to hand to flutter_html.
 ///
@@ -156,15 +173,26 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
   // summary exists -- summary_type is the only reliable way to tell a real
   // AI summary ('ai_cached') from that preview placeholder.
   late String summaryType;
+  // Whether "Tóm tắt bằng AI" was explicitly pressed for the email this
+  // screen is showing -- the summary card only ever renders when this is
+  // true, never just because summary_type carried over as 'ai_cached'
+  // from an earlier session's list fetch. Opening an email is for
+  // reading the real message, not a second opinion next to it.
+  // summaryType itself is kept as-is for the button label ("Tóm tắt lại"
+  // vs "Tóm tắt"), which should still reflect whether a cached summary
+  // exists even before the user asks to see it.
+  bool summaryRequested = false;
   bool summarizing = false;
   String? summaryError;
   bool togglingRead = false;
   late bool isUnread;
+  List<Map<String, dynamic>> attachments = [];
+  String downloadingAttachmentId = '';
 
   @override
   void initState() {
     super.initState();
-    summary = (widget.email['summary'] as String?) ?? '';
+    summary = '';
     summaryType = (widget.email['summary_type'] as String?) ?? '';
     isUnread = widget.email['is_unread'] == true;
     _loadBody();
@@ -194,10 +222,14 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
       final fetched = (data is Map ? data['body'] as String? : null) ?? '';
       final emailData = data is Map ? data['email'] as Map? : null;
       final fetchedHtml = (emailData?['html_body'] as String?) ?? '';
+      final fetchedAttachments = emailData?['attachments'];
       if (mounted) {
         setState(() {
           body = fetched;
           htmlBody = fetchedHtml;
+          attachments = fetchedAttachments is List
+              ? fetchedAttachments.whereType<Map>().map((a) => a.cast<String, dynamic>()).toList()
+              : [];
         });
       }
     } catch (error) {
@@ -221,12 +253,51 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
         setState(() {
           summary = fetched;
           summaryType = 'ai_cached';
+          summaryRequested = true;
         });
       }
     } catch (error) {
       if (mounted) setState(() => summaryError = error.toString());
     } finally {
       if (mounted) setState(() => summarizing = false);
+    }
+  }
+
+  // Saves into the OS temp directory rather than asking for a documents-
+  // folder dependency (path_provider) just for this -- matches RN's own
+  // "save + confirm, no auto-open" behavior rather than trying to launch a
+  // viewer, since url_launcher can't carry this app's Bearer-token auth to
+  // an external app anyway and a bare file:// open is unreliable per-platform.
+  Future<void> _downloadAttachment(Map<String, dynamic> attachment) async {
+    final id = widget.email['id'];
+    final attachmentId = attachment['id'];
+    if (id == null || attachmentId == null) return;
+    final t = context.read<LanguageController>().t;
+    setState(() => downloadingAttachmentId = '$attachmentId');
+    try {
+      final bytes = await apiGetBytes(
+          '/email/attachment/${Uri.encodeComponent('$id')}/${Uri.encodeComponent('$attachmentId')}');
+      final rawName = (attachment['filename'] as String?) ?? 'attachment';
+      final safeName = rawName
+          .replaceAll(RegExp(r'[^\p{L}\p{N}._() -]+', unicode: true), '_')
+          .replaceFirst(RegExp(r'^\.+'), '')
+          .trim();
+      final filename = safeName.isEmpty ? 'attachment' : safeName;
+      final file = File('${Directory.systemTemp.path}${Platform.pathSeparator}$filename');
+      await file.writeAsBytes(bytes);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                '${t('Đã lưu', 'Saved')} "$rawName" ${t('vào bộ nhớ ứng dụng', 'to app storage')}')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                '${t('Không tải được file đính kèm', 'Could not download the attachment')}: $error')));
+      }
+    } finally {
+      if (mounted) setState(() => downloadingAttachmentId = '');
     }
   }
 
@@ -275,7 +346,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
                   const SizedBox(height: 8),
                   Text(sender, style: TextStyle(color: colors.textMuted, fontSize: 13)),
                   const SizedBox(height: 20),
-                  if (summary.isNotEmpty && summaryType == 'ai_cached')
+                  if (summary.isNotEmpty && summaryRequested)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(14),
@@ -323,6 +394,55 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
                       },
                     }),
                   ),
+                  if (attachments.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      '${t('ĐÍNH KÈM', 'ATTACHMENTS')} (${attachments.length})',
+                      style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1),
+                    ),
+                    const SizedBox(height: 8),
+                    ...attachments.map((attachment) {
+                      final attachmentId = '${attachment['id']}';
+                      final filename = (attachment['filename'] as String?) ?? t('Tệp đính kèm', 'Attachment');
+                      final sizeLabel = _formatFileSize(attachment['size']);
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: colors.panelSoft,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.attach_file, size: 18, color: colors.textMuted),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(filename, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 13)),
+                                  if (sizeLabel.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: Text(sizeLabel, style: TextStyle(color: colors.textMuted, fontSize: 11.5)),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            downloadingAttachmentId == attachmentId
+                                ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: colors.primary))
+                                : IconButton(
+                                    icon: Icon(Icons.download_outlined, color: colors.primary, size: 20),
+                                    tooltip: t('Tải xuống', 'Download'),
+                                    onPressed: () => _downloadAttachment(attachment),
+                                  ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
                   const SizedBox(height: 22),
                   Divider(color: colors.border),
                   const SizedBox(height: 18),

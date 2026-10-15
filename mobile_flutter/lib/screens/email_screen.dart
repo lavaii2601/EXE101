@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:app_links/app_links.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_quill/flutter_quill.dart';
+import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:provider/provider.dart';
+import 'package:vsc_quill_delta_to_html/vsc_quill_delta_to_html.dart';
 import '../api/client.dart';
 import '../api/google_auth.dart';
 import '../config/app_icons.dart';
@@ -43,6 +47,177 @@ const Map<String, (String vi, String en)> _kSmartBucketLabels = {
   'fyi': ('Tham khảo', 'FYI'),
   'low_priority': ('Ít quan trọng', 'Low priority'),
 };
+
+String _guessImageMimeType(String path) {
+  final lower = path.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.bmp')) return 'image/bmp';
+  if (lower.endsWith('.heic') || lower.endsWith('.heif')) return 'image/heic';
+  return 'image/jpeg';
+}
+
+class ComposeRichEditorSubmitData {
+  final String html;
+  final String plainText;
+  final List<ComposeAttachment> inlineImages;
+  final List<String> inlineImageIds;
+  ComposeRichEditorSubmitData({
+    required this.html,
+    required this.plainText,
+    required this.inlineImages,
+    required this.inlineImageIds,
+  });
+}
+
+/// Rich-text compose body (bold/italic/underline/link/bullet list + inline
+/// images). The image toolbar button comes from flutter_quill_extensions'
+/// own default implementation (it picks and embeds the image itself via
+/// image_picker) rather than a hand-rolled BlockEmbed/replaceText call --
+/// that insertion logic is already written and tested by the package, so
+/// this widget never needs to know the exact embed value shape it produces.
+/// Instead, getSubmitData() converts the document to HTML and scans the
+/// *output* for whatever local image path ended up embedded, rewriting
+/// each into cid:<contentId> and reading that file's bytes to upload
+/// alongside it -- the same string-replace cid rewrite already used by the
+/// web and React Native composers, since there's no DOM/native attribute
+/// to mutate here either.
+class ComposeRichEditor extends StatefulWidget {
+  final String initialPlainText;
+  const ComposeRichEditor({super.key, this.initialPlainText = ''});
+
+  @override
+  State<ComposeRichEditor> createState() => ComposeRichEditorState();
+}
+
+class ComposeRichEditorState extends State<ComposeRichEditor> {
+  late final QuillController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = QuillController.basic();
+    final seed = widget.initialPlainText.trim();
+    if (seed.isNotEmpty) {
+      controller.document = Document.fromJson([
+        {'insert': '$seed\n'}
+      ]);
+    }
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  Future<ComposeRichEditorSubmitData> getSubmitData() async {
+    final plainText = controller.document.toPlainText().trim();
+    final rawOps = controller.document.toDelta().toJson();
+    final ops = rawOps.map((op) => Map<String, dynamic>.from(op as Map)).toList();
+    var html = QuillDeltaToHtmlConverter(ops, ConverterOptions.forEmail()).convert();
+
+    final inlineImages = <ComposeAttachment>[];
+    final inlineImageIds = <String>[];
+    final srcPattern = RegExp(r'<img[^>]*\ssrc="([^"]+)"[^>]*>');
+    final seenSrcs = <String>{};
+    for (final match in srcPattern.allMatches(html)) {
+      final src = match.group(1);
+      if (src == null || seenSrcs.contains(src)) continue;
+      if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) {
+        continue;
+      }
+      final path = src.startsWith('file://') ? Uri.parse(src).toFilePath() : src;
+      final file = File(path);
+      if (!await file.exists()) continue;
+      seenSrcs.add(src);
+      final bytes = await file.readAsBytes();
+      final contentId = 'img_${DateTime.now().microsecondsSinceEpoch}_${inlineImages.length}';
+      final rawFilename = path.split(Platform.pathSeparator).last;
+      inlineImages.add(ComposeAttachment(
+        filename: rawFilename.isEmpty ? 'image.jpg' : rawFilename,
+        bytes: bytes,
+        mimeType: _guessImageMimeType(path),
+      ));
+      inlineImageIds.add(contentId);
+      html = html.replaceAll(src, 'cid:$contentId');
+    }
+
+    return ComposeRichEditorSubmitData(
+      html: html,
+      plainText: plainText,
+      inlineImages: inlineImages,
+      inlineImageIds: inlineImageIds,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.watch<ThemeController>().colors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: colors.border),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+              ),
+              child: QuillSimpleToolbar(
+                controller: controller,
+                config: QuillSimpleToolbarConfig(
+                  showFontFamily: false,
+                  showFontSize: false,
+                  showHeaderStyle: false,
+                  showListNumbers: false,
+                  showListCheck: false,
+                  showCodeBlock: false,
+                  showQuote: false,
+                  showIndent: false,
+                  showColorButton: false,
+                  showBackgroundColorButton: false,
+                  showClearFormat: false,
+                  showUndo: false,
+                  showRedo: false,
+                  showSearchButton: false,
+                  showSubscript: false,
+                  showSuperscript: false,
+                  showInlineCode: false,
+                  showStrikeThrough: false,
+                  showDividers: false,
+                  embedButtons: FlutterQuillEmbeds.toolbarButtons(),
+                ),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: double.infinity,
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: colors.border),
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: QuillEditor.basic(
+                controller: controller,
+                config: QuillEditorConfig(
+                  minHeight: 160,
+                  maxHeight: 320,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  embedBuilders: FlutterQuillEmbeds.editorBuilders(),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class EmailScreen extends StatefulWidget {
   const EmailScreen({super.key});
@@ -501,7 +676,7 @@ class _EmailScreenState extends State<EmailScreen> {
     final ccController = TextEditingController();
     final bccController = TextEditingController();
     final subjectController = TextEditingController(text: initialSubject);
-    final bodyController = TextEditingController(text: initialBody);
+    final composeEditorKey = GlobalKey<ComposeRichEditorState>();
     bool sending = false;
     bool showCcBcc = false;
     String? error;
@@ -519,8 +694,10 @@ class _EmailScreenState extends State<EmailScreen> {
             Future<void> submit() async {
               final to = toController.text.trim();
               final subject = subjectController.text.trim();
-              final body = bodyController.text.trim();
-              if (to.isEmpty || subject.isEmpty || body.isEmpty) {
+              final editorData = await composeEditorKey.currentState?.getSubmitData();
+              final bodyText = editorData?.plainText ?? '';
+              final bodyHtml = editorData?.html ?? '';
+              if (to.isEmpty || subject.isEmpty || (bodyText.isEmpty && bodyHtml.isEmpty)) {
                 setSheetState(() => error = t(
                     'Vui lòng điền người nhận, tiêu đề và nội dung.',
                     'Please fill in recipient, subject, and body.'));
@@ -535,13 +712,18 @@ class _EmailScreenState extends State<EmailScreen> {
                 final fields = <String, String>{
                   'to': to,
                   'subject': subject,
-                  'body': body,
+                  'body': bodyText,
                   if (ccController.text.trim().isNotEmpty)
                     'cc': ccController.text.trim(),
                   if (bccController.text.trim().isNotEmpty)
                     'bcc': bccController.text.trim(),
                   if (isForward && forwardMessageId != null)
                     'message_id': forwardMessageId,
+                  // Forward's note field is plain text only today
+                  // (forward.py doesn't accept body_html/inline images) --
+                  // formatting and inserted images only apply to new
+                  // compose/reply sends, matching RN's own composer.
+                  if (!isForward && bodyHtml.isNotEmpty) 'body_html': bodyHtml,
                 };
                 await apiPostMultipart(
                   isForward ? '/email/forward' : '/email/send-reply',
@@ -551,6 +733,8 @@ class _EmailScreenState extends State<EmailScreen> {
                       .map((file) => ComposeAttachment(
                           filename: file.name, path: file.path))
                       .toList(),
+                  inlineImages: isForward ? const [] : (editorData?.inlineImages ?? const []),
+                  inlineImageIds: isForward ? const [] : (editorData?.inlineImageIds ?? const []),
                 );
                 if (sheetContext.mounted) Navigator.pop(sheetContext);
                 if (mounted) {
@@ -653,11 +837,16 @@ class _EmailScreenState extends State<EmailScreen> {
                           label: t('Tiêu đề', 'Subject'),
                           controller: subjectController,
                           hint: t('Tiêu đề email', 'Email subject')),
-                      AppField(
-                          label: t('Nội dung', 'Body'),
-                          controller: bodyController,
-                          hint: t('Nội dung email', 'Email body'),
-                          multiline: true),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(t('Nội dung', 'Body'),
+                            style: TextStyle(
+                                color: colors.textMuted,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12.5)),
+                      ),
+                      ComposeRichEditor(
+                          key: composeEditorKey, initialPlainText: initialBody),
                       Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: AppButton(

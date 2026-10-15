@@ -25,7 +25,11 @@ if (releaseTaskRequested && !keystorePropertiesFile.exists()) {
 
 android {
     namespace = "pro.flowmate.app"
-    compileSdk = flutter.compileSdkVersion
+    // Pinned past flutter.compileSdkVersion (34 on this Flutter SDK release):
+    // flutter_plugin_android_lifecycle, a transitive dependency pulled in by
+    // file_picker (and now also image_picker, added for the rich-text
+    // compose image button), requires compileSdk >= 36.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
