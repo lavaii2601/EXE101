@@ -623,17 +623,34 @@ def activate_google_account(user_id, account_email):
         ).fetchone()
         if not existing:
             raise CredentialStoreError('No linked Google account matches that email')
-        # One statement, not "deactivate everything then activate the
-        # target" as two separate statements -- avoids a window with zero
-        # active rows if this call raced with another worker's own
-        # activate/persist for the same user.
+        # Two statements, not one combined "set each row's is_active from a
+        # per-row comparison" UPDATE: Postgres does not guarantee per-row
+        # evaluation order within a single statement, and the partial unique
+        # index above is checked immediately (a bare CREATE UNIQUE INDEX is
+        # never deferrable) -- so that single-UPDATE form could transiently
+        # make this row AND the still-active old row both true mid-statement
+        # and raise UniqueViolation, depending on scan order. Both
+        # statements still run inside this same transaction (committed
+        # together when this `with` block exits), so no other connection
+        # ever observes the moment between them with zero active rows --
+        # same two-statement shape persist_google_credentials already uses.
         conn.execute(
             """
             UPDATE oauth_tokens
-            SET is_active = (account_email = %s)
+            SET is_active = FALSE
             WHERE user_id = %s AND provider = 'google' AND revoked_at IS NULL
+              AND account_email != %s
             """,
-            (account_email, user_id),
+            (user_id, account_email),
+        )
+        conn.execute(
+            """
+            UPDATE oauth_tokens
+            SET is_active = TRUE
+            WHERE user_id = %s AND provider = 'google' AND revoked_at IS NULL
+              AND account_email = %s
+            """,
+            (user_id, account_email),
         )
 
     with _credential_file_lock(token_file):

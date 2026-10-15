@@ -412,19 +412,24 @@ class _MultiAccountConnection:
             match = next(self.table._matching(user_id, active_only=True), None)
             return _ListResult([dict(match)] if match else [])
 
-        if statement.startswith('UPDATE OAUTH_TOKENS SET IS_ACTIVE = (ACCOUNT_EMAIL'):
-            # activate_google_account's single flip-all statement
-            account_email, user_id = params
-            for row in self.table._matching(user_id):
-                row['is_active'] = row['account_email'] == account_email
-            return _ListResult([])
-
         if statement.startswith('UPDATE OAUTH_TOKENS SET IS_ACTIVE = FALSE'):
-            # persist_google_credentials deactivating every sibling account
+            # Shared by persist_google_credentials and (first of two
+            # statements) activate_google_account -- both deactivate every
+            # sibling account for this user before activating the target.
             user_id, keep_email = params
             for row in self.table._matching(user_id):
                 if row['account_email'] != keep_email:
                     row['is_active'] = False
+            return _ListResult([])
+
+        if statement.startswith('UPDATE OAUTH_TOKENS SET IS_ACTIVE = TRUE WHERE USER_ID'):
+            # activate_google_account's second statement, activating the
+            # target account now that every sibling is deactivated. (Must
+            # be checked before the WHERE-ID-subselect branch below, whose
+            # delete_google_credentials statement shares this same prefix.)
+            user_id, account_email = params
+            for row in self.table._matching(user_id, account_email=account_email):
+                row['is_active'] = True
             return _ListResult([])
 
         if statement.startswith('UPDATE OAUTH_TOKENS SET REVOKED_AT = NOW(), IS_ACTIVE = FALSE'):
