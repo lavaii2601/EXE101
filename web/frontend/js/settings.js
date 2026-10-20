@@ -58,9 +58,7 @@ function renderSubscriptionUI(subscription = null) {
     );
     const remaining = subscriptionRemainingLabel(currentSubscription);
     const periodEnd = currentSubscription.current_period_end
-        ? new Date(currentSubscription.current_period_end).toLocaleDateString(
-            currentLanguage === 'en' ? 'en-US' : 'vi-VN'
-        )
+        ? localeDateString(new Date(currentSubscription.current_period_end))
         : '';
 
     const headerButton = document.getElementById('subscriptionHeaderBtn');

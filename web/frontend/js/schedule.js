@@ -55,7 +55,7 @@ function formatReadableDateTime(value) {
     if (!value) return '';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '';
-    return date.toLocaleString(currentLanguage === 'en' ? 'en-US' : 'vi-VN', {
+    return date.toLocaleString(resolveDateLocale(), {
         weekday: 'long',
         day: '2-digit',
         month: '2-digit',
@@ -75,7 +75,7 @@ function formatScheduleRange(startValue, endValue) {
             full: ui('Chưa xác định thời gian', 'Time not set')
         };
     }
-    const locale = currentLanguage === 'en' ? 'en-US' : 'vi-VN';
+    const locale = resolveDateLocale();
     const date = start.toLocaleDateString(locale, {
         weekday: 'long',
         day: '2-digit',

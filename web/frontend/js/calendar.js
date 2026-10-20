@@ -56,7 +56,7 @@ async function loadCalendarEvents() {
         data.events.forEach(event => {
             const eventDiv = document.createElement('div');
             eventDiv.className = 'event-item';
-            const locale = currentLanguage === 'en' ? 'en-US' : 'vi-VN';
+            const locale = resolveDateLocale();
             const startTime = new Date(event.start).toLocaleString(locale);
             const endTime = new Date(event.end).toLocaleString(locale);
             const attendeeList = event.attendees && event.attendees.length > 0

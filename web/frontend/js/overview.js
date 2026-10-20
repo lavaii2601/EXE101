@@ -83,7 +83,7 @@ function updateOverviewGreeting(name = '', selectedDate = '') {
     if (dateLabelEl) {
         const value = selectedDate || document.getElementById('overviewDate')?.value || formatDateForApi(new Date());
         const date = new Date(`${value}T00:00:00`);
-        dateLabelEl.textContent = date.toLocaleDateString(currentLanguage === 'en' ? 'en-US' : 'vi-VN', {
+        dateLabelEl.textContent = localeDateString(date, {
             weekday: 'long',
             day: 'numeric',
             month: 'long',
@@ -182,7 +182,7 @@ function formatOverviewDueLabel(item) {
     try {
         const date = new Date(`${dueDate}T00:00:00`);
         if (Number.isNaN(date.getTime())) return item.ai_reason || dueDate;
-        const label = date.toLocaleDateString(currentLanguage === 'en' ? 'en-US' : 'vi-VN', {
+        const label = localeDateString(date, {
             weekday: 'short',
             day: '2-digit',
             month: '2-digit'
@@ -444,7 +444,7 @@ function renderOverviewPlanSuggestion(plan) {
         try {
             const date = new Date(`${plan.date}T00:00:00`);
             if (Number.isNaN(date.getTime())) return plan.date || '';
-            return date.toLocaleDateString(currentLanguage === 'en' ? 'en-US' : 'vi-VN', {
+            return localeDateString(date, {
                 weekday: 'long',
                 day: '2-digit',
                 month: '2-digit',

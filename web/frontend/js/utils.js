@@ -344,6 +344,22 @@ function renderEmailSummaryCard(summaryText) {
 }
 
 
+// Centralizes the currentLanguage -> Intl locale choice that was
+// independently reimplemented in workspace.js, overview.js, chat.js,
+// schedule.js, settings.js, and admin.js -- two of those call sites
+// (admin.js, workspace.js's upcoming-week label) had hardcoded 'vi-VN'
+// regardless of currentLanguage, so they silently never switched to
+// English.
+function resolveDateLocale() {
+    return currentLanguage === 'en' ? 'en-US' : 'vi-VN';
+}
+
+// Callers keep their own `options` (the formats legitimately differ per
+// call site); only the locale-selection itself is shared here.
+function localeDateString(date, options) {
+    return date.toLocaleDateString(resolveDateLocale(), options);
+}
+
 function formatDateForApi(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }

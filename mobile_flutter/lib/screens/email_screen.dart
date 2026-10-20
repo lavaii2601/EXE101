@@ -48,6 +48,22 @@ const Map<String, (String vi, String en)> _kSmartBucketLabels = {
   'low_priority': ('Ít quan trọng', 'Low priority'),
 };
 
+// Mirrors mobile/src/screens/EmailScreen.js's emailSummaryPreview(): the
+// list row only has room for a short preview, so this strips a leading
+// "TÓM TẮT"/"SUMMARY" section header (see email_detail_screen.dart's
+// _summarySectionLabels for the full header set this backend emits) rather
+// than showing the raw, label-prefixed structured summary text.
+String _summaryListPreview(String summary) {
+  final text = summary.trim();
+  if (text.isEmpty) return '';
+  final firstBlock = text.split(RegExp(r'\n{2,}')).first;
+  final lines = firstBlock.split('\n');
+  final firstLine = lines.first.trim().toUpperCase();
+  final isHeader = firstLine == 'TÓM TẮT' || firstLine == 'SUMMARY';
+  final body = isHeader ? lines.skip(1).join(' ') : firstBlock;
+  return body.replaceAll(RegExp(r'\s+'), ' ').trim();
+}
+
 String _guessImageMimeType(String path) {
   final lower = path.toLowerCase();
   if (lower.endsWith('.png')) return 'image/png';
@@ -1284,7 +1300,50 @@ class _EmailScreenState extends State<EmailScreen> {
                                         color: colors.text,
                                         fontWeight: FontWeight.w700,
                                         fontSize: 14)),
-                                if ((email['snippet'] as String?)?.isNotEmpty ==
+                                // email['summary'] is pre-populated server-
+                                // side with a truncated snippet fallback for
+                                // every email, so it's non-empty long before
+                                // any real AI summary exists -- summary_type
+                                // is the only reliable way to tell a real AI
+                                // summary apart from that placeholder. Mirrors
+                                // mobile/src/screens/EmailScreen.js's list row
+                                // (previously missing here: this row always
+                                // fell through to the plain snippet).
+                                if (email['summary_type'] == 'ai_cached') ...[
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: colors.panelSoft,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(t('AI TÓM TẮT', 'AI SUMMARY'),
+                                            style: TextStyle(
+                                                color: colors.primary,
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 9,
+                                                letterSpacing: 0.6)),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                            _summaryListPreview(
+                                                email['summary'] as String? ??
+                                                    ''),
+                                            maxLines: 3,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                                color: colors.textMuted,
+                                                fontSize: 12.5,
+                                                height: 1.4)),
+                                      ],
+                                    ),
+                                  ),
+                                ] else if ((email['snippet'] as String?)
+                                        ?.isNotEmpty ==
                                     true) ...[
                                   const SizedBox(height: 4),
                                   Text(email['snippet'] as String,

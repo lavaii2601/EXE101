@@ -48,6 +48,16 @@ function handleUnauthorized(data = {}) {
   );
 }
 
+// fetch() applies no timeout of its own -- a dropped wifi handoff or an
+// unreachable host left every call able to hang forever with no way for
+// the UI to recover (confirmed: zero AbortController/timeout usage
+// anywhere in this file before this change). 30s, not Flutter client.dart's
+// 15s: the backend's own per-provider AI_REQUEST_TIMEOUT is 20s, and a
+// chat/summarize request can fail over across more than one provider
+// before responding, so a shorter client timeout would abort requests
+// that were actually still making progress server-side.
+const REQUEST_TIMEOUT_MS = 30000;
+
 async function request(path, options = {}) {
   const accessToken = getMobileAccessToken();
   const workspaceId = getCurrentWorkspaceId();
@@ -55,22 +65,38 @@ async function request(path, options = {}) {
   // 'application/json' Content-Type -- RN's fetch needs to set its own
   // multipart/form-data boundary header instead.
   const isFormData = options.body instanceof FormData;
-  const response = await fetch(`${API_BASE}${path}`, {
-    credentials: 'include',
-    ...options,
-    headers: {
-      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-      // No X-User-Id here: this app always authenticates with a real Bearer
-      // token, so the header would be redundant identity at best and, if
-      // MOBILE_USER_HEADER_ENABLED were ever accidentally left on in some
-      // environment, an unauthenticated impersonation path at worst. It's
-      // still meant to exist as a dev-only escape hatch (see utils/security.py),
-      // just not one this production client should be the one sending.
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}),
-      ...(options.headers || {})
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      credentials: 'include',
+      ...options,
+      signal: controller.signal,
+      headers: {
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+        // No X-User-Id here: this app always authenticates with a real Bearer
+        // token, so the header would be redundant identity at best and, if
+        // MOBILE_USER_HEADER_ENABLED were ever accidentally left on in some
+        // environment, an unauthenticated impersonation path at worst. It's
+        // still meant to exist as a dev-only escape hatch (see utils/security.py),
+        // just not one this production client should be the one sending.
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}),
+        ...(options.headers || {})
+      }
+    });
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      const timeoutError = new Error('Yêu cầu quá thời gian chờ. Vui lòng kiểm tra kết nối mạng.');
+      timeoutError.status = 0;
+      timeoutError.isTimeout = true;
+      throw timeoutError;
     }
-  });
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   const text = await response.text();
   let data = {};

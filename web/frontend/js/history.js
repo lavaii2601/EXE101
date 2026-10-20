@@ -13,7 +13,7 @@ async function loadActivityHistory() {
                 const historyDiv = document.createElement('div');
                 historyDiv.className = 'history-item';
                 const date = new Date(record.created_at).toLocaleString(
-                    currentLanguage === 'en' ? 'en-US' : 'vi-VN',
+                    resolveDateLocale(),
                     { dateStyle: 'medium', timeStyle: 'medium' }
                 );
                 const userMessage = String(record.user_message || '').trim();

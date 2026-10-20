@@ -279,7 +279,7 @@ function renderOrgWorkspaceSubscription() {
         </div>
         ${subscription?.current_period_end ? `
             <div class="org-subscription-period">
-                ${ui('Hết hạn', 'Expires')}: ${new Date(subscription.current_period_end).toLocaleDateString(currentLanguage === 'en' ? 'en-US' : 'vi-VN')}
+                ${ui('Hết hạn', 'Expires')}: ${localeDateString(new Date(subscription.current_period_end))}
             </div>
         ` : ''}
         ${accessState === 'grace' ? `
@@ -1078,14 +1078,14 @@ function formatQuickScheduleDate(date) {
 function formatQuickScheduleTime(schedule) {
     const start = new Date(schedule.start_time);
     if (Number.isNaN(start.getTime())) return ui('Chưa rõ giờ', 'Time unknown');
-    const startText = start.toLocaleTimeString(currentLanguage === 'en' ? 'en-US' : 'vi-VN', {
+    const startText = start.toLocaleTimeString(resolveDateLocale(), {
         hour: '2-digit',
         minute: '2-digit'
     });
     if (!schedule.end_time) return startText;
     const end = new Date(schedule.end_time);
     if (Number.isNaN(end.getTime())) return startText;
-    const endText = end.toLocaleTimeString(currentLanguage === 'en' ? 'en-US' : 'vi-VN', {
+    const endText = end.toLocaleTimeString(resolveDateLocale(), {
         hour: '2-digit',
         minute: '2-digit'
     });
