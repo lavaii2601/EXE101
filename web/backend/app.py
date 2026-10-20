@@ -414,6 +414,17 @@ def serve_static(path):
         # Safe to cache for a year: filenames are version-tagged via ?v= query
         # string, so a new deploy is requested under a new URL automatically.
         return send_from_directory('../frontend', path, max_age=31536000)
+    if path.startswith('downloads/'):
+        # Not version-tagged (the landing page links a stable filename so it
+        # never needs updating on a new app release) -- a short cache instead
+        # of the 1-year one above, so a new APK build isn't served stale for
+        # long after a release.
+        response = send_from_directory(
+            '../frontend', path, max_age=3600,
+            mimetype='application/vnd.android.package-archive' if path.endswith('.apk') else None,
+        )
+        response.headers['Content-Disposition'] = f'attachment; filename="{os.path.basename(path)}"'
+        return response
     if path in ('favicon.ico', 'manifest.json', 'robots.txt', 'sitemap.xml'):
         # Not version-tagged, so use a short cache instead of the 1-year one above.
         return send_from_directory('../frontend', path, max_age=3600)

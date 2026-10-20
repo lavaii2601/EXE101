@@ -38,7 +38,11 @@ class BrandAssetTests(unittest.TestCase):
         landing = (FRONTEND / "landing.html").read_text(encoding="utf-8")
         app = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/img/flowmate-workspace-hero.png?v=20261006-brand", landing)
+        # The hero no longer uses the generic workspace banner photo -- it
+        # shows real captured product screenshots in a floating device-
+        # mockup composition instead (2026-10-19 redesign).
+        self.assertIn("/img/hero-screen-overview.png", landing)
+        self.assertIn("/img/hero-screen-chat.png", landing)
         self.assertIn("/img/logo.png?v=20261006-brand", landing)
         self.assertIn("/img/logo.png?v=20261006-brand", app)
         self.assertNotIn('id="bmLine"', app)
