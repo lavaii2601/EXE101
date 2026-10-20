@@ -6,16 +6,14 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from google.auth.transport.requests import Request
 from google_auth_httplib2 import AuthorizedHttp
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 from config import Config
 from models.schedule import LOCAL_TZ
 from utils.user_context import (
-    persist_google_credentials,
     read_local_credentials,
-    user_id_from_token_file,
+    refresh_and_persist_google_credentials,
+    remember_google_api_error,
 )
 
 # Configure module logger
@@ -44,20 +42,7 @@ class CalendarService:
         self._authenticate()
 
     def _remember_error(self, error):
-        self.last_error = str(error)
-        self.last_error_status = getattr(getattr(error, 'resp', None), 'status', None)
-        self.last_error_reason = None
-        if isinstance(error, HttpError):
-            try:
-                import json
-                payload = json.loads(error.content.decode('utf-8'))
-                details = payload.get('error') or {}
-                errors = details.get('errors') or []
-                if errors:
-                    self.last_error_reason = errors[0].get('reason')
-                self.last_error = details.get('message') or self.last_error
-            except Exception:
-                pass
+        remember_google_api_error(self, error)
 
     def clear_last_error(self):
         self.last_error = None
@@ -76,28 +61,24 @@ class CalendarService:
             # If no valid credentials, return False
             if not creds or not creds.valid:
                 if creds and creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
-                    self._persist_refreshed_credentials(creds)
+                    creds = refresh_and_persist_google_credentials(creds, self.token_file, 'Calendar')
                 else:
                     logger.warning(f"No valid credentials found in {self.token_file}")
                     return False
-            
+
             authorized_http = AuthorizedHttp(creds, http=httplib2.Http(timeout=CALENDAR_HTTP_TIMEOUT_SECONDS))
             self.service = build('calendar', 'v3', http=authorized_http)
             logger.info("Google Calendar service initialized successfully")
             return True
         except Exception as e:
+            # Previously didn't call _remember_error here (unlike
+            # GmailService's equivalent except block), so last_error_reason
+            # stayed empty after a failed authentication -- routes reading it
+            # to decide "needs reconnect" vs. a transient failure got nothing.
+            self._remember_error(e)
             logger.error(f"Calendar authentication error: {str(e)}")
             return False
 
-    def _persist_refreshed_credentials(self, creds):
-        try:
-            user_id = user_id_from_token_file(self.token_file)
-            if user_id and user_id != 'default':
-                persist_google_credentials(user_id, creds)
-        except Exception:
-            logger.debug("Could not persist refreshed Calendar credentials", exc_info=True)
-    
     def get_events(self, max_results=10, time_min=None, time_max=None, raise_errors=False):
         """Get upcoming calendar events"""
         try:

@@ -13,7 +13,6 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from google.auth.transport.requests import Request
 from google_auth_httplib2 import AuthorizedHttp
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -21,10 +20,9 @@ from config import Config
 from services.email_html_sanitizer import sanitize_email_html
 from utils.google_service_cache import get_cached_service
 from utils.user_context import (
-    persist_google_credentials,
     read_local_credentials,
-    user_id_from_token_file,
-    write_local_credentials,
+    refresh_and_persist_google_credentials,
+    remember_google_api_error,
 )
 
 # Retried automatically by googleapiclient's execute(num_retries=...) on
@@ -105,21 +103,8 @@ class GmailService:
         self._authenticate()
 
     def _remember_error(self, error):
-        self.last_error = str(error)
-        self.last_error_status = getattr(getattr(error, 'resp', None), 'status', None)
-        self.last_error_reason = None
-        if isinstance(error, HttpError):
-            try:
-                import json
-                payload = json.loads(error.content.decode('utf-8'))
-                details = payload.get('error') or {}
-                errors = details.get('errors') or []
-                if errors:
-                    self.last_error_reason = errors[0].get('reason')
-                self.last_error = details.get('message') or self.last_error
-            except Exception:
-                pass
-    
+        remember_google_api_error(self, error)
+
     def _authenticate(self):
         """Authenticate with Gmail API (used only if token file missing).
 
@@ -128,26 +113,22 @@ class GmailService:
         """
         try:
             creds = None
-            
+
             # Load token if exists
             if os.path.exists(self.token_file):
                 creds = read_local_credentials(self.token_file)
-            
+
             # OAuth is completed by routes/email.py. Never start an
             # interactive local-server flow from a production API request:
             # that would hang the request and eventually look like an empty
             # inbox to the mobile client.
             if not creds or not creds.valid:
                 if creds and creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
+                    creds = refresh_and_persist_google_credentials(creds, self.token_file, 'Gmail')
                 else:
                     logger.warning("Stored Gmail credentials are missing or cannot be refreshed")
                     return False
-                
-                # Save the credentials for the next run
-                write_local_credentials(self.token_file, creds)
-                self._persist_refreshed_credentials(creds)
-            
+
             authorized_http = AuthorizedHttp(creds, http=httplib2.Http(timeout=GMAIL_HTTP_TIMEOUT_SECONDS))
             self.service = build('gmail', 'v1', http=authorized_http)
             return True
@@ -156,14 +137,6 @@ class GmailService:
             logger.warning("Gmail authentication error: %s", e)
             return False
 
-    def _persist_refreshed_credentials(self, creds):
-        try:
-            user_id = user_id_from_token_file(self.token_file)
-            if user_id and user_id != 'default':
-                persist_google_credentials(user_id, creds)
-        except Exception:
-            logger.debug("Could not persist refreshed Gmail credentials", exc_info=True)
-    
     def get_emails(
         self,
         max_results=10,

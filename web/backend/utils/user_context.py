@@ -1,5 +1,6 @@
 import json
 import hashlib
+import logging
 import os
 import re
 import sys
@@ -8,12 +9,16 @@ import threading
 from flask import session as flask_session
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.credentials import Credentials
+from googleapiclient.errors import HttpError
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
 from models import postgres_db as pg
 from utils.security import bearer_user_id, header_user_id, header_workspace_id
+
+
+logger = logging.getLogger(__name__)
 
 
 class IdentityConflictError(RuntimeError):
@@ -431,6 +436,53 @@ def read_local_credentials(token_file):
         )
     except Exception:
         return None
+
+
+def remember_google_api_error(service, error):
+    """Populate service.last_error/last_error_status/last_error_reason from a
+    Google API exception, in the shape both GmailService and CalendarService
+    expose for their route handlers to read. Was independently copy-pasted
+    verbatim in both services/gmail_service.py and services/calendar_service.py
+    -- centralized so a future fix to error-reason parsing can't land in one
+    copy and miss the other."""
+    service.last_error = str(error)
+    service.last_error_status = getattr(getattr(error, 'resp', None), 'status', None)
+    service.last_error_reason = None
+    if isinstance(error, HttpError):
+        try:
+            payload = json.loads(error.content.decode('utf-8'))
+            details = payload.get('error') or {}
+            errors = details.get('errors') or []
+            if errors:
+                service.last_error_reason = errors[0].get('reason')
+            service.last_error = details.get('message') or service.last_error
+        except Exception:
+            pass
+
+
+def refresh_and_persist_google_credentials(creds, token_file, log_label):
+    """Refresh expired Google credentials and persist the refreshed token to
+    both the local file cache and PostgreSQL. Returns creds (now refreshed).
+
+    Was independently reimplemented in GmailService._authenticate and
+    CalendarService._authenticate, and had drifted: Gmail wrote the refreshed
+    token back to the local file cache before persisting to Postgres,
+    Calendar silently didn't (it only persisted to Postgres), which would
+    leave Calendar's own local cache stale until the next full
+    get_user_token_file() re-sync. Centralized on Gmail's (more correct)
+    behavior so both services see the same guarantee.
+    """
+    creds.refresh(GoogleAuthRequest())
+    write_local_credentials(token_file, creds)
+    try:
+        user_id = user_id_from_token_file(token_file)
+        if user_id and user_id != 'default':
+            persist_google_credentials(user_id, creds)
+    except Exception:
+        logger.debug(
+            'Could not persist refreshed %s credentials', log_label, exc_info=True
+        )
+    return creds
 
 
 def _discard_local_credentials(token_file):

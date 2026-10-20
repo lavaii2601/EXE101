@@ -209,7 +209,10 @@ class AIService:
             'cooldown_minutes': cooldown
         }
         error_type = "QUOTA" if is_quota_error else "ERROR"
-        print(f"🔴 {provider.upper()} {error_type}: {error_message[:100]} (cooldown: {cooldown}min)")
+        logger.warning(
+            "%s %s: %s (cooldown: %smin)",
+            provider.upper(), error_type, str(error_message)[:100], cooldown,
+        )
     
     def _is_provider_healthy(self, provider):
         """Check if provider is healthy (not in cooldown period)"""
@@ -228,7 +231,7 @@ class AIService:
         if time_passed > timedelta(minutes=cooldown):
             # Reset health status
             del self.provider_health[provider]
-            print(f"✅ {provider.upper()} cooldown ended - back to healthy")
+            logger.info("%s cooldown ended - back to healthy", provider.upper())
             return True
         
         # Still in cooldown
@@ -327,7 +330,7 @@ class AIService:
             if not self._is_provider_healthy(provider):
                 health = self.provider_health.get(provider, {})
                 remaining = health.get('cooldown_minutes', 0)
-                print(f"⏭️  Bỏ qua {provider.upper()} (đang cooldown ~{remaining}min)")
+                logger.info("Skipping %s (cooldown ~%smin)", provider.upper(), remaining)
                 continue
 
             budget = admin_ops.current_budget_state(provider)
@@ -357,7 +360,7 @@ class AIService:
                     self.last_provider_used = provider
                     if provider in self.provider_usage:
                         self.provider_usage[provider] += 1
-                    print(f"✅ {provider.upper()} responded successfully")
+                    logger.info("%s responded successfully", provider.upper())
                     model = self._model_for(provider, tier)
                     ai_cost_log.record_call(
                         user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
@@ -387,11 +390,13 @@ class AIService:
                 is_quota = self._is_quota_error(error_msg, status_code)
 
                 if is_quota:
-                    print(f"🚫 {provider.upper()} HẾT QUOTA - chuyển sang provider khác")
+                    logger.warning("%s quota exhausted, switching provider", provider.upper())
                     self._mark_provider_failed(provider, error_msg, is_quota_error=True)
                 else:
                     all_quota_errors = False
-                    print(f"⚠️  {provider.upper()} lỗi - thử provider tiếp theo: {error_msg[:100]}")
+                    logger.warning(
+                        "%s error, trying next provider: %s", provider.upper(), error_msg[:100]
+                    )
                     self._mark_provider_failed(provider, error_msg, is_quota_error=False)
                 ai_cost_log.record_call(
                     user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
@@ -404,10 +409,11 @@ class AIService:
         healthy_count = len([p for p in self.configured_providers if self._is_provider_healthy(p)])
         
         if healthy_count == 0:
-            print(f"❌ TẤT CẢ AI PROVIDERS KHÔNG KHẢ DỤNG - chuyển Demo Mode")
-            print(f"   Last error: {last_error}")
+            logger.error("All AI providers unavailable, falling back to demo mode. Last error: %s", last_error)
         else:
-            print(f"⚠️  Không thể generate response. {healthy_count} providers vẫn healthy nhưng chưa thử")
+            logger.warning(
+                "Could not generate response; %s providers still healthy but untried", healthy_count
+            )
         
         if Config.BOB_LOCAL_ONLY:
             self.last_provider_used = 'bob-local'
@@ -575,14 +581,16 @@ class AIService:
         
         if not healthy_providers:
             # All providers in cooldown - try all configured anyway
-            print("⚠️  Tất cả providers trong cooldown - thử lại toàn bộ")
+            logger.warning("All providers in cooldown, retrying all configured providers")
             return self.configured_providers.copy()
-        
+
         # Use round-robin to select starting provider
         next_provider = self._get_next_round_robin_provider()
         if next_provider and next_provider in healthy_providers:
             ordered.append(next_provider)
-            print(f"🔄 Round-robin selected: {next_provider.upper()}")
+            # debug, not info: fires on every single AI call, would flood
+            # production logs at a higher level given this app's AI call volume
+            logger.debug("Round-robin selected: %s", next_provider.upper())
         
         # Add remaining healthy providers
         for provider in healthy_providers:
