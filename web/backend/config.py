@@ -130,6 +130,13 @@ class Config:
     AI_PRIMARY_PROVIDER = os.getenv("AI_PRIMARY_PROVIDER", "openrouter")
     AI_PROVIDER_ORDER = os.getenv("AI_PROVIDER_ORDER", "openrouter,openai,mistral,claude,gemini")
     AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", 20))
+    # Caps generate_response()'s total time spent failing over across
+    # providers (not any single provider's own AI_REQUEST_TIMEOUT). With up
+    # to 5 providers configured by default, an unbounded chain could block a
+    # request-handling thread for minutes when several are degraded at once.
+    # Default allows roughly two full per-provider timeouts before giving up
+    # and falling back to the existing demo-response path.
+    AI_FALLBACK_TOTAL_BUDGET_SECONDS = int(os.getenv("AI_FALLBACK_TOTAL_BUDGET_SECONDS", 45))
     AI_MAX_CONTEXT_MESSAGES = int(os.getenv("AI_MAX_CONTEXT_MESSAGES", 10))
     # These are character budgets (not output-token budgets).  The previous
     # 450/2800 defaults cut Bob's safety/language contract and, for intent

@@ -7,7 +7,7 @@ import re
 import uuid
 import sys
 import logging
-import threading
+from concurrent.futures import ThreadPoolExecutor
 import time
 import hashlib
 
@@ -170,6 +170,16 @@ Compress(app)
 install_workspace_sync_hooks(app)
 
 
+# Bounded, process-lifetime pool for the telemetry writes below -- every
+# /api/* request previously spawned a brand-new raw OS thread for this
+# (threading.Thread(...).start()), which is real avoidable overhead (stack
+# allocation + OS bookkeeping) under real traffic. A small reusable pool
+# amortizes that cost instead of paying it fresh per request. 4 workers is
+# comfortably more than this purely-DB-bound, sub-request-latency work
+# should ever need concurrently.
+_telemetry_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='telemetry')
+
+
 def _record_request_telemetry_async(status_code, latency_ms, user_id, is_login, event_kwargs):
     """Runs admin_ops' best-effort DB writes (api_metrics_daily upsert, users
     touch, operational_events insert) off the request/response critical
@@ -187,7 +197,7 @@ def _record_request_telemetry_async(status_code, latency_ms, user_id, is_login, 
             if event_kwargs is not None:
                 admin_ops.record_event(**event_kwargs)
 
-    threading.Thread(target=_bg, daemon=True).start()
+    _telemetry_executor.submit(_bg)
 
 
 @app.after_request
