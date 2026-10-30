@@ -47,6 +47,46 @@ class AdminControlsTests(unittest.TestCase):
         limit.assert_called_once_with("plus", "claude")
         increment.assert_called_once_with("user-1", "claude", limit=50)
 
+    def test_budget_state_fails_closed_when_cost_read_fails(self):
+        # A real incident: this read silently failed for 9+ days (same root
+        # cause that stopped ai_cost_log inserts entirely) while the old code
+        # treated the failure as "$0 spent this month", so hard_stop_enabled
+        # never actually blocked anything no matter how much was really
+        # being spent. It must now refuse to allow instead of guessing $0.
+        with (
+            patch.object(admin_ops.pg, "enabled", return_value=True),
+            patch.object(admin_ops.pg, "connection", side_effect=RuntimeError("pool exhausted")),
+        ):
+            state = admin_ops.current_budget_state("openai")
+
+        self.assertFalse(state["allowed"])
+        self.assertTrue(state["query_failed"])
+
+    def test_budget_state_allows_when_cost_read_succeeds_and_under_limit(self):
+        class _FakeConn:
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *exc_info):
+                return False
+
+            def execute(self_inner, *args, **kwargs):
+                class _Row:
+                    def fetchone(self_row):
+                        return {"total": 1.0, "provider_total": 0.5}
+
+                return _Row()
+
+        with (
+            patch.object(admin_ops.pg, "enabled", return_value=True),
+            patch.object(admin_ops.pg, "connection", return_value=_FakeConn()),
+            patch.object(admin_ops.pg, "normalize_row", side_effect=lambda row: row),
+        ):
+            state = admin_ops.current_budget_state("openai")
+
+        self.assertTrue(state["allowed"])
+        self.assertFalse(state["query_failed"])
+
 
 class AccountLifecycleSecurityTests(unittest.TestCase):
     def setUp(self):

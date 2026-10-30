@@ -7,7 +7,7 @@ migrations automatically before starting Gunicorn.
 ## Do not raise `--workers` above 1 without adding Redis first
 
 `railpack.json`'s `startCommand` runs Gunicorn as `--workers 1 --worker-class
-gthread --threads 4`. That worker count is load-bearing, not incidental:
+gthread --threads 16`. That worker count is load-bearing, not incidental:
 several in-process, in-memory data structures assume every request is
 handled inside the *same* Python process and would silently stop working
 correctly under multiple worker processes (each gets its own separate copy
@@ -20,13 +20,29 @@ of these structures, with no coordination between them):
   TOTP attempt throttling and replay-protection) -- same problem, plus a
   worker restart or a request landing on a different worker could let a
   replayed TOTP code through.
+- `services/overview_scheduler.py` and `services/subscription_lifecycle_
+  scheduler.py`'s `_started` guard: each only stops the *same* process from
+  starting its background thread twice. A second worker process gets its
+  own `_started = False` and starts its *own* copy of the scheduler loop,
+  so every connected user's daily overview warm-up and 5-minute new-mail
+  check -- each a real paid AI call -- silently runs twice, all day, with
+  no error or warning anywhere. **This actually happened**: `--workers` was
+  raised to 2 on 2026-10-20 without reading this section first, and by the
+  time it was caught (a $87/day OpenAI bill), `ai_cost_log` had also been
+  silently failing to insert the whole time (see `models/admin_ops.py`'s
+  `current_budget_state` -- it now fails closed instead of treating a
+  failed cost read as "$0 spent"), so the budget hard-stop never saw real
+  spend either. Both bugs compounded for 9+ days before anyone noticed.
 
 None of these raise an error or log a warning if scaled -- they just quietly
-stop enforcing their limit. If Railway's traffic ever requires more than one
-worker process (`--workers 1` maxes out on one CPU core's throughput
-regardless of `--threads`), move these to a shared store (Redis is the
-natural fit -- `INCR`/`EXPIRE` for the rate-limit buckets, `SET`/`GET` for
-the TOTP counters) *before* raising `--workers`, not after.
+stop enforcing their limit (or, for the schedulers, quietly double their
+own cost). If Railway's traffic ever requires more than one worker process
+(`--workers 1` maxes out on one CPU core's throughput regardless of
+`--threads`), move the rate limiter and TOTP counters to a shared store
+(Redis is the natural fit -- `INCR`/`EXPIRE` for the rate-limit buckets,
+`SET`/`GET` for the TOTP counters) *and* give both schedulers a real
+cross-process leader election (e.g. a Postgres advisory lock held for the
+lifetime of the scheduler loop) *before* raising `--workers`, not after.
 
 ## Required variables
 

@@ -53,7 +53,13 @@ def record_call(
                 ),
             )
     except Exception:
-        logger.warning("Failed to record ai_cost_log row", exc_info=True)
+        # error, not warning: a prior incident had this failing silently on
+        # every single call for 9+ days (caught only by comparing provider
+        # billing against this table well after the fact) because nothing
+        # ever surfaced it. current_budget_state() also fails closed now
+        # when it can't read this table, but that only helps if someone
+        # actually sees this line while it's happening.
+        logger.error("Failed to record ai_cost_log row", exc_info=True)
 
 
 def get_usage_summary(user_id=None, since=None):

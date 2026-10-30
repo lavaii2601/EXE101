@@ -148,6 +148,7 @@ def current_budget_state(provider=None):
     budgets = controls["budgets"]
     total = 0.0
     provider_total = 0.0
+    query_failed = False
     if pg.enabled():
         try:
             with pg.connection() as conn:
@@ -165,11 +166,23 @@ def current_budget_state(provider=None):
             total = float(normalized.get("total") or 0)
             provider_total = float(normalized.get("provider_total") or 0)
         except Exception:
-            logger.warning("Could not read current AI budget state", exc_info=True)
+            logger.error(
+                "Could not read current AI budget state -- failing closed "
+                "(a prior incident left this failing silently for days while "
+                "ai_cost_log inserts were also broken, so the hard-stop never "
+                "saw real spend and stayed permanently 'allowed')",
+                exc_info=True,
+            )
+            query_failed = True
     provider_limit = budgets.get(f"{provider}_usd") if provider in {"openai", "claude"} else None
     hard_stop = bool(budgets.get("hard_stop_enabled"))
+    # A failed read must never be treated as "$0 spent so far" -- that's
+    # exactly how the hard-stop silently stood down for days: the read kept
+    # failing, total stayed 0.0, and allowed stayed True no matter how much
+    # was actually being spent at the provider.
     allowed = not hard_stop or (
-        total < float(budgets["hard_limit_usd"])
+        not query_failed
+        and total < float(budgets["hard_limit_usd"])
         and (provider_limit is None or provider_total < float(provider_limit))
     )
     return {
@@ -178,6 +191,7 @@ def current_budget_state(provider=None):
         "provider_cost_usd": provider_total,
         "provider_limit_usd": provider_limit,
         "controls": controls,
+        "query_failed": query_failed,
     }
 
 
