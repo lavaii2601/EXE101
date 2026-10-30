@@ -4,6 +4,7 @@ import logging
 import json
 import re
 import requests
+import threading
 import time
 from datetime import datetime, timedelta
 
@@ -162,7 +163,26 @@ class AIService:
                 'cheap': Config.OPENROUTER_PRIMARY_MODEL_CHEAP,
             },
         }
-        self.last_provider_used = None
+        # last_provider_used must be per-THREAD, not a plain shared instance
+        # attribute: AIService is a module-level singleton (chat_agents/
+        # common.py's `ai_service = AIService()`), and every caller of
+        # generate_response() immediately reads this to learn whether ITS
+        # OWN call actually reached a real provider. With multiple gthread
+        # threads serving concurrent requests (and, from this session's own
+        # Phase 1 change, more of them than before), a plain shared
+        # attribute lets thread A's read land after thread B's concurrent
+        # call already overwrote it -- thread A then wrongly believes its
+        # own successful call fell back to demo mode (or vice versa). Fixed
+        # with the same per-thread-isolation approach already proven for
+        # this exact class of bug in utils/google_service_cache.py.
+        # last_provider_used_approx stays a plain shared attribute
+        # deliberately -- it backs the status/debug endpoint's "what has
+        # this service been doing lately" snapshot, where a racy,
+        # approximate cross-thread value is fine (and a thread-local value
+        # would be actively wrong there, since a status-check request's own
+        # thread never calls generate_response() itself).
+        self._provider_state = threading.local()
+        self.last_provider_used_approx = None
         self.provider_usage = {
             'bob-local': 0,
             'openrouter': 0,
@@ -330,8 +350,23 @@ class AIService:
         providers = self._build_provider_chain(task=task, prefer_quality=is_premium)
         last_error = None
         all_quota_errors = True
+        # Each provider attempt can block up to self.timeout (default 20s)
+        # before failing over to the next one -- with no overall cap, a
+        # chain of several configured providers all degraded at once could
+        # take minutes, tying up a request-handling thread that whole time
+        # (this app's actual concurrency ceiling) for a call that was never
+        # going to succeed anyway. Capping total fallback time bounds worst-
+        # case latency without changing anything about the common case
+        # (the first healthy provider almost always succeeds well under this).
+        fallback_deadline = time.monotonic() + Config.AI_FALLBACK_TOTAL_BUDGET_SECONDS
 
         for provider in providers:
+            if time.monotonic() >= fallback_deadline:
+                logger.warning(
+                    "AI fallback budget (%ss) exhausted before trying %s, stopping early",
+                    Config.AI_FALLBACK_TOTAL_BUDGET_SECONDS, provider.upper(),
+                )
+                break
             # Skip unhealthy providers
             if not self._is_provider_healthy(provider):
                 health = self.provider_health.get(provider, {})
@@ -350,7 +385,7 @@ class AIService:
                 continue
             if provider == 'claude' and user_id:
                 provider_quota = enforce_ai_quota(user_id, 'claude')
-                if provider_quota:
+                if not provider_quota['allowed']:
                     ai_cost_log.record_call(
                         user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
                         provider=provider, model=self._model_for(provider, tier), success=False,
@@ -458,7 +493,7 @@ class AIService:
             raise RuntimeError(f"{provider} bị tạm dừng vì đã chạm ngân sách AI")
         if provider == 'claude' and user_id:
             provider_quota = enforce_ai_quota(user_id, 'claude')
-            if provider_quota:
+            if not provider_quota['allowed']:
                 raise RuntimeError("Đã đạt giới hạn Claude trong ngày")
 
         if max_tokens is None:
@@ -503,6 +538,26 @@ class AIService:
             raise
 
         raise RuntimeError(f"{provider} không trả về nội dung")
+
+    @property
+    def last_provider_used(self):
+        return getattr(self._provider_state, 'value', None)
+
+    @last_provider_used.setter
+    def last_provider_used(self, value):
+        self._provider_state.value = value
+        self.last_provider_used_approx = value
+
+    @last_provider_used.deleter
+    def last_provider_used(self):
+        # Never called by this class's own code -- exists so
+        # unittest.mock.patch.object(service, 'last_provider_used', ...)
+        # can restore the pre-patch state. mock treats "not found in the
+        # instance's own __dict__ before patching" (true here: this is a
+        # thread-local-backed property, never a plain instance attribute)
+        # as "didn't exist," so its cleanup calls delattr instead of
+        # restoring a previous value -- without this deleter that raises.
+        self._provider_state.value = None
 
     def _parse_provider_list(self, value):
         if not value:
@@ -1128,7 +1183,7 @@ class AIService:
                 },
                 "provider_health": health,
                 "provider_usage": self.provider_usage,
-                "last_provider_used": self.last_provider_used,
+                "last_provider_used": self.last_provider_used_approx,
                 "rotation_index": 0,
                 "demo_mode": False,
                 "task_tiers": self.task_tiers,
@@ -1178,7 +1233,7 @@ class AIService:
             },
             "provider_health": health_status,
             "provider_usage": self.provider_usage,
-            "last_provider_used": self.last_provider_used,
+            "last_provider_used": self.last_provider_used_approx,
             "rotation_index": self.provider_rotation_index,
             "demo_mode": len(self.configured_providers) == 0 or all(not self._is_provider_healthy(p) for p in self.configured_providers),
             "task_tiers": self.task_tiers,

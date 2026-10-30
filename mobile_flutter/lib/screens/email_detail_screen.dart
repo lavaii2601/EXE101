@@ -9,6 +9,20 @@ import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
 import '../widgets/app_button.dart';
 
+/// aiQuota is the {action, allowed, used, limit, remaining} map every
+/// quota-gated AI route now returns on success (see utils/quota.py's
+/// enforce_ai_quota) -- previously discarded after a successful call, so
+/// there was no way to show how many uses of a Premium-gated feature are
+/// left without the user first running out. Returns '' when not applicable.
+String _formatQuotaRemainingLabel(
+    Map<String, dynamic>? aiQuota, String Function(String, [String?]) t) {
+  final limit = aiQuota?['limit'];
+  if (aiQuota == null || limit is! num || limit <= 0) return '';
+  final remaining = aiQuota['remaining'];
+  return t('Còn ${remaining ?? 0}/${limit.toInt()} lượt hôm nay',
+      '${remaining ?? 0}/${limit.toInt()} left today');
+}
+
 /// Mirrors mobile/src/utils (and web's equivalent) well enough for a simple
 /// attachment-size label -- no need for a package just for this.
 String _formatFileSize(dynamic rawSize) {
@@ -184,6 +198,10 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
   bool summaryRequested = false;
   bool summarizing = false;
   String? summaryError;
+  // {action, allowed, used, limit, remaining} from the summarize response's
+  // ai_quota field -- shows "X/Y left today" right after a successful
+  // summary instead of only once the user has already run out.
+  Map<String, dynamic>? summaryQuota;
   bool togglingRead = false;
   late bool isUnread;
   List<Map<String, dynamic>> attachments = [];
@@ -249,11 +267,13 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
     try {
       final data = await apiPost('/email/summary/$id', {});
       final fetched = (data is Map ? data['summary'] as String? : null) ?? '';
+      final quota = data is Map ? data['ai_quota'] as Map? : null;
       if (mounted) {
         setState(() {
           summary = fetched;
           summaryType = 'ai_cached';
           summaryRequested = true;
+          summaryQuota = quota?.cast<String, dynamic>();
         });
       }
     } catch (error) {
@@ -362,6 +382,11 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
                           Text(t('AI TÓM TẮT', 'AI SUMMARY'), style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1)),
                           const SizedBox(height: 6),
                           _buildEmailSummarySections(summary, colors, t),
+                          if (_formatQuotaRemainingLabel(summaryQuota, t).isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(_formatQuotaRemainingLabel(summaryQuota, t),
+                                style: TextStyle(color: colors.textMuted, fontSize: 11.5, fontWeight: FontWeight.w600)),
+                          ],
                         ],
                       ),
                     ),

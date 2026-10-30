@@ -11,12 +11,13 @@ from models.subscription import is_premium
 
 
 def enforce_ai_quota(user_id, action):
-    """Returns None if the call may proceed, or a dict with 'used'/'limit'
-    keys (for the caller to turn into a 403 ai_limit_reached response) if the
-    plan's daily limit for `action` has been reached."""
+    """Always returns {"allowed": bool, "used": int, "limit": int,
+    "remaining": int}. check_and_increment already computes used/limit on
+    every call (one atomic DB round trip) -- previously this discarded them
+    on the allowed path and returned bare None, so a caller had no way to
+    tell the user how many uses of a Premium-gated action they have left
+    today without a second query."""
     plan = 'plus' if is_premium(user_id) else 'free'
     limit = admin_ops.quota_limit(plan, action)
     allowed, used, limit = check_and_increment(user_id, action, limit=limit)
-    if allowed:
-        return None
-    return {"used": used, "limit": limit}
+    return {"allowed": allowed, "used": used, "limit": limit, "remaining": max(0, limit - used)}

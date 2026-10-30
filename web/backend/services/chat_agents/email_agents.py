@@ -4,6 +4,7 @@ result-reference resolution, draft-reply suggestions)."""
 import os
 import re
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 from services.gmail_service import get_cached_gmail_service
@@ -67,32 +68,53 @@ def _summarize_latest_emails(user_id, count=1, query_override=None):
     email_ids = [metadata.get('id') for metadata in latest[:count] if metadata.get('id')]
     full_emails = {email['id']: email for email in service.get_email_details_batch(email_ids)}
 
-    emails = []
-    sections = []
+    # Phase 1 (sequential, cheap): resolve exactly which emails are allowed
+    # to be summarized, in order, stopping at the first quota exhaustion.
+    # enforce_ai_quota atomically increments usage as a side effect, so this
+    # pass must stay sequential to keep the exact "stopped at N due to
+    # quota" semantics and correct usage counting -- it's a DB increment
+    # per email, not an AI call, so doing it sequentially costs nothing
+    # meaningful next to the AI calls themselves.
+    approved_emails = []
     quota_exhausted = False
     for email_id in email_ids:
         email = full_emails.get(email_id)
         if not email:
             logger.warning("Could not load full Gmail message %s", email_id)
             continue
-
         # Chat can request up to 50 emails in one message, so this loop is
         # the same 'email_summary' cost center as routes/email.py's batch
         # endpoint -- without this check a free user could summarize far
         # more than the advertised daily quota through chat alone.
-        if enforce_ai_quota(user_id, 'email_summary'):
+        quota_result = enforce_ai_quota(user_id, 'email_summary')
+        if not quota_result['allowed']:
             quota_exhausted = True
             break
+        approved_emails.append(email)
 
-        summary = ai_service.summarize_email_polished(email, user_id=user_id)
-        emails.append(email)
-        index = len(emails)
-        sections.append(
-            f"{index}. {email.get('subject') or '(Không có tiêu đề)'}\n"
-            f"Người gửi: {email.get('sender') or 'Không xác định'}\n"
-            f"Thời gian: {email.get('date') or 'Không xác định'}\n\n"
-            f"{summary}"
-        )
+    # Phase 2 (parallel, slow): the actual blocking AI calls. Previously
+    # sequential, so "summarize my last 10 emails" meant 10 full round-trips
+    # back to back -- a bounded thread pool lets them run concurrently
+    # instead (AI calls are I/O-bound, same reasoning as this app's gthread
+    # worker threads). Capped at 5 workers rather than one thread per email
+    # so a 50-email request doesn't flood the AI provider or this process
+    # with that much concurrency at once.
+    emails = []
+    sections = []
+    if approved_emails:
+        with ThreadPoolExecutor(max_workers=min(5, len(approved_emails))) as pool:
+            summaries = list(pool.map(
+                lambda email: ai_service.summarize_email_polished(email, user_id=user_id),
+                approved_emails,
+            ))
+        for index, (email, summary) in enumerate(zip(approved_emails, summaries), start=1):
+            emails.append(email)
+            sections.append(
+                f"{index}. {email.get('subject') or '(Không có tiêu đề)'}\n"
+                f"Người gửi: {email.get('sender') or 'Không xác định'}\n"
+                f"Thời gian: {email.get('date') or 'Không xác định'}\n\n"
+                f"{summary}"
+            )
 
     if not emails:
         if quota_exhausted:

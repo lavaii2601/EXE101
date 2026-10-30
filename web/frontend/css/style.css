@@ -2520,6 +2520,13 @@ select:focus {
     margin-bottom: 8px;
 }
 
+.overview-ai-brief-quota {
+    margin: -4px 0 12px;
+    color: var(--text-secondary);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+
 .overview-score {
     display: grid;
     place-items: center;
@@ -3421,6 +3428,17 @@ select:focus {
     font-weight: 700;
 }
 
+.quota-remaining-badge {
+    margin-left: 6px;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+}
+
 .btn-danger {
     background: #dc2626;
     color: #fff;
@@ -4253,6 +4271,15 @@ select:focus {
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+}
+
+.email-detail-summary-quota {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+    color: var(--text-secondary);
+    font-size: 11.5px;
+    font-weight: 600;
 }
 
 .email-summary-section {

@@ -360,6 +360,20 @@ function localeDateString(date, options) {
     return date.toLocaleDateString(resolveDateLocale(), options);
 }
 
+// aiQuota is the {action, allowed, used, limit, remaining} object every
+// quota-gated AI route now returns on success (see utils/quota.py's
+// enforce_ai_quota) -- previously discarded after a successful call, so
+// there was no way to show the user how many uses of a Premium-gated
+// feature they had left without them first running out. Returns '' (not
+// shown) when there's nothing meaningful to report.
+function formatQuotaRemainingLabel(aiQuota) {
+    if (!aiQuota || typeof aiQuota.limit !== 'number' || aiQuota.limit <= 0) return '';
+    return ui(
+        `Còn ${aiQuota.remaining}/${aiQuota.limit} lượt hôm nay`,
+        `${aiQuota.remaining}/${aiQuota.limit} left today`
+    );
+}
+
 function formatDateForApi(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }

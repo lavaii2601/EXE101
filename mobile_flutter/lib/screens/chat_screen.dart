@@ -12,7 +12,23 @@ class _ChatMessage {
   final String id;
   final String role;
   final String text;
-  _ChatMessage({required this.id, required this.role, required this.text});
+  // e.g. "Còn 3/5 lượt hôm nay" -- see _formatQuotaRemainingLabel.
+  final String? meta;
+  _ChatMessage({required this.id, required this.role, required this.text, this.meta});
+}
+
+/// aiQuota is the {action, allowed, used, limit, remaining} map every
+/// quota-gated AI route now returns on success (see utils/quota.py's
+/// enforce_ai_quota) -- previously discarded after a successful call, so
+/// there was no way to show how many uses of a Premium-gated feature are
+/// left without the user first running out. Returns null when not applicable.
+String? _formatQuotaRemainingLabel(dynamic aiQuota, String Function(String, [String?]) t) {
+  if (aiQuota is! Map) return null;
+  final limit = aiQuota['limit'];
+  if (limit is! num || limit <= 0) return null;
+  final remaining = aiQuota['remaining'];
+  return t('Còn ${remaining ?? 0}/${limit.toInt()} lượt hôm nay',
+      '${remaining ?? 0}/${limit.toInt()} left today');
 }
 
 const List<int> _kRetentionOptions = [30, 90, 180];
@@ -66,11 +82,13 @@ class _ChatScreenState extends State<ChatScreen> {
         'session_id': sessionId,
       });
       if (data is Map && data['session_id'] != null) sessionId = data['session_id'] as String;
+      final t = mounted ? context.read<LanguageController>().t : null;
       setState(() {
         messages.add(_ChatMessage(
           id: 'a-${DateTime.now().millisecondsSinceEpoch}',
           role: 'assistant',
           text: (data is Map ? data['response'] as String? : null) ?? 'Không có phản hồi.',
+          meta: t == null ? null : _formatQuotaRemainingLabel(data is Map ? data['ai_quota'] : null, t),
         ));
       });
     } catch (error) {
@@ -238,7 +256,21 @@ class _ChatScreenState extends State<ChatScreen> {
                               ),
                               border: isUser ? null : Border.all(color: colors.border),
                             ),
-                            child: Text(m.text, style: TextStyle(color: isUser ? Colors.white : colors.text, fontSize: 13, height: 1.4)),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(m.text, style: TextStyle(color: isUser ? Colors.white : colors.text, fontSize: 13, height: 1.4)),
+                                if (m.meta != null) ...[
+                                  const SizedBox(height: 4),
+                                  Text(m.meta!,
+                                      style: TextStyle(
+                                          color: isUser ? Colors.white70 : colors.textMuted,
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w600)),
+                                ],
+                              ],
+                            ),
                           ),
                         );
                       },

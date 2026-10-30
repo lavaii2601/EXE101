@@ -454,5 +454,58 @@ class EmailSummaryAITests(unittest.TestCase):
         self.assertIn('250 triệu đồng', result)
 
 
+class AIServiceFallbackBudgetTests(unittest.TestCase):
+    """generate_response's provider loop previously had no overall time cap
+    -- a chain of several degraded providers, each blocking up to
+    AI_REQUEST_TIMEOUT before failing over, could tie up a request-handling
+    thread (this app's actual concurrency ceiling) for minutes."""
+
+    def setUp(self):
+        self.service = ai_service_module.AIService()
+
+    def test_stops_trying_more_providers_once_total_budget_is_exhausted(self):
+        # Real (tiny) sleep, not a mocked clock: more robust against
+        # incidental extra time.monotonic() calls elsewhere in the loop
+        # than asserting on call order/count against a mocked clock would be.
+        import time as time_module
+
+        attempted = []
+
+        def fake_call_provider(provider, *args, **kwargs):
+            attempted.append(provider)
+            time_module.sleep(0.08)
+            raise RuntimeError(f"{provider} is down")
+
+        with (
+            patch.object(ai_service_module.Config, 'AI_FALLBACK_TOTAL_BUDGET_SECONDS', 0.05),
+            patch.object(self.service, 'configured_providers', ['openai', 'claude', 'gemini']),
+            patch.object(self.service, '_build_provider_chain', return_value=['openai', 'claude', 'gemini']),
+            patch.object(self.service, '_is_provider_healthy', return_value=True),
+            patch.object(ai_service_module.admin_ops, 'current_budget_state', return_value={'allowed': True}),
+            patch.object(self.service, '_call_provider', side_effect=fake_call_provider),
+        ):
+            self.service.generate_response([{"role": "user", "content": "hi"}], task='chat')
+
+        # Only the first provider should have been attempted -- its own
+        # 0.08s already exceeds the 0.05s total budget, so the loop must
+        # stop before trying a second one.
+        self.assertEqual(['openai'], attempted)
+
+    def test_first_provider_is_still_tried_even_with_a_near_zero_budget(self):
+        """The budget caps the FALLBACK chain, not the first attempt -- a
+        tiny/misconfigured budget must never prevent trying any provider
+        at all, only stop further failover after it's exhausted."""
+        with (
+            patch.object(ai_service_module.Config, 'AI_FALLBACK_TOTAL_BUDGET_SECONDS', 45),
+            patch.object(self.service, 'configured_providers', ['openai']),
+            patch.object(self.service, '_build_provider_chain', return_value=['openai']),
+            patch.object(self.service, '_is_provider_healthy', return_value=True),
+            patch.object(ai_service_module.admin_ops, 'current_budget_state', return_value={'allowed': True}),
+            patch.object(self.service, '_call_provider', return_value=('hello', {})),
+        ):
+            result = self.service.generate_response([{"role": "user", "content": "hi"}], task='chat')
+        self.assertEqual('hello', result)
+
+
 if __name__ == '__main__':
     unittest.main()

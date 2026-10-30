@@ -295,6 +295,10 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
   // 'ai_cached' over from an earlier session's list fetch. Opening an
   // email is for reading the real message, not a second opinion next to it.
   const [summaryRequested, setSummaryRequested] = useState(false);
+  // {action, allowed, used, limit, remaining} from the summarize response's
+  // ai_quota field -- lets the detail view show "X/Y left today" right
+  // after summarizing, not just an error once the user runs out.
+  const [summaryQuota, setSummaryQuota] = useState(null);
   const [compose, setCompose] = useState({
     to: '', subject: '', body: '', cc: '', bcc: '',
     // mode: 'new' | 'reply' | 'forward' -- picks /email/send-reply vs
@@ -494,6 +498,7 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
     setEmailHtmlBody('');
     setSummary('');
     setSummaryRequested(false);
+    setSummaryQuota(null);
     setAttachments([]);
     try {
       const data = await apiGet(`/email/get-email-body/${email.id}`);
@@ -540,6 +545,7 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
       email.summary_type = 'ai_cached';
       setSummary(data.summary || '');
       setSummaryRequested(true);
+      setSummaryQuota(data.ai_quota || null);
       setEmails((current) => current.map((item) => (
         item.id === email.id ? { ...item, summary: data.summary || '', summary_type: 'ai_cached' } : item
       )));
@@ -1090,7 +1096,12 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
                 <Text style={styles.body}>{emailBody || selectedEmail.snippet || 'Đang tải...'}</Text>
               )}
               {summary && summaryRequested ? (
-                <EmailSummaryCard value={summary} colors={colors} styles={styles} />
+                <>
+                  <EmailSummaryCard value={summary} colors={colors} styles={styles} />
+                  {formatQuotaRemainingLabel(summaryQuota) ? (
+                    <Text style={styles.summaryQuotaLabel}>{formatQuotaRemainingLabel(summaryQuota)}</Text>
+                  ) : null}
+                </>
               ) : null}
               {attachments.length > 0 ? (
                 <View style={styles.attachmentList}>
@@ -1330,6 +1341,18 @@ function isQuotaError(error) {
   return error?.status === 403 && error?.data?.error === 'ai_limit_reached';
 }
 
+// aiQuota is the {action, allowed, used, limit, remaining} object every
+// quota-gated AI route now returns on success (see utils/quota.py's
+// enforce_ai_quota) -- previously discarded after a successful call, so
+// there was no way to show how many uses of a Premium-gated feature are
+// left without the user first running out. Returns '' when not applicable.
+// This screen has no i18n hook (unlike the web frontend) -- every other
+// user-facing string here is Vietnamese-only, matched for consistency.
+function formatQuotaRemainingLabel(aiQuota) {
+  if (!aiQuota || typeof aiQuota.limit !== 'number' || aiQuota.limit <= 0) return '';
+  return `Còn ${aiQuota.remaining}/${aiQuota.limit} lượt hôm nay`;
+}
+
 function formatFileSize(bytes) {
   const size = Number(bytes) || 0;
   if (size < 1024) return `${size} B`;
@@ -1553,6 +1576,12 @@ function makeStyles(colors) {
       gap: 8,
     },
     attachmentHeader: { color: colors.primary, fontSize: 10, fontFamily: 'Poppins_700Bold', letterSpacing: 1 },
+    summaryQuotaLabel: {
+      marginTop: 6,
+      color: colors.textMuted,
+      fontFamily: 'Poppins_600SemiBold',
+      fontSize: 11,
+    },
     attachmentRow: {
       flexDirection: 'row',
       alignItems: 'center',

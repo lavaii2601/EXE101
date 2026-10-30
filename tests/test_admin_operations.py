@@ -39,9 +39,11 @@ class AdminControlsTests(unittest.TestCase):
             patch.object(quota.admin_ops, "quota_limit", return_value=50) as limit,
             patch.object(quota, "check_and_increment", return_value=(True, 1, 50)) as increment,
         ):
-            rejection = quota.enforce_ai_quota("user-1", "claude")
+            result = quota.enforce_ai_quota("user-1", "claude")
 
-        self.assertIsNone(rejection)
+        self.assertEqual(
+            {"allowed": True, "used": 1, "limit": 50, "remaining": 49}, result,
+        )
         limit.assert_called_once_with("plus", "claude")
         increment.assert_called_once_with("user-1", "claude", limit=50)
 

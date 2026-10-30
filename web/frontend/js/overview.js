@@ -863,7 +863,11 @@ function bindStudySummarizerBody() {
                 }
                 throw new Error(data.error || ui('Không thể tóm tắt', 'Unable to summarize'));
             }
-            if (resultBox) resultBox.innerHTML = `<div class="student-tools-summary">${escapeHtml(data.summary)}</div>`;
+            const quotaLabel = formatQuotaRemainingLabel(data.ai_quota);
+            if (resultBox) {
+                resultBox.innerHTML = `<div class="student-tools-summary">${escapeHtml(data.summary)}</div>`
+                    + (quotaLabel ? `<p class="student-tools-quota-note">${quotaLabel}</p>` : '');
+            }
         } catch (error) {
             showNotification(error.message, 'error');
         } finally {
@@ -1115,6 +1119,11 @@ async function loadOverviewPage(options = {}) {
         // when a provider is configured); buildOverviewInsight is the
         // local/deterministic fallback used whenever it's absent.
         const briefText = overviewData.brief || buildOverviewInsight({ schedules, emails, selectedDate });
+        // Only shown when the brief actually came from a real AI call
+        // (overviewData.brief is non-empty) -- the deterministic local
+        // fallback above never consumes quota, so showing a count next to
+        // it would be misleading.
+        const briefQuotaLabel = overviewData.brief ? formatQuotaRemainingLabel(overviewData.ai_quota) : '';
 
         container.innerHTML = `
             <section class="overview-hero">
@@ -1124,6 +1133,7 @@ async function loadOverviewPage(options = {}) {
                         ? ui(`Bạn có ${attentionCount} điều đáng chú ý.`, `You have ${attentionCount} things worth attention.`)
                         : ui('Hôm nay trông thật nhẹ nhàng.', 'Today looks refreshingly clear.')}</h3>
                     <p class="overview-ai-brief">${escapeHtml(briefText)}</p>
+                    ${briefQuotaLabel ? `<p class="overview-ai-brief-quota">${briefQuotaLabel}</p>` : ''}
                     <ul class="overview-attention-list">${renderOverviewAttention({ schedules, emails, deadlines })}</ul>
                     ${refreshNote}
                 </div>

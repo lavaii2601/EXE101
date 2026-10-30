@@ -893,7 +893,9 @@ async function handleSummarizeEmail() {
                 const summaryEl = document.createElement('div');
                 summaryEl.className = 'email-detail-summary';
                 summaryEl.style.setProperty('--email-tag-color', '#2196F3');
-                summaryEl.innerHTML = `<div class="email-detail-summary-label">${ui('AI tóm tắt', 'AI summary')}</div>${renderEmailSummaryCard(data.summary)}`;
+                const quotaLabel = formatQuotaRemainingLabel(data.ai_quota);
+                summaryEl.innerHTML = `<div class="email-detail-summary-label">${ui('AI tóm tắt', 'AI summary')}</div>${renderEmailSummaryCard(data.summary)}`
+                    + (quotaLabel ? `<div class="email-detail-summary-quota">${quotaLabel}</div>` : '');
                 bodyEl.parentNode.insertBefore(summaryEl, bodyEl);
             }
             showNotification(ui('✅ Đã tóm tắt email', '✅ Email summarized'), 'success');

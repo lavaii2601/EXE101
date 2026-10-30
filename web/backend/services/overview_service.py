@@ -135,12 +135,11 @@ def refresh_daily_overview(user_id, day=None, max_results=50, force=False):
     # emails. None means "no narrative"; callers fall back to rendering the
     # bullet list, same as before this existed.
     try:
-        quota_rejection = enforce_ai_quota(user_id, 'daily_overview')
-        payload['brief'] = None if quota_rejection else _ai_service.generate_daily_overview_brief(
+        quota_result = enforce_ai_quota(user_id, 'daily_overview')
+        payload['brief'] = None if not quota_result['allowed'] else _ai_service.generate_daily_overview_brief(
             payload['schedules'], rows, report_date=format_report_date(day), user_id=user_id,
         )
-        if quota_rejection:
-            payload['ai_quota'] = {'action': 'daily_overview', **quota_rejection}
+        payload['ai_quota'] = {'action': 'daily_overview', **quota_result}
     except Exception:
         logger.warning("Could not generate AI overview brief for %s", user_id, exc_info=True)
         payload['brief'] = None

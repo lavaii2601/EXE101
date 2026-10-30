@@ -236,9 +236,9 @@ def send_message():
     if not user_message:
         return jsonify({'error': 'Empty message'}), 400
 
-    quota_rejection = enforce_ai_quota(user_id, 'bob_chat')
-    if quota_rejection:
-        return jsonify({'error': 'ai_limit_reached', **quota_rejection}), 403
+    quota_result = enforce_ai_quota(user_id, 'bob_chat')
+    if not quota_result['allowed']:
+        return jsonify({'error': 'ai_limit_reached', **quota_result}), 403
 
     db_path = get_user_db_path(user_id)
     History.init_db(db_path=db_path)
@@ -374,6 +374,7 @@ def send_message():
         response_payload['email_sources'] = result.email_sources
     if result.day_plan_suggestion is not None:
         response_payload['day_plan_suggestion'] = result.day_plan_suggestion
+    response_payload['ai_quota'] = {'action': 'bob_chat', **quota_result}
 
     return jsonify(response_payload)
 
@@ -423,9 +424,9 @@ def summarize_study_material():
     if not content:
         return jsonify({'error': 'Empty content'}), 400
 
-    quota_rejection = enforce_ai_quota(user_id, 'study_summary')
-    if quota_rejection:
-        return jsonify({'error': 'ai_limit_reached', **quota_rejection}), 403
+    quota_result = enforce_ai_quota(user_id, 'study_summary')
+    if not quota_result['allowed']:
+        return jsonify({'error': 'ai_limit_reached', **quota_result}), 403
 
     db_path = get_user_db_path(user_id)
     summary = extractive_summary.summarize_short(title, content)
@@ -445,6 +446,7 @@ def summarize_study_material():
     return jsonify({
         'success': True,
         'summary': summary,
+        'ai_quota': {'action': 'study_summary', **quota_result},
     })
 
 

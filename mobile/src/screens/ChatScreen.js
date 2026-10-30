@@ -133,6 +133,14 @@ function formatAgentMeta(data) {
   if (data?.pending_action) {
     parts.push('Cần xác nhận hành động');
   }
+  // ai_quota is the {action, allowed, used, limit, remaining} object every
+  // quota-gated AI route now returns on success -- previously discarded,
+  // so there was no way to show how many Premium-gated uses are left
+  // without the user first running out.
+  const quota = data?.ai_quota;
+  if (quota && typeof quota.limit === 'number' && quota.limit > 0) {
+    parts.push(`Còn ${quota.remaining}/${quota.limit} lượt hôm nay`);
+  }
   return parts.join(' · ');
 }
 

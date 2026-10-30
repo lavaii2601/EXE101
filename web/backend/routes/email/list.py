@@ -479,9 +479,9 @@ def summarize_email_detail(email_id):
                 db_path=db_path
             )
 
-        quota_rejection = enforce_ai_quota(user_id, 'email_summary')
-        if quota_rejection:
-            return jsonify({'error': 'ai_limit_reached', **quota_rejection}), 403
+        quota_result = enforce_ai_quota(user_id, 'email_summary')
+        if not quota_result['allowed']:
+            return jsonify({'error': 'ai_limit_reached', **quota_result}), 403
 
         summary = ai_service.summarize_email_polished(email_data, user_id=user_id)
         payload = {
@@ -510,7 +510,8 @@ def summarize_email_detail(email_id):
             'success': True,
             'summary': summary,
             'email': payload['email'],
-            'cache_hit': False
+            'cache_hit': False,
+            'ai_quota': {'action': 'email_summary', **quota_result},
         })
     except Exception as e:
         logger.error(f"Error summarizing email: {str(e)}", exc_info=True)

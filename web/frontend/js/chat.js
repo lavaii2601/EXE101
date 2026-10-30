@@ -339,9 +339,11 @@ async function sendMessageConfirmed(message, opts = {}) {
             const sourceBadge = workspaceSources.length
                 ? `<span class="provider-badge workspace-source-badge">${workspaceSources.map(source => sourceLabels[source]).join(' + ')}</span>`
                 : '';
+            const quotaLabel = formatQuotaRemainingLabel(data.ai_quota);
+            const quotaBadge = quotaLabel ? `<span class="provider-badge quota-remaining-badge">${quotaLabel}</span>` : '';
             // agent_trace is diagnostic data. Do not expose internal intent
             // names or orchestration steps in the user's conversation.
-            addMessage(data.response, 'assistant', sourceBadge);
+            addMessage(data.response, 'assistant', sourceBadge + quotaBadge);
             loadChatSessions().catch(() => {});
 
             await refreshWorkspaceTargets(data.refresh_targets);

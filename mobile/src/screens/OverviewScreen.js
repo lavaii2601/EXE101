@@ -60,6 +60,10 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, use
   const [summaryTitle, setSummaryTitle] = useState('');
   const [summaryContent, setSummaryContent] = useState('');
   const [summaryResult, setSummaryResult] = useState('');
+  // {action, allowed, used, limit, remaining} from the summarize response's
+  // ai_quota field -- shows "X/Y left today" right after a successful
+  // summary instead of only once the user has already run out.
+  const [summaryQuota, setSummaryQuota] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [gpaVisible, setGpaVisible] = useState(false);
   const [gpaRows, setGpaRows] = useState([{ name: '', credits: '', grade: '' }, { name: '', credits: '', grade: '' }, { name: '', credits: '', grade: '' }]);
@@ -254,6 +258,7 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, use
     try {
       const data = await apiPost('/chat/summarize-study', { title: summaryTitle.trim(), content });
       setSummaryResult(data.summary || '');
+      setSummaryQuota(data.ai_quota || null);
     } catch (error) {
       if (error.status === 403 && error.data?.error === 'ai_limit_reached') {
         Alert.alert('Hết lượt miễn phí', `Bạn đã dùng hết ${error.data.limit} lượt tóm tắt miễn phí hôm nay.`);
@@ -895,6 +900,9 @@ export default function OverviewScreen({ onAgentSync, syncEvent, onNavigate, use
             {summaryResult ? (
               <View style={styles.summaryResultBox}>
                 <Text style={styles.itemPreview}>{summaryResult}</Text>
+                {summaryQuota && typeof summaryQuota.limit === 'number' && summaryQuota.limit > 0 ? (
+                  <Text style={styles.studentUpsellText}>{`Còn ${summaryQuota.remaining}/${summaryQuota.limit} lượt hôm nay`}</Text>
+                ) : null}
               </View>
             ) : null}
           </Card>
