@@ -104,16 +104,19 @@ Future<({bool success, bool needsPassword})> consumeGoogleAuthCallback(Uri uri) 
     }
   }
 
-  // Legacy fallback, kept for a backend deploy that predates the
-  // exchange-code flow: the token arrives directly in the deep link.
-  final accessToken = uri.queryParameters['access_token'];
-  if (accessToken == null || accessToken.isEmpty) return failure;
-  await clearPendingOauthCodeVerifier();
-  await setMobileSession(
-    userId: uri.queryParameters['user_id'] ?? '',
-    accessToken: accessToken,
-  );
-  return (success: true, needsPassword: uri.queryParameters['needs_password'] == '1');
+  // A bare access_token in the deep link used to be accepted here as a
+  // fallback for app builds older than the exchange-code flow. Removed:
+  // flowmateai:// is an unverified custom scheme, so anything else on the
+  // device (another app, a web link, an SMS/QR code) can fire an intent
+  // matching isGoogleAuthCallback with an attacker-chosen access_token and
+  // user_id -- and this function runs on every cold start (see main.dart's
+  // getInitialLink handling), not just during an active sign-in flow. The
+  // exchange_code path above is immune to that because redeeming it
+  // requires the code_verifier this same app instance generated and never
+  // exposed outside an HTTPS POST body. Every current app build always
+  // sends code_challenge (see connectGoogleAccount below), so the backend
+  // should never need this path either.
+  return failure;
 }
 
 /// Mirrors mobile/src/api/googleAuth.js: the app's own http client never

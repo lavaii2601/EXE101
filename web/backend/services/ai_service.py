@@ -194,7 +194,16 @@ class AIService:
             'demo': 0
         }
         
-        # Round-robin rotation and health tracking
+        # Round-robin rotation and health tracking. Plain instance state on
+        # this module-level singleton -- same class of per-process-only
+        # state as RAILWAY.md's documented rate-limiter/TOTP-counter/
+        # scheduler bugs: under more than one gunicorn worker, each process
+        # keeps its own independent cooldown/rotation, so a provider one
+        # worker has marked unhealthy keeps getting retried by the others.
+        # Doesn't bypass the (Postgres-backed, fail-closed) budget hard-stop
+        # in models/admin_ops.py, so this is a cost/reliability concern, not
+        # a security bypass -- but move it to a shared store (Redis, or a
+        # table keyed by provider) before ever raising --workers again.
         self.provider_rotation_index = 0
         self.provider_health = {}  # {provider: {'failed_at': timestamp, 'errors': count}}
         self.provider_cooldown_minutes = 5  # Wait 5 minutes before retrying failed provider

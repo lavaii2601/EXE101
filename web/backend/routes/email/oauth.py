@@ -1147,16 +1147,19 @@ def oauth2callback():
                 exchange_query = urlencode({'exchange_code': exchange_code})
                 return redirect(f"{Config.MOBILE_OAUTH_REDIRECT_URL}?{exchange_query}")
 
-            # Legacy fallback for an app build that hasn't updated to send a
-            # code_challenge yet -- keep working exactly as before rather
-            # than breaking sign-in for whatever's already installed.
-            token_query = urlencode({
-                'access_token': issue_mobile_token(user_id, token_version=(user or {}).get('token_version')),
-                'user_id': user_id,
-                'email': gmail_email,
-                'needs_password': '1' if needs_password else '0',
-            })
-            return redirect(f"{Config.MOBILE_OAUTH_REDIRECT_URL}?{token_query}")
+            # Previously fell back to redirecting a real access_token
+            # directly in the URL here for an app build that hadn't sent a
+            # code_challenge yet. Removed: flowmateai:// is an unverified
+            # custom scheme, so putting a real, usable token in that URL lets
+            # anything else on the device that can fire a matching intent
+            # (another app, a web link, an SMS/QR code) hand the mobile app
+            # an attacker-controlled session -- the mobile client no longer
+            # accepts this shape either (see mobile/src/api/googleAuth.js and
+            # mobile_flutter/lib/api/google_auth.dart). Every current app
+            # build always sends code_challenge, so this should be
+            # unreachable in practice; treat it as the same class of failure
+            # as any other callback error instead of a usable fallback.
+            return _oauth_error_redirect('flow_not_initialized', is_mobile_flow=True)
 
         # Return HTML page that notifies the opener or redirects back to SPA
         return_to = session.pop('oauth_return_to', '/app?gmail_auth=success')

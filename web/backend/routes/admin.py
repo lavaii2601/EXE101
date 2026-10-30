@@ -123,19 +123,20 @@ def _trusted_admin_email(user_id):
 def is_current_user_admin():
     """Return whether the signed-in account's email is allowlisted.
 
-    This is deliberately only a role check. Opening the dashboard still
-    requires the independent TOTP gate enforced by ``_require_admin``.
+    Always a plain bool -- deliberately only a role check, not an account-
+    status gate (account_status is checked separately by
+    ``_google_admin_identity``, which is the function that actually decides
+    whether an admin dashboard request proceeds). Every caller of this
+    function (app.py's redirect guard, the /api/email/auth-status 'is_admin'
+    field) only checks truthiness, so this must never return anything other
+    than True/False -- a prior version returned a (None, error_response)
+    tuple for a suspended account, which is truthy and silently defeated
+    both of those truthiness checks.
     """
     raw_user_id = authenticated_user_id()
     if not raw_user_id or not Config.ADMIN_EMAILS:
         return False
     user_id = sanitize_user_id(raw_user_id)
-    account = User.get(user_id) or {}
-    if str(account.get('account_status') or 'active').lower() != 'active':
-        return None, (
-            jsonify({'error': 'admin_account_inactive', 'message': 'Tài khoản quản trị đang bị khóa.'}),
-            403,
-        )
     admin_email = _trusted_admin_email(user_id)
     return bool(admin_email and admin_email in Config.ADMIN_EMAILS)
 
@@ -191,6 +192,18 @@ def _google_admin_identity():
                 'error': 'admin_not_allowed',
                 'message': 'Tài khoản này không có quyền quản trị.',
             }),
+            403,
+        )
+    account = User.get(user_id) or {}
+    if str(account.get('account_status') or 'active').lower() != 'active':
+        # Checked here, not in is_current_user_admin() -- this is the
+        # function _require_admin() actually calls on every admin request,
+        # so suspending an admin's account takes effect immediately on
+        # their next request instead of only once their already-open TOTP
+        # session (admin_totp_verified_at, up to ADMIN_TOTP_SESSION_SECONDS)
+        # expires on its own.
+        return None, (
+            jsonify({'error': 'admin_account_inactive', 'message': 'Tài khoản quản trị đang bị khóa.'}),
             403,
         )
     return user_id, None

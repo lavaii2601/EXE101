@@ -446,15 +446,14 @@ async function loadSchedules(options = {}) {
                     : String(schedule.attendees || '');
                 const description = plainTextFromHtml(schedule.description || '');
                 const externalLink = schedule.html_link || schedule.web_link || schedule.calendar_event_link || '';
-                const expectedUpdatedAt = JSON.stringify(schedule.updated_at || null);
                 const localActions = isLocal
                     ? `
                         ${schedule.status === 'completed'
-                            ? `<button class="btn-check" onclick='markScheduleIncomplete(${schedule.local_id}, ${expectedUpdatedAt})'>${ui('↩ Chưa xong', '↩ Mark pending')}</button>`
-                            : `<button class="btn-check" onclick='markScheduleComplete(${schedule.local_id}, ${expectedUpdatedAt})'>${ui('✓ Hoàn thành', '✓ Complete')}</button>`}
+                            ? `<button class="btn-check" data-mark-incomplete>${ui('↩ Chưa xong', '↩ Mark pending')}</button>`
+                            : `<button class="btn-check" data-mark-complete>${ui('✓ Hoàn thành', '✓ Complete')}</button>`}
                         ${unsyncedLocal ? `<button class="btn-sync-google" data-sync-google>${ui('Đồng bộ Google', 'Sync Google')}</button>` : ''}
-                        <button class="btn-edit" onclick="openEditSchedule(${schedule.local_id})">${ui('Sửa', 'Edit')}</button>
-                        <button class="btn-delete" onclick="deleteSchedule(${schedule.local_id})">${ui('Xóa', 'Delete')}</button>
+                        <button class="btn-edit" data-edit-schedule>${ui('Sửa', 'Edit')}</button>
+                        <button class="btn-delete" data-delete-schedule>${ui('Xóa', 'Delete')}</button>
                     `
                     : sourceClass === 'google' && schedule.google_event_id
                         ? `<button class="btn-delete" data-google-event-id="${escapeHtml(schedule.google_event_id || '')}">${ui('Xóa khỏi Google', 'Delete from Google')}</button>`
@@ -496,6 +495,22 @@ async function loadSchedules(options = {}) {
                 const openEventButton = scheduleDiv.querySelector('[data-open-event-link]');
                 if (openEventButton) {
                     openEventButton.addEventListener('click', () => openExternalUrl(openEventButton.dataset.openEventLink));
+                }
+                const markCompleteButton = scheduleDiv.querySelector('[data-mark-complete]');
+                if (markCompleteButton) {
+                    markCompleteButton.addEventListener('click', () => markScheduleComplete(schedule.local_id, schedule.updated_at || null));
+                }
+                const markIncompleteButton = scheduleDiv.querySelector('[data-mark-incomplete]');
+                if (markIncompleteButton) {
+                    markIncompleteButton.addEventListener('click', () => markScheduleIncomplete(schedule.local_id, schedule.updated_at || null));
+                }
+                const editScheduleButton = scheduleDiv.querySelector('[data-edit-schedule]');
+                if (editScheduleButton) {
+                    editScheduleButton.addEventListener('click', () => openEditSchedule(schedule.local_id));
+                }
+                const deleteScheduleButton = scheduleDiv.querySelector('[data-delete-schedule]');
+                if (deleteScheduleButton) {
+                    deleteScheduleButton.addEventListener('click', () => deleteSchedule(schedule.local_id));
                 }
                 const syncGoogleButton = scheduleDiv.querySelector('[data-sync-google]');
                 if (syncGoogleButton) {

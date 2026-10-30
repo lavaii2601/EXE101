@@ -151,7 +151,22 @@ function showNotification(message, type = 'info', options = {}) {
 
 
 function openExternalUrl(url) {
-    const popup = window.open(url, '_blank', 'noopener,noreferrer');
+    // Scheme-validated here rather than via sanitizeExternalUrl() below --
+    // that helper HTML-escapes its result for insertion into an href
+    // attribute, which would corrupt a URL passed straight to window.open().
+    // Today's only dynamic caller (schedule.js) only ever passes a Google
+    // Calendar/Microsoft Graph provider-generated link, but window.open()
+    // happily executes a javascript:/data: URI, so any future caller that
+    // passes less trusted data (an ICS import, a custom link field) must
+    // not be able to turn this into script execution.
+    let parsed;
+    try {
+        parsed = new URL(String(url || '').trim(), window.location.origin);
+    } catch (error) {
+        return;
+    }
+    if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) return;
+    const popup = window.open(parsed.href, '_blank', 'noopener,noreferrer');
     if (popup) popup.opener = null;
 }
 

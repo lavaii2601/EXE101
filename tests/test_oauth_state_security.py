@@ -199,10 +199,18 @@ class OAuthStateSecurityTests(unittest.TestCase):
         self.assertNotIn("access_token=", location)
         self.assertNotIn("fake-mobile-token", location)
 
-    def test_not_yet_updated_app_still_gets_the_token_directly_in_the_redirect(self):
-        """No code_challenge was ever sent (older installed app build) --
-        oauth2callback must fall back to the pre-PKCE behavior rather than
-        breaking sign-in for it."""
+    def test_not_yet_updated_app_gets_an_error_not_a_bare_token(self):
+        """No code_challenge was ever sent (an app build old enough to predate
+        the exchange-code flow entirely). This used to fall back to handing
+        the real access_token directly in the flowmateai:// redirect --
+        removed as a real vulnerability: that scheme is an unverified custom
+        scheme, so anything else on the device that can fire a matching
+        intent (another app, a web link, an SMS/QR code) could hand the
+        victim's app an attacker-chosen access_token/user_id and silently
+        switch its session to the attacker's account. Every currently
+        shipping app build always sends a code_challenge, so this path
+        should now be unreachable in practice; it must fail safely rather
+        than leak a usable token if it's ever hit anyway."""
         flow, patches = self._mock_successful_google_exchange()
         with tempfile.TemporaryDirectory() as temp_dir, (
             patch.object(email_route.oauth.pg, "enabled", return_value=False)
@@ -223,8 +231,10 @@ class OAuthStateSecurityTests(unittest.TestCase):
 
         self.assertEqual(302, response.status_code)
         location = response.headers["Location"]
-        self.assertIn("access_token=fake-mobile-token", location)
+        self.assertNotIn("access_token=", location)
+        self.assertNotIn("fake-mobile-token", location)
         self.assertNotIn("exchange_code=", location)
+        self.assertEqual("flow_not_initialized", _error_from_redirect(response))
 
 
 class MobilePkceExchangeTests(unittest.TestCase):
@@ -459,7 +469,7 @@ class OAuthIntentGatingTests(unittest.TestCase):
             patches = self._mock_successful_exchange(existing_owner=existing_owner)
             with patch.object(
                 email_route.oauth, "_consume_oauth_state",
-                return_value=_issued_mobile_state(link_user_id="alice"),
+                return_value=_issued_mobile_state_with_challenge("test-challenge", link_user_id="alice"),
             ), patch.object(email_route.oauth, "issue_mobile_token", return_value="tok"):
                 for p in patches:
                     p.start()
@@ -469,7 +479,7 @@ class OAuthIntentGatingTests(unittest.TestCase):
                     for p in patches:
                         p.stop()
             self.assertEqual(302, response.status_code, msg=f"existing_owner={existing_owner!r}")
-            self.assertIn("access_token=", response.headers["Location"])
+            self.assertIn("exchange_code=", response.headers["Location"])
 
     def test_callback_recover_rejects_a_google_identity_nobody_ever_linked(self):
         """Recovery must never mint a new account -- that would silently
@@ -492,7 +502,7 @@ class OAuthIntentGatingTests(unittest.TestCase):
         patches = self._mock_successful_exchange(existing_owner="alice")
         with patch.object(
             email_route.oauth, "_consume_oauth_state",
-            return_value=_issued_mobile_state(link_user_id=None),
+            return_value=_issued_mobile_state_with_challenge("test-challenge", link_user_id=None),
         ), patch.object(email_route.oauth, "issue_mobile_token", return_value="tok"):
             for p in patches:
                 p.start()
@@ -502,15 +512,21 @@ class OAuthIntentGatingTests(unittest.TestCase):
                 for p in patches:
                     p.stop()
         self.assertEqual(302, response.status_code)
-        self.assertIn("access_token=", response.headers["Location"])
+        self.assertIn("exchange_code=", response.headers["Location"])
 
     def test_callback_flags_needs_password_for_an_account_with_no_password_set(self):
+        # needs_password now travels inside the exchange payload, not as a
+        # query param on the redirect itself (only exchange_code is) -- so
+        # this has to redeem the exchange_code via the real endpoint, the
+        # same way the app does, to observe it.
+        verifier = "needs-password-test-verifier"
+        challenge = email_route.oauth._pkce_s256_challenge(verifier)
         patches = self._mock_successful_exchange(
             existing_owner="alice", existing_user={"password_hash": None},
         )
         with patch.object(
             email_route.oauth, "_consume_oauth_state",
-            return_value=_issued_mobile_state(link_user_id=None),
+            return_value=_issued_mobile_state_with_challenge(challenge, link_user_id=None),
         ), patch.object(email_route.oauth, "issue_mobile_token", return_value="tok"):
             for p in patches:
                 p.start()
@@ -520,7 +536,16 @@ class OAuthIntentGatingTests(unittest.TestCase):
                 for p in patches:
                     p.stop()
         self.assertEqual(302, response.status_code)
-        self.assertIn("needs_password=1", response.headers["Location"])
+        query = parse_qs(urlparse(response.headers["Location"]).query)
+        exchange_code = query.get("exchange_code", [None])[0]
+        self.assertTrue(exchange_code)
+
+        exchanged = self.client.post(
+            "/api/email/oauth-token-exchange",
+            json={"exchange_code": exchange_code, "code_verifier": verifier},
+        )
+        self.assertEqual(200, exchanged.status_code)
+        self.assertTrue(exchanged.get_json()["needs_password"])
 
 
 if __name__ == "__main__":

@@ -303,6 +303,42 @@ class AdminRouteSecurityTests(unittest.TestCase):
         ):
             self.assertTrue(admin.is_current_user_admin())
 
+    def test_is_current_user_admin_is_always_a_plain_bool_even_when_suspended(self):
+        # Previously returned a (None, error_response) tuple for a
+        # suspended account instead of False -- both of this function's
+        # real callers (app.py's redirect guard, /api/email/auth-status's
+        # is_admin field) only ever check truthiness, and a non-empty tuple
+        # is truthy. That silently reported is_admin=True (and skipped the
+        # redirect-away-from-login-shell guard) for ANY suspended account
+        # whose email happened to be admin-allowlisted. Account-status is
+        # now checked only in _google_admin_identity, which is what actually
+        # gates dashboard access -- this function stays a pure role check.
+        with (
+            patch.object(Config, 'ADMIN_EMAILS', {'admin@example.com'}),
+            patch.object(admin, 'authenticated_user_id', return_value='admin_example_com'),
+            patch.object(admin, '_trusted_admin_email', return_value='admin@example.com'),
+        ):
+            result = admin.is_current_user_admin()
+        self.assertIs(result, True)
+
+    def test_google_admin_identity_rejects_a_suspended_admin_account(self):
+        # _require_admin() calls this on every /api/admin/* request, so a
+        # suspended admin's already-open TOTP session (admin_totp_
+        # verified_at) must stop working on its very next request, not just
+        # once that session eventually expires on its own.
+        with (
+            self.app.test_request_context(),
+            patch.object(Config, 'ADMIN_EMAILS', {'admin@example.com'}),
+            patch.object(admin, 'authenticated_user_id', return_value='admin_example_com'),
+            patch.object(admin, '_trusted_admin_email', return_value='admin@example.com'),
+            patch.object(admin.User, 'get', return_value={'account_status': 'suspended'}),
+        ):
+            user_id, error_response = admin._google_admin_identity()
+
+        self.assertIsNone(user_id)
+        self.assertEqual(error_response[1], 403)
+        self.assertEqual(error_response[0].get_json()['error'], 'admin_account_inactive')
+
     def test_auth_status_exposes_admin_role_from_server_allowlist(self):
         client = self._client_with_google_session()
         credential_status = {

@@ -112,13 +112,19 @@ export async function connectGoogleAccount(intent = 'link') {
     return { connected: true, needsPassword: !!exchanged.needs_password };
   }
 
-  // Legacy fallback, kept for a backend deploy that predates the
-  // exchange-code flow: the token arrives directly in the deep link.
-  if (!queryParams?.access_token) {
-    throw new Error('Không nhận được access token từ máy chủ.');
-  }
-  setMobileSession({ userId: queryParams.user_id, accessToken: queryParams.access_token });
-  return { connected: true, needsPassword: queryParams.needs_password === '1' };
+  // A bare access_token in the deep link used to be accepted here as a
+  // fallback for app builds older than the exchange-code flow. Removed:
+  // flowmateai:// is an unverified custom scheme, so anything else on the
+  // device (another app, a web link, an SMS/QR code) can fire an intent
+  // matching this redirect URL with an attacker-chosen access_token and
+  // user_id while this openAuthSessionAsync call is in flight, silently
+  // switching the victim's session to the attacker's account. The
+  // exchange_code path above is immune to that because redeeming it
+  // requires the codeVerifier this same app instance generated and never
+  // exposed outside an HTTPS POST body. Every current app build always
+  // sends code_challenge (see generatePkcePair above), so the backend
+  // should never need this path either.
+  throw new Error('Không nhận được access token từ máy chủ.');
 }
 
 // Multiple Gmail accounts can be linked to one FlowMate account (see
