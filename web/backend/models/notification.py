@@ -1,9 +1,8 @@
 """In-app notifications (Phase 6, design doc section 9.9).
 
-Written by services/subscription_lifecycle_scheduler.py (renewal reminders,
-grace/read-only transitions) and read by routes/notifications.py. Postgres-
-only, same justification as every other workspace-era table this session:
-notifications are a production/Business concern, no SQLite parity needed.
+Written by services/subscription_lifecycle_scheduler.py (personal Premium
+renewal reminders) and read by routes/notifications.py. Postgres-only --
+no SQLite parity needed for this table.
 """
 
 from models import postgres_db as pg
@@ -12,7 +11,7 @@ SEVERITIES = ("info", "warning", "critical")
 
 
 def create(recipient_user_id, dedupe_key, type_, title, body=None, severity="info",
-           workspace_id=None, action_url=None, expires_at=None):
+           action_url=None, expires_at=None):
     """Idempotent fire-and-forget insert. ON CONFLICT DO NOTHING means a
     caller never needs to pre-check whether this exact (recipient,
     dedupe_key) notification already exists -- the constraint does that.
@@ -26,13 +25,13 @@ def create(recipient_user_id, dedupe_key, type_, title, body=None, severity="inf
         conn.execute(
             """
             INSERT INTO notifications (
-                recipient_user_id, workspace_id, type, severity, title, body,
+                recipient_user_id, type, severity, title, body,
                 action_url, dedupe_key, expires_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (recipient_user_id, dedupe_key) DO NOTHING
             """,
-            (recipient_user_id, workspace_id, type_, severity, title, body,
+            (recipient_user_id, type_, severity, title, body,
              action_url, dedupe_key, expires_at),
         )
 

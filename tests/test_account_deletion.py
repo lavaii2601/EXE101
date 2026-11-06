@@ -39,28 +39,17 @@ class _Result:
 class _PostgresConnection:
     def __init__(self):
         self.queries = []
-        self.replacements = {
-            'workspace-with-team': {'user_id': 'admin-user'},
-            'workspace-solo': None,
-        }
 
     def execute(self, sql, params=()):
         normalized = ' '.join(sql.split())
         self.queries.append((normalized, params))
-        if normalized.startswith('SELECT id, name FROM workspaces'):
-            return _Result(rows=[
-                {'id': 'workspace-with-team', 'name': 'Team'},
-                {'id': 'workspace-solo', 'name': 'Solo'},
-            ])
-        if normalized.startswith('SELECT user_id FROM workspace_memberships'):
-            return _Result(row=self.replacements[params[0]])
         if normalized.startswith('DELETE FROM users'):
             return _Result(rowcount=1)
         return _Result(rowcount=1)
 
 
 class AccountDeletionServiceTests(unittest.TestCase):
-    def test_postgres_transfers_shared_workspace_and_deletes_solo_workspace(self):
+    def test_postgres_deletes_knowledge_and_user_row(self):
         connection = _PostgresConnection()
 
         @contextmanager
@@ -70,13 +59,7 @@ class AccountDeletionServiceTests(unittest.TestCase):
         with patch.object(account_deletion_service.pg, 'connection', fake_connection):
             result = account_deletion_service._delete_postgres_account('owner-user')
 
-        self.assertEqual(1, result['transferred_business_workspaces'])
-        self.assertEqual(1, result['deleted_business_workspaces'])
-        self.assertTrue(any(
-            query.startswith('UPDATE workspaces SET owner_user_id')
-            and params == ('admin-user', 'workspace-with-team')
-            for query, params in connection.queries
-        ))
+        self.assertEqual({}, result)
         self.assertTrue(any(
             query.startswith('DELETE FROM knowledge_documents')
             for query, _params in connection.queries
@@ -103,7 +86,7 @@ class AccountDeletionServiceTests(unittest.TestCase):
 
                 result = account_deletion_service.delete_account('delete-me')
 
-                self.assertEqual(0, result['transferred_business_workspaces'])
+                self.assertEqual({}, result)
                 self.assertFalse(os.path.exists(private_db))
                 self.assertIsNone(User.get('delete-me'))
                 User._initialized_dbs.discard(database_path)
@@ -131,10 +114,7 @@ class AccountDeletionRouteTests(unittest.TestCase):
 
     def test_confirmed_deletion_clears_session(self):
         self._login()
-        deletion_result = {
-            'transferred_business_workspaces': 1,
-            'deleted_business_workspaces': 0,
-        }
+        deletion_result = {}
         with patch.object(user_route, 'delete_account', return_value=deletion_result) as delete_spy:
             response = self.client.post(
                 '/api/user/account/delete',

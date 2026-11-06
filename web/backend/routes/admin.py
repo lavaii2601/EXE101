@@ -19,10 +19,8 @@ from models import postgres_db as pg
 from models.knowledge import KnowledgeDocument
 from models.user import User
 from models import subscription as subscription_model
-from models import workspace as workspace_model
-from models import workspace_subscription
 from models import admin_ops
-from models.workspace_sync import WorkspaceSync
+from models.sync_state import SyncState
 from utils.security import authenticated_user_id
 from utils.user_context import sanitize_user_id
 
@@ -277,31 +275,6 @@ def _clear_totp_attempts(user_id):
         _totp_attempts.pop(key, None)
 
 
-def _workspace_access_alert_counts(conn=None):
-    """Phase 6 operational alerts: access_state has no pure-SQL equivalent
-    (it's computed live by workspace_subscription.get_access_state), so
-    reuse the exact same decorated rows Stage A's lifecycle scheduler reads
-    from -- this can never silently disagree with what the scheduler /
-    assert_writable actually enforce. Extracted as its own function so it's
-    testable without scripting every unrelated query _postgres_dashboard
-    also runs.
-
-    Pass the connection _postgres_dashboard already has open so this reuses
-    that round trip instead of opening a second one."""
-    workspaces_in_grace = 0
-    workspaces_read_only = 0
-    for row in workspace_subscription.list_all_with_owner(conn=conn):
-        state = row.get('access_state')
-        if state == workspace_subscription.ACCESS_GRACE:
-            workspaces_in_grace += 1
-        elif state == workspace_subscription.ACCESS_READ_ONLY:
-            workspaces_read_only += 1
-    return {
-        'workspaces_in_grace': workspaces_in_grace,
-        'workspaces_read_only': workspaces_read_only,
-    }
-
-
 def _postgres_dashboard():
     with pg.connection() as conn:
         summary = conn.execute(
@@ -487,10 +460,8 @@ def _postgres_dashboard():
                    NOW() AS server_time
             """
         ).fetchone()
-        alert_counts = _workspace_access_alert_counts(conn=conn)
 
     summary_row = pg.normalize_row(summary)
-    summary_row.update(alert_counts)
 
     return {
         'summary': summary_row,
@@ -580,116 +551,6 @@ def _empty_finance():
         },
         'money_unit': 'minor',
         'reporting_timezone': 'Asia/Ho_Chi_Minh',
-    }
-
-
-def _empty_workspace_dashboard():
-    return {
-        'summary': {
-            'business_workspaces': 0,
-            'active_workspaces': 0,
-            'attention_workspaces': 0,
-            'active_seats': 0,
-            'seat_capacity': 0,
-            'pending_seat_requests': 0,
-        },
-        'workspaces': [],
-    }
-
-
-def _postgres_workspace_dashboard():
-    """Return one operational row per Business workspace without N+1 reads."""
-    with pg.connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                workspace.id::TEXT AS workspace_id,
-                workspace.name,
-                workspace.slug,
-                workspace.status AS workspace_status,
-                workspace.owner_user_id,
-                COALESCE(NULLIF(owner.gmail_email, ''), NULLIF(owner.email, ''), workspace.owner_user_id) AS owner,
-                workspace.created_at,
-                workspace.updated_at,
-                COALESCE(members.active_seats, 0)::BIGINT AS active_seats,
-                COALESCE(invitations.pending_invitations, 0)::BIGINT AS pending_invitations,
-                COALESCE(seat_requests.pending_seat_requests, 0)::BIGINT AS pending_seat_requests,
-                subscription.id AS subscription_id,
-                subscription.plan_code,
-                subscription.plan_name,
-                subscription.status AS subscription_status,
-                subscription.billing_interval,
-                subscription.currency,
-                subscription.unit_amount,
-                subscription.current_period_start,
-                subscription.current_period_end,
-                subscription.grace_period_ends_at,
-                subscription.included_seats,
-                subscription.extra_seats,
-                subscription.cancel_at_period_end
-            FROM workspaces workspace
-            LEFT JOIN users owner ON owner.user_id = workspace.owner_user_id
-            LEFT JOIN LATERAL (
-                SELECT COUNT(*) AS active_seats
-                FROM workspace_memberships
-                WHERE workspace_id = workspace.id AND status = 'active'
-            ) members ON TRUE
-            LEFT JOIN LATERAL (
-                SELECT COUNT(*) AS pending_invitations
-                FROM workspace_invitations
-                WHERE workspace_id = workspace.id
-                  AND status IN ('pending', 'capacity_blocked')
-            ) invitations ON TRUE
-            LEFT JOIN LATERAL (
-                SELECT COUNT(*) AS pending_seat_requests
-                FROM workspace_seat_requests
-                WHERE workspace_id = workspace.id
-                  AND status IN ('pending_owner', 'payment_pending')
-            ) seat_requests ON TRUE
-            LEFT JOIN LATERAL (
-                SELECT * FROM subscriptions
-                WHERE workspace_id = workspace.id
-                ORDER BY created_at DESC
-                LIMIT 1
-            ) subscription ON TRUE
-            WHERE workspace.type = 'business'
-            ORDER BY workspace.updated_at DESC
-            """
-        ).fetchall()
-
-    workspaces = []
-    for raw_row in pg.normalize_rows(rows):
-        row = dict(raw_row)
-        subscription = None
-        if row.get('subscription_id') is not None:
-            subscription = {
-                'status': row.get('subscription_status'),
-                'current_period_end': row.get('current_period_end'),
-                'grace_period_ends_at': row.get('grace_period_ends_at'),
-            }
-        row['access_state'] = workspace_subscription.get_access_state(subscription)
-        row['seat_capacity'] = (
-            int(row.get('included_seats') or 0) + int(row.get('extra_seats') or 0)
-            if subscription
-            else workspace_subscription.DEFAULT_BUSINESS_INCLUDED_SEATS
-        )
-        workspaces.append(row)
-
-    attention_states = {
-        workspace_subscription.ACCESS_GRACE,
-        workspace_subscription.ACCESS_READ_ONLY,
-        workspace_subscription.ACCESS_NONE,
-    }
-    return {
-        'summary': {
-            'business_workspaces': len(workspaces),
-            'active_workspaces': sum(row['access_state'] == workspace_subscription.ACCESS_ACTIVE for row in workspaces),
-            'attention_workspaces': sum(row['access_state'] in attention_states for row in workspaces),
-            'active_seats': sum(int(row.get('active_seats') or 0) for row in workspaces),
-            'seat_capacity': sum(int(row.get('seat_capacity') or 0) for row in workspaces),
-            'pending_seat_requests': sum(int(row.get('pending_seat_requests') or 0) for row in workspaces),
-        },
-        'workspaces': workspaces,
     }
 
 
@@ -913,7 +774,6 @@ def _postgres_finance():
             SELECT
                 subscription.id,
                 subscription.user_id,
-                subscription.workspace_id::TEXT AS workspace_id,
                 subscription.provider,
                 subscription.plan_code,
                 COALESCE(NULLIF(subscription.plan_name, ''), subscription.plan_code) AS plan_name,
@@ -936,13 +796,10 @@ def _postgres_finance():
                 COALESCE(
                     NULLIF(users.gmail_email, ''),
                     NULLIF(users.email, ''),
-                    NULLIF(workspaces.name, ''),
-                    subscription.user_id,
-                    subscription.workspace_id::TEXT
+                    subscription.user_id
                 ) AS customer
             FROM subscriptions subscription
             LEFT JOIN users ON users.user_id = subscription.user_id
-            LEFT JOIN workspaces ON workspaces.id = subscription.workspace_id
             ORDER BY subscription.updated_at DESC
             LIMIT 30
             """
@@ -1549,60 +1406,6 @@ def admin_security():
     return jsonify({'success': True, 'admin': admin, 'security': payload})
 
 
-@admin_bp.route('/workspaces', methods=['GET'])
-def admin_workspaces():
-    admin, error_response = _require_admin()
-    if error_response:
-        return error_response
-
-    payload = _postgres_workspace_dashboard() if pg.enabled() else _empty_workspace_dashboard()
-    return jsonify({
-        'success': True,
-        'admin': admin,
-        'backend': 'postgres' if pg.enabled() else 'sqlite',
-        'generated_at': datetime.now(timezone.utc).isoformat(),
-        **payload,
-    })
-
-
-@admin_bp.route('/workspaces/<workspace_id>/audit', methods=['GET'])
-def admin_workspace_audit(workspace_id):
-    """Surface workspace_audit_events (Phase 5 runtime security monitoring).
-
-    Every business-data mutation already writes one of these rows via
-    models.workspace.record_audit_event (see models/project.py, task.py,
-    status_report.py, shared_artifact.py, workspace_subscription.py) --
-    nothing read them back before this endpoint existed."""
-    admin, error_response = _require_admin()
-    if error_response:
-        return error_response
-    if not pg.enabled():
-        return jsonify({'success': True, 'admin': admin, 'backend': 'sqlite', 'events': [], 'has_more': False})
-
-    try:
-        limit = min(max(int(request.args.get('limit', 50)), 1), 200)
-    except (TypeError, ValueError):
-        limit = 50
-    event_type = (request.args.get('event_type') or '').strip() or None
-    before = (request.args.get('before') or '').strip() or None
-
-    # Fetch one extra row to know whether there's a next page without a
-    # separate COUNT(*) query.
-    events = workspace_model.list_audit_events(
-        workspace_id, limit=limit + 1, event_type=event_type, before=before,
-    )
-    has_more = len(events) > limit
-    events = events[:limit]
-    return jsonify({
-        'success': True,
-        'admin': admin,
-        'backend': 'postgres',
-        'events': events,
-        'has_more': has_more,
-        'next_before': events[-1]['created_at'] if has_more and events else None,
-    })
-
-
 @admin_bp.route('/users/<user_id>/subscription', methods=['POST'])
 def admin_grant_subscription(user_id):
     """Manually grant Premium to a user (provider='manual'), for the period
@@ -1648,7 +1451,7 @@ def admin_grant_subscription(user_id):
         }), 409
 
     try:
-        WorkspaceSync.bump(user_id, ('profile', 'settings', 'overview'))
+        SyncState.bump(user_id, ('profile', 'settings', 'overview'))
     except Exception:
         pass
     admin_ops.record_admin_audit(
@@ -1664,92 +1467,6 @@ def admin_grant_subscription(user_id):
     })
 
 
-@admin_bp.route('/workspaces/<workspace_id>/subscription', methods=['POST'])
-def admin_grant_workspace_subscription(workspace_id):
-    """Manually grant/renew a Business workspace subscription (provider=
-    'manual'), for the period before a real payment gateway is wired up.
-    Same subscriptions row shape a future payment-provider webhook would
-    eventually insert -- see routes/workspace.py's models/workspace_subscription
-    module docstring."""
-    admin, error_response = _require_admin()
-    if error_response:
-        return error_response
-    if not pg.enabled():
-        return jsonify({'error': 'subscriptions_require_postgres'}), 400
-
-    data = request.get_json(silent=True) or {}
-    action = (data.get('action') or '').strip().lower() or None
-    if action and action not in workspace_subscription.PURCHASE_ACTIONS:
-        return jsonify({'error': 'invalid_subscription_action'}), 400
-    plan_code = (data.get('plan_code') or 'business_monthly').strip()
-    plan_name = (data.get('plan_name') or 'Business').strip()
-    billing_interval = data.get('billing_interval') or 'monthly'
-    if billing_interval not in ('monthly', 'yearly'):
-        return jsonify({'error': 'invalid_billing_interval'}), 400
-    try:
-        unit_amount = int(data.get('unit_amount') or 0)
-        days = int(data.get('days') or (365 if billing_interval == 'yearly' else 30))
-        included_seats = int(
-            data.get('included_seats') or workspace_subscription.DEFAULT_BUSINESS_INCLUDED_SEATS
-        )
-    except (TypeError, ValueError):
-        return jsonify({'error': 'invalid_amount_or_days'}), 400
-
-    try:
-        row = workspace_subscription.grant_manual(
-            workspace_id,
-            plan_code,
-            plan_name=plan_name,
-            billing_interval=billing_interval,
-            unit_amount=unit_amount,
-            currency=data.get('currency') or 'VND',
-            included_seats=included_seats,
-            days=days,
-            action=action,
-            actor_user_id=_admin_actor_id(admin),
-        )
-    except workspace_subscription.WorkspaceSubscriptionError as exc:
-        return jsonify({
-            'error': exc.code,
-            'allowed_action': exc.extra.get('allowed_action'),
-            'subscription': exc.extra.get('subscription'),
-        }), 409
-
-    admin_ops.record_admin_audit(
-        _admin_actor_id(admin), 'workspace_subscription_update', 'workspace', workspace_id,
-        after={'plan_code': row.get('plan_code'), 'status': row.get('status')},
-        request_id=request.headers.get('X-Request-Id'),
-    )
-
-    return jsonify({
-        'success': True,
-        'admin': admin,
-        'action': row.get('entitlement_action'),
-        'subscription': row,
-    })
-
-
-@admin_bp.route('/workspaces/<workspace_id>/subscription/revoke', methods=['POST'])
-def admin_revoke_workspace_subscription(workspace_id):
-    admin, error_response = _require_admin()
-    if error_response:
-        return error_response
-    if not pg.enabled():
-        return jsonify({'error': 'subscriptions_require_postgres'}), 400
-
-    revoked = workspace_subscription.revoke(
-        workspace_id,
-        actor_user_id=_admin_actor_id(admin),
-    )
-    if not revoked:
-        return jsonify({'error': 'no_active_business_subscription'}), 404
-    admin_ops.record_admin_audit(
-        _admin_actor_id(admin), 'workspace_subscription_revoke', 'workspace', workspace_id,
-        after={'revoked': True}, request_id=request.headers.get('X-Request-Id'),
-    )
-    return jsonify({'success': True, 'admin': admin, 'revoked': True})
-
-
 @admin_bp.route('/users/<user_id>/subscription/revoke', methods=['POST'])
 def admin_revoke_subscription(user_id):
     admin, error_response = _require_admin()
@@ -1762,7 +1479,7 @@ def admin_revoke_subscription(user_id):
     if not revoked:
         return jsonify({'error': 'no_active_premium'}), 404
     try:
-        WorkspaceSync.bump(user_id, ('profile', 'settings', 'overview'))
+        SyncState.bump(user_id, ('profile', 'settings', 'overview'))
     except Exception:
         pass
     admin_ops.record_admin_audit(

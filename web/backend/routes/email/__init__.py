@@ -54,7 +54,7 @@ path (routes.email.<name>), so those call sites need no changes:
   moved to), so those tests' patch targets were updated to the owning
   submodule instead (e.g. `routes.email.oauth._build_oauth_flow`,
   `routes.email.list._load_gmail_service`) -- the same pattern
-  services/chat_agents' split used for `_build_workspace_context`. A
+  services/chat_agents' split used for `_build_personal_context`. A
   *direct* call to a pure function (e.g. `routes.email._get_cache_key(...)`)
   has no such issue and keeps working once re-exported here, since the
   function's own body still resolves its own dependencies via its

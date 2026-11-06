@@ -2,12 +2,12 @@ import os
 
 from flask import Blueprint, current_app, g, jsonify, request, session
 
-from models.workspace_sync import WORKSPACE_SYNC_DOMAINS, WorkspaceSync
+from models.sync_state import SYNC_DOMAINS, SyncState
 from utils.security import authenticated_user_id
 from utils.user_context import get_current_user_id, get_user_db_path, sanitize_user_id
 
 
-sync_bp = Blueprint("workspace_sync", __name__, url_prefix="/api/sync")
+sync_bp = Blueprint("sync_state", __name__, url_prefix="/api/sync")
 
 _OAUTH_COMPLETION_PATHS = {
     "/api/email/google-auth",
@@ -15,7 +15,7 @@ _OAUTH_COMPLETION_PATHS = {
 }
 _SYNC_STATE_PATH = "/api/sync/state"
 _MUTATION_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-_DOMAIN_SET = frozenset(WORKSPACE_SYNC_DOMAINS)
+_DOMAIN_SET = frozenset(SYNC_DOMAINS)
 
 
 def _poll_after_ms():
@@ -50,11 +50,11 @@ def _ordered_domains(values):
         for value in (values or ())
         if str(value or "").strip().lower() in _DOMAIN_SET
     }
-    return tuple(domain for domain in WORKSPACE_SYNC_DOMAINS if domain in selected)
+    return tuple(domain for domain in SYNC_DOMAINS if domain in selected)
 
 
 def mutation_domains_for_response(response):
-    """Map a successful API mutation to workspace domains it invalidates."""
+    """Map a successful API mutation to the sync domains it invalidates."""
     path = request.path.rstrip("/") or "/"
     method = request.method.upper()
     is_oauth_completion = path in _OAUTH_COMPLETION_PATHS
@@ -145,33 +145,12 @@ def mutation_domains_for_response(response):
         domains.add("knowledge")
     elif path.startswith("/api/_background/"):
         domains.update(("schedule", "calendar", "overview"))
-    elif path == "/api/projects" or path.startswith("/api/projects/"):
-        domains.add("work_hub")
-    elif path == "/api/tasks" or path.startswith("/api/tasks/"):
-        domains.add("work_hub")
-    elif path == "/api/status-reports" or path.startswith("/api/status-reports/"):
-        domains.add("status_reports")
-    elif path == "/api/workspace-knowledge" or path.startswith("/api/workspace-knowledge/"):
-        domains.add("workspace_knowledge")
-    elif path.startswith("/api/workspaces/") and "/shared-artifacts" in path:
-        domains.add("sharing")
-    elif path == "/api/workspaces" or path.startswith("/api/workspaces/"):
-        # Covers workspace create/rename, member disable/role, invitations,
-        # and seat-request approve/reject -- everything else this route
-        # group can mutate. Only reached for POST/PUT/PATCH/DELETE (see the
-        # _MUTATION_METHODS guard above), so the shared-artifacts branch
-        # above -- checked first since it's also under /api/workspaces/ --
-        # already carved out the one sub-path that belongs to "sharing"
-        # instead.
-        domains.add("workspace_members")
-    elif path.startswith("/api/workspace-invitations/"):
-        domains.add("workspace_members")
 
     return _ordered_domains(domains)
 
 
 def _captured_user_id():
-    value = str(getattr(g, "workspace_sync_user_id", "") or "").strip()
+    value = str(getattr(g, "sync_state_user_id", "") or "").strip()
     if value and value != "default":
         return value
     return ""
@@ -186,24 +165,24 @@ def _post_oauth_user_id():
     return "" if value == "default" else value
 
 
-def install_workspace_sync_hooks(app):
+def install_sync_hooks(app):
     """Install request identity capture and best-effort mutation invalidation."""
-    if app.extensions.get("workspace_sync_hooks"):
+    if app.extensions.get("sync_state_hooks"):
         return
-    app.extensions["workspace_sync_hooks"] = True
+    app.extensions["sync_state_hooks"] = True
 
     @app.before_request
-    def capture_workspace_sync_user():
+    def capture_sync_state_user():
         if not request.path.startswith("/api/"):
             return None
         if authenticated_user_id():
             user_id = get_current_user_id(request)
             if user_id and user_id != "default":
-                g.workspace_sync_user_id = user_id
+                g.sync_state_user_id = user_id
         return None
 
     @app.after_request
-    def bump_workspace_sync_revision(response):
+    def bump_sync_state_revision(response):
         domains = mutation_domains_for_response(response)
         if not domains:
             return response
@@ -217,23 +196,23 @@ def install_workspace_sync_hooks(app):
             return response
 
         try:
-            WorkspaceSync.bump(
+            SyncState.bump(
                 user_id,
                 domains,
                 db_path=get_user_db_path(user_id),
             )
         except Exception:
-            # The business mutation has already succeeded. Sync invalidation is
+            # The mutation has already succeeded. Sync invalidation is
             # advisory and must not convert that success into a client retry.
             current_app.logger.exception(
-                "Could not advance workspace sync revision for %s",
+                "Could not advance sync state revision for %s",
                 request.path,
             )
         return response
 
 
 @sync_bp.route("/state", methods=["GET"])
-def get_workspace_sync_state():
+def get_sync_state():
     if not authenticated_user_id():
         return jsonify({"error": "not_authenticated"}), 401
 
@@ -241,7 +220,7 @@ def get_workspace_sync_state():
     if not user_id or user_id == "default":
         return jsonify({"error": "not_authenticated"}), 401
 
-    state = WorkspaceSync.get_state(
+    state = SyncState.get_state(
         user_id,
         db_path=get_user_db_path(user_id),
     )
@@ -250,7 +229,7 @@ def get_workspace_sync_state():
     domains = state["domains"]
     changed = [
         domain
-        for domain in WORKSPACE_SYNC_DOMAINS
+        for domain in SYNC_DOMAINS
         if domains.get(domain, 0) > since
     ]
     return jsonify(

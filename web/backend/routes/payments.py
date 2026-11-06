@@ -7,7 +7,7 @@ from flask import Blueprint, Response, current_app, jsonify, request, url_for
 
 from models import sepay_payment
 from models import subscription as subscription_model
-from models.workspace_sync import WorkspaceSync
+from models.sync_state import SyncState
 from utils.user_context import get_current_user_id
 
 
@@ -290,7 +290,7 @@ def sepay_ipn():
         if notification_type == "ORDER_PAID":
             result = sepay_payment.process_order_paid(payload)
             if result.get("user_id") and not result.get("duplicate"):
-                WorkspaceSync.bump(result["user_id"], ("profile", "settings", "overview"))
+                SyncState.bump(result["user_id"], ("profile", "settings", "overview"))
         elif notification_type == "TRANSACTION_VOID":
             result = sepay_payment.process_transaction_void(payload)
         else:

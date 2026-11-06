@@ -333,7 +333,7 @@ class BobWebResearchIntentTests(unittest.TestCase):
             patch("services.chat_agents.ai_service.configured_providers", ["ollama"]),
             patch("services.chat_agents.ai_service.last_provider_used", "ollama"),
             patch("services.chat_agents.ai_service.generate_response", return_value=answer) as generate,
-            patch("services.chat_agents.freeform_agent._build_workspace_context", return_value=({"internet"}, context)),
+            patch("services.chat_agents.freeform_agent._build_personal_context", return_value=({"internet"}, context)),
             patch("services.chat_agents.SessionMemory.list_for_session", return_value=[]),
         ):
             result = FreeformChatAgent().handle(ctx)
@@ -391,7 +391,7 @@ Use these external sources only for public web facts.
 
         with (
             patch(
-                "services.chat_agents.freeform_agent._build_workspace_context",
+                "services.chat_agents.freeform_agent._build_personal_context",
                 return_value=({"internet"}, context),
             ),
             patch("services.chat_agents.ai_service.configured_providers", []),
@@ -451,7 +451,7 @@ Use these external sources only for public web facts.
 
 
 class BobWorkspaceDataFallbackTests(unittest.TestCase):
-    """_build_workspace_context (see _intent_sources) can successfully pull
+    """_build_personal_context (see _intent_sources) can successfully pull
     real email/calendar/history/profile data for an "overview"-style
     request even when every configured AI provider then fails or is
     rejected for that one request -- a real, observed production condition
@@ -471,7 +471,7 @@ class BobWorkspaceDataFallbackTests(unittest.TestCase):
             workspace_context,
             {"email", "calendar", "history", "profile"},
         )
-        self.assertEqual("workspace", provider)
+        self.assertEqual("personal_data", provider)
         self.assertTrue(grounded)
         self.assertIn("Báo cáo tuần", response)
         self.assertNotIn("chưa có đủ kiến thức", response)

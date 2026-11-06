@@ -334,7 +334,6 @@ def _remember_email_result_map(ctx, emails):
             ctx.chat_session_id,
             emails,
             db_path=ctx.db_path,
-            workspace_id=ctx.workspace_id,
         )
     except Exception:
         # A failed convenience-memory write must not hide real Gmail results.
@@ -531,7 +530,6 @@ def _email_reference_proposal(ctx, read):
             ctx.user_id,
             ctx.chat_session_id,
             db_path=ctx.db_path,
-            workspace_id=ctx.workspace_id,
         )
     except Exception:
         logger.warning(
@@ -646,7 +644,6 @@ def _mark_emails_apply(ctx, read):
             "Đánh dấu qua chat sau xác nhận",
             action_type='chat',
             db_path=ctx.db_path,
-            workspace_id=ctx.workspace_id,
         )
 
     return AgentResult(

@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.user_context import get_current_user_id, get_user_db_path
 from services.calendar_service import CalendarService
 from models.schedule import Schedule
-from models.workspace_sync import WorkspaceSync
+from models.sync_state import SyncState
 
 bg_bp = Blueprint('_background', __name__, url_prefix='/api/_background')
 
@@ -50,7 +50,7 @@ def _sync_to_calendar_async(user_id, schedule_id):
                     db_path=db_path,
                 )
                 if attached:
-                    WorkspaceSync.bump(
+                    SyncState.bump(
                         user_id,
                         ('schedule', 'calendar', 'overview'),
                         db_path=db_path,

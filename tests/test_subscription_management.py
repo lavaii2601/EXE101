@@ -279,7 +279,7 @@ class SubscriptionRouteTests(unittest.TestCase):
                 "grant_manual",
                 return_value=renewed,
             ) as grant,
-            patch.object(admin_route.WorkspaceSync, "bump") as bump,
+            patch.object(admin_route.SyncState, "bump") as bump,
         ):
             response = self.client.post(
                 "/api/admin/users/alice/subscription",
@@ -310,7 +310,7 @@ class SubscriptionRouteTests(unittest.TestCase):
                 "revoke",
                 return_value=True,
             ),
-            patch.object(admin_route.WorkspaceSync, "bump") as revoke_bump,
+            patch.object(admin_route.SyncState, "bump") as revoke_bump,
         ):
             revoked = self.client.post(
                 "/api/admin/users/alice/subscription/revoke",

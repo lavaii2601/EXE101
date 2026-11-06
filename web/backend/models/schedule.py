@@ -374,8 +374,8 @@ class Schedule:
         This is integration metadata, not user-authored schedule content, so
         the statement intentionally leaves ``updated_at`` untouched. The
         PostgreSQL schedules trigger must likewise exclude this metadata-only
-        update. Background callers still publish a workspace revision so
-        clients can discover the newly attached Google ID.
+        update. Background callers still publish a sync revision so clients
+        can discover the newly attached Google ID.
         """
         if not calendar_event_id:
             return False

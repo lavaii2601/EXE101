@@ -12,8 +12,8 @@ class attribute affects every module's reference to the same class object)
 but had to have its patch target for _load_schedule_match_index updated to
 "routes.email.meeting._load_schedule_match_index" to follow that function to
 its new module, the same way services/chat_agents' split required updating
-"services.chat_agents._build_workspace_context" to
-"services.chat_agents.freeform_agent._build_workspace_context".
+"services.chat_agents._build_personal_context" to
+"services.chat_agents.freeform_agent._build_personal_context".
 """
 import logging
 import re

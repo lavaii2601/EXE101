@@ -23,29 +23,6 @@ _request_buckets = defaultdict(deque)
 _request_buckets_lock = threading.Lock()
 _security_logger = logging.getLogger('flowmate.security')
 
-# The WorkspaceError codes that mean "this request was denied access to a
-# tenant/role it wasn't entitled to" -- Phase 5 runtime security monitoring
-# (WORKER_BUSINESS_SUBSCRIPTION_DESIGN.md section 15). Not every WorkspaceError
-# is security-relevant (e.g. 'project_name_required' is just a validation
-# error), so callers pass only these three codes through this path.
-WORKSPACE_ACCESS_DENIED_CODES = frozenset({
-    'membership_required', 'insufficient_role', 'workspace_not_found',
-})
-
-
-def log_workspace_access_denied(code, actor_user_id, requested_workspace_id):
-    """One structured log line per denied cross-tenant/role attempt, so an
-    operator can grep/alert on repeated attempts from one actor against a
-    workspace they don't belong to. No new DB table this pass -- see
-    routes/admin.py's audit-log endpoint for the separate, already-written
-    workspace_audit_events trail of *successful* business-data mutations."""
-    _security_logger.warning(
-        "workspace_access_denied code=%s actor=%s workspace=%s endpoint=%s method=%s correlation_id=%s",
-        code, actor_user_id, requested_workspace_id or '-', request.endpoint,
-        request.method, getattr(g, 'correlation_id', '-'),
-    )
-
-
 def _serializer():
     return URLSafeTimedSerializer(
         current_app.config["SECRET_KEY"],
@@ -106,22 +83,6 @@ def header_user_id():
         return None
     value = (request.headers.get("X-User-Id") or "").strip()
     if not value or len(value) > 256:
-        return None
-    return value
-
-
-def header_workspace_id():
-    """The active tenant, sent by every client as X-Workspace-Id once a
-    workspace exists (see web/frontend/js/utils.js's apiFetch, mobile/src/api/
-    client.js, mobile_flutter/lib/api/client.dart). Unlike header_user_id
-    this isn't an identity bypass -- it only selects which already-
-    authenticated caller's workspace to operate in -- so it needs no
-    MOBILE_USER_HEADER_ENABLED gate. Membership is still verified downstream
-    by models.workspace.resolve_context; a header naming a workspace the
-    caller doesn't belong to is rejected there, not here.
-    """
-    value = (request.headers.get("X-Workspace-Id") or "").strip()
-    if not value or len(value) > 64:
         return None
     return value
 

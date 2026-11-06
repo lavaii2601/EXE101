@@ -1,9 +1,8 @@
 """Permanent, user-initiated FlowMate account deletion.
 
-Personal data is removed immediately. A Business workspace with another
-active member is transferred before the user row is deleted, so one person's
-privacy request never destroys collaborators' shared work. A sole-member
-Business workspace is deleted with the account through PostgreSQL cascades.
+Personal data is removed immediately; related rows (chat_sessions, history,
+session_memory, subscriptions, notifications) cascade via their user_id FK
+once the users row is deleted.
 """
 
 import logging
@@ -51,67 +50,13 @@ def _remove_private_files(user_id):
 
 
 def _delete_postgres_account(user_id):
-    transferred = []
-    deleted_workspaces = []
     with pg.connection() as conn:
-        owned_workspaces = conn.execute(
-            """
-            SELECT id, name
-            FROM workspaces
-            WHERE owner_user_id = %s AND type = 'business'
-            ORDER BY created_at ASC
-            FOR UPDATE
-            """,
-            (user_id,),
-        ).fetchall()
-
-        for workspace in owned_workspaces:
-            replacement = conn.execute(
-                """
-                SELECT user_id
-                FROM workspace_memberships
-                WHERE workspace_id = %s
-                  AND user_id <> %s
-                  AND status = 'active'
-                ORDER BY CASE role WHEN 'admin' THEN 0 ELSE 1 END,
-                         joined_at ASC,
-                         id ASC
-                LIMIT 1
-                FOR UPDATE
-                """,
-                (workspace['id'], user_id),
-            ).fetchone()
-            if replacement:
-                replacement_user_id = replacement['user_id']
-                conn.execute(
-                    """
-                    UPDATE workspace_memberships
-                    SET role = 'owner', updated_at = NOW()
-                    WHERE workspace_id = %s AND user_id = %s
-                    """,
-                    (workspace['id'], replacement_user_id),
-                )
-                conn.execute(
-                    """
-                    UPDATE workspaces
-                    SET owner_user_id = %s, updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (replacement_user_id, workspace['id']),
-                )
-                transferred.append(workspace.get('name') or str(workspace['id']))
-            else:
-                # The workspace still points to the deleting user and is
-                # intentionally removed by ON DELETE CASCADE below.
-                deleted_workspaces.append(workspace.get('name') or str(workspace['id']))
-
         # Personal learned knowledge predates its FK and therefore needs an
-        # explicit delete. Workspace documents remain with the workspace;
-        # their created_by_user_id is nulled by its FK.
+        # explicit delete.
         conn.execute(
             """
             DELETE FROM knowledge_documents
-            WHERE user_id = %s AND workspace_id IS NULL
+            WHERE user_id = %s
             """,
             (user_id,),
         )
@@ -122,10 +67,7 @@ def _delete_postgres_account(user_id):
         if deleted_user.rowcount != 1:
             raise AccountDeletionError('Account was not found or was already deleted.')
 
-    return {
-        'transferred_business_workspaces': len(transferred),
-        'deleted_business_workspaces': len(deleted_workspaces),
-    }
+    return {}
 
 
 def _delete_sqlite_account(user_id):
@@ -152,10 +94,7 @@ def _delete_sqlite_account(user_id):
         raise
     finally:
         conn.close()
-    return {
-        'transferred_business_workspaces': 0,
-        'deleted_business_workspaces': 0,
-    }
+    return {}
 
 
 def delete_account(user_id):

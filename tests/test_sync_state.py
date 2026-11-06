@@ -14,10 +14,10 @@ BACKEND_DIR = REPO_ROOT / "web" / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from models import workspace_sync as workspace_sync_module  # noqa: E402
-from models.workspace_sync import (  # noqa: E402
-    WORKSPACE_SYNC_DOMAINS,
-    WorkspaceSync,
+from models import sync_state as sync_state_module  # noqa: E402
+from models.sync_state import (  # noqa: E402
+    SYNC_DOMAINS,
+    SyncState,
 )
 from routes import sync as sync_route  # noqa: E402
 
@@ -59,19 +59,19 @@ class WorkspaceSyncModelTests(unittest.TestCase):
     def test_sqlite_revisions_are_monotonic_and_tenant_scoped(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = os.path.join(temp_dir, "shared.db")
-            with patch.object(workspace_sync_module.pg, "enabled", return_value=False):
-                initial = WorkspaceSync.get_state("alice", db_path=db_path)
-                first = WorkspaceSync.bump(
+            with patch.object(sync_state_module.pg, "enabled", return_value=False):
+                initial = SyncState.get_state("alice", db_path=db_path)
+                first = SyncState.bump(
                     "alice",
                     ["history", "chat", "unknown"],
                     db_path=db_path,
                 )
-                second = WorkspaceSync.bump(
+                second = SyncState.bump(
                     "alice",
                     ["schedule"],
                     db_path=db_path,
                 )
-                bob = WorkspaceSync.get_state("bob", db_path=db_path)
+                bob = SyncState.get_state("bob", db_path=db_path)
 
         self.assertEqual(0, initial["revision"])
         self.assertEqual(1, first["revision"])
@@ -83,27 +83,27 @@ class WorkspaceSyncModelTests(unittest.TestCase):
         self.assertEqual(2, second["domains"]["schedule"])
         self.assertEqual(0, bob["revision"])
         self.assertEqual(
-            {domain: 0 for domain in WORKSPACE_SYNC_DOMAINS},
+            {domain: 0 for domain in SYNC_DOMAINS},
             bob["domains"],
         )
 
     def test_postgres_bump_locks_and_updates_only_requested_user(self):
         connection = _RecordingConnection()
         with (
-            patch.object(workspace_sync_module.pg, "enabled", return_value=True),
-            patch.object(workspace_sync_module.pg, "ensure_user") as ensure_user,
+            patch.object(sync_state_module.pg, "enabled", return_value=True),
+            patch.object(sync_state_module.pg, "ensure_user") as ensure_user,
             patch.object(
-                workspace_sync_module.pg,
+                sync_state_module.pg,
                 "connection",
                 side_effect=lambda: _connection(connection),
             ),
             patch.object(
-                workspace_sync_module.pg,
+                sync_state_module.pg,
                 "json_value",
                 side_effect=lambda value: value,
             ),
         ):
-            state = WorkspaceSync.bump("alice", ["email", "overview"])
+            state = SyncState.bump("alice", ["email", "overview"])
 
         self.assertEqual(5, state["revision"])
         self.assertEqual(5, state["domains"]["email"])
@@ -136,7 +136,7 @@ class WorkspaceSyncRouteTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.temp_dir.name, "sync.db")
         self.pg_patch = patch.object(
-            workspace_sync_module.pg,
+            sync_state_module.pg,
             "enabled",
             return_value=False,
         )
@@ -175,7 +175,7 @@ class WorkspaceSyncRouteTests(unittest.TestCase):
         )
 
         self._login("alice")
-        WorkspaceSync.bump(
+        SyncState.bump(
             "alice",
             ["chat", "email"],
             db_path=self.db_path,
@@ -186,7 +186,7 @@ class WorkspaceSyncRouteTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertTrue(payload["success"])
         self.assertEqual(1, payload["revision"])
-        self.assertEqual(set(WORKSPACE_SYNC_DOMAINS), set(payload["domains"]))
+        self.assertEqual(set(SYNC_DOMAINS), set(payload["domains"]))
         self.assertEqual(["chat", "email"], payload["changed"])
         self.assertGreaterEqual(payload["poll_after_ms"], 2000)
 
@@ -195,7 +195,7 @@ class WorkspaceSyncRouteTests(unittest.TestCase):
 
     def test_since_ahead_of_current_resets_for_account_switch(self):
         self._login("alice")
-        WorkspaceSync.bump(
+        SyncState.bump(
             "alice",
             ["settings"],
             db_path=self.db_path,
@@ -204,7 +204,7 @@ class WorkspaceSyncRouteTests(unittest.TestCase):
         self.assertEqual(["settings"], payload["changed"])
 
     def test_route_state_is_tenant_isolated(self):
-        WorkspaceSync.bump(
+        SyncState.bump(
             "alice",
             ["history"],
             db_path=self.db_path,
@@ -220,7 +220,7 @@ class WorkspaceSyncHookTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.temp_dir.name, "hooks.db")
         self.pg_patch = patch.object(
-            workspace_sync_module.pg,
+            sync_state_module.pg,
             "enabled",
             return_value=False,
         )
@@ -273,7 +273,7 @@ class WorkspaceSyncHookTests(unittest.TestCase):
             session.clear()
             return jsonify({"success": True})
 
-        sync_route.install_workspace_sync_hooks(self.app)
+        sync_route.install_sync_hooks(self.app)
         self.app.register_blueprint(sync_route.sync_bp)
         self.client = self.app.test_client()
 
@@ -292,7 +292,7 @@ class WorkspaceSyncHookTests(unittest.TestCase):
             "/api/chat/message",
             json={"message": "mark it read"},
         )
-        state = WorkspaceSync.get_state("alice", db_path=self.db_path)
+        state = SyncState.get_state("alice", db_path=self.db_path)
 
         self.assertEqual(200, response.status_code)
         self.assertEqual(1, state["revision"])
@@ -307,12 +307,12 @@ class WorkspaceSyncHookTests(unittest.TestCase):
         self.client.post("/api/calendar/create?fail=1")
         self.client.post("/api/schedule/plan-day", json={"text": "ideas"})
         self.client.get("/api/sync/state?since=0")
-        state = WorkspaceSync.get_state("alice", db_path=self.db_path)
+        state = SyncState.get_state("alice", db_path=self.db_path)
         self.assertEqual(0, state["revision"])
 
     def test_oauth_callback_uses_identity_established_during_route(self):
         response = self.client.get("/api/email/oauth2callback")
-        state = WorkspaceSync.get_state("oauth-user", db_path=self.db_path)
+        state = SyncState.get_state("oauth-user", db_path=self.db_path)
 
         self.assertEqual(302, response.status_code)
         self.assertEqual(1, state["revision"])
@@ -323,7 +323,7 @@ class WorkspaceSyncHookTests(unittest.TestCase):
     def test_logout_uses_identity_captured_before_route_clears_session(self):
         self._login()
         response = self.client.post("/api/email/logout")
-        state = WorkspaceSync.get_state("alice", db_path=self.db_path)
+        state = SyncState.get_state("alice", db_path=self.db_path)
 
         self.assertEqual(200, response.status_code)
         self.assertEqual(1, state["revision"])
@@ -333,7 +333,7 @@ class WorkspaceSyncHookTests(unittest.TestCase):
     def test_sync_bump_failure_does_not_change_successful_response(self):
         self._login()
         with patch.object(
-            sync_route.WorkspaceSync,
+            sync_route.SyncState,
             "bump",
             side_effect=RuntimeError("database unavailable"),
         ), self.assertLogs(self.app.logger.name, level="ERROR"):
@@ -344,131 +344,6 @@ class WorkspaceSyncHookTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         self.assertTrue(response.get_json()["success"])
-
-
-class BusinessWorkspaceMutationDomainsTests(unittest.TestCase):
-    """Work Hub/Sharing/Status Reports/Business Knowledge/membership routes
-    previously bumped zero WorkspaceSync domains, so a mutation made from one
-    client (e.g. the web app) never told a user's other open sessions
-    (mobile, another tab) to refresh. These assert each route group now maps
-    to its own domain."""
-
-    def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.db_path = os.path.join(self.temp_dir.name, "business_hooks.db")
-        self.pg_patch = patch.object(
-            workspace_sync_module.pg,
-            "enabled",
-            return_value=False,
-        )
-        self.pg_patch.start()
-        self.path_patch = patch.object(
-            sync_route,
-            "get_user_db_path",
-            return_value=self.db_path,
-        )
-        self.path_patch.start()
-
-        self.app = Flask(__name__)
-        self.app.config.update(
-            TESTING=True,
-            SECRET_KEY="business-hook-secret",
-            MOBILE_USER_HEADER_ENABLED=False,
-        )
-
-        @self.app.route("/api/projects", methods=["POST"])
-        def create_project():
-            return jsonify({"success": True})
-
-        @self.app.route("/api/tasks/<task_id>", methods=["PATCH"])
-        def update_task(task_id):
-            return jsonify({"success": True})
-
-        @self.app.route("/api/status-reports", methods=["POST"])
-        def create_status_report():
-            return jsonify({"success": True})
-
-        @self.app.route("/api/workspace-knowledge/<int:doc_id>", methods=["PATCH"])
-        def update_knowledge_doc(doc_id):
-            return jsonify({"success": True})
-
-        @self.app.route(
-            "/api/workspaces/<workspace_id>/shared-artifacts", methods=["POST"]
-        )
-        def create_shared_artifact(workspace_id):
-            return jsonify({"success": True})
-
-        @self.app.route("/api/workspaces/<workspace_id>", methods=["PATCH"])
-        def rename_workspace(workspace_id):
-            return jsonify({"success": True})
-
-        @self.app.route(
-            "/api/workspaces/<workspace_id>/seat-requests/<request_id>/approve",
-            methods=["POST"],
-        )
-        def approve_seat_request(workspace_id, request_id):
-            return jsonify({"success": True})
-
-        @self.app.route(
-            "/api/workspace-invitations/<token>/accept", methods=["POST"]
-        )
-        def accept_invitation(token):
-            return jsonify({"success": True})
-
-        sync_route.install_workspace_sync_hooks(self.app)
-        self.client = self.app.test_client()
-
-    def tearDown(self):
-        self.path_patch.stop()
-        self.pg_patch.stop()
-        self.temp_dir.cleanup()
-
-    def _login(self, user_id="alice"):
-        with self.client.session_transaction() as browser_session:
-            browser_session["user_id"] = user_id
-
-    def _domains(self):
-        return WorkspaceSync.get_state("alice", db_path=self.db_path)["domains"]
-
-    def test_project_and_task_mutations_bump_work_hub(self):
-        self._login()
-        self.client.post("/api/projects", json={"name": "P1"})
-        self.assertEqual(1, self._domains()["work_hub"])
-        self.client.patch("/api/tasks/t1", json={"status": "done"})
-        self.assertEqual(2, self._domains()["work_hub"])
-
-    def test_status_report_mutation_bumps_status_reports(self):
-        self._login()
-        self.client.post("/api/status-reports", json={"summary": "week 1"})
-        self.assertEqual(1, self._domains()["status_reports"])
-
-    def test_workspace_knowledge_mutation_bumps_workspace_knowledge(self):
-        self._login()
-        self.client.patch("/api/workspace-knowledge/1", json={"title": "x"})
-        self.assertEqual(1, self._domains()["workspace_knowledge"])
-        # Must stay isolated from the unrelated personal-knowledge domain.
-        self.assertEqual(0, self._domains()["knowledge"])
-
-    def test_shared_artifact_mutation_bumps_sharing_not_workspace_members(self):
-        self._login()
-        self.client.post(
-            "/api/workspaces/ws-1/shared-artifacts", json={"artifact_id": "a1"}
-        )
-        domains = self._domains()
-        self.assertEqual(1, domains["sharing"])
-        self.assertEqual(0, domains["workspace_members"])
-
-    def test_workspace_rename_and_seat_approval_bump_workspace_members(self):
-        self._login()
-        self.client.patch("/api/workspaces/ws-1", json={"name": "New name"})
-        self.assertEqual(1, self._domains()["workspace_members"])
-        self.client.post("/api/workspaces/ws-1/seat-requests/r1/approve")
-        self.assertEqual(2, self._domains()["workspace_members"])
-
-    def test_invitation_accept_bumps_workspace_members(self):
-        self._login()
-        self.client.post("/api/workspace-invitations/tok-1/accept")
-        self.assertEqual(1, self._domains()["workspace_members"])
 
 
 if __name__ == "__main__":

@@ -156,7 +156,6 @@ class ChecklistCreateAgent:
             "Them qua xac nhan trong chat",
             action_type='chat',
             db_path=ctx.db_path,
-            workspace_id=ctx.workspace_id,
         )
         response = "Mình đã thêm vào checklist hôm nay:\n" + "\n".join(f"- {title}" for title in added)
         return AgentResult(

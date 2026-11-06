@@ -36,7 +36,7 @@ from models.schedule import Schedule
 from models.history import History
 from models.user import User
 from models.knowledge import KnowledgeDocument
-from models.workspace_sync import WorkspaceSync
+from models.sync_state import SyncState
 from models import admin_ops
 from models import postgres_db as pg
 from services.overview_scheduler import start_overview_scheduler
@@ -48,15 +48,11 @@ from routes.schedule import schedule_bp
 from routes.user import user_bp
 from routes.calendar import calendar_bp
 from routes.overview import overview_bp
-from routes.sync import install_workspace_sync_hooks, sync_bp
+from routes.sync import install_sync_hooks, sync_bp
 from routes.knowledge import knowledge_bp, _seed_if_empty as seed_knowledge_base
 from routes._background import bg_bp
 from routes.admin import admin_bp, _require_admin, is_current_user_admin
 from routes.course import course_bp
-from routes.workspace import workspace_bp, workspace_invitations_bp
-from routes.work_hub import work_hub_bp
-from routes.sharing import sharing_bp
-from routes.workspace_knowledge import workspace_knowledge_bp
 from routes.notifications import notifications_bp
 from routes.payments import payments_bp
 from utils.security import (
@@ -116,10 +112,9 @@ def make_session_permanent():
     g.request_started_at = time.monotonic()
     # Correlation ID for this request -- reuse an inbound X-Request-Id if a
     # proxy/client already set one (useful for tracing a single request
-    # across services), otherwise mint one. Read by the structured
-    # "cross-workspace denied" security logging in routes/work_hub.py,
-    # sharing.py, and workspace.py, and echoed back in add_security_headers
-    # below so a client/support request can be correlated to server logs.
+    # across services), otherwise mint one. Echoed back in
+    # add_security_headers below so a client/support request can be
+    # correlated to server logs.
     inbound_request_id = (request.headers.get('X-Request-Id') or '').strip()[:100]
     g.correlation_id = (
         inbound_request_id if re.fullmatch(r'[A-Za-z0-9._-]+', inbound_request_id or '')
@@ -167,7 +162,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 allowed_origins = Config.ALLOWED_ORIGINS
 CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
 Compress(app)
-install_workspace_sync_hooks(app)
+install_sync_hooks(app)
 
 
 # Bounded, process-lifetime pool for the telemetry writes below -- every
@@ -304,11 +299,6 @@ app.register_blueprint(knowledge_bp)
 app.register_blueprint(bg_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(course_bp)
-app.register_blueprint(workspace_bp)
-app.register_blueprint(workspace_invitations_bp)
-app.register_blueprint(work_hub_bp)
-app.register_blueprint(sharing_bp)
-app.register_blueprint(workspace_knowledge_bp)
 app.register_blueprint(notifications_bp)
 app.register_blueprint(payments_bp)
 
@@ -322,7 +312,7 @@ Schedule.init_db()
 History.init_db()
 User.init_db()
 KnowledgeDocument.init_db()
-WorkspaceSync.init_db()
+SyncState.init_db()
 seed_knowledge_base()
 start_overview_scheduler()
 start_subscription_lifecycle_scheduler()

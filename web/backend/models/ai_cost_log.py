@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 def record_call(
     user_id=None,
-    workspace_id=None,
     task='chat',
     tier='strong',
     provider='demo',
@@ -41,13 +40,13 @@ def record_call(
             conn.execute(
                 """
                 INSERT INTO ai_cost_log (
-                    user_id, workspace_id, task, tier, provider, model, success,
+                    user_id, task, tier, provider, model, success,
                     error_type, input_tokens, output_tokens, estimated_cost_usd,
                     latency_ms, cache_hit
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
-                    user_id, workspace_id, task, tier, provider, model, success,
+                    user_id, task, tier, provider, model, success,
                     error_type, input_tokens, output_tokens, estimated_cost_usd,
                     latency_ms, cache_hit,
                 ),

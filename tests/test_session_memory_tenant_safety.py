@@ -21,8 +21,6 @@ from models.history import History  # noqa: E402
 from models.session_memory import SessionMemory  # noqa: E402
 from routes import chat as chat_route  # noqa: E402
 
-WORKSPACE_ID = "10000000-0000-4000-8000-000000000001"
-
 
 class _Result:
     def __init__(self, one=None, rows=None, rowcount=0):
@@ -55,7 +53,11 @@ def _connection(connection):
 
 
 class SessionMemoryTenantTests(unittest.TestCase):
-    def test_postgres_remember_requires_matching_user_and_session_owner(self):
+    """Session memory must never leak or be writable across a *user*
+    boundary, now that there's no workspace dimension layered on top of
+    user_id."""
+
+    def test_postgres_remember_requires_matching_session_owner(self):
         connection = _RecordingConnection([
             _Result(one=None),
             _Result(one=None),
@@ -74,16 +76,15 @@ class SessionMemoryTenantTests(unittest.TestCase):
                 "alice",
                 "00000000-0000-4000-8000-000000000001",
                 "Project Atlas ships Friday",
-                workspace_id=WORKSPACE_ID,
             )
 
         self.assertIsNone(remembered)
         duplicate_sql, duplicate_params = connection.calls[0]
         insert_sql, insert_params = connection.calls[1]
         self.assertIn("memory.user_id = %s", duplicate_sql)
-        self.assertEqual(("alice", WORKSPACE_ID), duplicate_params[:2])
+        self.assertEqual("alice", duplicate_params[0])
         self.assertIn("session.user_id = %s", insert_sql)
-        self.assertEqual(("alice", WORKSPACE_ID), insert_params[-2:])
+        self.assertEqual("alice", insert_params[-1])
 
     def test_postgres_memory_reads_and_deletes_are_user_scoped(self):
         read_connection = _RecordingConnection([
@@ -102,7 +103,6 @@ class SessionMemoryTenantTests(unittest.TestCase):
             memories = SessionMemory.list_for_session(
                 "alice",
                 "00000000-0000-4000-8000-000000000001",
-                workspace_id=WORKSPACE_ID,
             )
 
         with (
@@ -116,7 +116,6 @@ class SessionMemoryTenantTests(unittest.TestCase):
             deleted = SessionMemory.delete_for_session(
                 "alice",
                 "00000000-0000-4000-8000-000000000001",
-                workspace_id=WORKSPACE_ID,
             )
 
         self.assertEqual(["second", "first"], memories)
@@ -124,10 +123,10 @@ class SessionMemoryTenantTests(unittest.TestCase):
         read_sql, read_params = read_connection.calls[0]
         delete_sql, delete_params = delete_connection.calls[0]
         self.assertIn("memory.user_id = %s", read_sql)
-        self.assertEqual(("alice", WORKSPACE_ID), read_params[:2])
+        self.assertEqual("alice", read_params[0])
         self.assertIn("user_id = %s", delete_sql)
         self.assertEqual(
-            ("alice", WORKSPACE_ID, "00000000-0000-4000-8000-000000000001"),
+            ("alice", "00000000-0000-4000-8000-000000000001"),
             delete_params,
         )
 
@@ -185,14 +184,12 @@ class ChatSessionTenantTests(unittest.TestCase):
                 return_value=True,
             ),
         ):
-            actual = History.ensure_chat_session(
-                "alice", session_id=supplied, workspace_id=WORKSPACE_ID
-            )
+            actual = History.ensure_chat_session("alice", session_id=supplied)
 
         self.assertEqual(supplied, actual)
         insert_params = connection.calls[1][1]
+        self.assertEqual(365, insert_params[4])
         self.assertEqual(365, insert_params[5])
-        self.assertEqual(365, insert_params[6])
 
     def test_foreign_supplied_session_id_is_replaced(self):
         supplied = str(uuid.uuid4())
@@ -217,9 +214,7 @@ class ChatSessionTenantTests(unittest.TestCase):
             ),
             patch.object(history_module.uuid, "uuid4", return_value=replacement),
         ):
-            actual = History.ensure_chat_session(
-                "alice", session_id=supplied, workspace_id=WORKSPACE_ID
-            )
+            actual = History.ensure_chat_session("alice", session_id=supplied)
 
         self.assertEqual(str(replacement), actual)
         insert_sql, insert_params = connection.calls[1]
@@ -232,7 +227,6 @@ class ChatSessionTenantTests(unittest.TestCase):
         connection = _RecordingConnection([
             _Result(one={
                 "user_id": "alice",
-                "workspace_id": WORKSPACE_ID,
                 "available": True,
             }),
             _Result(one={"id": supplied}),
@@ -252,24 +246,10 @@ class ChatSessionTenantTests(unittest.TestCase):
                 side_effect=lambda: _connection(connection),
             ),
         ):
-            actual = History.ensure_chat_session(
-                "alice", session_id=supplied, workspace_id=WORKSPACE_ID
-            )
+            actual = History.ensure_chat_session("alice", session_id=supplied)
 
         self.assertEqual(supplied, actual)
         self.assertEqual(supplied, connection.calls[1][1][0])
-
-
-class WorkspaceIsolationSchemaTests(unittest.TestCase):
-    def test_existing_tables_gain_workspace_columns_before_backfill(self):
-        schema = (REPO_ROOT / "database" / "postgres_schema.sql").read_text(
-            encoding="utf-8"
-        )
-        backfill_position = schema.index("UPDATE chat_sessions cs")
-        for table in ("chat_sessions", "history", "session_memory"):
-            alter = f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS workspace_id UUID;"
-            self.assertIn(alter, schema)
-            self.assertLess(schema.index(alter), backfill_position)
 
 
 class ClearRouteSemanticsTests(unittest.TestCase):
@@ -282,7 +262,6 @@ class ClearRouteSemanticsTests(unittest.TestCase):
     def test_clear_without_session_removes_all_conversations_and_memory(self):
         with (
             patch.object(chat_route, "get_current_user_id", return_value="alice"),
-            patch.object(chat_route, "get_current_workspace_id", return_value=WORKSPACE_ID),
             patch.object(chat_route, "get_user_db_path", return_value="alice.db"),
             patch.object(
                 chat_route.History,
@@ -299,13 +278,11 @@ class ClearRouteSemanticsTests(unittest.TestCase):
             db_path="alice.db",
             chat_session_id=None,
             clear_all_history=False,
-            workspace_id=WORKSPACE_ID,
         )
 
     def test_clear_all_removes_session_metadata_and_memory_for_same_user(self):
         with (
             patch.object(chat_route, "get_current_user_id", return_value="alice"),
-            patch.object(chat_route, "get_current_workspace_id", return_value=WORKSPACE_ID),
             patch.object(chat_route, "get_user_db_path", return_value="alice.db"),
             patch.object(
                 chat_route.History,
@@ -324,7 +301,6 @@ class ClearRouteSemanticsTests(unittest.TestCase):
             "alice",
             db_path="alice.db",
             clear_all_history=True,
-            workspace_id=WORKSPACE_ID,
         )
 
     def test_sqlite_session_clear_is_one_scoped_state_operation(self):

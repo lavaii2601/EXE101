@@ -16,7 +16,7 @@ from models.calendar_event import CalendarEvent
 from models.schedule import Schedule, LOCAL_TZ
 from models.sync_job import SyncJob
 from models.user import User
-from models.workspace_sync import WorkspaceSync
+from models.sync_state import SyncState
 from utils.user_context import (
     get_current_user_id,
     get_user_db_path,
@@ -195,7 +195,7 @@ def _normalize_attendees(attendees_value):
 def _publish_background_calendar_link(user_id, db_path):
     """Notify clients after integration metadata changes outside a request."""
     try:
-        WorkspaceSync.bump(
+        SyncState.bump(
             user_id,
             ('schedule', 'calendar', 'overview'),
             db_path=db_path,

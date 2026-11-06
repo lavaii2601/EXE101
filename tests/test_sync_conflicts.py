@@ -17,7 +17,7 @@ from models import cache as cache_module  # noqa: E402
 from models import schedule as schedule_module  # noqa: E402
 from models.cache import Cache  # noqa: E402
 from models.schedule import Schedule  # noqa: E402
-from models.workspace_sync import WorkspaceSync  # noqa: E402
+from models.sync_state import SyncState  # noqa: E402
 from routes import _background as background_route  # noqa: E402
 from routes import chat as chat_route  # noqa: E402
 from routes import schedule as schedule_route  # noqa: E402
@@ -43,8 +43,8 @@ class ScheduleOptimisticConcurrencyTests(unittest.TestCase):
         self.pg_patch.stop()
         Schedule._initialized_dbs.discard(self.alice_db)
         Schedule._initialized_dbs.discard(self.bob_db)
-        WorkspaceSync._initialized_dbs.discard(self.alice_db)
-        WorkspaceSync._initialized_dbs.discard(self.bob_db)
+        SyncState._initialized_dbs.discard(self.alice_db)
+        SyncState._initialized_dbs.discard(self.bob_db)
         self.temp_dir.cleanup()
 
     @staticmethod
@@ -189,7 +189,7 @@ class ScheduleOptimisticConcurrencyTests(unittest.TestCase):
             )
 
         linked = Schedule.get_by_id(schedule_id, db_path=self.alice_db)
-        state = WorkspaceSync.get_state("alice", db_path=self.alice_db)
+        state = SyncState.get_state("alice", db_path=self.alice_db)
 
         self.assertEqual("google-event-1", event_id)
         self.assertEqual("google-event-1", linked["calendar_event_id"])
@@ -237,7 +237,7 @@ class ScheduleOptimisticConcurrencyTests(unittest.TestCase):
             )
 
         linked = Schedule.get_by_id(schedule_id, db_path=self.alice_db)
-        state = WorkspaceSync.get_state("alice", db_path=self.alice_db)
+        state = SyncState.get_state("alice", db_path=self.alice_db)
         self.assertEqual("winner-event", event_id)
         self.assertEqual("winner-event", linked["calendar_event_id"])
         self.assertEqual(0, state["revision"])
@@ -284,7 +284,7 @@ class ScheduleOptimisticConcurrencyTests(unittest.TestCase):
                 side_effect=lambda *_args, **_kwargs: operations.append("attach") or True,
             ),
             patch.object(
-                background_route.WorkspaceSync,
+                background_route.SyncState,
                 "bump",
                 side_effect=lambda *_args, **_kwargs: operations.append("bump"),
             ) as bump,

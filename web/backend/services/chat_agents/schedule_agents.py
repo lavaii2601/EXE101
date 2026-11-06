@@ -314,7 +314,7 @@ class ScheduleCreateAgent:
         if ctx.client_confirm:
             return self._handle_confirmed(ctx)
         direct_result = intent_orchestrator.execute_direct(
-            ctx.intent_result, ctx.user_id, ctx.db_path, workspace_id=ctx.workspace_id
+            ctx.intent_result, ctx.user_id, ctx.db_path
         )
         return _wrap_direct_result(direct_result, ctx)
 
@@ -347,7 +347,6 @@ class ScheduleCreateAgent:
                     action_type='schedule_created',
                     related_id=schedule_created.get('id'),
                     db_path=ctx.db_path,
-                    workspace_id=ctx.workspace_id,
                 )
         except Exception as e:
             logger.exception("Failed to create schedule through intent orchestrator")
@@ -462,7 +461,6 @@ class ScheduleUpdateAgent:
                 action_type='schedule_updated',
                 related_id=schedule_id,
                 db_path=ctx.db_path,
-                workspace_id=ctx.workspace_id,
             )
             response = f"Đã cập nhật lịch '{updated.get('title')}' sang {_format_user_datetime(updated.get('start_time'))}."
         except Exception as e:
@@ -539,7 +537,6 @@ class ScheduleDeleteAgent:
                 action_type='schedule_deleted',
                 related_id=schedule_id,
                 db_path=ctx.db_path,
-                workspace_id=ctx.workspace_id,
             )
             response = f"Đã xóa lịch '{schedule.get('title')}'."
         except Exception as e:

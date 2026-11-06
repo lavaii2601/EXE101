@@ -44,7 +44,6 @@ class ChatContext:
     mode_prompt: str
     task: str
     intent_result: dict
-    workspace_id: str = None
     original_user_message: str = None
     refresh_targets: list = field(default_factory=list)
     client_confirm: bool = False
@@ -341,9 +340,9 @@ def normalize_agent_result_language(
     return result
 
 
-def _format_history_context(db_path, workspace_id=None):
+def _format_history_context(db_path):
     from .schedule_agents import _format_user_datetime
-    records = History.get_recent(limit=10, db_path=db_path, workspace_id=workspace_id)
+    records = History.get_recent(limit=10, db_path=db_path)
     if not records:
         return "LỊCH SỬ HOẠT ĐỘNG\nChưa có hoạt động nào."
 
@@ -591,7 +590,7 @@ def _build_mentor_prompt(user_message, assistant_response, intent_result=None, w
         {
             "role": "system",
             "content": (
-                "You are a senior AI mentor reviewing Bob, a FlowMate workspace agent. "
+                "You are a senior AI mentor reviewing Bob, a FlowMate personal AI assistant. "
                 "Your job is to extract at most ONE durable process lesson that would help Bob handle "
                 "future information-processing or action-planning tasks better. "
                 "Do not copy private details, names, emails, calendar contents, or one-off facts. "
@@ -763,7 +762,7 @@ def _build_agent_system_prompt(mode_prompt, agent_capabilities):
     )[now.weekday()]
     runtime_clock = now.strftime('%d/%m/%Y. %H:%M')
     return (
-        "You are Bob, the AI agent inside FlowMate -- a workspace agent for email, "
+        "You are Bob, the AI agent inside FlowMate -- a personal AI assistant for email, "
         "calendar, schedules, history, and user settings. If asked your name, say Bob. "
         "Never mention which underlying AI provider or model powers you. "
         "LANGUAGE POLICY: fully understand Vietnamese, English, and natural code-switching "

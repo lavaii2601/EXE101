@@ -16,14 +16,6 @@ EMAIL_RESULT_MAP_SOURCE = "user"
 MAX_EMAIL_RESULTS_PER_SESSION = 10
 
 
-def _resolve_workspace_id(user_id, workspace_id):
-    if workspace_id:
-        return str(workspace_id)
-    from models import workspace as workspace_model
-
-    return str(workspace_model.ensure_personal_workspace(user_id)['id'])
-
-
 class SessionMemory:
     """Short factual notes Bob auto-extracts during a chat session (e.g. the
     user's name, a deadline, a preference, a decision) and re-injects into
@@ -66,7 +58,7 @@ class SessionMemory:
         SessionMemory._initialized_dbs.add(db_path)
 
     @staticmethod
-    def remember(user_id, chat_session_id, content, source='auto', db_path=None, workspace_id=None):
+    def remember(user_id, chat_session_id, content, source='auto', db_path=None):
         """Store one short fact for this session. Skips empty content and
         exact duplicates of a fact already remembered in this session."""
         content = (content or '').strip()
@@ -77,7 +69,6 @@ class SessionMemory:
 
         if pg.enabled():
             pg.ensure_user(user_id)
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 existing = conn.execute(
                     """
@@ -86,40 +77,37 @@ class SessionMemory:
                     JOIN chat_sessions session
                       ON session.id = memory.chat_session_id
                      AND session.user_id = memory.user_id
-                     AND session.workspace_id = memory.workspace_id
                     WHERE memory.user_id = %s
-                      AND memory.workspace_id = %s
                       AND memory.chat_session_id = %s
                       AND memory.content = %s
                     """,
-                    (user_id, workspace_id, chat_session_id, content),
+                    (user_id, chat_session_id, content),
                 ).fetchone()
                 if existing:
                     conn.execute(
                         """
                         UPDATE session_memory
                         SET updated_at = NOW()
-                        WHERE id = %s AND user_id = %s AND workspace_id = %s
+                        WHERE id = %s AND user_id = %s
                         """,
-                        (existing['id'], user_id, workspace_id),
+                        (existing['id'], user_id),
                     )
                     return existing['id']
                 row = conn.execute(
                     """
-                    INSERT INTO session_memory (user_id, workspace_id, chat_session_id, content, source)
-                    SELECT %s, %s, session.id, %s, %s
+                    INSERT INTO session_memory (user_id, chat_session_id, content, source)
+                    SELECT %s, session.id, %s, %s
                     FROM chat_sessions session
                     WHERE session.id = %s
                       AND session.user_id = %s
-                      AND session.workspace_id = %s
                       AND session.archived_at IS NULL
                       AND session.expires_at > NOW()
                     RETURNING session_memory.id
                     """,
-                    (user_id, workspace_id, content, source, chat_session_id, user_id, workspace_id),
+                    (user_id, content, source, chat_session_id, user_id),
                 ).fetchone()
                 # Never attach a user's memory to a session owned by another
-                # tenant/workspace (or to an expired/archived session).
+                # user (or to an expired/archived session).
                 if not row:
                     return None
                 conn.execute(
@@ -186,7 +174,7 @@ class SessionMemory:
         return new_id
 
     @staticmethod
-    def list_for_session(user_id, chat_session_id, limit=15, db_path=None, workspace_id=None):
+    def list_for_session(user_id, chat_session_id, limit=15, db_path=None):
         """Most recent facts for this session, oldest-first (reads like a
         chronological memory list when dropped into a prompt)."""
         if not chat_session_id:
@@ -195,7 +183,6 @@ class SessionMemory:
         limit = max(1, min(int(limit or 15), MAX_ENTRIES_PER_SESSION))
 
         if pg.enabled():
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 rows = conn.execute(
                     """
@@ -204,9 +191,7 @@ class SessionMemory:
                     JOIN chat_sessions session
                       ON session.id = memory.chat_session_id
                      AND session.user_id = memory.user_id
-                     AND session.workspace_id = memory.workspace_id
                     WHERE memory.user_id = %s
-                      AND memory.workspace_id = %s
                       AND memory.chat_session_id = %s
                       AND session.user_id = %s
                       AND NOT (
@@ -218,7 +203,6 @@ class SessionMemory:
                     """,
                     (
                         user_id,
-                        workspace_id,
                         chat_session_id,
                         user_id,
                         EMAIL_RESULT_MAP_SOURCE,
@@ -251,7 +235,7 @@ class SessionMemory:
         return list(reversed(rows))
 
     @staticmethod
-    def remember_email_results(user_id, chat_session_id, emails, db_path=None, workspace_id=None):
+    def remember_email_results(user_id, chat_session_id, emails, db_path=None):
         """Replace the latest ordered Gmail result map for one active chat.
 
         The map is stored alongside session memory so the existing
@@ -285,20 +269,17 @@ class SessionMemory:
         )
 
         if pg.enabled():
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 conn.execute(
                     """
                     DELETE FROM session_memory
                     WHERE user_id = %s
-                      AND workspace_id = %s
                       AND chat_session_id = %s
                       AND source = %s
                       AND LEFT(content, %s) = %s
                     """,
                     (
                         user_id,
-                        workspace_id,
                         chat_session_id,
                         EMAIL_RESULT_MAP_SOURCE,
                         len(EMAIL_RESULT_MAP_PREFIX),
@@ -308,25 +289,22 @@ class SessionMemory:
                 row = conn.execute(
                     """
                     INSERT INTO session_memory (
-                        user_id, workspace_id, chat_session_id, content, source
+                        user_id, chat_session_id, content, source
                     )
-                    SELECT %s, %s, session.id, %s, %s
+                    SELECT %s, session.id, %s, %s
                     FROM chat_sessions session
                     WHERE session.id = %s
                       AND session.user_id = %s
-                      AND session.workspace_id = %s
                       AND session.archived_at IS NULL
                       AND session.expires_at > NOW()
                     RETURNING session_memory.id
                     """,
                     (
                         user_id,
-                        workspace_id,
                         content,
                         EMAIL_RESULT_MAP_SOURCE,
                         chat_session_id,
                         user_id,
-                        workspace_id,
                     ),
                 ).fetchone()
                 return row['id'] if row else None
@@ -375,14 +353,13 @@ class SessionMemory:
         return result_id
 
     @staticmethod
-    def get_email_results(user_id, chat_session_id, db_path=None, workspace_id=None):
+    def get_email_results(user_id, chat_session_id, db_path=None):
         """Return the latest ordered email results for this owned session."""
         if not chat_session_id:
             return []
         user_id = user_id or 'default'
 
         if pg.enabled():
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 row = conn.execute(
                     """
@@ -391,9 +368,7 @@ class SessionMemory:
                     JOIN chat_sessions session
                       ON session.id = memory.chat_session_id
                      AND session.user_id = memory.user_id
-                     AND session.workspace_id = memory.workspace_id
                     WHERE memory.user_id = %s
-                      AND memory.workspace_id = %s
                       AND memory.chat_session_id = %s
                       AND session.user_id = %s
                       AND session.archived_at IS NULL
@@ -405,7 +380,6 @@ class SessionMemory:
                     """,
                     (
                         user_id,
-                        workspace_id,
                         chat_session_id,
                         user_id,
                         EMAIL_RESULT_MAP_SOURCE,
@@ -463,20 +437,19 @@ class SessionMemory:
         ]
 
     @staticmethod
-    def delete_for_session(user_id, chat_session_id, db_path=None, workspace_id=None):
+    def delete_for_session(user_id, chat_session_id, db_path=None):
         if not chat_session_id:
             return 0
         user_id = user_id or 'default'
 
         if pg.enabled():
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 cur = conn.execute(
                     """
                     DELETE FROM session_memory
-                    WHERE user_id = %s AND workspace_id = %s AND chat_session_id = %s
+                    WHERE user_id = %s AND chat_session_id = %s
                     """,
-                    (user_id, workspace_id, chat_session_id),
+                    (user_id, chat_session_id),
                 )
                 return cur.rowcount
 
@@ -491,20 +464,19 @@ class SessionMemory:
         return deleted
 
     @staticmethod
-    def delete_all_for_user(user_id, db_path=None, workspace_id=None):
+    def delete_all_for_user(user_id, db_path=None):
         """Delete every remembered fact belonging to one user.
 
         SQLite uses one database file per user, while PostgreSQL stores all
-        tenants together and therefore always filters explicitly by user_id.
+        users together and therefore always filters explicitly by user_id.
         """
         user_id = user_id or 'default'
 
         if pg.enabled():
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 cur = conn.execute(
-                    "DELETE FROM session_memory WHERE user_id = %s AND workspace_id = %s",
-                    (user_id, workspace_id),
+                    "DELETE FROM session_memory WHERE user_id = %s",
+                    (user_id,),
                 )
                 return cur.rowcount
 

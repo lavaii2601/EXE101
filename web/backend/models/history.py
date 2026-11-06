@@ -12,14 +12,6 @@ from models import subscription as subscription_model
 from models import entitlements
 
 
-def _resolve_workspace_id(user_id, workspace_id):
-    if workspace_id:
-        return str(workspace_id)
-    from models import workspace as workspace_model
-
-    return str(workspace_model.ensure_personal_workspace(user_id)['id'])
-
-
 class History:
     _initialized_dbs = set()
 
@@ -84,7 +76,7 @@ class History:
         return max(7, min(days, cap))
 
     @staticmethod
-    def ensure_chat_session(user_id, session_id=None, title=None, mode='worker', retention_days=None, db_path=None, workspace_id=None):
+    def ensure_chat_session(user_id, session_id=None, title=None, mode='worker', retention_days=None, db_path=None):
         session_id = History._normalize_session_id(session_id)
         title = (title or 'Chat').strip()[:120] or 'Chat'
         is_premium = pg.enabled() and subscription_model.is_premium(user_id)
@@ -95,13 +87,11 @@ class History:
 
         if pg.enabled():
             pg.ensure_user(user_id)
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 existing = conn.execute(
                     """
                     SELECT
                         user_id,
-                        workspace_id,
                         (archived_at IS NULL AND expires_at > NOW()) AS available
                     FROM chat_sessions
                     WHERE id = %s
@@ -110,21 +100,17 @@ class History:
                 ).fetchone()
                 if existing and (
                     existing['user_id'] != user_id
-                    or str(existing.get('workspace_id')) != str(workspace_id)
                     or not existing['available']
                 ):
-                    # A client may supply an old or guessed session UUID, or
-                    # the same user's own session from a *different* workspace
-                    # (e.g. they switched from Personal to a Business
-                    # workspace mid-session). Never return a UUID owned by
-                    # another tenant or another workspace, and never revive an
-                    # archived/expired session.
+                    # A client may supply an old or guessed session UUID --
+                    # never return a UUID owned by another user, and never
+                    # revive an archived/expired session.
                     session_id = str(uuid.uuid4())
 
                 row = conn.execute(
                     """
-                    INSERT INTO chat_sessions (id, user_id, workspace_id, title, mode, retention_days, expires_at)
-                    VALUES (%s, %s, %s, %s, %s::user_mode, %s, NOW() + (%s || ' days')::INTERVAL)
+                    INSERT INTO chat_sessions (id, user_id, title, mode, retention_days, expires_at)
+                    VALUES (%s, %s, %s, %s::user_mode, %s, NOW() + (%s || ' days')::INTERVAL)
                     ON CONFLICT (id) DO UPDATE
                     SET updated_at = NOW(),
                         title = CASE
@@ -136,22 +122,21 @@ class History:
                         retention_days = COALESCE(chat_sessions.retention_days, EXCLUDED.retention_days),
                         expires_at = GREATEST(chat_sessions.expires_at, NOW() + (chat_sessions.retention_days || ' days')::INTERVAL)
                     WHERE chat_sessions.user_id = EXCLUDED.user_id
-                      AND chat_sessions.workspace_id = EXCLUDED.workspace_id
                     RETURNING id::TEXT
                     """,
-                    (session_id, user_id, workspace_id, title, safe_mode, retention_days, retention_days),
+                    (session_id, user_id, title, safe_mode, retention_days, retention_days),
                 ).fetchone()
                 if not row:
-                    # Covers the very small race where another tenant inserts
+                    # Covers the very small race where another user inserts
                     # the requested UUID after the ownership check.
                     session_id = str(uuid.uuid4())
                     row = conn.execute(
                         """
                         INSERT INTO chat_sessions (
-                            id, user_id, workspace_id, title, mode, retention_days, expires_at
+                            id, user_id, title, mode, retention_days, expires_at
                         )
                         VALUES (
-                            %s, %s, %s, %s, %s::user_mode, %s,
+                            %s, %s, %s, %s::user_mode, %s,
                             NOW() + (%s || ' days')::INTERVAL
                         )
                         RETURNING id::TEXT
@@ -159,7 +144,6 @@ class History:
                         (
                             session_id,
                             user_id,
-                            workspace_id,
                             title,
                             safe_mode,
                             retention_days,
@@ -211,10 +195,9 @@ class History:
         return session_id
 
     @staticmethod
-    def list_chat_sessions(user_id, limit=30, db_path=None, workspace_id=None):
+    def list_chat_sessions(user_id, limit=30, db_path=None):
         limit = max(1, min(int(limit or 30), 100))
         if pg.enabled():
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 rows = conn.execute(
                     """
@@ -237,14 +220,13 @@ class History:
                         ON history.chat_session_id = session.id
                        AND history.action_type = 'chat'
                     WHERE session.user_id = %s
-                      AND session.workspace_id = %s
                       AND session.archived_at IS NULL
                       AND session.expires_at > NOW()
                     GROUP BY session.id
                     ORDER BY COALESCE(MAX(history.created_at), session.updated_at, session.created_at) DESC
                     LIMIT %s
                     """,
-                    (user_id, workspace_id, limit),
+                    (user_id, limit),
                 ).fetchall()
                 return pg.normalize_rows(rows)
 
@@ -290,10 +272,9 @@ class History:
         return rows
 
     @staticmethod
-    def chat_session_available(user_id, session_id, db_path=None, workspace_id=None):
+    def chat_session_available(user_id, session_id, db_path=None):
         session_id = History._normalize_session_id(session_id)
         if pg.enabled():
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 row = conn.execute(
                     """
@@ -301,11 +282,10 @@ class History:
                     FROM chat_sessions
                     WHERE id = %s
                       AND user_id = %s
-                      AND workspace_id = %s
                       AND archived_at IS NULL
                       AND expires_at > NOW()
                     """,
-                    (session_id, user_id, workspace_id),
+                    (session_id, user_id),
                 ).fetchone()
                 return bool(row)
 
@@ -327,7 +307,7 @@ class History:
         return available
 
     @staticmethod
-    def update_chat_session(user_id, session_id, title=None, retention_days=None, db_path=None, workspace_id=None):
+    def update_chat_session(user_id, session_id, title=None, retention_days=None, db_path=None):
         session_id = History._normalize_session_id(session_id)
         assignments = []
         values = []
@@ -347,15 +327,14 @@ class History:
             return False
 
         if pg.enabled():
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 cur = conn.execute(
                     f"""
                     UPDATE chat_sessions
                     SET {', '.join(assignments)}, updated_at = NOW()
-                    WHERE id = %s AND user_id = %s AND workspace_id = %s
+                    WHERE id = %s AND user_id = %s
                     """,
-                    (*values, session_id, user_id, workspace_id),
+                    (*values, session_id, user_id),
                 )
                 return cur.rowcount > 0
 
@@ -373,26 +352,25 @@ class History:
         return updated
 
     @staticmethod
-    def delete_chat_session(user_id, session_id, db_path=None, workspace_id=None):
+    def delete_chat_session(user_id, session_id, db_path=None):
         """Delete a chat session and the chat messages attached to it."""
         session_id = History._normalize_session_id(session_id)
         if not session_id:
             return False
 
         if pg.enabled():
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 conn.execute(
                     """
                     DELETE FROM history
-                    WHERE user_id = %s AND workspace_id = %s
+                    WHERE user_id = %s
                       AND action_type = %s::activity_type AND chat_session_id = %s
                     """,
-                    (user_id, workspace_id, 'chat', session_id),
+                    (user_id, 'chat', session_id),
                 )
                 cur = conn.execute(
-                    "DELETE FROM chat_sessions WHERE id = %s AND user_id = %s AND workspace_id = %s",
-                    (session_id, user_id, workspace_id),
+                    "DELETE FROM chat_sessions WHERE id = %s AND user_id = %s",
+                    (session_id, user_id),
                 )
                 return cur.rowcount > 0
 
@@ -411,19 +389,18 @@ class History:
         return deleted
 
     @staticmethod
-    def delete_all_chat_sessions(user_id, workspace_id=None, db_path=None):
-        """Delete all saved chat-session metadata for one user in one workspace.
+    def delete_all_chat_sessions(user_id, db_path=None):
+        """Delete all saved chat-session metadata for one user.
 
         PostgreSQL cascades this deletion to session_memory. SQLite stores one
-        tenant per database file; its memory rows are cleared separately by
+        user per database file; its memory rows are cleared separately by
         the route so this method remains focused on chat session metadata.
         """
         if pg.enabled():
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 cur = conn.execute(
-                    "DELETE FROM chat_sessions WHERE user_id = %s AND workspace_id = %s",
-                    (user_id, workspace_id),
+                    "DELETE FROM chat_sessions WHERE user_id = %s",
+                    (user_id,),
                 )
                 return cur.rowcount
 
@@ -440,7 +417,6 @@ class History:
     @staticmethod
     def clear_chat_state(
         user_id,
-        workspace_id=None,
         db_path=None,
         chat_session_id=None,
         clear_all_history=False,
@@ -448,48 +424,45 @@ class History:
         """Atomically clear history, working memory, and session metadata.
 
         A session-specific clear retains that empty session for clients that
-        continue chatting in it. A user-wide clear removes all session shells
-        for the current workspace only -- clearing chat while in Personal
-        must never touch a Business workspace's chat history, or vice versa.
+        continue chatting in it. A user-wide clear removes all session
+        shells for this user.
         """
         user_id = user_id or 'default'
         if pg.enabled():
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 if chat_session_id:
                     history_cur = conn.execute(
                         """
                         DELETE FROM history
                         WHERE user_id = %s
-                          AND workspace_id = %s
                           AND action_type = 'chat'
                           AND chat_session_id = %s
                         """,
-                        (user_id, workspace_id, chat_session_id),
+                        (user_id, chat_session_id),
                     )
                     memory_cur = conn.execute(
                         """
                         DELETE FROM session_memory
-                        WHERE user_id = %s AND workspace_id = %s AND chat_session_id = %s
+                        WHERE user_id = %s AND chat_session_id = %s
                         """,
-                        (user_id, workspace_id, chat_session_id),
+                        (user_id, chat_session_id),
                     )
                     session_count = 0
                 else:
                     history_sql = (
-                        "DELETE FROM history WHERE user_id = %s AND workspace_id = %s"
+                        "DELETE FROM history WHERE user_id = %s"
                         if clear_all_history
                         else "DELETE FROM history "
-                        "WHERE user_id = %s AND workspace_id = %s AND action_type = 'chat'"
+                        "WHERE user_id = %s AND action_type = 'chat'"
                     )
-                    history_cur = conn.execute(history_sql, (user_id, workspace_id))
+                    history_cur = conn.execute(history_sql, (user_id,))
                     memory_cur = conn.execute(
-                        "DELETE FROM session_memory WHERE user_id = %s AND workspace_id = %s",
-                        (user_id, workspace_id),
+                        "DELETE FROM session_memory WHERE user_id = %s",
+                        (user_id,),
                     )
                     session_cur = conn.execute(
-                        "DELETE FROM chat_sessions WHERE user_id = %s AND workspace_id = %s",
-                        (user_id, workspace_id),
+                        "DELETE FROM chat_sessions WHERE user_id = %s",
+                        (user_id,),
                     )
                     session_count = session_cur.rowcount
                 return {
@@ -542,22 +515,21 @@ class History:
             conn.close()
 
     @staticmethod
-    def create(user_message, assistant_response, action_type="chat", related_id=None, db_path=None, chat_session_id=None, workspace_id=None):
+    def create(user_message, assistant_response, action_type="chat", related_id=None, db_path=None, chat_session_id=None):
         if pg.enabled():
             user_id = pg.user_id_from_db_path(db_path)
             pg.ensure_user(user_id)
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 row = conn.execute(
                     """
                     INSERT INTO history (
-                        user_id, workspace_id, user_message, assistant_response,
+                        user_id, user_message, assistant_response,
                         action_type, related_id, chat_session_id, created_at
                     )
-                    VALUES (%s, %s, %s, %s, %s::activity_type, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s::activity_type, %s, %s, %s)
                     RETURNING id
                     """,
-                    (user_id, workspace_id, user_message, assistant_response, action_type, related_id, chat_session_id, datetime.now()),
+                    (user_id, user_message, assistant_response, action_type, related_id, chat_session_id, datetime.now()),
                 ).fetchone()
                 return row['id']
 
@@ -579,33 +551,30 @@ class History:
         return rowid
 
     @staticmethod
-    def get_recent(limit=10, db_path=None, chat_session_id=None, workspace_id=None):
+    def get_recent(limit=10, db_path=None, chat_session_id=None):
         if pg.enabled():
             user_id = pg.user_id_from_db_path(db_path)
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 if chat_session_id:
                     rows = conn.execute(
                         """
                         SELECT * FROM history
                         WHERE user_id = %s
-                          AND workspace_id = %s
                           AND chat_session_id = %s
                         ORDER BY created_at DESC
                         LIMIT %s
                         """,
-                        (user_id, workspace_id, chat_session_id, limit),
+                        (user_id, chat_session_id, limit),
                     ).fetchall()
                 else:
                     rows = conn.execute(
                         """
                         SELECT * FROM history
                         WHERE user_id = %s
-                          AND workspace_id = %s
                         ORDER BY created_at DESC
                         LIMIT %s
                         """,
-                        (user_id, workspace_id, limit),
+                        (user_id, limit),
                     ).fetchall()
                 return pg.normalize_rows(rows)
 
@@ -630,25 +599,24 @@ class History:
         return [dict(row) for row in rows]
 
     @staticmethod
-    def clear_all(action_type=None, db_path=None, chat_session_id=None, workspace_id=None):
+    def clear_all(action_type=None, db_path=None, chat_session_id=None):
         if pg.enabled():
             user_id = pg.user_id_from_db_path(db_path)
-            workspace_id = _resolve_workspace_id(user_id, workspace_id)
             with pg.connection() as conn:
                 if chat_session_id:
                     cur = conn.execute(
-                        "DELETE FROM history WHERE user_id = %s AND workspace_id = %s AND action_type = %s AND chat_session_id = %s",
-                        (user_id, workspace_id, action_type or 'chat', chat_session_id),
+                        "DELETE FROM history WHERE user_id = %s AND action_type = %s AND chat_session_id = %s",
+                        (user_id, action_type or 'chat', chat_session_id),
                     )
                 elif action_type:
                     cur = conn.execute(
-                        "DELETE FROM history WHERE user_id = %s AND workspace_id = %s AND action_type = %s",
-                        (user_id, workspace_id, action_type),
+                        "DELETE FROM history WHERE user_id = %s AND action_type = %s",
+                        (user_id, action_type),
                     )
                 else:
                     cur = conn.execute(
-                        "DELETE FROM history WHERE user_id = %s AND workspace_id = %s",
-                        (user_id, workspace_id),
+                        "DELETE FROM history WHERE user_id = %s",
+                        (user_id,),
                     )
                 return cur.rowcount
 

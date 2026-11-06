@@ -646,7 +646,7 @@ class BobDeepContextTests(unittest.TestCase):
             intent_result={"intent": "chat.freeform", "entities": {}},
         )
         with patch(
-            "services.chat_agents.freeform_agent._build_workspace_context",
+            "services.chat_agents.freeform_agent._build_personal_context",
             return_value=({"email"}, "WORKSPACE_SENTINEL"),
         ) as workspace_builder, patch(
             "services.chat_agents.History.get_recent",

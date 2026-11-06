@@ -1,7 +1,6 @@
 import sys
 import unittest
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,7 +14,6 @@ if str(BACKEND_DIR) not in sys.path:
 
 from models import notification as notification_model  # noqa: E402
 from models import subscription as subscription_model  # noqa: E402
-from models import workspace_subscription as workspace_subscription_model  # noqa: E402
 from routes import notifications as notifications_route  # noqa: E402
 from services import subscription_lifecycle_scheduler as scheduler  # noqa: E402
 
@@ -81,7 +79,7 @@ class NotificationModelTests(unittest.TestCase):
         sql, params = connection.calls[0]
         self.assertIn("ON CONFLICT (recipient_user_id, dedupe_key) DO NOTHING", sql)
         self.assertEqual("alice", params[0])
-        self.assertEqual("sub_reminder:1:2026-09-10", params[7])
+        self.assertEqual("sub_reminder:1:2026-09-10", params[6])
 
     def test_create_falls_back_to_info_severity_when_invalid(self):
         connection = _ScriptedConnection([("INSERT INTO notifications", _Result())])
@@ -91,7 +89,7 @@ class NotificationModelTests(unittest.TestCase):
                 severity="not_a_real_severity",
             )
         _, params = connection.calls[0]
-        self.assertEqual("info", params[3])
+        self.assertEqual("info", params[2])
 
     def test_list_for_user_orders_unread_first(self):
         connection = _ScriptedConnection([("SELECT * FROM notifications", _Result(many=[]))])
@@ -149,50 +147,6 @@ class SubscriptionLifecycleQueryTests(unittest.TestCase):
         with patch.object(subscription_model.pg, "enabled", return_value=True):
             self.assertEqual(0, subscription_model.mark_expired([]))
 
-    def test_workspace_list_all_with_owner_joins_workspaces(self):
-        connection = _ScriptedConnection([("SELECT s.*, w.owner_user_id", _Result(many=[]))])
-        with _patched_pg(workspace_subscription_model, connection):
-            workspace_subscription_model.list_all_with_owner()
-        sql, _ = connection.calls[0]
-        self.assertIn("JOIN workspaces w ON w.id = s.workspace_id", sql)
-        self.assertIn("status NOT IN ('expired', 'canceled')", sql)
-
-    def test_workspace_mark_expired_excludes_terminal_statuses(self):
-        connection = _ScriptedConnection([("UPDATE subscriptions SET status = 'expired'", _Result(rowcount=1))])
-        with _patched_pg(workspace_subscription_model, connection):
-            updated = workspace_subscription_model.mark_expired(["w1"])
-        self.assertEqual(1, updated)
-        sql, params = connection.calls[0]
-        self.assertIn("status NOT IN ('expired', 'canceled', 'suspended')", sql)
-        self.assertEqual((["w1"],), params)
-
-    def test_workspace_mark_expired_never_touches_an_admin_suspended_row(self):
-        # Regression test for a real bug the code-review skill caught:
-        # get_access_state() treats status='suspended' as an unconditional
-        # ACCESS_READ_ONLY regardless of current_period_end (an admin's
-        # explicit revoke()). If mark_expired() were allowed to flip that
-        # row to 'expired', the next get_access_state() call would fall
-        # through to the ordinary period_end comparison and could come back
-        # ACCESS_ACTIVE -- silently restoring access the admin revoked.
-        # Exercised here against the REAL get_access_state, not a mock, so
-        # a future change to either function's logic can't silently
-        # reintroduce the gap.
-        suspended_row = {
-            "status": "suspended",
-            "current_period_end": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
-        }
-        self.assertEqual(
-            workspace_subscription_model.ACCESS_READ_ONLY,
-            workspace_subscription_model.get_access_state(suspended_row),
-        )
-
-        connection = _ScriptedConnection([("UPDATE subscriptions SET status = 'expired'", _Result(rowcount=0))])
-        with _patched_pg(workspace_subscription_model, connection):
-            updated = workspace_subscription_model.mark_expired(["suspended-1"])
-        self.assertEqual(0, updated)
-        sql, _ = connection.calls[0]
-        self.assertIn("'suspended'", sql)
-
 
 class LifecycleSchedulerOrchestrationTests(unittest.TestCase):
     """Pure decision-logic tests -- model-layer calls are mocked so these
@@ -229,124 +183,14 @@ class LifecycleSchedulerOrchestrationTests(unittest.TestCase):
         second_key = create.call_args_list[1].kwargs["dedupe_key"]
         self.assertEqual(first_key, second_key)
 
-    def test_workspace_in_grace_notifies_owner_and_does_not_expire(self):
-        row = {
-            "id": 7, "workspace_id": "ws-1", "workspace_owner_user_id": "owner-1",
-            "access_state": workspace_subscription_model.ACCESS_GRACE,
-            "current_period_end": "2026-09-01T00:00:00+00:00",
-        }
-        with (
-            patch.object(workspace_subscription_model, "list_all_with_owner", return_value=[row]),
-            patch.object(notification_model, "create") as create,
-            patch.object(workspace_subscription_model, "mark_expired") as mark_expired,
-        ):
-            scheduler._process_workspace_subscriptions()
-        create.assert_called_once()
-        kwargs = create.call_args.kwargs
-        self.assertEqual("owner-1", kwargs["recipient_user_id"])
-        self.assertEqual("workspace_subscription_grace", kwargs["type_"])
-        self.assertEqual("warning", kwargs["severity"])
-        mark_expired.assert_not_called()
-
-    def test_workspace_read_only_notifies_owner_and_marks_expired(self):
-        row = {
-            "id": 8, "workspace_id": "ws-2", "workspace_owner_user_id": "owner-2",
-            "access_state": workspace_subscription_model.ACCESS_READ_ONLY,
-            "current_period_end": "2026-08-01T00:00:00+00:00",
-        }
-        with (
-            patch.object(workspace_subscription_model, "list_all_with_owner", return_value=[row]),
-            patch.object(notification_model, "create") as create,
-            patch.object(workspace_subscription_model, "mark_expired") as mark_expired,
-        ):
-            scheduler._process_workspace_subscriptions()
-        create.assert_called_once()
-        kwargs = create.call_args.kwargs
-        self.assertEqual("workspace_subscription_read_only", kwargs["type_"])
-        self.assertEqual("critical", kwargs["severity"])
-        mark_expired.assert_called_once_with([8])
-
-    def test_workspace_suspended_by_admin_is_not_notified_or_touched(self):
-        # status='suspended' also reads back ACCESS_READ_ONLY from
-        # get_access_state() (see SubscriptionLifecycleQueryTests above), but
-        # it's an admin's explicit revoke, not a billing-timer lapse -- the
-        # "renew to restore access" copy used for the ordinary read_only
-        # case would be actively wrong here, and mark_expired() already
-        # refuses to touch a suspended row, so there's nothing to expire.
-        row = {
-            "id": 12, "workspace_id": "ws-6", "workspace_owner_user_id": "owner-6",
-            "status": "suspended",
-            "access_state": workspace_subscription_model.ACCESS_READ_ONLY,
-            "current_period_end": "2026-08-01T00:00:00+00:00",
-        }
-        with (
-            patch.object(workspace_subscription_model, "list_all_with_owner", return_value=[row]),
-            patch.object(notification_model, "create") as create,
-            patch.object(workspace_subscription_model, "mark_expired") as mark_expired,
-        ):
-            scheduler._process_workspace_subscriptions()
-        create.assert_not_called()
-        mark_expired.assert_not_called()
-
-    def test_workspace_active_far_from_expiry_notifies_nobody(self):
-        far_future = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
-        row = {
-            "id": 9, "workspace_id": "ws-3", "workspace_owner_user_id": "owner-3",
-            "access_state": workspace_subscription_model.ACCESS_ACTIVE,
-            "current_period_end": far_future,
-        }
-        with (
-            patch.object(workspace_subscription_model, "list_all_with_owner", return_value=[row]),
-            patch.object(notification_model, "create") as create,
-            patch.object(workspace_subscription_model, "mark_expired") as mark_expired,
-        ):
-            scheduler._process_workspace_subscriptions()
-        create.assert_not_called()
-        mark_expired.assert_not_called()
-
-    def test_workspace_active_within_reminder_window_notifies_owner(self):
-        soon = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
-        row = {
-            "id": 10, "workspace_id": "ws-4", "workspace_owner_user_id": "owner-4",
-            "access_state": workspace_subscription_model.ACCESS_ACTIVE,
-            "current_period_end": soon,
-        }
-        with (
-            patch.object(workspace_subscription_model, "list_all_with_owner", return_value=[row]),
-            patch.object(notification_model, "create") as create,
-        ):
-            scheduler._process_workspace_subscriptions()
-        create.assert_called_once()
-        self.assertEqual(
-            "workspace_subscription_renewal_reminder",
-            create.call_args.kwargs["type_"],
-        )
-
-    def test_row_missing_workspace_owner_is_skipped_without_error(self):
-        row = {
-            "id": 11, "workspace_id": "ws-5", "workspace_owner_user_id": None,
-            "access_state": workspace_subscription_model.ACCESS_READ_ONLY,
-            "current_period_end": "2026-08-01T00:00:00+00:00",
-        }
-        with (
-            patch.object(workspace_subscription_model, "list_all_with_owner", return_value=[row]),
-            patch.object(notification_model, "create") as create,
-            patch.object(workspace_subscription_model, "mark_expired") as mark_expired,
-        ):
-            scheduler._process_workspace_subscriptions()
-        create.assert_not_called()
-        mark_expired.assert_not_called()
-
-    def test_run_lifecycle_pass_calls_all_three_stages(self):
+    def test_run_lifecycle_pass_calls_both_stages(self):
         with (
             patch.object(scheduler, "_expire_lapsed_personal") as expire_personal,
             patch.object(scheduler, "_remind_personal_expiring_soon") as remind_personal,
-            patch.object(scheduler, "_process_workspace_subscriptions") as process_workspace,
         ):
             scheduler.run_lifecycle_pass()
         expire_personal.assert_called_once()
         remind_personal.assert_called_once()
-        process_workspace.assert_called_once()
 
 
 class NotificationsRouteTests(unittest.TestCase):

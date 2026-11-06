@@ -274,7 +274,7 @@ class SepayRouteTests(unittest.TestCase):
         result = {"duplicate": False, "user_id": "alice", "subscription_id": 7}
         with (
             patch.object(payment_routes.sepay_payment, "process_order_paid", return_value=result),
-            patch.object(payment_routes.WorkspaceSync, "bump") as bump,
+            patch.object(payment_routes.SyncState, "bump") as bump,
         ):
             response = self.client.post(
                 "/api/payments/sepay/ipn",
@@ -297,7 +297,7 @@ class SepayRouteTests(unittest.TestCase):
         result = {"duplicate": False, "user_id": "alice", "subscription_id": 7}
         with (
             patch.object(payment_routes.sepay_payment, "process_order_paid", return_value=result) as process,
-            patch.object(payment_routes.WorkspaceSync, "bump") as bump,
+            patch.object(payment_routes.SyncState, "bump") as bump,
         ):
             response = self.client.post(
                 "/api/payments/sepay/ipn",
@@ -313,7 +313,7 @@ class SepayRouteTests(unittest.TestCase):
         result = {"duplicate": True, "user_id": "alice", "subscription_id": 7}
         with (
             patch.object(payment_routes.sepay_payment, "process_order_paid", return_value=result),
-            patch.object(payment_routes.WorkspaceSync, "bump") as bump,
+            patch.object(payment_routes.SyncState, "bump") as bump,
         ):
             response = self.client.post(
                 "/api/payments/sepay/ipn",

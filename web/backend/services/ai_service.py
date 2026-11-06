@@ -289,13 +289,13 @@ class AIService:
         
         return provider
     
-    def generate_response(self, messages, max_tokens=None, task='chat', user_id=None, workspace_id=None):
+    def generate_response(self, messages, max_tokens=None, task='chat', user_id=None):
         """Generate AI response using round-robin rotation with intelligent fallback"""
         if Config.BOB_LOCAL_ONLY and not self.configured_providers:
             self.last_provider_used = 'bob-local'
             self.provider_usage['bob-local'] += 1
             ai_cost_log.record_call(
-                user_id=user_id, workspace_id=workspace_id, task=task,
+                user_id=user_id, task=task,
                 tier=self._tier_for_task(task), provider='bob-local', success=True,
             )
             return self._get_local_response(messages)
@@ -324,17 +324,13 @@ class AIService:
                 h.update(task.encode('utf-8'))
                 joined = '\n'.join([m.get('role','') + ':' + (m.get('content') or '') for m in optimized_messages])
                 h.update(joined.encode('utf-8'))
-                # workspace_id in the key: the same prompt text asked from
-                # Personal vs. a Business workspace must never share a cached
-                # answer -- the injected workspace_context differs even when
-                # the raw message text happens to match.
-                cache_key = f"ai::{user_id}::{workspace_id}::{h.hexdigest()}"
+                cache_key = f"ai::{user_id}::{h.hexdigest()}"
                 cached = Cache.get(cache_key, db_path=cache_db)
                 if cached:
                     cached_provider = cached.get('provider', self.last_provider_used)
                     self.last_provider_used = cached_provider
                     ai_cost_log.record_call(
-                        user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                        user_id=user_id, task=task, tier=tier,
                         provider=cached_provider or 'cache', success=True, cache_hit=True,
                     )
                     return cached.get('response')
@@ -345,7 +341,7 @@ class AIService:
             self.last_provider_used = 'demo'
             self.provider_usage['demo'] += 1
             ai_cost_log.record_call(
-                user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                user_id=user_id, task=task, tier=tier,
                 provider='demo', success=True,
             )
             demo = self._get_demo_response(optimized_messages)
@@ -386,7 +382,7 @@ class AIService:
             budget = admin_ops.current_budget_state(provider)
             if not budget['allowed']:
                 ai_cost_log.record_call(
-                    user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                    user_id=user_id, task=task, tier=tier,
                     provider=provider, model=self._model_for(provider, tier), success=False,
                     error_type='budget_hard_stop',
                 )
@@ -396,7 +392,7 @@ class AIService:
                 provider_quota = enforce_ai_quota(user_id, 'claude')
                 if not provider_quota['allowed']:
                     ai_cost_log.record_call(
-                        user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                        user_id=user_id, task=task, tier=tier,
                         provider=provider, model=self._model_for(provider, tier), success=False,
                         error_type='user_quota',
                     )
@@ -413,7 +409,7 @@ class AIService:
                     logger.info("%s responded successfully", provider.upper())
                     model = self._model_for(provider, tier)
                     ai_cost_log.record_call(
-                        user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                        user_id=user_id, task=task, tier=tier,
                         provider=provider, model=model, success=True,
                         input_tokens=(usage or {}).get('input_tokens'),
                         output_tokens=(usage or {}).get('output_tokens'),
@@ -449,7 +445,7 @@ class AIService:
                     )
                     self._mark_provider_failed(provider, error_msg, is_quota_error=False)
                 ai_cost_log.record_call(
-                    user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                    user_id=user_id, task=task, tier=tier,
                     provider=provider, model=self._model_for(provider, tier), success=False,
                     error_type='quota' if is_quota else 'error',
                     latency_ms=int((time.monotonic() - t0) * 1000),
@@ -469,20 +465,20 @@ class AIService:
             self.last_provider_used = 'bob-local'
             self.provider_usage['bob-local'] += 1
             ai_cost_log.record_call(
-                user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                user_id=user_id, task=task, tier=tier,
                 provider='bob-local', success=True,
             )
             return self._get_local_response(optimized_messages)
         self.last_provider_used = 'demo'
         self.provider_usage['demo'] += 1
         ai_cost_log.record_call(
-            user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+            user_id=user_id, task=task, tier=tier,
             provider='demo', success=True,
         )
         return self._get_demo_response(optimized_messages)
 
     def generate_with_provider(self, provider, messages, max_tokens=None, task='analyze',
-                                user_id=None, workspace_id=None):
+                                user_id=None):
         """Generate one response from a specific configured provider.
 
         Used by background mentor learning so Bob can ask a particular
@@ -524,7 +520,7 @@ class AIService:
                     self.provider_usage[provider] += 1
                 model = self._model_for(provider, tier)
                 ai_cost_log.record_call(
-                    user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                    user_id=user_id, task=task, tier=tier,
                     provider=provider, model=model, success=True,
                     input_tokens=(usage or {}).get('input_tokens'),
                     output_tokens=(usage or {}).get('output_tokens'),
@@ -539,7 +535,7 @@ class AIService:
             is_quota = self._is_quota_error(str(e), status_code)
             self._mark_provider_failed(provider, str(e), is_quota_error=is_quota)
             ai_cost_log.record_call(
-                user_id=user_id, workspace_id=workspace_id, task=task, tier=tier,
+                user_id=user_id, task=task, tier=tier,
                 provider=provider, model=self._model_for(provider, tier), success=False,
                 error_type='quota' if is_quota else 'error',
                 latency_ms=int((time.monotonic() - t0) * 1000),

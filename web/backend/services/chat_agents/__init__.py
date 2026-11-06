@@ -63,7 +63,7 @@ from .freeform_agent import (
     FreeformChatAgent,
     _valid_freeform_synthesis,
     _web_research_fallback_response,
-    _build_workspace_context,
+    _build_personal_context,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ class HistoryListAgent:
 
     def handle(self, ctx):
         direct_result = intent_orchestrator.execute_direct(
-            ctx.intent_result, ctx.user_id, ctx.db_path, workspace_id=ctx.workspace_id
+            ctx.intent_result, ctx.user_id, ctx.db_path
         )
         return _wrap_direct_result(direct_result, ctx)
 
@@ -90,7 +90,7 @@ class SettingsUpdateModeAgent:
         if ctx.action_confirm and (ctx.action_override or {}).get('mode'):
             return self._handle_confirmed(ctx)
         direct_result = intent_orchestrator.execute_direct(
-            ctx.intent_result, ctx.user_id, ctx.db_path, workspace_id=ctx.workspace_id
+            ctx.intent_result, ctx.user_id, ctx.db_path
         )
         return _wrap_direct_result(direct_result, ctx)
 
@@ -115,7 +115,6 @@ class SettingsUpdateModeAgent:
             "Che do duoc doi qua xac nhan trong chat",
             action_type='settings_updated',
             db_path=ctx.db_path,
-            workspace_id=ctx.workspace_id,
         )
         return AgentResult(
             response=f"Đã cập nhật chế độ làm việc sang {label}.",

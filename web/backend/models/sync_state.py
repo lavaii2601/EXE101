@@ -10,7 +10,7 @@ from config import Config
 from models import postgres_db as pg
 
 
-WORKSPACE_SYNC_DOMAINS = (
+SYNC_DOMAINS = (
     "chat",
     "history",
     "email",
@@ -21,17 +21,12 @@ WORKSPACE_SYNC_DOMAINS = (
     "settings",
     "knowledge",
     "providers",
-    "work_hub",
-    "status_reports",
-    "workspace_knowledge",
-    "sharing",
-    "workspace_members",
 )
-_DOMAIN_SET = frozenset(WORKSPACE_SYNC_DOMAINS)
+_DOMAIN_SET = frozenset(SYNC_DOMAINS)
 
 
 def _empty_domains():
-    return {domain: 0 for domain in WORKSPACE_SYNC_DOMAINS}
+    return {domain: 0 for domain in SYNC_DOMAINS}
 
 
 def _normalize_domains(value):
@@ -44,7 +39,7 @@ def _normalize_domains(value):
         value = {}
 
     normalized = _empty_domains()
-    for domain in WORKSPACE_SYNC_DOMAINS:
+    for domain in SYNC_DOMAINS:
         try:
             normalized[domain] = max(0, int(value.get(domain) or 0))
         except (TypeError, ValueError):
@@ -58,18 +53,19 @@ def _normalize_requested_domains(domains):
         domain = str(value or "").strip().lower()
         if domain in _DOMAIN_SET:
             requested.add(domain)
-    return tuple(domain for domain in WORKSPACE_SYNC_DOMAINS if domain in requested)
+    return tuple(domain for domain in SYNC_DOMAINS if domain in requested)
 
 
 def _require_user_id(user_id):
     value = str(user_id or "").strip()
     if not value:
-        raise ValueError("user_id is required for workspace sync state")
+        raise ValueError("user_id is required for sync state")
     return value
 
 
-class WorkspaceSync:
-    """Per-user revision cursor used to invalidate web/mobile workspace views."""
+class SyncState:
+    """Per-user revision cursor used to invalidate web/mobile views after a
+    mutation elsewhere (another device, a background job)."""
 
     _initialized_dbs = set()
 
@@ -80,7 +76,7 @@ class WorkspaceSync:
             return True
 
         db_path = os.path.abspath(db_path or Config.DATABASE_PATH)
-        if db_path in WorkspaceSync._initialized_dbs and os.path.exists(db_path):
+        if db_path in SyncState._initialized_dbs and os.path.exists(db_path):
             return True
 
         parent = os.path.dirname(db_path)
@@ -107,7 +103,7 @@ class WorkspaceSync:
             conn.commit()
         finally:
             conn.close()
-        WorkspaceSync._initialized_dbs.add(db_path)
+        SyncState._initialized_dbs.add(db_path)
         return True
 
     @staticmethod
@@ -125,7 +121,7 @@ class WorkspaceSync:
                 ).fetchone()
         else:
             db_path = os.path.abspath(db_path or Config.DATABASE_PATH)
-            WorkspaceSync.init_db(db_path)
+            SyncState.init_db(db_path)
             conn = sqlite3.connect(db_path, timeout=10)
             conn.row_factory = sqlite3.Row
             try:
@@ -153,7 +149,7 @@ class WorkspaceSync:
         user_id = _require_user_id(user_id)
         requested = _normalize_requested_domains(domains)
         if not requested:
-            return WorkspaceSync.get_state(user_id, db_path=db_path)
+            return SyncState.get_state(user_id, db_path=db_path)
 
         if pg.enabled():
             pg.ensure_user(user_id)
@@ -191,7 +187,7 @@ class WorkspaceSync:
             return {"revision": next_revision, "domains": next_domains}
 
         db_path = os.path.abspath(db_path or Config.DATABASE_PATH)
-        WorkspaceSync.init_db(db_path)
+        SyncState.init_db(db_path)
         conn = sqlite3.connect(db_path, timeout=10, isolation_level=None)
         conn.row_factory = sqlite3.Row
         try:

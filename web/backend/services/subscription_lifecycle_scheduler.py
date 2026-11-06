@@ -1,9 +1,8 @@
 """Phase 6 ("Billing automation and production hardening", design doc
 section 15/9.11): the one scheduled job the subscription lifecycle needs.
 
-Access-state correctness never depended on this job -- get_access_state()
-(models/workspace_subscription.py) and get_active() (models/subscription.py)
-both compute live from current_period_end/grace_period_ends_at on every
+Access-state correctness never depended on this job -- get_active()
+(models/subscription.py) computes live from current_period_end on every
 read. This job exists purely for:
   1. status-column hygiene (flip 'active' to 'expired' once a subscription
      is truly done, so admin views/queries filtering on status aren't
@@ -30,8 +29,6 @@ from datetime import datetime, timezone
 from config import Config
 from models import notification as notification_model
 from models import subscription as subscription_model
-from models import workspace_subscription as workspace_subscription_model
-from models.workspace_subscription import ACCESS_ACTIVE, ACCESS_GRACE, ACCESS_READ_ONLY
 
 logger = logging.getLogger(__name__)
 _started = False
@@ -68,13 +65,9 @@ def run_lifecycle_pass():
     directly (e.g. from tests) without waiting on the sleep loop."""
     _expire_lapsed_personal()
     _remind_personal_expiring_soon()
-    _process_workspace_subscriptions()
 
 
 def _as_aware(value):
-    """Duplicated from models/workspace_subscription.py's identical private
-    helper rather than imported -- same cross-module-private-helper
-    avoidance already established for _record_audit_event in that file."""
     if value is None:
         return None
     if isinstance(value, str):
@@ -118,64 +111,3 @@ def _remind_personal_expiring_soon():
             body=f"Gói {plan_label} của bạn sẽ hết hạn vào {period_end}. Gia hạn ngay để không bị gián đoạn.",
             action_url="/app?page=settings",
         )
-
-
-def _process_workspace_subscriptions():
-    to_expire = []
-    for row in workspace_subscription_model.list_all_with_owner():
-        owner_id = row.get("workspace_owner_user_id")
-        workspace_id = row.get("workspace_id")
-        if not owner_id or not workspace_id:
-            continue
-        if row.get("status") == "suspended":
-            # An admin's explicit revoke, not a billing-timer event -- also
-            # reads ACCESS_READ_ONLY from get_access_state(), but "renew to
-            # restore access" is the wrong message here (mark_expired()
-            # deliberately never touches a suspended row, so renewing
-            # wouldn't lift the suspension either). Leave it to whatever
-            # out-of-band channel the admin action already used.
-            continue
-        state = row.get("access_state")
-        period_end = _period_end_date(row.get("current_period_end"))
-
-        if state == ACCESS_GRACE:
-            notification_model.create(
-                recipient_user_id=owner_id,
-                workspace_id=workspace_id,
-                dedupe_key=f"workspace_grace:{row['id']}:{period_end}",
-                type_="workspace_subscription_grace",
-                severity="warning",
-                title="Subscription doanh nghiệp đã hết hạn",
-                body="Không gian doanh nghiệp của bạn đang trong 7 ngày gia hạn. Gia hạn trước khi hết hạn để tránh chuyển sang chế độ chỉ đọc.",
-                action_url="/app?page=settings",
-            )
-        elif state == ACCESS_READ_ONLY:
-            notification_model.create(
-                recipient_user_id=owner_id,
-                workspace_id=workspace_id,
-                dedupe_key=f"workspace_read_only:{row['id']}:{period_end}",
-                type_="workspace_subscription_read_only",
-                severity="critical",
-                title="Subscription doanh nghiệp đã chuyển sang chỉ đọc",
-                body="Thời gian gia hạn đã hết. Không gian doanh nghiệp hiện chỉ đọc cho tới khi gia hạn.",
-                action_url="/app?page=settings",
-            )
-            to_expire.append(row["id"])
-        elif state == ACCESS_ACTIVE:
-            end = _as_aware(row.get("current_period_end"))
-            if end and (end - datetime.now(timezone.utc)).days <= REMINDER_WINDOW_DAYS:
-                notification_model.create(
-                    recipient_user_id=owner_id,
-                    workspace_id=workspace_id,
-                    dedupe_key=f"workspace_reminder:{row['id']}:{period_end}",
-                    type_="workspace_subscription_renewal_reminder",
-                    severity="warning",
-                    title="Subscription doanh nghiệp sắp hết hạn",
-                    body=f"Subscription của không gian doanh nghiệp sẽ hết hạn vào {period_end}. Gia hạn ngay để giữ quyền truy cập đầy đủ cho cả nhóm.",
-                    action_url="/app?page=settings",
-                )
-
-    if to_expire:
-        updated = workspace_subscription_model.mark_expired(to_expire)
-        if updated:
-            logger.info("Subscription lifecycle: expired %s past-grace workspace subscription(s)", updated)
