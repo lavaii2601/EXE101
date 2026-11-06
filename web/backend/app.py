@@ -143,6 +143,13 @@ def make_session_permanent():
         '/api/email/oauth2callback',
         '/api/email/oauth-config-check',
         '/api/email/google-auth',
+        # Redeems a one-time exchange_code for the mobile session payload --
+        # the whole point is to let a brand-new, unauthenticated client
+        # finish logging in (PKCE code_verifier match is the real guard, see
+        # oauth_token_exchange()). Omitting this left every first-time
+        # "recover via Google" mobile login blocked with 401
+        # not_authenticated before the route body ever ran.
+        '/api/email/oauth-token-exchange',
         '/api/auth/register',
         '/api/auth/login',
         '/api/payments/sepay/ipn',
