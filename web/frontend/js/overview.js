@@ -1109,6 +1109,11 @@ async function loadOverviewPage(options = {}) {
         const checklistState = normalizeOverviewChecklist(checklistData);
         const deadlines = schedules.filter((item) => getOverviewPriority(item) === ui('Deadline', 'Deadline'));
         const openTasks = schedules.filter((item) => item.status !== 'completed');
+        const checklistItems = buildOverviewChecklistItems(schedules, checklistState);
+        const completedChecklistItems = checklistItems.filter((item) => item.completed).length;
+        const completionRate = checklistItems.length
+            ? Math.round((completedChecklistItems / checklistItems.length) * 100)
+            : 0;
         const attentionCount = openTasks.length + emails.length;
         const refreshNote = overviewData.refreshing
             ? `<p class="overview-refresh-note">${overviewData.refresh_state === 'checking'
@@ -1145,37 +1150,40 @@ async function loadOverviewPage(options = {}) {
             </section>
 
             <div class="overview-stat-grid">
-                <article><span class="overview-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg></span><div><strong>${schedules.length}</strong><span>${ui('Sự kiện hôm nay', 'Events today')}</span></div></article>
-                <article><span class="overview-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/><rect x="3" y="3" width="18" height="18" rx="4"/></svg></span><div><strong>${openTasks.length}</strong><span>${ui('Việc cần làm', 'Open tasks')}</span></div></article>
-                <article><span class="overview-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><div><strong>${emails.length}</strong><span>${ui('Email quan trọng', 'Important emails')}</span></div></article>
+                <article class="is-events"><span class="overview-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg></span><div><span class="overview-stat-label">${ui('SỰ KIỆN HÔM NAY', 'EVENTS TODAY')}</span><strong>${schedules.length}</strong><small>${ui('cuộc hẹn trong lịch', 'calendar events')}</small></div></article>
+                <article class="is-tasks"><span class="overview-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/><rect x="3" y="3" width="18" height="18" rx="4"/></svg></span><div><span class="overview-stat-label">${ui('VIỆC CẦN LÀM', 'OPEN TASKS')}</span><strong>${openTasks.length}</strong><small>${ui('nhiệm vụ đang mở', 'tasks in progress')}</small></div></article>
+                <article class="is-emails"><span class="overview-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><div><span class="overview-stat-label">${ui('EMAIL QUAN TRỌNG', 'IMPORTANT EMAIL')}</span><strong>${emails.length}</strong><small>${ui('thư cần chú ý', 'messages need attention')}</small></div></article>
+                <article class="is-performance"><span class="overview-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 17l5-5 4 3 7-8"/><path d="M15 7h5v5"/></svg></span><div><span class="overview-stat-label">${ui('HIỆU SUẤT TRONG NGÀY', 'DAILY PROGRESS')}</span><strong>${completionRate}%</strong><small>${ui(`${completedChecklistItems}/${checklistItems.length} việc hoàn thành`, `${completedChecklistItems}/${checklistItems.length} completed`)}</small></div></article>
             </div>
 
-            <div class="overview-grid">
-                <section class="overview-panel">
-                    <div class="overview-panel-head">
-                        <span class="overview-kicker">${ui('DEADLINE & TASK', 'DEADLINES & TASKS')}</span>
-                        <strong>${ui('Việc cần xử lý hôm nay', 'Today’s work')}</strong>
-                    </div>
-                    <div class="overview-list">${renderOverviewList(schedules, 'task')}</div>
-                </section>
-                <section class="overview-panel">
-                    <div class="overview-panel-head">
-                        <span class="overview-kicker">EMAIL</span>
-                        <strong>${ui('Mail quan trọng trong ngày', 'Important mail today')}</strong>
-                    </div>
-                    <div class="overview-list">${renderOverviewList(emails, 'email')}</div>
-                </section>
+            <div class="overview-dashboard-grid">
+                <div class="overview-dashboard-column is-main">
+                    <section class="overview-panel overview-focus-panel">
+                        <div class="overview-panel-head">
+                            <span class="overview-kicker">${ui('DEADLINE & TASK', 'DEADLINES & TASKS')}</span>
+                            <strong>${ui('Nhiệm vụ trọng tâm hôm nay', 'Today’s focus')}</strong>
+                        </div>
+                        <div class="overview-list">${renderOverviewList(schedules, 'task')}</div>
+                    </section>
+                    ${renderOverviewQuickAdd()}
+                    ${renderOverviewChecklist(schedules, checklistState)}
+                </div>
+                <div class="overview-dashboard-column is-side">
+                    <section class="overview-panel overview-email-panel">
+                        <div class="overview-panel-head">
+                            <span class="overview-kicker">EMAIL</span>
+                            <strong>${ui('Email mới nhất', 'Latest email')}</strong>
+                        </div>
+                        <div class="overview-list">${renderOverviewList(emails, 'email')}</div>
+                    </section>
+                    ${renderOverviewAnalytics(analyticsData)}
+                </div>
             </div>
 
-            ${renderOverviewQuickAdd()}
-
-            ${renderOverviewChecklist(schedules, checklistState)}
-
-            ${renderOverviewCountdown(overviewData.upcoming_deadlines)}
-
-            ${renderStudentToolsPanel()}
-
-            ${renderOverviewAnalytics(analyticsData)}
+            <div class="overview-secondary-grid">
+                ${renderOverviewCountdown(overviewData.upcoming_deadlines)}
+                ${renderStudentToolsPanel()}
+            </div>
         `;
         bindOverviewQuickAdd(container, selectedDate);
         bindOverviewChecklist(container, selectedDate, schedules, checklistState);

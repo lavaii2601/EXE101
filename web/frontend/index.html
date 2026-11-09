@@ -13,7 +13,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/style.css?v=20261109-login-redesign-02">
-    <link rel="stylesheet" href="/css/workspace-redesign.css?v=20261006-brand-01">
+    <link rel="stylesheet" href="/css/workspace-redesign.css?v=20261109-overview-themes-02">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -260,6 +260,10 @@
                     </div>
                 </div>
                 <div class="workspace-actions">
+                    <button type="button" id="themeQuickToggle" class="theme-quick-toggle" aria-label="Chuyển sang giao diện tối" aria-pressed="false" title="Đổi giao diện sáng/tối">
+                        <svg class="theme-icon-light" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="3.5" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v2M12 19.5v2M21.5 12h-2M4.5 12h-2M18.7 5.3l-1.4 1.4M6.7 17.3l-1.4 1.4M18.7 18.7l-1.4-1.4M6.7 6.7L5.3 5.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                        <svg class="theme-icon-dark" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M20 15.4A8.2 8.2 0 018.6 4a8.3 8.3 0 1011.4 11.4z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
                     <div class="notification-bell-wrap">
                         <button type="button" id="notificationBellBtn" class="notification-bell-btn" aria-haspopup="true" aria-expanded="false" title="Thông báo">
                             <span aria-hidden="true">🔔</span>
@@ -1031,13 +1035,13 @@
     <script src="/js/auth.js?v=20261109-login-redesign-02" defer></script>
     <script src="/js/workspace.js?v=20261013-richtext-01" defer></script>
     <script src="/js/notifications.js?v=20261013-richtext-01" defer></script>
-    <script src="/js/overview.js?v=20261013-richtext-01" defer></script>
+    <script src="/js/overview.js?v=20261109-overview-dark-01" defer></script>
     <script src="/js/chat.js?v=20261013-richtext-01" defer></script>
     <script src="/js/email.js?v=20261013-richtext-01" defer></script>
     <script src="/js/schedule.js?v=20261013-richtext-01" defer></script>
     <script src="/js/calendar.js?v=20261013-richtext-01" defer></script>
     <script src="/js/history.js?v=20261013-richtext-01" defer></script>
     <script src="/js/settings.js?v=20261013-richtext-01" defer></script>
-    <script src="/js/main.js?v=20261013-richtext-01" defer></script>
+    <script src="/js/main.js?v=20261109-overview-themes-02" defer></script>
 </body>
 </html>

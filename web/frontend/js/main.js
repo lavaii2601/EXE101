@@ -9,6 +9,23 @@ function normalizePages() {
     });
 }
 
+function applyWorkspaceTheme(theme, persist = true) {
+    const isDark = theme === 'dark';
+    document.body.classList.toggle('dark-theme', isDark);
+    if (persist) localStorage.setItem('flowmate-theme', isDark ? 'dark' : 'light');
+
+    const quickToggle = document.getElementById('themeQuickToggle');
+    if (quickToggle) {
+        quickToggle.setAttribute('aria-pressed', String(isDark));
+        quickToggle.setAttribute('aria-label', isDark
+            ? 'Chuyển sang giao diện sáng'
+            : 'Chuyển sang giao diện tối');
+    }
+
+    const settingsToggle = document.getElementById('settingsDarkMode');
+    if (settingsToggle) settingsToggle.checked = isDark;
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', initApp);
 
@@ -53,7 +70,7 @@ async function initApp() {
     applyLanguage();
     setupDateTimePreviews();
     const savedTheme = localStorage.getItem('flowmate-theme');
-    document.body.classList.toggle('dark-theme', savedTheme === 'dark');
+    applyWorkspaceTheme(savedTheme === 'dark' ? 'dark' : 'light', false);
     // Normalize page visibility on startup to avoid stale CSS/inline styles
     normalizePages();
     
@@ -334,9 +351,15 @@ async function initApp() {
         if (settingsDarkMode) {
             settingsDarkMode.checked = document.body.classList.contains('dark-theme');
             settingsDarkMode.addEventListener('change', () => {
-                document.body.classList.toggle('dark-theme', settingsDarkMode.checked);
-                localStorage.setItem('flowmate-theme', settingsDarkMode.checked ? 'dark' : 'light');
+                applyWorkspaceTheme(settingsDarkMode.checked ? 'dark' : 'light');
                 setSettingsState('Đã lưu giao diện');
+            });
+        }
+        const themeQuickToggle = document.getElementById('themeQuickToggle');
+        if (themeQuickToggle) {
+            themeQuickToggle.addEventListener('click', () => {
+                const nextTheme = document.body.classList.contains('dark-theme') ? 'light' : 'dark';
+                applyWorkspaceTheme(nextTheme);
             });
         }
         const settingsGoogleBtn = document.getElementById('settingsGoogleBtn');
