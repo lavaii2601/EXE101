@@ -825,13 +825,19 @@ async function loadMeetingSuggestions() {
             : ui('Chưa xác định thời gian', 'Time not detected');
         card.innerHTML = `
             <div class="meeting-suggestion-main">
+                <div class="meeting-suggestion-source-row">
+                    <span>✦ ${ui('Phát hiện từ email', 'Detected from email')}</span>
+                    <small>${escapeHtml(suggestion.sender || ui('Không xác định', 'Unknown'))}</small>
+                </div>
                 <div class="meeting-suggestion-title">${escapeHtml(suggestion.title || suggestion.subject || ui('Lịch hẹn từ email', 'Appointment from email'))}</div>
-                <div class="meeting-suggestion-source">${ui('Từ', 'From')}: ${escapeHtml(suggestion.sender || ui('Không xác định', 'Unknown'))}</div>
-                <div class="meeting-suggestion-time">${escapeHtml(start)}</div>
-                ${suggestion.snippet ? `<p>${escapeHtml(suggestion.snippet)}</p>` : ''}
+                <div class="meeting-suggestion-time-box">
+                    <span aria-hidden="true">◷</span>
+                    <div><strong>${escapeHtml(start)}</strong><small>${ui('Thời gian được trích xuất tự động', 'Time extracted automatically')}</small></div>
+                </div>
+                ${suggestion.snippet ? `<div class="meeting-suggestion-bob-note"><span aria-hidden="true">✦</span><p><strong>Bob:</strong> ${escapeHtml(suggestion.snippet)}</p></div>` : ''}
             </div>
             <div class="meeting-suggestion-actions">
-                <button type="button" class="btn-primary meeting-suggestion-create">${ui('Tạo lịch', 'Create event')}</button>
+                <button type="button" class="btn-primary meeting-suggestion-create">＋ ${ui('Thêm vào lịch', 'Add to calendar')}</button>
                 <button type="button" class="btn-secondary meeting-suggestion-dismiss">${ui('Bỏ qua', 'Dismiss')}</button>
             </div>
         `;

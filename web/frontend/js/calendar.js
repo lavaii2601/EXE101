@@ -1,4 +1,11 @@
 // GOOGLE CALENDAR FUNCTIONS
+function updateCalendarStatus(text, state = 'neutral') {
+    const calendarStatus = document.getElementById('calendarStatus');
+    if (!calendarStatus) return;
+    calendarStatus.textContent = text;
+    calendarStatus.dataset.state = state;
+}
+
 async function loadCalendarEvents() {
     const eventsList = document.getElementById('calendarEventsList');
     if (!eventsList) return;
@@ -9,8 +16,6 @@ async function loadCalendarEvents() {
         const response = await apiFetch(`${API_BASE}/calendar/events?max_results=10`);
         const data = await response.json();
         
-        const calendarStatus = document.getElementById('calendarStatus');
-        
         if (data && data.error === 'not_authenticated') {
             eventsList.innerHTML = `
                 <div style="padding: 30px; text-align: center; background: #FFF3E0; border-radius: 8px; margin: 20px;">
@@ -19,7 +24,7 @@ async function loadCalendarEvents() {
                     <button id="calendarLoginBtn" class="btn-primary">${ui('Đăng nhập Gmail', 'Sign in to Gmail')}</button>
                 </div>
             `;
-            if (calendarStatus) calendarStatus.textContent = ui('Chưa kết nối Google Calendar', 'Google Calendar not connected');
+            updateCalendarStatus(ui('Chưa kết nối Google Calendar', 'Google Calendar not connected'), 'disconnected');
             
             const calendarLoginBtn = document.getElementById('calendarLoginBtn');
             if (calendarLoginBtn) {
@@ -35,7 +40,7 @@ async function loadCalendarEvents() {
                     <button onclick="loadCalendarEvents()" class="btn-primary" style="margin-top: 10px;">${ui('🔄 Thử lại', '🔄 Try again')}</button>
                 </div>
             `;
-            if (calendarStatus) calendarStatus.textContent = ui('Lỗi tải sự kiện', 'Unable to load events');
+            updateCalendarStatus(ui('Lỗi tải sự kiện', 'Unable to load events'), 'error');
             return;
         }
         
@@ -46,7 +51,7 @@ async function loadCalendarEvents() {
                     <p style="color: #666; font-size: 14px; margin-bottom: 15px;">${ui('Hãy tạo sự kiện mới hoặc kiểm tra Google Calendar', 'Create a new event or check Google Calendar.')}</p>
                 </div>
             `;
-            if (calendarStatus) calendarStatus.textContent = ui('Đã kết nối - Không có sự kiện', 'Connected - No events');
+            updateCalendarStatus(ui('Đã kết nối - Không có sự kiện', 'Connected - No events'), 'connected');
             return;
         }
         
@@ -90,12 +95,11 @@ async function loadCalendarEvents() {
             eventsList.appendChild(eventDiv);
         });
         
-        if (calendarStatus) calendarStatus.textContent = ui(`Đã kết nối - ${data.count} sự kiện sắp tới`, `Connected - ${data.count} upcoming events`);
+        updateCalendarStatus(ui(`Đã kết nối - ${data.count} sự kiện sắp tới`, `Connected - ${data.count} upcoming events`), 'connected');
     } catch (error) {
         console.error('Calendar load error:', error);
         eventsList.innerHTML = `<p>${ui('❌ Lỗi', '❌ Error')}: ${escapeHtml(error.message)}</p>`;
-        const calendarStatus = document.getElementById('calendarStatus');
-        if (calendarStatus) calendarStatus.textContent = ui('Lỗi kết nối', 'Connection error');
+        updateCalendarStatus(ui('Lỗi kết nối', 'Connection error'), 'error');
     }
 }
 

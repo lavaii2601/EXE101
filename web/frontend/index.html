@@ -13,7 +13,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/style.css?v=20261109-login-redesign-02">
-    <link rel="stylesheet" href="/css/workspace-redesign.css?v=20261109-overview-themes-02">
+    <link rel="stylesheet" href="/css/workspace-redesign.css?v=20261109-calendar-ui-03">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
@@ -469,23 +469,36 @@
             
             <!-- Schedule Page (merged with Google Calendar) -->
             <section id="schedule-page" class="page">
-                <div class="section-header">
-                    <h2>Lịch</h2>
-                    <div style="display:flex; gap:8px; align-items:center;">
+                <div class="section-header schedule-header">
+                    <div class="schedule-heading-copy">
+                        <span class="schedule-kicker">LỊCH THÔNG MINH</span>
+                        <h2>Lịch &amp; Cuộc họp</h2>
+                        <p>Quản lý lịch tuần, cuộc họp sắp tới và các đề xuất được Bob phát hiện từ email.</p>
+                    </div>
+                    <div class="schedule-header-actions">
                         <span id="calendarStatus" class="calendar-status">Chưa kết nối Google Calendar</span>
-                        <button id="refreshCalendarBtn" class="btn-secondary">Làm mới</button>
-                        <button id="openCalendarBtn" class="btn-secondary">Mở Google Calendar</button>
-                        <button id="createEventBtn" class="btn-primary">Tạo sự kiện</button>
+                        <button id="refreshCalendarBtn" class="schedule-icon-button" type="button" title="Làm mới lịch" aria-label="Làm mới lịch">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.2 9A7 7 0 006.4 6.4L4 9m2 6a7 7 0 0011.6 2.6L20 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                        </button>
+                        <button id="openCalendarBtn" class="btn-secondary schedule-google-button" type="button">Mở Google Calendar</button>
+                        <button id="createEventBtn" class="btn-primary schedule-create-button" type="button"><span aria-hidden="true">＋</span> Tạo sự kiện</button>
                     </div>
                 </div>
 
                 <div class="tab-content" id="upcoming-tab">
                     <div class="week-schedule-section">
                         <div class="week-nav">
-                            <button id="prevWeekBtn" class="btn-secondary">‹ Tuần trước</button>
-                            <div id="weekRangeLabel" class="week-range-label"></div>
-                            <button id="nextWeekBtn" class="btn-secondary">Tuần sau ›</button>
-                            <button id="todayWeekBtn" class="btn-secondary">Tuần này</button>
+                            <div class="week-nav-heading">
+                                <span class="schedule-section-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none"><rect x="3" y="5" width="18" height="16" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M8 3v4M16 3v4M3 10h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                                </span>
+                                <div><span class="schedule-kicker">TUẦN LÀM VIỆC</span><strong id="weekRangeLabel" class="week-range-label"></strong></div>
+                            </div>
+                            <div class="week-nav-controls">
+                                <button id="todayWeekBtn" class="btn-secondary">Hôm nay</button>
+                                <button id="prevWeekBtn" class="schedule-icon-button" type="button" aria-label="Tuần trước">‹</button>
+                                <button id="nextWeekBtn" class="schedule-icon-button" type="button" aria-label="Tuần sau">›</button>
+                            </div>
                         </div>
                         <div class="week-table-wrapper">
                             <table class="week-table">
@@ -500,13 +513,38 @@
                     </div>
                     <section id="emailMeetingSuggestions" class="meeting-suggestions-section" hidden>
                         <div class="meeting-suggestions-header">
-                            <div>
-                                <span>GỢI Ý TỪ EMAIL</span>
-                                <h3>Cuộc họp và lịch hẹn được phát hiện</h3>
+                            <div class="meeting-suggestions-heading">
+                                <span class="schedule-section-icon is-ai" aria-hidden="true">✦</span>
+                                <div>
+                                    <div class="meeting-suggestion-title-row">
+                                        <h3>Gợi ý từ Email &amp; Bob AI</h3>
+                                        <span id="meetingSuggestionCount" class="meeting-suggestion-count">0</span>
+                                    </div>
+                                    <p>Tự động nhận diện cuộc hẹn và thời hạn từ thư điện tử.</p>
+                                </div>
                             </div>
-                            <span id="meetingSuggestionCount" class="meeting-suggestion-count">0</span>
                         </div>
                         <div id="meetingSuggestionsList" class="meeting-suggestions-list"></div>
+                    </section>
+                    <section class="schedule-quick-create">
+                        <div class="schedule-quick-create-main">
+                            <span class="schedule-section-icon is-ai" aria-hidden="true">✦</span>
+                            <div class="schedule-quick-copy">
+                                <div><strong>Nhập lịch nhanh bằng ngôn ngữ tự nhiên</strong><span>Bob NLP</span></div>
+                                <p>Nhập tiếng Việt tự nhiên, FlowMate sẽ nhận diện thời gian và tạo lịch phù hợp.</p>
+                            </div>
+                            <form id="scheduleQuickAddForm" class="schedule-quick-form">
+                                <input id="scheduleQuickInput" type="text" autocomplete="off" placeholder="Ví dụ: Ăn trưa với Minh lúc 12h trưa mai...">
+                                <button id="scheduleQuickAddBtn" class="btn-primary" type="submit">Tạo nhanh ⚡</button>
+                            </form>
+                        </div>
+                        <div class="schedule-quick-suggestions">
+                            <span>Gợi ý nhanh:</span>
+                            <button type="button" data-schedule-quick-example="Ăn trưa với Minh lúc 12h thứ Sáu">“Ăn trưa với Minh lúc 12h thứ Sáu”</button>
+                            <button type="button" data-schedule-quick-example="Báo cáo tiến độ dự án lúc 9h sáng thứ Hai">“Báo cáo tiến độ dự án lúc 9h sáng thứ Hai”</button>
+                            <button type="button" data-schedule-quick-example="Nhắc đối soát thẻ tín dụng lúc 16h30 hôm nay">“Nhắc đối soát lúc 16h30 hôm nay”</button>
+                        </div>
+                        <p id="scheduleQuickStatus" class="schedule-quick-status" aria-live="polite"></p>
                     </section>
                     <div id="schedulesList" class="schedules-list unified-schedules-list" style="margin-top:16px;"></div>
                 </div>
@@ -1037,11 +1075,11 @@
     <script src="/js/notifications.js?v=20261013-richtext-01" defer></script>
     <script src="/js/overview.js?v=20261109-overview-dark-01" defer></script>
     <script src="/js/chat.js?v=20261013-richtext-01" defer></script>
-    <script src="/js/email.js?v=20261013-richtext-01" defer></script>
-    <script src="/js/schedule.js?v=20261013-richtext-01" defer></script>
-    <script src="/js/calendar.js?v=20261013-richtext-01" defer></script>
+    <script src="/js/email.js?v=20261109-calendar-ui-03" defer></script>
+    <script src="/js/schedule.js?v=20261109-calendar-ui-03" defer></script>
+    <script src="/js/calendar.js?v=20261109-calendar-ui-03" defer></script>
     <script src="/js/history.js?v=20261013-richtext-01" defer></script>
     <script src="/js/settings.js?v=20261013-richtext-01" defer></script>
-    <script src="/js/main.js?v=20261109-overview-themes-02" defer></script>
+    <script src="/js/main.js?v=20261109-calendar-ui-03" defer></script>
 </body>
 </html>

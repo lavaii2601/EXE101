@@ -155,6 +155,7 @@ async function initApp() {
         if (createEventBtn) {
             createEventBtn.addEventListener('click', () => openNewScheduleModal());
         }
+        bindScheduleQuickAdd();
 
         // New Schedule modal close handlers (X button and Hủy button)
         const newScheduleModal = document.getElementById('newScheduleModal');

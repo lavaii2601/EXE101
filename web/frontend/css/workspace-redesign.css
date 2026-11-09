@@ -1552,3 +1552,888 @@ body.dark-theme .workspace-app[data-current-page="overview"] {
         width: 100%;
     }
 }
+
+/* --------------------------------------------------------------------------
+   Schedule — weekly board, email suggestions, and natural-language quick add
+   -------------------------------------------------------------------------- */
+
+.workspace-app[data-current-page="schedule"] {
+    --schedule-base: #f7f8fc;
+    --schedule-surface-lowest: #ffffff;
+    --schedule-surface-low: #ffffff;
+    --schedule-surface: #f1f5f9;
+    --schedule-surface-high: #e9eef6;
+    --schedule-surface-highest: #dfe6ef;
+    --schedule-text: #0f172a;
+    --schedule-text-soft: #475569;
+    --schedule-muted: #64748b;
+    --schedule-border: rgba(15, 23, 42, .09);
+    --schedule-primary: #6366f1;
+    --schedule-primary-strong: #4f46e5;
+    --schedule-on-primary: #ffffff;
+    --schedule-tertiary: #0891b2;
+    --schedule-success: #059669;
+    --schedule-secondary: #7c3aed;
+    --schedule-warning: #d97706;
+    --schedule-danger: #dc2626;
+    --schedule-header-bg: rgba(247, 248, 252, .90);
+    --schedule-primary-soft: rgba(99, 102, 241, .10);
+    --schedule-tertiary-soft: rgba(8, 145, 178, .10);
+    --schedule-success-soft: rgba(5, 150, 105, .10);
+    --schedule-warning-soft: rgba(217, 119, 6, .10);
+    background: var(--schedule-base);
+}
+
+body.dark-theme .workspace-app[data-current-page="schedule"] {
+    --schedule-base: #090a0f;
+    --schedule-surface-lowest: #0d0e13;
+    --schedule-surface-low: #1a1b21;
+    --schedule-surface: #1e1f25;
+    --schedule-surface-high: #292a2f;
+    --schedule-surface-highest: #34343a;
+    --schedule-text: #f8fafc;
+    --schedule-text-soft: #c7c4d7;
+    --schedule-muted: #94a3b8;
+    --schedule-border: rgba(255, 255, 255, .08);
+    --schedule-primary: #8083ff;
+    --schedule-primary-strong: #c0c1ff;
+    --schedule-on-primary: #0d0096;
+    --schedule-tertiary: #4cd7f6;
+    --schedule-success: #10b981;
+    --schedule-secondary: #ddb7ff;
+    --schedule-warning: #fbbf24;
+    --schedule-danger: #ffb4ab;
+    --schedule-header-bg: rgba(9, 10, 15, .88);
+    --schedule-primary-soft: rgba(128, 131, 255, .12);
+    --schedule-tertiary-soft: rgba(76, 215, 246, .10);
+    --schedule-success-soft: rgba(16, 185, 129, .12);
+    --schedule-warning-soft: rgba(251, 191, 36, .12);
+    color-scheme: dark;
+}
+
+.workspace-app[data-current-page="schedule"] .main-content,
+.workspace-app[data-current-page="schedule"] #schedule-page,
+.workspace-app[data-current-page="schedule"] #schedule-page #upcoming-tab {
+    background: var(--schedule-base);
+    color: var(--schedule-text);
+}
+
+.workspace-app[data-current-page="schedule"] #schedule-page.page.active {
+    gap: 0;
+}
+
+.workspace-app[data-current-page="schedule"] #schedule-page .schedule-header {
+    display: flex;
+    min-height: 112px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--schedule-border);
+    background: var(--schedule-header-bg);
+    backdrop-filter: blur(18px);
+}
+
+.workspace-app[data-current-page="schedule"] #schedule-page .schedule-header > div {
+    display: flex !important;
+}
+
+.schedule-heading-copy {
+    min-width: 0;
+    flex-direction: column;
+}
+
+.schedule-kicker {
+    color: var(--schedule-tertiary);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .08em;
+}
+
+.workspace-app[data-current-page="schedule"] #schedule-page .schedule-header h2 {
+    margin: 3px 0 0;
+    color: var(--schedule-text);
+    font-family: "Plus Jakarta Sans", "Inter", sans-serif;
+    font-size: clamp(26px, 2.5vw, 34px);
+    font-weight: 700;
+    letter-spacing: -.03em;
+}
+
+.workspace-app[data-current-page="schedule"] #schedule-page .schedule-header p {
+    margin: 5px 0 0;
+    color: var(--schedule-text-soft);
+    font-size: 13px;
+}
+
+.schedule-header-actions {
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.workspace-app[data-current-page="schedule"] .calendar-status {
+    display: inline-flex;
+    min-height: 32px;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: var(--schedule-success-soft);
+    color: var(--schedule-success);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.workspace-app[data-current-page="schedule"] .calendar-status::before {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    content: '';
+}
+
+.workspace-app[data-current-page="schedule"] .calendar-status[data-state="disconnected"],
+.workspace-app[data-current-page="schedule"] .calendar-status[data-state="local"] {
+    background: var(--schedule-surface-high);
+    color: var(--schedule-muted);
+}
+
+.workspace-app[data-current-page="schedule"] .calendar-status[data-state="error"] {
+    background: color-mix(in srgb, var(--schedule-danger) 12%, transparent);
+    color: var(--schedule-danger);
+}
+
+.schedule-icon-button {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid var(--schedule-border);
+    border-radius: 11px;
+    background: var(--schedule-surface-low);
+    color: var(--schedule-text-soft);
+    cursor: pointer;
+    font-size: 20px;
+    transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.schedule-icon-button:hover,
+.schedule-icon-button:focus-visible {
+    border-color: var(--schedule-primary);
+    background: var(--schedule-primary-soft);
+    color: var(--schedule-primary);
+    transform: translateY(-1px);
+}
+
+.workspace-app[data-current-page="schedule"] .schedule-google-button,
+.workspace-app[data-current-page="schedule"] .week-nav .btn-secondary {
+    min-height: 40px;
+    border-color: var(--schedule-border);
+    border-radius: 11px;
+    background: var(--schedule-surface-low);
+    color: var(--schedule-text-soft);
+}
+
+.workspace-app[data-current-page="schedule"] .schedule-google-button:hover,
+.workspace-app[data-current-page="schedule"] .week-nav .btn-secondary:hover {
+    border-color: var(--schedule-primary);
+    background: var(--schedule-primary-soft);
+    color: var(--schedule-primary);
+}
+
+.workspace-app[data-current-page="schedule"] .schedule-create-button,
+.workspace-app[data-current-page="schedule"] .schedule-quick-form .btn-primary,
+.workspace-app[data-current-page="schedule"] .meeting-suggestion-create {
+    min-height: 40px;
+    border-radius: 11px;
+    background: var(--schedule-primary);
+    color: var(--schedule-on-primary);
+    font-weight: 700;
+    box-shadow: 0 8px 22px var(--schedule-primary-soft);
+}
+
+.workspace-app[data-current-page="schedule"] .schedule-create-button:hover,
+.workspace-app[data-current-page="schedule"] .schedule-quick-form .btn-primary:hover,
+.workspace-app[data-current-page="schedule"] .meeting-suggestion-create:hover {
+    background: var(--schedule-primary-strong);
+    color: var(--schedule-on-primary);
+}
+
+.workspace-app[data-current-page="schedule"] #schedule-page #upcoming-tab {
+    display: flex;
+    flex-direction: column;
+    gap: 26px;
+    padding: 22px 28px 34px;
+    overflow: auto;
+}
+
+.workspace-app[data-current-page="schedule"] .week-schedule-section {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin: 0;
+}
+
+.workspace-app[data-current-page="schedule"] .week-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0;
+}
+
+.week-nav-heading,
+.meeting-suggestions-heading {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 11px;
+}
+
+.week-nav-heading > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.schedule-section-icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--schedule-border);
+    border-radius: 12px;
+    background: var(--schedule-surface-low);
+    color: var(--schedule-tertiary);
+}
+
+.schedule-section-icon.is-ai {
+    background: var(--schedule-primary-soft);
+    color: var(--schedule-primary);
+}
+
+.workspace-app[data-current-page="schedule"] .week-range-label {
+    min-width: 0;
+    color: var(--schedule-text);
+    font-family: "Plus Jakarta Sans", "Inter", sans-serif;
+    font-size: 17px;
+    font-weight: 650;
+    text-align: left;
+}
+
+.week-nav-controls {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.workspace-app[data-current-page="schedule"] .week-table-wrapper {
+    flex: 0 0 auto;
+    min-height: 0;
+    overflow-x: auto;
+    border: 1px solid var(--schedule-border);
+    border-radius: 16px;
+    background: var(--schedule-surface-lowest);
+    box-shadow: none;
+}
+
+.workspace-app[data-current-page="schedule"] .week-table {
+    min-width: 1080px;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+    background: transparent;
+}
+
+.workspace-app[data-current-page="schedule"] .week-table th,
+.workspace-app[data-current-page="schedule"] .week-table td {
+    min-width: 150px;
+    padding: 0;
+    border: 0;
+    border-right: 1px solid var(--schedule-border);
+}
+
+.workspace-app[data-current-page="schedule"] .week-table th:last-child,
+.workspace-app[data-current-page="schedule"] .week-table td:last-child {
+    border-right: 0;
+}
+
+.workspace-app[data-current-page="schedule"] .week-table thead th {
+    position: relative;
+    height: 74px;
+    padding: 12px 10px;
+    border-bottom: 1px solid var(--schedule-border);
+    background: var(--schedule-surface-low);
+    color: var(--schedule-text-soft);
+}
+
+.workspace-app[data-current-page="schedule"] .week-table thead th:nth-last-child(-n + 2),
+.workspace-app[data-current-page="schedule"] .week-table tbody td:nth-last-child(-n + 2) {
+    background: color-mix(in srgb, var(--schedule-surface-lowest) 96%, var(--schedule-primary) 4%);
+}
+
+.workspace-app[data-current-page="schedule"] .week-table thead th.is-today,
+.workspace-app[data-current-page="schedule"] .week-table tbody td.is-today {
+    background: var(--schedule-primary-soft);
+}
+
+.workspace-app[data-current-page="schedule"] .week-day-name {
+    display: block;
+    color: var(--schedule-muted);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+}
+
+.workspace-app[data-current-page="schedule"] .week-day-date {
+    display: block;
+    margin-top: 3px;
+    color: var(--schedule-text);
+    font-family: "Plus Jakarta Sans", "Inter", sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.week-today-marker {
+    position: absolute;
+    top: 10px;
+    right: 9px;
+    padding: 3px 6px;
+    border-radius: 999px;
+    background: var(--schedule-primary);
+    color: var(--schedule-on-primary);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 8px;
+}
+
+.workspace-app[data-current-page="schedule"] .week-day-cell {
+    height: 370px;
+    padding: 12px;
+    vertical-align: top;
+    background: var(--schedule-surface-lowest);
+}
+
+.week-day-empty {
+    display: flex;
+    height: 100%;
+    min-height: 180px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 7px;
+    color: var(--schedule-muted);
+    opacity: .55;
+}
+
+.week-day-empty > span {
+    font-size: 22px;
+}
+
+.week-day-empty small {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px;
+}
+
+.workspace-app[data-current-page="schedule"] .week-event {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0 0 10px;
+    padding: 11px;
+    border: 1px solid var(--schedule-border);
+    border-left: 3px solid var(--schedule-primary);
+    border-radius: 12px;
+    background: var(--schedule-surface-low);
+    color: var(--schedule-text);
+    box-shadow: 0 3px 12px rgba(15, 23, 42, .04);
+    transition: border-color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.workspace-app[data-current-page="schedule"] .week-event:hover {
+    border-color: color-mix(in srgb, var(--schedule-primary) 55%, var(--schedule-border));
+    background: var(--schedule-surface);
+    box-shadow: 0 8px 20px var(--schedule-primary-soft);
+    transform: translateY(-1px);
+}
+
+.workspace-app[data-current-page="schedule"] .week-event.source-google {
+    border-left-color: var(--schedule-tertiary);
+}
+
+.workspace-app[data-current-page="schedule"] .week-event.source-outlook {
+    border-left-color: var(--schedule-secondary);
+}
+
+.workspace-app[data-current-page="schedule"] .week-event.is-imminent {
+    border: 1px solid color-mix(in srgb, var(--schedule-primary) 58%, transparent);
+    border-left: 3px solid var(--schedule-primary);
+    background: linear-gradient(145deg, var(--schedule-surface-low), var(--schedule-primary-soft));
+    box-shadow: 0 0 24px var(--schedule-primary-soft);
+}
+
+.week-event-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.workspace-app[data-current-page="schedule"] .week-event-time {
+    margin: 0;
+    color: var(--schedule-primary);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.week-event-source-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--schedule-tertiary);
+}
+
+.source-outlook .week-event-source-dot {
+    background: var(--schedule-secondary);
+}
+
+.source-local .week-event-source-dot {
+    background: var(--schedule-success);
+}
+
+.week-event-imminent {
+    padding: 3px 6px;
+    border-radius: 999px;
+    background: var(--schedule-primary-soft);
+    color: var(--schedule-primary);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 8px;
+    font-weight: 700;
+}
+
+.workspace-app[data-current-page="schedule"] .week-event-title {
+    margin: 0;
+    color: var(--schedule-text);
+    font-family: "Plus Jakarta Sans", "Inter", sans-serif;
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 1.35;
+}
+
+.week-event-meta {
+    overflow: hidden;
+    color: var(--schedule-muted);
+    font-size: 10px;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.week-event-join {
+    display: inline-flex;
+    min-height: 30px;
+    align-items: center;
+    justify-content: center;
+    margin-top: 3px;
+    border-radius: 8px;
+    background: var(--schedule-primary);
+    color: var(--schedule-on-primary);
+    font-size: 10px;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.week-event-join:hover {
+    background: var(--schedule-primary-strong);
+    color: var(--schedule-on-primary);
+}
+
+.workspace-app[data-current-page="schedule"] .week-event-sync.unsynced {
+    color: var(--schedule-warning);
+    font-size: 9px;
+}
+
+.workspace-app[data-current-page="schedule"] .week-loading {
+    height: 280px;
+    color: var(--schedule-muted);
+    text-align: center;
+}
+
+.workspace-app[data-current-page="schedule"] .meeting-suggestions-section {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.workspace-app[data-current-page="schedule"] .meeting-suggestions-section[hidden] {
+    display: none;
+}
+
+.workspace-app[data-current-page="schedule"] .meeting-suggestions-header {
+    margin: 0;
+}
+
+.meeting-suggestion-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.workspace-app[data-current-page="schedule"] .meeting-suggestions-header h3 {
+    margin: 0;
+    color: var(--schedule-text);
+    font-family: "Plus Jakarta Sans", "Inter", sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.workspace-app[data-current-page="schedule"] .meeting-suggestions-header p {
+    margin: 3px 0 0;
+    color: var(--schedule-muted);
+    font-size: 12px;
+}
+
+.workspace-app[data-current-page="schedule"] .meeting-suggestion-count {
+    display: inline-flex;
+    width: auto;
+    height: 22px;
+    min-width: 22px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--schedule-primary-soft);
+    color: var(--schedule-primary) !important;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px;
+}
+
+.workspace-app[data-current-page="schedule"] .meeting-suggestions-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.workspace-app[data-current-page="schedule"] .meeting-suggestion-card {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px;
+    border: 1px solid var(--schedule-border);
+    border-radius: 16px;
+    background: var(--schedule-surface-low);
+    box-shadow: none;
+}
+
+.workspace-app[data-current-page="schedule"] .meeting-suggestion-card:hover {
+    border-color: color-mix(in srgb, var(--schedule-primary) 46%, var(--schedule-border));
+    background: var(--schedule-surface);
+}
+
+.meeting-suggestion-main {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.meeting-suggestion-source-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--schedule-tertiary);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 9px;
+}
+
+.meeting-suggestion-source-row small {
+    overflow: hidden;
+    color: var(--schedule-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-app[data-current-page="schedule"] .meeting-suggestion-title {
+    color: var(--schedule-text);
+    font-family: "Plus Jakarta Sans", "Inter", sans-serif;
+    font-size: 14px;
+    font-weight: 650;
+    line-height: 1.4;
+}
+
+.meeting-suggestion-time-box,
+.meeting-suggestion-bob-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 10px;
+    border: 1px solid var(--schedule-border);
+    border-radius: 11px;
+    background: var(--schedule-surface);
+}
+
+.meeting-suggestion-time-box > span,
+.meeting-suggestion-bob-note > span {
+    color: var(--schedule-primary);
+    font-size: 17px;
+}
+
+.meeting-suggestion-time-box div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.meeting-suggestion-time-box strong {
+    color: var(--schedule-text);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px;
+    line-height: 1.45;
+}
+
+.meeting-suggestion-time-box small {
+    color: var(--schedule-muted);
+    font-size: 9px;
+}
+
+.meeting-suggestion-bob-note {
+    background: var(--schedule-primary-soft);
+}
+
+.workspace-app[data-current-page="schedule"] .meeting-suggestion-bob-note p {
+    margin: 0;
+    color: var(--schedule-text-soft);
+    font-size: 11px;
+    line-height: 1.55;
+}
+
+.meeting-suggestion-bob-note strong {
+    color: var(--schedule-primary);
+}
+
+.workspace-app[data-current-page="schedule"] .meeting-suggestion-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--schedule-border);
+}
+
+.workspace-app[data-current-page="schedule"] .meeting-suggestion-dismiss {
+    border-color: var(--schedule-border);
+    background: var(--schedule-surface);
+    color: var(--schedule-muted);
+}
+
+.schedule-quick-create {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--schedule-border);
+    border-radius: 16px;
+    background: var(--schedule-surface-low);
+}
+
+.schedule-quick-create-main {
+    display: grid;
+    grid-template-columns: auto minmax(220px, auto) minmax(360px, 1fr);
+    gap: 12px;
+    align-items: center;
+}
+
+.schedule-quick-copy {
+    min-width: 0;
+}
+
+.schedule-quick-copy > div {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.schedule-quick-copy strong {
+    color: var(--schedule-text);
+    font-family: "Plus Jakarta Sans", "Inter", sans-serif;
+    font-size: 13px;
+}
+
+.schedule-quick-copy > div span {
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: var(--schedule-success-soft);
+    color: var(--schedule-success);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 8px;
+}
+
+.schedule-quick-copy p {
+    margin: 3px 0 0;
+    color: var(--schedule-muted);
+    font-size: 10px;
+}
+
+.schedule-quick-form {
+    display: flex;
+    min-width: 0;
+    gap: 8px;
+}
+
+.schedule-quick-form input {
+    min-width: 0;
+    flex: 1;
+    min-height: 40px;
+    padding: 9px 12px;
+    border: 1px solid var(--schedule-border);
+    border-radius: 11px;
+    outline: 0;
+    background: var(--schedule-surface-lowest);
+    color: var(--schedule-text);
+    font-size: 12px;
+}
+
+.schedule-quick-form input:focus {
+    border-color: var(--schedule-primary);
+    box-shadow: 0 0 0 3px var(--schedule-primary-soft);
+}
+
+.schedule-quick-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px;
+    padding-top: 10px;
+    border-top: 1px solid var(--schedule-border);
+}
+
+.schedule-quick-suggestions > span {
+    color: var(--schedule-muted);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 9px;
+}
+
+.schedule-quick-suggestions button {
+    padding: 6px 9px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--schedule-surface);
+    color: var(--schedule-text-soft);
+    cursor: pointer;
+    font-size: 9px;
+}
+
+.schedule-quick-suggestions button:hover {
+    background: var(--schedule-surface-high);
+    color: var(--schedule-text);
+}
+
+.schedule-quick-status {
+    min-height: 0;
+    margin: 0;
+    color: var(--schedule-muted);
+    font-size: 10px;
+}
+
+.schedule-quick-status:not(:empty) {
+    min-height: 16px;
+}
+
+@media (max-width: 1180px) {
+    .workspace-app[data-current-page="schedule"] .meeting-suggestions-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .schedule-quick-create-main {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .schedule-quick-form {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 860px) {
+    .workspace-app[data-current-page="schedule"] #schedule-page .schedule-header {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 16px;
+    }
+
+    .workspace-app[data-current-page="schedule"] #schedule-page .schedule-header > div {
+        width: 100%;
+    }
+
+    .schedule-header-actions {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+    }
+
+    .workspace-app[data-current-page="schedule"] #schedule-page #upcoming-tab {
+        gap: 20px;
+        padding: 16px;
+    }
+
+    .workspace-app[data-current-page="schedule"] .meeting-suggestions-list {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 560px) {
+    .workspace-app[data-current-page="schedule"] .week-nav {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .week-nav-controls {
+        width: 100%;
+    }
+
+    .week-nav-controls #todayWeekBtn {
+        flex: 1;
+    }
+
+    .workspace-app[data-current-page="schedule"] .calendar-status {
+        order: -1;
+        width: 100%;
+        justify-content: center;
+    }
+
+    .workspace-app[data-current-page="schedule"] .schedule-google-button {
+        display: none;
+    }
+
+    .schedule-quick-create-main {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .schedule-quick-create-main .schedule-section-icon {
+        display: none;
+    }
+
+    .schedule-quick-form {
+        grid-column: auto;
+        flex-direction: column;
+    }
+
+    .schedule-quick-form button {
+        width: 100%;
+    }
+
+    .workspace-app[data-current-page="schedule"] .meeting-suggestion-actions {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

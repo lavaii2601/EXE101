@@ -45,6 +45,83 @@ function bindWeekNavigation() {
     }
 }
 
+function bindScheduleQuickAdd() {
+    const form = document.getElementById('scheduleQuickAddForm');
+    const input = document.getElementById('scheduleQuickInput');
+    const button = document.getElementById('scheduleQuickAddBtn');
+    const status = document.getElementById('scheduleQuickStatus');
+    if (!form || !input || form.dataset.quickAddReady === 'true') return;
+    form.dataset.quickAddReady = 'true';
+
+    document.querySelectorAll('[data-schedule-quick-example]').forEach((example) => {
+        example.addEventListener('click', () => {
+            input.value = example.dataset.scheduleQuickExample || '';
+            input.focus();
+        });
+    });
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const text = input.value.trim();
+        if (!text) {
+            input.focus();
+            return;
+        }
+
+        if (button) button.disabled = true;
+        if (status) status.textContent = ui('Bob đang phân tích thời gian và nội dung...', 'Bob is parsing the date and time...');
+
+        try {
+            const response = await apiFetch(`${API_BASE}/schedule/quick-add`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, date: formatDateForApi(new Date()) })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || data.error || ui('Không thể tạo lịch nhanh', 'Unable to quick-create the event'));
+            }
+
+            if (data.kind === 'suggested_plan') {
+                const first = Array.isArray(data.items) ? data.items[0] : null;
+                if (first) {
+                    document.getElementById('scheduleTitle').value = first.title || text;
+                    document.getElementById('scheduleDesc').value = first.description || '';
+                    document.getElementById('scheduleStartTime').value = toDatetimeLocal(first.start_time);
+                    const endInput = document.getElementById('scheduleEndTime');
+                    if (endInput) endInput.value = toDatetimeLocal(first.end_time);
+                    const durationInput = document.getElementById('scheduleDuration');
+                    if (durationInput) durationInput.value = first.duration_minutes || getDurationMinutes(first.start_time, first.end_time) || 60;
+                    updateDateTimePreview('scheduleStartTime');
+                    updateDateTimePreview('scheduleEndTime');
+                    openNewScheduleModal();
+                    if (status) status.textContent = ui('Bob đã đề xuất khung giờ. Hãy kiểm tra trước khi lưu.', 'Bob suggested a time. Review it before saving.');
+                }
+                return;
+            }
+
+            input.value = '';
+            clearRuntimeCache('schedule:');
+            if (data.kind === 'activity') {
+                if (status) status.textContent = ui('Đã tạo lịch. Đang cập nhật tuần làm việc...', 'Event created. Refreshing your week...');
+                showNotification(ui('Đã thêm vào lịch', 'Added to calendar'), 'success');
+                await Promise.allSettled([
+                    loadWeekSchedule({ sync: true }),
+                    loadSchedules({ liveGoogle: true })
+                ]);
+            } else {
+                if (status) status.textContent = ui('Đã thêm vào checklist hôm nay.', 'Added to today’s checklist.');
+                showNotification(ui('Đã thêm vào checklist', 'Added to checklist'), 'success');
+            }
+        } catch (error) {
+            if (status) status.textContent = error.message;
+            showNotification(`${ui('Lỗi', 'Error')}: ${error.message}`, 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    });
+}
+
 function formatWeekDate(date) {
     const dd = String(date.getDate()).padStart(2, '0');
     const mm = String(date.getMonth() + 1).padStart(2, '0');
@@ -196,27 +273,34 @@ async function loadWeekSchedule(options = {}) {
     const weekStartStr = `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}-${String(currentWeekStart.getDate()).padStart(2, '0')}`;
     const today = new Date();
     headerRow.innerHTML = '';
-    const timezoneHeader = document.createElement('th');
-    timezoneHeader.className = 'week-timezone';
-    timezoneHeader.textContent = 'GMT+7';
-    headerRow.appendChild(timezoneHeader);
 
     for (let i = 0; i < 7; i++) {
         const dayDate = new Date(currentWeekStart);
         dayDate.setDate(dayDate.getDate() + i);
         const th = document.createElement('th');
         if (isSameDate(dayDate, today)) th.classList.add('is-today');
-        th.innerHTML = `<span class="week-day-name">${weekDayNames()[i]}</span><span class="week-day-date">${formatWeekDate(dayDate)}</span>`;
+        th.innerHTML = `
+            <span class="week-day-name">${weekDayNames()[i]}</span>
+            <span class="week-day-date">${String(dayDate.getDate()).padStart(2, '0')}</span>
+            ${isSameDate(dayDate, today) ? `<span class="week-today-marker">${ui('Hôm nay', 'Today')}</span>` : ''}
+        `;
         headerRow.appendChild(th);
     }
 
     if (rangeLabel) {
         const sunday = new Date(currentWeekStart);
         sunday.setDate(sunday.getDate() + 6);
-        rangeLabel.textContent = `${formatWeekDate(currentWeekStart)} - ${formatWeekDate(sunday)}/${sunday.getFullYear()}`;
+        const sameMonth = currentWeekStart.getMonth() === sunday.getMonth()
+            && currentWeekStart.getFullYear() === sunday.getFullYear();
+        rangeLabel.textContent = sameMonth
+            ? ui(
+                `${currentWeekStart.getDate()} - ${sunday.getDate()} tháng ${sunday.getMonth() + 1}, ${sunday.getFullYear()}`,
+                `${currentWeekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${sunday.toLocaleDateString('en-US', { day: 'numeric', year: 'numeric' })}`
+            )
+            : `${formatWeekDate(currentWeekStart)} - ${formatWeekDate(sunday)}/${sunday.getFullYear()}`;
     }
 
-    tableBody.innerHTML = `<tr><td colspan="8" class="week-loading">${ui('Đang tải...', 'Loading...')}</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="7" class="week-loading">${ui('Đang tải...', 'Loading...')}</td></tr>`;
 
     try {
         const syncFlag = (options.sync || options.forceSync) ? 1 : 0;
@@ -229,7 +313,7 @@ async function loadWeekSchedule(options = {}) {
         if (requestId !== weekScheduleRequestId) return;
 
         if (!data.success) {
-            tableBody.innerHTML = `<tr><td colspan="8" class="week-loading">${ui('Không thể tải lịch tuần', 'Unable to load weekly calendar')}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="7" class="week-loading">${ui('Không thể tải lịch tuần', 'Unable to load weekly calendar')}</td></tr>`;
             return;
         }
 
@@ -237,56 +321,70 @@ async function loadWeekSchedule(options = {}) {
         const days = (Array.isArray(data.days) ? data.days : []).map((dayEvents) =>
             dedupeSchedules(Array.isArray(dayEvents) ? dayEvents : [])
         );
-        const eventHours = Array.from(new Set(
-            days
-                .flatMap((dayEvents) => Array.isArray(dayEvents) ? dayEvents : [])
-                .map((schedule) => new Date(schedule.start_time))
-                .filter((date) => !Number.isNaN(date.getTime()))
-                .map((date) => date.getHours())
-        )).sort((a, b) => a - b);
-
         tableBody.innerHTML = '';
-        if (eventHours.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="8" class="week-loading">${ui('Tuần này chưa có lịch hẹn', 'No appointments this week')}</td></tr>`;
-            return;
-        }
+        const row = document.createElement('tr');
+        const now = new Date();
 
-        for (const hour of eventHours) {
-            const row = document.createElement('tr');
-            const timeCell = document.createElement('th');
-            timeCell.className = 'week-time-label';
-            timeCell.textContent = `${hour}:00`;
-            row.appendChild(timeCell);
+        for (let i = 0; i < 7; i++) {
+            const dayDate = new Date(currentWeekStart);
+            dayDate.setDate(dayDate.getDate() + i);
+            const td = document.createElement('td');
+            td.className = 'week-day-cell';
+            if (isSameDate(dayDate, today)) td.classList.add('is-today');
 
-            for (let i = 0; i < 7; i++) {
-                const dayDate = new Date(currentWeekStart);
-                dayDate.setDate(dayDate.getDate() + i);
-                const td = document.createElement('td');
-                td.className = 'week-hour-cell';
-                if (isSameDate(dayDate, today)) td.classList.add('is-today');
-
-                const dayEvents = days[i] || [];
-                dayEvents
-                    .filter((schedule) => new Date(schedule.start_time).getHours() === hour)
-                    .forEach((schedule) => {
+            const dayEvents = [...(days[i] || [])].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+            if (!dayEvents.length) {
+                td.innerHTML = `
+                    <div class="week-day-empty">
+                        <span aria-hidden="true">${i >= 5 ? '☾' : '○'}</span>
+                        <small>${i >= 5 ? ui('Không có lịch', 'No events') : ui('Lịch trống', 'Clear day')}</small>
+                    </div>
+                `;
+            } else {
+                dayEvents.forEach((schedule) => {
                     const eventDiv = document.createElement('div');
-                    eventDiv.className = 'week-event';
+                    const startDate = new Date(schedule.start_time);
+                    const endDate = new Date(schedule.end_time || schedule.start_time);
+                    const startsInMinutes = (startDate.getTime() - now.getTime()) / 60000;
+                    const isOngoing = !Number.isNaN(startDate.getTime()) && startDate <= now && endDate >= now;
+                    const isImminent = !isOngoing && startsInMinutes >= 0 && startsInMinutes <= 30;
+                    const sourceValue = String(schedule.provider || schedule.source || '').toLowerCase();
+                    const sourceClass = sourceValue.includes('outlook') || sourceValue.includes('microsoft')
+                        ? 'outlook'
+                        : (sourceValue.includes('google') || schedule.google_event_id || schedule.calendar_event_id)
+                            ? 'google'
+                            : 'local';
+                    eventDiv.className = `week-event source-${sourceClass}${isOngoing || isImminent ? ' is-imminent' : ''}`;
                     const unsyncedLocal = isUnsyncedLocalSchedule(schedule, googleConnected);
                     if (unsyncedLocal) eventDiv.classList.add('is-unsynced');
                     const range = formatScheduleRange(schedule.start_time, schedule.end_time);
+                    const location = String(schedule.location || '').trim();
+                    const meetingLink = schedule.meeting_link || schedule.conference_link || schedule.hangout_link
+                        || (/^https?:\/\//i.test(location) ? location : '');
+                    const imminentLabel = isOngoing
+                        ? ui('Đang diễn ra', 'Live now')
+                        : (isImminent ? ui(`Trong ${Math.max(1, Math.ceil(startsInMinutes))} phút`, `In ${Math.max(1, Math.ceil(startsInMinutes))} min`) : '');
 
                     eventDiv.innerHTML = `
-                        <div class="week-event-title">${escapeHtml(schedule.title)}</div>
-                        <div class="week-event-time">${escapeHtml(range.time)}</div>
+                        <div class="week-event-topline">
+                            <span class="week-event-time">${escapeHtml(range.time)}</span>
+                            ${imminentLabel ? `<span class="week-event-imminent">${escapeHtml(imminentLabel)}</span>` : `<span class="week-event-source-dot" aria-label="${escapeAttr(sourceClass)}"></span>`}
+                        </div>
+                        <div class="week-event-title">${escapeHtml(schedule.title || ui('Sự kiện', 'Event'))}</div>
+                        <div class="week-event-meta">${location ? escapeHtml(location) : (sourceClass === 'local' ? 'FlowMate' : sourceClass === 'outlook' ? 'Outlook Calendar' : 'Google Calendar')}</div>
+                        ${meetingLink && (isOngoing || isImminent) ? `<a class="week-event-join" href="${escapeAttr(meetingLink)}" target="_blank" rel="noopener noreferrer">${ui('Vào họp ngay', 'Join now')}</a>` : ''}
                         ${unsyncedLocal ? `<div class="week-event-sync unsynced">${ui('Chưa đồng bộ Google', 'Not synced to Google')}</div>` : ''}
                     `;
-                    eventDiv.addEventListener('click', () => openEditSchedule(schedule.id));
+                    eventDiv.addEventListener('click', (event) => {
+                        if (event.target.closest('a, button')) return;
+                        openEditSchedule(schedule.local_id || schedule.id);
+                    });
                     td.appendChild(eventDiv);
                 });
-                row.appendChild(td);
             }
-            tableBody.appendChild(row);
+            row.appendChild(td);
         }
+        tableBody.appendChild(row);
 
         if (data.calendar_sync_pending && (options.sync || options.forceSync)) {
             window.setTimeout(() => {
@@ -297,7 +395,7 @@ async function loadWeekSchedule(options = {}) {
             }, 1800);
         }
     } catch (error) {
-        tableBody.innerHTML = `<tr><td colspan="8" class="week-loading">${ui('Không thể tải lịch tuần', 'Unable to load weekly calendar')}</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="7" class="week-loading">${ui('Không thể tải lịch tuần', 'Unable to load weekly calendar')}</td></tr>`;
     }
 }
 
@@ -406,9 +504,15 @@ async function loadSchedules(options = {}) {
             const connectedSources = [];
             if (data.calendar_connected || data.google_calendar_connected) connectedSources.push('Google');
             if (data.outlook_calendar_connected) connectedSources.push('Outlook');
-            calendarStatus.textContent = connectedSources.length
+            const statusText = connectedSources.length
                 ? ui(`Đã kết nối ${connectedSources.join(' + ')} - ${data.count || 0} sự kiện`, `Connected ${connectedSources.join(' + ')} - ${data.count || 0} events`)
                 : ui('Lịch FlowMate', 'FlowMate Calendar');
+            if (typeof updateCalendarStatus === 'function') {
+                updateCalendarStatus(statusText, connectedSources.length ? 'connected' : 'local');
+            } else {
+                calendarStatus.textContent = statusText;
+                calendarStatus.dataset.state = connectedSources.length ? 'connected' : 'local';
+            }
         }
 
         const googleConnected = Boolean(data.calendar_connected || data.google_calendar_connected);
