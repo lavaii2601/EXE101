@@ -11,12 +11,49 @@
     <link rel="manifest" href="/manifest.json?v=20261006-brand">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css?v=20261013-richtext-01">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css?v=20261109-login-redesign-02">
     <link rel="stylesheet" href="/css/workspace-redesign.css?v=20261006-brand-01">
 </head>
 <body>
     <section id="authGate" class="auth-gate" aria-labelledby="authGateTitle">
+        <aside class="auth-brand-panel" aria-label="Giới thiệu FlowMate AI">
+            <div class="auth-brand-lockup">
+                <span class="auth-brand-icon" aria-hidden="true">
+                    <img src="/img/logo.png?v=20261006-brand" alt="" width="34" height="34">
+                </span>
+                <strong>FlowMate AI</strong>
+                <span class="auth-version-badge">FlowMate 2.0</span>
+            </div>
+            <div class="auth-brand-copy">
+                <p class="auth-brand-title">Không gian làm việc<br>thông minh cho <span>Gmail &amp;<br>Google Calendar</span></p>
+                <p>Tự động hóa luồng công việc hằng ngày, tổng hợp thông minh email quan trọng và xếp lịch thông minh trong chớp mắt.</p>
+            </div>
+            <div class="auth-ai-preview" aria-label="Trạng thái trợ lý FlowMate AI">
+                <div class="auth-ai-preview-head">
+                    <span><i aria-hidden="true"></i> Hệ thống AI sẵn sàng</span>
+                    <small>Thời gian thực</small>
+                </div>
+                <div class="auth-ai-preview-body">
+                    <div class="auth-ai-preview-item">
+                        <span class="auth-preview-item-icon is-ai" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M12 3l1.45 4.05L17.5 8.5l-4.05 1.45L12 14l-1.45-4.05L6.5 8.5l4.05-1.45L12 3zM18.5 14l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2z" fill="currentColor"/></svg>
+                        </span>
+                        <span><strong>AI vừa tóm tắt 14 email quan trọng hôm nay</strong><small>3 hành động khẩn cấp từ bảng mã được gắn nhãn ưu tiên</small></span>
+                    </div>
+                    <div class="auth-ai-preview-item">
+                        <span class="auth-preview-item-icon is-calendar" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><rect x="4" y="5.5" width="16" height="14" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M8 3.5v4M16 3.5v4M4 10h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                        </span>
+                        <span><strong>Lịch trình ngày mai đã được tối ưu, tiết kiệm 1.5 giờ</strong><small>Tự động gộp 2 cuộc họp trùng &amp; dành 90 phút thời gian tập trung</small></span>
+                    </div>
+                </div>
+                <div class="auth-ai-preview-foot">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" aria-hidden="true"><path d="M7.5 10V7.5a4.5 4.5 0 019 0V10M6 10h12v10H6V10z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+                    Mã hóa bảo mật đầu cuối
+                </div>
+            </div>
+        </aside>
         <div class="auth-orb auth-orb-one"></div>
         <div class="auth-orb auth-orb-two"></div>
         <div class="auth-orb auth-orb-three"></div>
@@ -68,6 +105,14 @@
                         </span>
                         <small id="authPasswordHint" hidden>Mật khẩu phải có ít nhất 8 ký tự.</small>
                     </label>
+                    <div class="auth-form-options">
+                        <label class="auth-remember">
+                            <input id="authRememberEmail" type="checkbox">
+                            <span aria-hidden="true"></span>
+                            Ghi nhớ đăng nhập
+                        </label>
+                        <button type="button" id="authForgotPasswordBtnSecondary" class="auth-forgot-link">Quên mật khẩu?</button>
+                    </div>
                     <button type="submit" id="authSubmitBtn" class="auth-submit-button">
                         <span class="auth-submit-label">Vào không gian làm việc →</span>
                         <span class="auth-spinner" aria-hidden="true"></span>
@@ -983,7 +1028,7 @@
     <script src="/js/utils.js?v=20261013-richtext-01" defer></script>
     <script src="/js/state.js?v=20261013-richtext-01" defer></script>
     <script src="/js/i18n.js?v=20261013-richtext-01" defer></script>
-    <script src="/js/auth.js?v=20261013-richtext-01" defer></script>
+    <script src="/js/auth.js?v=20261109-login-redesign-02" defer></script>
     <script src="/js/workspace.js?v=20261013-richtext-01" defer></script>
     <script src="/js/notifications.js?v=20261013-richtext-01" defer></script>
     <script src="/js/overview.js?v=20261013-richtext-01" defer></script>

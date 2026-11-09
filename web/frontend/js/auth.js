@@ -1,4 +1,9 @@
 function setupAuthGate() {
+    const rememberedEmail = localStorage.getItem('flowmate-login-email') || '';
+    const emailInput = document.getElementById('authEmailInput');
+    const rememberEmail = document.getElementById('authRememberEmail');
+    if (rememberedEmail && emailInput) emailInput.value = rememberedEmail;
+    if (rememberedEmail && rememberEmail) rememberEmail.checked = true;
     document.getElementById('appAuthForm')?.addEventListener('submit', submitPasswordAuth);
     document.getElementById('authModeToggle')?.addEventListener('click', () => {
         setAuthFormMode(authFormMode === 'login' ? 'signup' : 'login');
@@ -9,6 +14,9 @@ function setupAuthGate() {
     document.getElementById('authForgotPasswordBtn')?.addEventListener('click', () => {
         const status = document.getElementById('authGateStatus');
         if (status) status.textContent = ui('Tính năng khôi phục mật khẩu sẽ sớm ra mắt.', 'Password recovery is coming soon.');
+    });
+    document.getElementById('authForgotPasswordBtnSecondary')?.addEventListener('click', () => {
+        document.getElementById('authForgotPasswordBtn')?.click();
     });
     document.getElementById('adminOpenAppBtn')?.addEventListener('click', () => {
         const key = adminDestinationStorageKey();
@@ -35,17 +43,19 @@ function setAuthFormMode(mode) {
     const submitLabel = document.querySelector('#authSubmitBtn .auth-submit-label');
     const prompt = document.getElementById('authModePrompt');
     const toggle = document.getElementById('authModeToggle');
+    const formOptions = document.querySelector('.auth-form-options');
 
     if (nameField) nameField.hidden = !isSignup;
     if (nameInput) nameInput.required = isSignup;
     if (passwordInput) passwordInput.autocomplete = isSignup ? 'new-password' : 'current-password';
     if (passwordHint) passwordHint.hidden = !isSignup;
+    if (formOptions) formOptions.hidden = isSignup;
     if (title) title.textContent = isSignup
         ? ui('Tạo tài khoản', 'Create Account')
-        : ui('Chào mừng trở lại', 'Welcome Back');
+        : ui('Đăng nhập tài khoản', 'Sign in to your account');
     if (subtitle) subtitle.textContent = isSignup
         ? ui('Tham gia FlowMate ngay hôm nay.', 'Join FlowMate today.')
-        : ui('Đăng nhập để tiếp tục không gian làm việc của bạn.', 'Sign in to continue to your workspace.');
+        : ui('Truy cập không gian làm việc FlowMate AI của bạn để quản lý tự động hóa.', 'Access your FlowMate AI workspace and manage your automations.');
     if (submitLabel) submitLabel.textContent = isSignup
         ? ui('Tạo tài khoản →', 'Create Account →')
         : ui('Vào không gian làm việc →', 'Enter Workspace →');
@@ -54,7 +64,7 @@ function setAuthFormMode(mode) {
         : ui('Chưa có tài khoản?', "Don't have an account?");
     if (toggle) toggle.textContent = isSignup
         ? ui('Đăng nhập ngay', 'Sign in now')
-        : ui('Đăng ký ngay', 'Sign up now');
+        : ui('Đăng ký dùng thử 14 ngày miễn phí', 'Start a free 14-day trial');
 
     const status = document.getElementById('authGateStatus');
     if (status) status.textContent = '';
@@ -120,6 +130,13 @@ async function submitPasswordAuth(event) {
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.success) {
             throw new Error(data.message || data.error || ui('Không thể đăng nhập.', 'Unable to sign in.'));
+        }
+
+        const rememberEmail = document.getElementById('authRememberEmail');
+        if (!isSignup && rememberEmail?.checked) {
+            localStorage.setItem('flowmate-login-email', email);
+        } else if (!isSignup) {
+            localStorage.removeItem('flowmate-login-email');
         }
 
         if (status) status.textContent = ui('Đăng nhập thành công. Đang mở ứng dụng...', 'Signed in. Opening your workspace...');
