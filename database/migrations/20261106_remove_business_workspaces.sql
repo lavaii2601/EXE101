@@ -28,7 +28,21 @@ BEGIN;
 -- identify them by). The existing subscriptions_subject_check CHECK
 -- guarantees every remaining row already has user_id set once this DELETE
 -- is done, so tightening it to NOT NULL right after is safe.
-DELETE FROM subscriptions WHERE workspace_id IS NOT NULL;
+--
+-- Guarded by a column-existence check (unlike every DROP below, a bare
+-- DELETE ... WHERE workspace_id can't use IF EXISTS) -- deploy_postgres_
+-- schema.py re-applies every migration file on every deploy with no
+-- tracking table, and the column is gone after the first successful run.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'subscriptions' AND column_name = 'workspace_id'
+    ) THEN
+        DELETE FROM subscriptions WHERE workspace_id IS NOT NULL;
+    END IF;
+END;
+$$;
 ALTER TABLE subscriptions DROP CONSTRAINT IF EXISTS subscriptions_subject_check;
 ALTER TABLE subscriptions DROP COLUMN IF EXISTS workspace_id;
 ALTER TABLE subscriptions ALTER COLUMN user_id SET NOT NULL;

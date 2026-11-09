@@ -1,26 +1,18 @@
--- Phase 5 ("Advanced workspace and AI", design doc section 8.7 / 15): a third
--- knowledge tier alongside the existing global (user_id IS NULL) and personal
--- (user_id set) rows -- workspace-curated policy/template/FAQ docs, owner/admin
--- authored, visible to every active member of that Business workspace.
+-- Originally added a third, workspace-curated knowledge tier (workspace_id,
+-- FK'd to workspaces(id)) alongside global/personal knowledge_documents
+-- rows, plus created_by_user_id. Business mode is gone and workspaces no
+-- longer exists, so the workspace_id column + FK + index are removed here
+-- (20261106_remove_business_workspaces.sql already dropped the live
+-- column; re-adding it here would just recreate a dead column, and its FK
+-- would fail with UndefinedTable on every replay from here on --
+-- deploy_postgres_schema.py re-applies every migration file on every
+-- deploy with no tracking table).
 --
--- Nullable by design (unlike chat_sessions/history/session_memory's mandatory
--- workspace_id): a knowledge_documents row is global OR personal OR
--- workspace-scoped, never required to carry a workspace_id. No backfill --
--- every existing row keeps meaning exactly what it means today (global or
--- personal). Safe to run multiple times.
+-- created_by_user_id is NOT workspace-specific -- models/knowledge.py and
+-- services/knowledge_service.py still read/write it for personal and
+-- global documents -- so it stays.
 
-ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS workspace_id UUID;
 ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS created_by_user_id TEXT;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'knowledge_documents_workspace_fkey') THEN
-        ALTER TABLE knowledge_documents
-            ADD CONSTRAINT knowledge_documents_workspace_fkey
-            FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE;
-    END IF;
-END;
-$$;
 
 DO $$
 BEGIN
@@ -31,5 +23,3 @@ BEGIN
     END IF;
 END;
 $$;
-
-CREATE INDEX IF NOT EXISTS idx_knowledge_documents_workspace ON knowledge_documents (workspace_id);
