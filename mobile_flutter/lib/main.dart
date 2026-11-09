@@ -15,7 +15,6 @@ import 'screens/set_password_screen.dart';
 import 'state/app_state.dart';
 import 'state/language_controller.dart';
 import 'state/theme_controller.dart';
-import 'state/workspace_controller.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -32,7 +31,6 @@ class FlowMateApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeController()),
         ChangeNotifierProvider(create: (_) => LanguageController()),
         ChangeNotifierProvider(create: (_) => AppState()..bootstrap()),
-        ChangeNotifierProvider(create: (_) => WorkspaceController()),
         // Single shared listener for the flowmateai://oauth-callback deep
         // link the backend redirects to once Google OAuth consent finishes.
         Provider(create: (_) => AppLinks()),

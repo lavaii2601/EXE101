@@ -19,9 +19,7 @@ import HistoryScreen from './src/screens/HistoryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import WelcomeScreen from './src/screens/WelcomeScreen';
-import WorkerModeScreen from './src/screens/WorkerModeScreen';
 import ProfileHeader from './src/components/ProfileHeader';
-import OrgWorkspaceBar from './src/components/OrgWorkspaceBar';
 import RoleSelection from './src/components/RoleSelection';
 import { apiGet, apiPost, setSessionRevokedHandler } from './src/api/client';
 import {
@@ -33,13 +31,11 @@ import {
   loadWorkspaceSyncRevision,
   persistWorkspaceSyncRevision,
 } from './src/state/workspaceSync';
-import { OrgWorkspaceProvider, useOrgWorkspace } from './src/state/OrgWorkspaceContext';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
 
 const tabs = [
   { key: 'overview', icon: 'stats-chart-outline', label: ['Tổng hợp', 'Overview'] },
-  { key: 'work',     icon: 'briefcase-outline',   label: ['Công việc', 'Work'], workerOnly: true },
   { key: 'chat',     icon: 'chatbubble-outline',  label: ['Chat', 'Chat'] },
   { key: 'emails',   icon: 'mail-outline',        label: ['Email', 'Email'] },
   { key: 'schedule', icon: 'calendar-outline',    label: ['Lịch', 'Calendar'] },
@@ -107,9 +103,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <LanguageProvider>
-        <OrgWorkspaceProvider>
-          <AppShell />
-        </OrgWorkspaceProvider>
+        <AppShell />
       </LanguageProvider>
     </ThemeProvider>
   );
@@ -118,7 +112,6 @@ export default function App() {
 function AppShell() {
   const { colors, isDark } = useTheme();
   const { t } = useLanguage();
-  const orgWorkspace = useOrgWorkspace();
   const [activeTab, setActiveTab] = useState('overview');
   const [profile, setProfile] = useState(null);
   const [status, setStatus] = useState(null);
@@ -186,14 +179,6 @@ function AppShell() {
     // every app restart silently calls the backend as an anonymous user.
     loadPersistedSession().finally(refreshShell);
   }, [refreshShell]);
-
-  const loadOrgWorkspaces = orgWorkspace.loadWorkspaces;
-  useEffect(() => {
-    // orgWorkspace.loadWorkspaces is stable across renders (see
-    // OrgWorkspaceContext.js), so this only fires when auth state actually
-    // changes -- not on every workspace-state update.
-    if (isAuthenticated) loadOrgWorkspaces();
-  }, [isAuthenticated, loadOrgWorkspaces]);
 
   useEffect(() => {
     SecureStore.getItemAsync(ONBOARDING_SEEN_KEY)
@@ -388,11 +373,10 @@ function AppShell() {
     setNewMailNotice(null);
     lastSeenMailId.current = null;
     setActiveTab('overview');
-    orgWorkspace.reset();
     // Drives the render below back to LoginScreen instead of leaving the
     // user stuck inside the authenticated tabs (e.g. still on Settings).
     setIsAuthenticated(false);
-  }, [orgWorkspace.reset]);
+  }, []);
 
   useEffect(() => {
     // client.js calls this when a 401 means the device's own session is
@@ -434,19 +418,8 @@ function AppShell() {
     }
   }, [profile]);
 
-  const workerModeEnabled = userMode === 'worker' || userMode === 'business';
-  const visibleTabs = useMemo(
-    () => tabs.filter((tab) => !tab.workerOnly || workerModeEnabled),
-    [workerModeEnabled],
-  );
-
-  useEffect(() => {
-    if (activeTab === 'work' && !workerModeEnabled) setActiveTab('overview');
-  }, [activeTab, workerModeEnabled]);
-
   const renderScreen = () => {
     if (activeTab === 'overview') return <OverviewScreen onAgentSync={handleAgentSync} syncEvent={syncEvent} onNavigate={setActiveTab} userMode={userMode || 'worker'} subscription={profile?.subscription} userName={profile?.name} gmailConnected={!!profile?.gmail_connected} />;
-    if (activeTab === 'work')     return <WorkerModeScreen syncEvent={syncEvent} />;
     if (activeTab === 'emails')   return <EmailScreen userMode={userMode || 'worker'} onAuthChanged={refreshShell} onAgentSync={handleAgentSync} onNavigate={setActiveTab} syncEvent={syncEvent} />;
     if (activeTab === 'schedule') return <ScheduleScreen onAgentSync={handleAgentSync} syncEvent={syncEvent} />;
     if (activeTab === 'history')  return <HistoryScreen syncEvent={syncEvent} />;
@@ -514,7 +487,6 @@ function AppShell() {
           onRefresh={refreshShell}
           onChangeMode={() => setModePickerOpen(true)}
         />
-        <OrgWorkspaceBar />
         <View style={styles.content}>{renderScreen()}</View>
         {newMailNotice ? (
           <View style={styles.mailNotice} accessibilityRole="alert">
@@ -557,7 +529,7 @@ function AppShell() {
           </View>
         ) : null}
         <View style={styles.tabBar}>
-          {visibleTabs.map((tab) => {
+          {tabs.map((tab) => {
             const active = activeTab === tab.key;
             const showMailBadge = tab.key === 'emails' && unseenMailCount > 0;
             return (

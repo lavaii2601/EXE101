@@ -147,26 +147,6 @@
                         <span class="user-mode-chevron">›</span>
                     </button>
                 </div>
-                <!-- Multi-tenant Business workspace switcher (Worker Business Phase 1).
-                     Distinct from the "Chế độ làm việc" mode-picker above, which is a
-                     per-user persona/personalization preference, not a tenant -- it used
-                     to be labeled "Không gian làm việc" (Workspace), which collided with
-                     this actual workspace concept sitting right next to it. Renamed to
-                     stop implying they're the same thing. -->
-                <div class="org-workspace-switcher">
-                    <button type="button" id="orgWorkspaceSwitcherBtn" class="org-workspace-current" aria-haspopup="true" aria-expanded="false">
-                        <span id="orgWorkspaceIcon" class="org-workspace-icon">👤</span>
-                        <span>
-                            <strong id="orgWorkspaceName">Cá nhân</strong>
-                            <small id="orgWorkspaceType">Không gian cá nhân</small>
-                        </span>
-                        <span class="org-workspace-chevron">›</span>
-                    </button>
-                    <div id="orgWorkspacePopup" class="org-workspace-popup" role="menu">
-                        <div id="orgWorkspaceList" class="org-workspace-list"></div>
-                        <button type="button" id="createOrgWorkspaceBtn" class="org-workspace-create-btn">+ Tạo không gian doanh nghiệp</button>
-                    </div>
-                </div>
             </div>
 
             <nav class="sidebar-nav">
@@ -198,27 +178,6 @@
                 <button class="nav-btn" data-page="history">
                     <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></span>
                     <span class="nav-label" data-i18n="nav.history">Lịch sử</span>
-                </button>
-                <span id="navBusinessLabel" class="nav-section-label nav-business-label" hidden>Nhóm</span>
-                <button class="nav-btn" data-page="workspace-members" id="orgWorkspaceMembersNavBtn" style="display:none;">
-                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
-                    <span class="nav-label">Thành viên</span>
-                </button>
-                <button class="nav-btn" data-page="work-hub" id="orgWorkHubNavBtn" style="display:none;">
-                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></span>
-                    <span class="nav-label">Công việc</span>
-                </button>
-                <button class="nav-btn" data-page="status-reports" id="orgStatusReportsNavBtn" style="display:none;">
-                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 12h6M9 16h6M9 8h1"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg></span>
-                    <span class="nav-label">Báo cáo</span>
-                </button>
-                <button class="nav-btn" data-page="workspace-knowledge" id="orgWorkspaceKnowledgeNavBtn" style="display:none;">
-                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg></span>
-                    <span class="nav-label">Kiến thức</span>
-                </button>
-                <button class="nav-btn" data-page="sharing-center" id="sharingCenterNavBtn" style="display:none;">
-                    <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg></span>
-                    <span class="nav-label">Chia sẻ</span>
                 </button>
                 <span class="nav-section-label nav-settings-label">Hệ thống</span>
                 <button class="nav-btn" data-page="settings">
@@ -512,210 +471,6 @@
                     <h2>Lịch sử hoạt động</h2>
                 </div>
                 <div id="historyList" class="history-list"></div>
-            </section>
-
-            <section id="workspace-members-page" class="page">
-                <div class="settings-page-header">
-                    <div>
-                        <span class="settings-kicker">DOANH NGHIỆP</span>
-                        <h2 id="orgWorkspaceMembersTitle">Thành viên</h2>
-                        <p id="orgWorkspaceMembersSubtitle">Quản lý thành viên và lời mời của không gian hiện tại.</p>
-                    </div>
-                </div>
-
-                <div id="orgWorkspaceMembersEmpty" class="settings-card" hidden>
-                    <span class="settings-section-label">KHÔNG GIAN CÁ NHÂN</span>
-                    <p>Bạn đang ở không gian cá nhân, không có thành viên. Chọn hoặc tạo một không gian doanh nghiệp ở góc trên bên trái để mời đồng nghiệp.</p>
-                </div>
-
-                <div id="orgWorkspaceMembersContent" class="settings-grid" hidden>
-                    <article id="orgWorkspaceSubscriptionCard" class="settings-card">
-                        <span class="settings-section-label">GÓI DOANH NGHIỆP</span>
-                        <div id="orgWorkspaceSubscriptionBody"></div>
-                    </article>
-
-                    <article class="settings-card">
-                        <span class="settings-section-label">DANH SÁCH THÀNH VIÊN</span>
-                        <div id="orgWorkspaceMembersList" class="org-workspace-members-list"></div>
-                    </article>
-
-                    <article id="orgWorkspaceInviteCard" class="settings-card" hidden>
-                        <span class="settings-section-label">MỜI THÀNH VIÊN</span>
-                        <form id="orgWorkspaceInviteForm" class="org-workspace-invite-form">
-                            <input type="email" id="orgInviteEmail" placeholder="email@congty.com" required>
-                            <select id="orgInviteRole">
-                                <option value="worker">Worker</option>
-                                <option value="admin">Admin</option>
-                            </select>
-                            <button type="submit" class="btn-primary">Gửi lời mời</button>
-                        </form>
-                        <p id="orgInviteStatus" class="org-workspace-invite-status" aria-live="polite"></p>
-                        <div id="orgWorkspacePendingInvitations" class="org-workspace-invitations-list"></div>
-                    </article>
-
-                    <article id="orgWorkspaceSeatRequestsCard" class="settings-card" hidden>
-                        <span class="settings-section-label">YÊU CẦU THÊM CHỖ</span>
-                        <div id="orgWorkspaceSeatRequestsList" class="org-seat-requests-list"></div>
-                    </article>
-                </div>
-            </section>
-
-            <section id="work-hub-page" class="page">
-                <div class="settings-page-header">
-                    <div>
-                        <span class="settings-kicker">DOANH NGHIỆP</span>
-                        <h2>Công việc</h2>
-                        <p>Dự án và nhiệm vụ dùng chung trong không gian hiện tại.</p>
-                    </div>
-                </div>
-
-                <div id="workHubDashboard" class="work-hub-dashboard" hidden></div>
-
-                <div id="workHubEmpty" class="settings-card" hidden>
-                    <span class="settings-section-label">KHÔNG GIAN CÁ NHÂN</span>
-                    <p>Bạn đang ở không gian cá nhân, không có dự án chung. Chọn hoặc tạo một không gian doanh nghiệp ở góc trên bên trái.</p>
-                </div>
-
-                <div id="workHubContent" class="settings-grid" hidden>
-                    <article id="workHubNewProjectCard" class="settings-card" hidden>
-                        <span class="settings-section-label">DỰ ÁN MỚI</span>
-                        <form id="workHubNewProjectForm" class="work-hub-form">
-                            <input type="text" id="workHubProjectName" placeholder="Tên dự án" required>
-                            <textarea id="workHubProjectDescription" placeholder="Mô tả (tuỳ chọn)" rows="2"></textarea>
-                            <div class="work-hub-form-row">
-                                <select id="workHubProjectStatus">
-                                    <option value="planning">Lên kế hoạch</option>
-                                    <option value="active">Đang triển khai</option>
-                                    <option value="on_hold">Tạm dừng</option>
-                                    <option value="completed">Hoàn thành</option>
-                                    <option value="archived">Lưu trữ</option>
-                                </select>
-                                <select id="workHubProjectVisibility">
-                                    <option value="workspace">Cả không gian</option>
-                                    <option value="private">Riêng tư</option>
-                                </select>
-                            </div>
-                            <div class="work-hub-form-row">
-                                <input type="date" id="workHubProjectStartDate" title="Ngày bắt đầu">
-                                <input type="date" id="workHubProjectDueDate" title="Hạn chót">
-                            </div>
-                            <button type="submit" class="btn-primary">Tạo dự án</button>
-                        </form>
-                    </article>
-
-                    <article class="settings-card">
-                        <span class="settings-section-label">DỰ ÁN</span>
-                        <div id="workHubProjectsList" class="work-hub-projects-list"></div>
-                    </article>
-
-                    <article id="workHubTasksCard" class="settings-card" hidden>
-                        <span class="settings-section-label" id="workHubTasksLabel">NHIỆM VỤ</span>
-                        <form id="workHubNewTaskForm" class="work-hub-form">
-                            <input type="text" id="workHubTaskTitle" placeholder="Tên nhiệm vụ" required>
-                            <div class="work-hub-form-row">
-                                <select id="workHubTaskPriority">
-                                    <option value="low">Thấp</option>
-                                    <option value="medium" selected>Trung bình</option>
-                                    <option value="high">Cao</option>
-                                    <option value="urgent">Khẩn cấp</option>
-                                </select>
-                                <input type="date" id="workHubTaskDueDate" title="Hạn chót">
-                            </div>
-                            <button type="submit" class="btn-secondary">Thêm nhiệm vụ</button>
-                        </form>
-                        <div id="workHubTasksList" class="work-hub-tasks-list"></div>
-                    </article>
-                </div>
-            </section>
-
-            <section id="status-reports-page" class="page">
-                <div class="settings-page-header">
-                    <div>
-                        <span class="settings-kicker">DOANH NGHIỆP</span>
-                        <h2>Báo cáo trạng thái</h2>
-                        <p>Done / Doing / Blocked / Next / Risks -- chỉ dùng dữ liệu đã có trong không gian này.</p>
-                    </div>
-                </div>
-
-                <div id="statusReportsEmpty" class="settings-card" hidden>
-                    <span class="settings-section-label">KHÔNG GIAN CÁ NHÂN</span>
-                    <p>Bạn đang ở không gian cá nhân, không có báo cáo chung. Chọn hoặc tạo một không gian doanh nghiệp ở góc trên bên trái.</p>
-                </div>
-
-                <div id="statusReportsContent" class="settings-grid" hidden>
-                    <article class="settings-card">
-                        <span class="settings-section-label">BÁO CÁO MỚI</span>
-                        <form id="statusReportNewForm" class="work-hub-form">
-                            <select id="statusReportProject">
-                                <option value="">Không gắn với dự án cụ thể</option>
-                            </select>
-                            <textarea id="statusReportDone" placeholder="Done -- đã hoàn thành" rows="2"></textarea>
-                            <textarea id="statusReportDoing" placeholder="Doing -- đang làm" rows="2"></textarea>
-                            <textarea id="statusReportBlocked" placeholder="Blocked -- đang vướng" rows="2"></textarea>
-                            <textarea id="statusReportNext" placeholder="Next -- sắp tới" rows="2"></textarea>
-                            <textarea id="statusReportRisks" placeholder="Risks -- rủi ro" rows="2"></textarea>
-                            <button type="submit" class="btn-primary">Lưu nháp</button>
-                        </form>
-                    </article>
-
-                    <article class="settings-card">
-                        <span class="settings-section-label">NHÁP CỦA TÔI</span>
-                        <div id="statusReportDraftsList" class="work-hub-reports-list"></div>
-                    </article>
-
-                    <article class="settings-card">
-                        <span class="settings-section-label">ĐÃ CÔNG BỐ</span>
-                        <div id="statusReportPublishedList" class="work-hub-reports-list"></div>
-                    </article>
-                </div>
-            </section>
-
-            <section id="workspace-knowledge-page" class="page">
-                <div class="settings-page-header">
-                    <div>
-                        <span class="settings-kicker">DOANH NGHIỆP</span>
-                        <h2>Kiến thức doanh nghiệp</h2>
-                        <p>Policy, template, quy trình, FAQ -- Bob dùng để trả lời, luôn ghi rõ nguồn là doanh nghiệp.</p>
-                    </div>
-                </div>
-
-                <div id="workspaceKnowledgeEmpty" class="settings-card" hidden>
-                    <span class="settings-section-label">KHÔNG GIAN CÁ NHÂN</span>
-                    <p>Bạn đang ở không gian cá nhân, không có kiến thức doanh nghiệp. Chọn hoặc tạo một không gian doanh nghiệp ở góc trên bên trái.</p>
-                </div>
-
-                <div id="workspaceKnowledgeContent" class="settings-grid" hidden>
-                    <article id="workspaceKnowledgeNewCard" class="settings-card" hidden>
-                        <span class="settings-section-label">THÊM TÀI LIỆU</span>
-                        <form id="workspaceKnowledgeNewForm" class="work-hub-form">
-                            <input type="text" id="workspaceKnowledgeTitle" placeholder="Tiêu đề" required>
-                            <textarea id="workspaceKnowledgeContentInput" placeholder="Nội dung" rows="4" required></textarea>
-                            <input type="text" id="workspaceKnowledgeTags" placeholder="Nhãn, phân tách bằng dấu phẩy (tuỳ chọn)">
-                            <button type="submit" class="btn-primary">Lưu tài liệu</button>
-                        </form>
-                    </article>
-
-                    <article class="settings-card">
-                        <span class="settings-section-label">TÀI LIỆU CỦA DOANH NGHIỆP</span>
-                        <div id="workspaceKnowledgeList" class="work-hub-projects-list"></div>
-                    </article>
-                </div>
-            </section>
-
-            <section id="sharing-center-page" class="page">
-                <div class="settings-page-header">
-                    <div>
-                        <span class="settings-kicker">RIÊNG TƯ</span>
-                        <h2>Trung tâm chia sẻ</h2>
-                        <p>Mọi nội dung cá nhân bạn đã chia sẻ vào các không gian doanh nghiệp -- thu hồi bất cứ lúc nào.</p>
-                    </div>
-                </div>
-                <div class="settings-grid">
-                    <article class="settings-card">
-                        <span class="settings-section-label">ĐÃ CHIA SẺ</span>
-                        <div id="sharingCenterList" class="work-hub-projects-list"></div>
-                    </article>
-                </div>
             </section>
 
             <section id="settings-page" class="page">
@@ -1047,24 +802,6 @@
         </div>
     </div>
 
-    <div id="createOrgWorkspaceModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="createOrgWorkspaceTitle">
-        <div class="modal-content">
-            <span class="close" data-modal="createOrgWorkspaceModal">&times;</span>
-            <h2 id="createOrgWorkspaceTitle">Tạo không gian doanh nghiệp</h2>
-            <form id="createOrgWorkspaceForm">
-                <div class="form-group">
-                    <label>Tên doanh nghiệp / nhóm</label>
-                    <input type="text" id="createOrgWorkspaceName" placeholder="Ví dụ: Công ty ABC" required>
-                </div>
-                <p id="createOrgWorkspaceStatus" class="org-workspace-invite-status" aria-live="polite"></p>
-                <div class="form-actions">
-                    <button type="submit" class="btn-primary">Tạo</button>
-                    <button type="button" class="btn-secondary" data-modal="createOrgWorkspaceModal">Hủy</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
     <div id="emailDetailModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="emailDetailTitle">
         <div class="modal-content email-detail-modal-content">
             <button type="button" class="close email-detail-close" aria-label="Đóng cửa sổ xem email">&times;</button>
@@ -1077,25 +814,6 @@
         </div>
     </div>
 
-    <div id="shareArtifactModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="shareArtifactTitle">
-        <div class="modal-content">
-            <span class="close" data-modal="shareArtifactModal">&times;</span>
-            <h2 id="shareArtifactTitle">Chia sẻ vào không gian doanh nghiệp</h2>
-            <p class="org-workspace-invite-status">Xem lại nội dung sẽ được chia sẻ trước khi xác nhận. Chủ sở hữu/quản trị không gian sẽ thấy được nội dung này.</p>
-            <div id="shareArtifactPreview" class="work-hub-report-body"></div>
-            <form id="shareArtifactForm">
-                <div class="form-group">
-                    <label>Không gian doanh nghiệp</label>
-                    <select id="shareArtifactWorkspace" required></select>
-                </div>
-                <div class="form-actions">
-                    <button type="submit" class="btn-primary">Xác nhận chia sẻ</button>
-                    <button type="button" class="btn-secondary" data-modal="shareArtifactModal">Hủy</button>
-                </div>
-            </form>
-        </div>
-    </div>
-    
     <!-- Student mode tools: study-material summarizer, GPA calculator, checklist-by-subject view.
          Body is filled dynamically per tool (see openStudentToolsModal in app.js) instead of
          three separate modals, since only one is ever open at a time. -->
@@ -1267,7 +985,6 @@
     <script src="/js/i18n.js?v=20261013-richtext-01" defer></script>
     <script src="/js/auth.js?v=20261013-richtext-01" defer></script>
     <script src="/js/workspace.js?v=20261013-richtext-01" defer></script>
-    <script src="/js/workhub.js?v=20261013-richtext-01" defer></script>
     <script src="/js/notifications.js?v=20261013-richtext-01" defer></script>
     <script src="/js/overview.js?v=20261013-richtext-01" defer></script>
     <script src="/js/chat.js?v=20261013-richtext-01" defer></script>

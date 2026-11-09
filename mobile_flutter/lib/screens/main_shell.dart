@@ -3,8 +3,6 @@ import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
-import '../state/workspace_controller.dart';
-import '../widgets/org_workspace_bar.dart';
 import '../widgets/profile_header.dart';
 import 'chat_screen.dart';
 import 'email_screen.dart';
@@ -13,7 +11,6 @@ import 'overview_screen.dart';
 import 'role_selection_screen.dart';
 import 'schedule_screen.dart';
 import 'settings_screen.dart';
-import 'worker_mode_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -25,21 +22,6 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int tabIndex = 0;
   bool modePickerOpen = false;
-  // Tracks whether the Work tab was present on the previous build, so a
-  // userMode change that adds/removes it (shifting every later tab's index)
-  // can snap tabIndex back to a safe position instead of landing on the
-  // wrong screen. Mirrors mobile/App.js's workerModeEnabled-triggered
-  // activeTab reset.
-  bool? _lastWorkerModeEnabled;
-
-  @override
-  void initState() {
-    super.initState();
-    // MainShell only ever builds once authenticated, so this is the right
-    // one-time place to load the workspace list (mirrors AppState.bootstrap
-    // being called once at app start, not per-rebuild).
-    context.read<WorkspaceController>().loadWorkspaces();
-  }
 
   static const _baseTabs = [
     (icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart, labelVi: 'Tổng hợp', labelEn: 'Overview'),
@@ -49,9 +31,6 @@ class _MainShellState extends State<MainShell> {
     (icon: Icons.history_outlined, activeIcon: Icons.history, labelVi: 'Lịch sử', labelEn: 'History'),
     (icon: Icons.settings_outlined, activeIcon: Icons.settings, labelVi: 'Cài đặt', labelEn: 'Settings'),
   ];
-
-  static const _workTab =
-      (icon: Icons.work_outline, activeIcon: Icons.work, labelVi: 'Công việc', labelEn: 'Work');
 
   @override
   Widget build(BuildContext context) {
@@ -69,17 +48,10 @@ class _MainShellState extends State<MainShell> {
       );
     }
 
-    final workerModeEnabled = appState.userMode == 'worker' || appState.userMode == 'business';
-    if (_lastWorkerModeEnabled != workerModeEnabled) {
-      _lastWorkerModeEnabled = workerModeEnabled;
-      tabIndex = 0;
-    }
-
-    final tabs = workerModeEnabled ? [_baseTabs[0], _workTab, ..._baseTabs.sublist(1)] : _baseTabs;
+    final tabs = _baseTabs;
 
     final screens = [
       OverviewScreen(onNavigate: (tab) => setState(() => tabIndex = tab)),
-      if (workerModeEnabled) const WorkerModeScreen(),
       const ChatScreen(),
       const EmailScreen(),
       const ScheduleScreen(),
@@ -97,7 +69,6 @@ class _MainShellState extends State<MainShell> {
               onRefresh: appState.refreshShell,
               onChangeMode: () => setState(() => modePickerOpen = true),
             ),
-            const OrgWorkspaceBar(),
             Expanded(child: IndexedStack(index: tabIndex, children: screens)),
           ],
         ),

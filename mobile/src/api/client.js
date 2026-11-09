@@ -1,6 +1,6 @@
 import { Alert } from 'react-native';
 import { API_BASE } from './config';
-import { clearPersistedSession, getCurrentWorkspaceId, getMobileAccessToken } from './session';
+import { clearPersistedSession, getMobileAccessToken } from './session';
 
 let authAlertActive = false;
 let lastAuthAlertAt = 0;
@@ -60,7 +60,6 @@ const REQUEST_TIMEOUT_MS = 30000;
 
 async function request(path, options = {}) {
   const accessToken = getMobileAccessToken();
-  const workspaceId = getCurrentWorkspaceId();
   // A FormData body (email attachment uploads) must NOT get a hardcoded
   // 'application/json' Content-Type -- RN's fetch needs to set its own
   // multipart/form-data boundary header instead.
@@ -82,7 +81,6 @@ async function request(path, options = {}) {
         // still meant to exist as a dev-only escape hatch (see utils/security.py),
         // just not one this production client should be the one sending.
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}),
         ...(options.headers || {})
       }
     });

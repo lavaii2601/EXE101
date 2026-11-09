@@ -6,17 +6,9 @@ const state = {
   financeLoaded: false,
   financeLoading: false,
   financeGeneratedAt: null,
-  workspaces: null,
-  workspacesLoaded: false,
-  workspacesLoading: false,
-  workspacesGeneratedAt: null,
   autoRefresh: true,
   refreshIntervalSeconds: 30,
   nextRefreshAt: null,
-  auditWorkspaceId: null,
-  auditEvents: [],
-  auditNextBefore: null,
-  auditLoading: false,
   users: [],
   aiUsage: null,
   controls: null,
@@ -165,7 +157,7 @@ function showGate(name, message = '') {
 }
 
 function activateTab(name, { focus = false, load = true } = {}) {
-  const validTabs = ['overview', 'users', 'finance', 'ai', 'controls', 'integrations', 'health', 'security', 'workspaces'];
+  const validTabs = ['overview', 'users', 'finance', 'ai', 'controls', 'integrations', 'health', 'security'];
   const next = validTabs.includes(name) ? name : 'overview';
   state.activeTab = next;
   document.querySelectorAll('[data-dashboard-tab]').forEach((tab) => {
@@ -178,7 +170,6 @@ function activateTab(name, { focus = false, load = true } = {}) {
     panel.hidden = panel.dataset.dashboardPanel !== next;
   });
   if (next === 'finance' && load && !state.financeLoaded) loadFinance();
-  if (next === 'workspaces' && load && !state.workspacesLoaded) loadWorkspaces();
   if (load && !state.loadedTabs.has(next)) {
     const loaders = {
       users: loadAdminUsers,
@@ -401,11 +392,6 @@ function renderAlerts(summary) {
   if (Number(summary.oauth_access_expired)) alerts.push(['warning', `${number(summary.oauth_access_expired)} access token Google đã hết hạn; refresh token sẽ được thử khi người dùng đồng bộ.`]);
   if (Number(summary.oauth_missing_scopes)) alerts.push(['danger', `${number(summary.oauth_missing_scopes)} tài khoản thiếu scope Gmail hoặc Calendar và cần kết nối lại.`]);
   if (Number(summary.sync_failures_24h)) alerts.push(['danger', `${number(summary.sync_failures_24h)} tác vụ đồng bộ thất bại trong 24 giờ qua.`]);
-  // Phase 6 ("Billing automation and production hardening"): operational
-  // alerts for the subscription lifecycle -- live-queried, not a separate
-  // alert-delivery system (see services/subscription_lifecycle_scheduler.py).
-  if (Number(summary.workspaces_in_grace)) alerts.push(['warning', `${number(summary.workspaces_in_grace)} workspace doanh nghiệp đang trong 7 ngày gia hạn.`]);
-  if (Number(summary.workspaces_read_only)) alerts.push(['danger', `${number(summary.workspaces_read_only)} workspace doanh nghiệp đã chuyển sang chỉ đọc do hết hạn.`]);
   if (Number(summary.failed_payments_24h)) alerts.push(['warning', `${number(summary.failed_payments_24h)} giao dịch thanh toán thất bại trong 24 giờ qua.`]);
   $('alerts').innerHTML = alerts.length
     ? alerts.map(([tone, text]) => `<div class="alert ${tone === 'danger' ? 'danger' : ''}">${escapeHtml(text)}</div>`).join('')
@@ -449,172 +435,6 @@ function render(data) {
   renderMiniChart('overviewRevenueChart', data.revenue_30d || [], 'value');
   renderMiniChart('aiCostChart', data.ai_cost_30d || [], 'value', (value) => usd(value));
   markRefreshed(data);
-}
-
-function workspaceAccessLabel(accessState) {
-  return {
-    active: 'Hoạt động',
-    grace: 'Grace period',
-    read_only: 'Chỉ đọc',
-    none: 'Chưa có gói',
-  }[accessState] || accessState || '—';
-}
-
-function renderWorkspaces(data = state.workspaces) {
-  if (!data) return;
-  const summary = data.summary || {};
-  const items = data.workspaces || [];
-  const query = normalizedText($('workspaceSearch').value);
-  const accessState = $('workspaceStateFilter').value;
-  const filtered = items.filter((workspace) => {
-    const haystack = normalizedText([
-      workspace.name,
-      workspace.slug,
-      workspace.owner,
-      workspace.owner_user_id,
-      workspace.workspace_id,
-    ].join(' '));
-    return (!query || haystack.includes(query))
-      && (accessState === 'all' || workspace.access_state === accessState);
-  });
-
-  $('businessWorkspaces').textContent = number(summary.business_workspaces);
-  $('activeBusinessWorkspaces').textContent = `${number(summary.active_workspaces)} đang hoạt động`;
-  $('workspaceSeats').textContent = `${number(summary.active_seats)} / ${number(summary.seat_capacity)}`;
-  $('attentionWorkspaces').textContent = number(summary.attention_workspaces);
-  $('pendingSeatRequests').textContent = number(summary.pending_seat_requests);
-  $('workspacesGeneratedAt').textContent = `Cập nhật ${dateTime(data.generated_at)}`;
-  $('workspaceResultCount').textContent = `${number(filtered.length)} / ${number(items.length)} tổ chức`;
-  $('workspacesBody').innerHTML = filtered.length ? filtered.map((workspace) => {
-    const hasSubscription = Boolean(workspace.subscription_id);
-    const renew = hasSubscription ? 'renew' : 'purchase';
-    const primaryLabel = hasSubscription ? 'Gia hạn 30 ngày' : 'Kích hoạt Business';
-    const plan = workspace.plan_name || workspace.plan_code || 'Chưa kích hoạt';
-    const seatDetail = [
-      Number(workspace.pending_invitations || 0) ? `${number(workspace.pending_invitations)} lời mời chờ` : '',
-      Number(workspace.pending_seat_requests || 0) ? `${number(workspace.pending_seat_requests)} yêu cầu ghế` : '',
-    ].filter(Boolean).join(' · ');
-    return `<tr>
-      <td><strong>${escapeHtml(workspace.name || workspace.workspace_id)}</strong><br><span class="muted">${escapeHtml(workspace.slug || workspace.workspace_id)}</span></td>
-      <td>${escapeHtml(workspace.owner || workspace.owner_user_id || '—')}</td>
-      <td><span class="badge ${escapeHtml(workspace.access_state)}">${escapeHtml(workspaceAccessLabel(workspace.access_state))}</span></td>
-      <td><strong>${number(workspace.active_seats)} / ${number(workspace.seat_capacity)}</strong>${seatDetail ? `<br><span class="muted">${escapeHtml(seatDetail)}</span>` : ''}</td>
-      <td>${escapeHtml(plan)}<br><span class="muted">${escapeHtml(workspace.billing_interval === 'yearly' ? 'Hằng năm' : (hasSubscription ? 'Hằng tháng' : '10 ghế mặc định'))}</span></td>
-      <td>${escapeHtml(dateTime(workspace.current_period_end || workspace.updated_at))}</td>
-      <td class="subscription-actions">
-        <button type="button" class="btn-link" data-${renew === 'renew' ? 'renew' : 'grant'}-business="${escapeHtml(workspace.workspace_id)}">${escapeHtml(primaryLabel)}</button>
-        ${hasSubscription ? `<button type="button" class="btn-link danger" data-revoke-business="${escapeHtml(workspace.workspace_id)}">Thu hồi</button>` : ''}
-        <button type="button" class="btn-link" data-view-audit="${escapeHtml(workspace.workspace_id)}" data-view-audit-name="${escapeHtml(workspace.name || workspace.workspace_id)}">Nhật ký</button>
-      </td>
-    </tr>`;
-  }).join('') : '<tr><td colspan="7" class="muted">Không có tổ chức phù hợp bộ lọc.</td></tr>';
-}
-
-async function grantBusinessSubscription(workspaceId, action = 'purchase') {
-  const renewing = action === 'renew';
-  if (!window.confirm(`${renewing ? 'Gia hạn' : 'Kích hoạt'} Business 30 ngày cho workspace ${workspaceId}?`)) return;
-  try {
-    await api(`/api/admin/workspaces/${encodeURIComponent(workspaceId)}/subscription`, {
-      method: 'POST',
-      body: JSON.stringify({
-        action,
-        plan_code: 'business_monthly',
-        plan_name: 'Business',
-        billing_interval: 'monthly',
-        currency: 'VND',
-        unit_amount: 0,
-        included_seats: 10,
-        days: 30,
-      }),
-    });
-    state.financeLoaded = false;
-    state.workspacesLoaded = false;
-    showToast(`${renewing ? 'Đã gia hạn' : 'Đã kích hoạt'} Business cho workspace.`);
-    await loadWorkspaces();
-  } catch (error) {
-    if (!handleAdminGate(error)) {
-      if (error.data?.allowed_action === 'renew') {
-        showToast('Workspace đã có gói; hãy dùng thao tác gia hạn.', 'warning');
-        await loadWorkspaces();
-      } else {
-        showToast(error.message || 'Không cập nhật được gói Business.', 'error');
-      }
-    }
-  }
-}
-
-async function revokeBusinessSubscription(workspaceId) {
-  if (!window.confirm(`Thu hồi quyền Business của workspace ${workspaceId}?`)) return;
-  try {
-    await api(`/api/admin/workspaces/${encodeURIComponent(workspaceId)}/subscription/revoke`, {
-      method: 'POST',
-      body: '{}',
-    });
-    state.financeLoaded = false;
-    state.workspacesLoaded = false;
-    showToast('Đã thu hồi quyền Business của workspace.', 'warning');
-    await loadWorkspaces();
-  } catch (error) {
-    if (!handleAdminGate(error)) showToast(error.message || 'Không thu hồi được gói Business.', 'error');
-  }
-}
-
-// Phase 5 ("Advanced workspace and AI"): surface workspace_audit_events,
-// written on every business-data mutation (see routes/work_hub.py,
-// sharing.py, workspace_subscription.py) but never displayed before this.
-function openWorkspaceAudit(workspaceId, workspaceName) {
-  state.auditWorkspaceId = workspaceId;
-  state.auditEvents = [];
-  state.auditNextBefore = null;
-  $('workspaceAuditTitle').textContent = `Nhật ký · ${workspaceName || workspaceId}`;
-  $('auditEventTypeFilter').value = '';
-  $('workspaceAuditPanel').hidden = false;
-  $('workspaceAuditPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  loadWorkspaceAudit({ reset: true });
-}
-
-function closeWorkspaceAudit() {
-  state.auditWorkspaceId = null;
-  $('workspaceAuditPanel').hidden = true;
-}
-
-async function loadWorkspaceAudit({ reset = false } = {}) {
-  if (!state.auditWorkspaceId || state.auditLoading) return;
-  state.auditLoading = true;
-  const params = new URLSearchParams({ limit: '50' });
-  const eventType = $('auditEventTypeFilter').value;
-  if (eventType) params.set('event_type', eventType);
-  if (!reset && state.auditNextBefore) params.set('before', state.auditNextBefore);
-  try {
-    const data = await api(`/api/admin/workspaces/${encodeURIComponent(state.auditWorkspaceId)}/audit?${params}`);
-    state.auditEvents = reset ? (data.events || []) : [...state.auditEvents, ...(data.events || [])];
-    state.auditNextBefore = data.has_more ? data.next_before : null;
-    renderWorkspaceAudit();
-  } catch (error) {
-    if (!handleAdminGate(error)) showToast(error.message || 'Không tải được nhật ký hoạt động.', 'error');
-  } finally {
-    state.auditLoading = false;
-  }
-}
-
-function renderWorkspaceAudit() {
-  const filterSelect = $('auditEventTypeFilter');
-  const knownTypes = new Set(Array.from(filterSelect.options).map((option) => option.value).filter(Boolean));
-  state.auditEvents.forEach((event) => {
-    if (event.event_type && !knownTypes.has(event.event_type)) {
-      knownTypes.add(event.event_type);
-      filterSelect.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(event.event_type)}">${escapeHtml(event.event_type)}</option>`);
-    }
-  });
-  $('workspaceAuditBody').innerHTML = state.auditEvents.length
-    ? state.auditEvents.map((event) => `<tr>
-        <td>${escapeHtml(dateTime(event.created_at))}</td>
-        <td><span class="badge">${escapeHtml(event.event_type || '—')}</span></td>
-        <td>${escapeHtml(event.actor_user_id || '—')}</td>
-        <td>${escapeHtml([event.target_type, event.target_id].filter(Boolean).join(' · ') || '—')}</td>
-      </tr>`).join('')
-    : '<tr><td colspan="4" class="muted">Chưa có sự kiện nào.</td></tr>';
-  $('loadMoreAuditButton').hidden = !state.auditNextBefore;
 }
 
 function setMoneyValue(id, value, currency) {
@@ -762,14 +582,10 @@ function renderRecentSubscriptions(finance, currency) {
       subscription.remaining_seconds,
       subscription.current_period_end
     );
-    const workspaceId = subscription.workspace_id;
-    const actions = workspaceId
-      ? `<button type="button" class="btn-link" data-renew-business="${escapeHtml(workspaceId)}">Gia hạn 30 ngày</button>
-         <button type="button" class="btn-link danger" data-revoke-business="${escapeHtml(workspaceId)}">Thu hồi</button>`
-      : (active && subscription.user_id
-        ? `<button type="button" class="btn-link" data-renew-premium="${escapeHtml(subscription.user_id)}">Gia hạn 30 ngày</button>
-           <button type="button" class="btn-link danger" data-revoke-premium="${escapeHtml(subscription.user_id)}">Thu hồi</button>`
-        : '<span class="muted">—</span>');
+    const actions = active && subscription.user_id
+      ? `<button type="button" class="btn-link" data-renew-premium="${escapeHtml(subscription.user_id)}">Gia hạn 30 ngày</button>
+         <button type="button" class="btn-link danger" data-revoke-premium="${escapeHtml(subscription.user_id)}">Thu hồi</button>`
+      : '<span class="muted">—</span>';
     return `<tr>
       <td><strong>${escapeHtml(subscription.customer)}</strong><br><span class="muted">${escapeHtml(subscription.provider)}</span></td>
       <td>${escapeHtml(subscription.plan_name || subscription.plan_code)}</td>
@@ -790,12 +606,8 @@ function renderRecentSubscriptions(finance, currency) {
 $('recentSubscriptionsBody')?.addEventListener('click', (event) => {
   const renewId = event.target.closest('[data-renew-premium]')?.dataset.renewPremium;
   const revokeId = event.target.closest('[data-revoke-premium]')?.dataset.revokePremium;
-  const renewWorkspaceId = event.target.closest('[data-renew-business]')?.dataset.renewBusiness;
-  const revokeWorkspaceId = event.target.closest('[data-revoke-business]')?.dataset.revokeBusiness;
   if (renewId) grantPremium(renewId, 'renew');
   if (revokeId) revokePremium(revokeId);
-  if (renewWorkspaceId) grantBusinessSubscription(renewWorkspaceId, 'renew');
-  if (revokeWorkspaceId) revokeBusinessSubscription(revokeWorkspaceId);
 });
 
 function renderFinance(data) {
@@ -855,33 +667,6 @@ async function loadFinance() {
     }
   } finally {
     state.financeLoading = false;
-    $('refreshButton').disabled = false;
-  }
-}
-
-async function loadWorkspaces() {
-  if (state.workspacesLoading) return;
-  state.workspacesLoading = true;
-  $('refreshButton').disabled = true;
-  $('workspacesError').classList.add('hidden');
-  setConnection('waiting', 'Đang tải tổ chức');
-  try {
-    const data = await api('/api/admin/workspaces');
-    state.workspaces = data;
-    state.workspacesLoaded = true;
-    state.workspacesGeneratedAt = data.generated_at;
-    renderWorkspaces(data);
-    markRefreshed(data);
-    setConnection('online', 'Admin đã xác thực');
-  } catch (error) {
-    state.workspacesLoaded = false;
-    if (!handleAdminGate(error)) {
-      $('workspacesError').textContent = `Không tải được danh sách tổ chức: ${error.message}`;
-      $('workspacesError').classList.remove('hidden');
-      setConnection('offline', 'Lỗi dữ liệu tổ chức');
-    }
-  } finally {
-    state.workspacesLoading = false;
     $('refreshButton').disabled = false;
   }
 }
@@ -1206,25 +991,6 @@ function downloadCsv(filename, rows) {
 
 function exportCurrentData() {
   const stamp = new Date().toISOString().slice(0, 10);
-  if (state.activeTab === 'workspaces') {
-    const rows = (state.workspaces?.workspaces || []).map((workspace) => [
-      workspace.workspace_id,
-      workspace.name,
-      workspace.owner,
-      workspace.access_state,
-      workspace.active_seats,
-      workspace.seat_capacity,
-      workspace.pending_invitations,
-      workspace.pending_seat_requests,
-      workspace.plan_name || workspace.plan_code,
-      workspace.current_period_end,
-    ]);
-    downloadCsv(`flowmate-workspaces-${stamp}.csv`, [[
-      'workspace_id', 'name', 'owner', 'access_state', 'active_seats', 'seat_capacity',
-      'pending_invitations', 'pending_seat_requests', 'plan', 'period_end',
-    ], ...rows]);
-    return;
-  }
   if (state.activeTab === 'finance') {
     const currency = $('financeCurrency').value;
     const rows = (state.finance?.recent_payments || [])
@@ -1276,7 +1042,6 @@ function exportCurrentData() {
 
 function refreshActiveTab() {
   if (state.activeTab === 'finance') return loadFinance();
-  if (state.activeTab === 'workspaces') return loadWorkspaces();
   const loaders = {
     users: loadAdminUsers, ai: loadAiUsage, controls: loadAiControls,
     integrations: loadIntegrations, health: loadSystemHealth, security: loadSecurity,
@@ -1331,9 +1096,6 @@ $('autoRefreshToggle').addEventListener('change', (event) => {
     renderUsers(state.overview?.recent_users || []);
   });
 });
-['workspaceSearch', 'workspaceStateFilter'].forEach((id) => {
-  $(id).addEventListener(id === 'workspaceSearch' ? 'input' : 'change', () => renderWorkspaces());
-});
 ['adminUserSearch', 'adminUserPlanFilter', 'adminUserStatusFilter'].forEach((id) => {
   $(id).addEventListener(id === 'adminUserSearch' ? 'input' : 'change', renderAdminUsers);
 });
@@ -1360,19 +1122,6 @@ $('aiUsageDays').addEventListener('change', () => {
   loadAiUsage();
 });
 $('aiControlsForm').addEventListener('submit', saveAiControls);
-$('workspacesBody').addEventListener('click', (event) => {
-  const grantId = event.target.closest('[data-grant-business]')?.dataset.grantBusiness;
-  const renewId = event.target.closest('[data-renew-business]')?.dataset.renewBusiness;
-  const revokeId = event.target.closest('[data-revoke-business]')?.dataset.revokeBusiness;
-  const auditButton = event.target.closest('[data-view-audit]');
-  if (grantId) grantBusinessSubscription(grantId, 'purchase');
-  if (renewId) grantBusinessSubscription(renewId, 'renew');
-  if (revokeId) revokeBusinessSubscription(revokeId);
-  if (auditButton) openWorkspaceAudit(auditButton.dataset.viewAudit, auditButton.dataset.viewAuditName);
-});
-$('closeWorkspaceAuditButton').addEventListener('click', closeWorkspaceAudit);
-$('auditEventTypeFilter').addEventListener('change', () => loadWorkspaceAudit({ reset: true }));
-$('loadMoreAuditButton').addEventListener('click', () => loadWorkspaceAudit({ reset: false }));
 $('totpInput').addEventListener('input', (event) => {
   event.target.value = event.target.value.replace(/\D/g, '').slice(0, 6);
 });

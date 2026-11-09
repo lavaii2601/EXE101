@@ -608,10 +608,6 @@ async function saveUserMode(mode, closeAfterSave = false) {
         if (closeAfterSave) {
             setTimeout(() => userModeModal?.classList.remove('show'), 200);
         }
-        // Business-workspace nav items (Thành viên/Công việc/Báo cáo/Chia sẻ)
-        // are gated on mode too now (canShowBusinessFeatures) -- re-render so
-        // switching mode hides/reveals them without needing a page reload.
-        renderOrgWorkspaceSwitcher();
         showWorkspace();
         await resumeWorkspaceAfterModeSelection();
     } catch (error) {

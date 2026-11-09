@@ -17,7 +17,6 @@ import { API_BASE } from '../api/config';
 import { getMobileAccessToken } from '../api/session';
 import { connectGoogleAccount } from '../api/googleAuth';
 import { useGoogleAuthErrorModal } from '../components/GoogleAuthConflictModal';
-import { useOrgWorkspace } from '../state/OrgWorkspaceContext';
 import { radius, useTheme } from '../theme/ThemeContext';
 
 const filters = [
@@ -264,22 +263,14 @@ const styles_ComposeRichEditor = StyleSheet.create({
 });
 
 export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNavigate, syncEvent }) {
-  // Business-workspace collaboration ("Chia sẻ" into a Business workspace)
-  // is scoped to the "worker" and "business" user modes, matching
-  // SettingsScreen.js's canShowBusinessFeatures -- see its comment for why.
-  const canShowBusinessFeatures = userMode === 'worker' || userMode === 'business';
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const orgWorkspace = useOrgWorkspace();
   const { modal: googleAuthErrorModal, showError: showGoogleAuthError } = useGoogleAuthErrorModal();
 
   const [mode, setMode] = useState('inbox');
   const [source, setSource] = useState('all');
   const [filter, setFilter] = useState('all');
   const [smartBucket, setSmartBucket] = useState('');
-  const [shareEmail, setShareEmail] = useState(null);
-  const [shareWorkspaceId, setShareWorkspaceId] = useState('');
-  const [sharing, setSharing] = useState(false);
   const [includeRead, setIncludeRead] = useState(true);
   const [emails, setEmails] = useState([]);
   const [auth, setAuth] = useState(null);
@@ -671,52 +662,6 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
     }
   };
 
-  const openShareModal = (email) => {
-    const businessWorkspaces = orgWorkspace?.workspaces?.filter((w) => w.type === 'business') || [];
-    if (!businessWorkspaces.length) return;
-    setShareEmail(email);
-    setShareWorkspaceId(businessWorkspaces[0].id);
-  };
-
-  const closeShareModal = () => {
-    setShareEmail(null);
-    setShareWorkspaceId('');
-  };
-
-  const submitShare = () => {
-    if (!shareEmail || !shareWorkspaceId) return;
-    Alert.alert(
-      'Xác nhận chia sẻ',
-      'Chủ sở hữu/quản trị không gian đã chọn sẽ thấy được nội dung này. Tiếp tục?',
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Chia sẻ',
-          onPress: async () => {
-            setSharing(true);
-            try {
-              await apiPost(`/workspaces/${shareWorkspaceId}/shared-artifacts`, {
-                source_type: 'email_summary',
-                title: shareEmail.subject || 'Email đã chia sẻ',
-                content: {
-                  subject: shareEmail.subject || '',
-                  sender: shareEmail.sender || shareEmail.from || '',
-                  summary: shareEmail.summary || shareEmail.snippet || '',
-                  date: shareEmail.date || '',
-                },
-              });
-              closeShareModal();
-            } catch (error) {
-              Alert.alert('Không chia sẻ được', error.message);
-            } finally {
-              setSharing(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
   const sendEmail = async () => {
     const isForward = compose.mode === 'forward';
     const editorData = await composeEditorRef.current?.getSubmitData();
@@ -945,9 +890,6 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
                   variant="secondary"
                   onPress={() => toggleReadStatus(email)}
                 />
-                {canShowBusinessFeatures && orgWorkspace?.workspaces?.some((w) => w.type === 'business') ? (
-                  <Button title="Chia sẻ" variant="secondary" onPress={() => openShareModal(email)} />
-                ) : null}
               </View>
             </Card>
           </SwipeableEmailRow>
@@ -1166,43 +1108,6 @@ export default function EmailScreen({ userMode, onAuthChanged, onAgentSync, onNa
             <Text style={styles.filterSectionLabel}>Nguồn email</Text>
             <SegmentedControl options={sourceFilters} value={source} onChange={setSource} />
             <Button title="Xong" onPress={() => setFilterModalVisible(false)} style={styles.filterModalDone} />
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-      <Modal
-        visible={!!shareEmail}
-        animationType="slide"
-        transparent
-        onRequestClose={closeShareModal}
-      >
-        <TouchableOpacity style={styles.filterModalOverlay} activeOpacity={1} onPress={closeShareModal}>
-          <TouchableOpacity style={styles.filterModalSheet} activeOpacity={1} onPress={() => {}}>
-            <View style={styles.filterModalHeader}>
-              <Text style={styles.filterModalTitle}>Chia sẻ vào không gian doanh nghiệp</Text>
-              <TouchableOpacity onPress={closeShareModal} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="close" size={22} color={colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-            {shareEmail ? (
-              <>
-                <Text style={styles.muted}>
-                  Chủ sở hữu/quản trị không gian sẽ thấy được nội dung này sau khi xác nhận.
-                </Text>
-                <View style={styles.shareSummaryCard}>
-                  <Text style={styles.sender} numberOfLines={1}>{shareEmail.subject || '(Không tiêu đề)'}</Text>
-                  <Text style={styles.preview} numberOfLines={3}>{shareEmail.summary || shareEmail.snippet || ''}</Text>
-                </View>
-                <Text style={styles.filterSectionLabel}>Không gian doanh nghiệp</Text>
-                <SegmentedControl
-                  options={(orgWorkspace?.workspaces || [])
-                    .filter((w) => w.type === 'business')
-                    .map((w) => ({ label: w.name, value: w.id }))}
-                  value={shareWorkspaceId}
-                  onChange={setShareWorkspaceId}
-                />
-                <Button title="Xác nhận chia sẻ" onPress={submitShare} loading={sharing} style={styles.filterModalDone} />
-              </>
-            ) : null}
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -1516,13 +1421,6 @@ function makeStyles(colors) {
     smartBadge_waiting: { color: '#b45309', backgroundColor: 'rgba(180,83,9,0.14)' },
     smartBadge_fyi: { color: colors.primary, backgroundColor: `${colors.primary}18` },
     smartBadge_low_priority: { color: colors.textMuted, backgroundColor: colors.secondaryBg },
-    shareSummaryCard: {
-      backgroundColor: colors.secondaryBg,
-      borderRadius: radius.card,
-      padding: 12,
-      marginVertical: 10,
-      gap: 4,
-    },
     sender:   { flex: 1, color: colors.text, fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
     preview:  { marginTop: 8, color: colors.textMuted, fontFamily: 'Poppins_400Regular', lineHeight: 20 },
     aiSummary: {

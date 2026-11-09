@@ -49,10 +49,7 @@ async function initApp() {
     emailSearchInput = document.getElementById('emailSearchInput');
     setupAuthGate();
     setupWorkspaceShell();
-    setupOrgWorkspaceUI();
     setupNotificationUI();
-    setupWorkHubUI();
-    setupSharingUI();
     applyLanguage();
     setupDateTimePreviews();
     const savedTheme = localStorage.getItem('flowmate-theme');
@@ -473,8 +470,6 @@ async function initApp() {
     await startWorkspaceSyncWatcher();
     await loadUserProfile();
     showSepayReturnNotice();
-    await loadOrgWorkspaces();
-    checkPendingOrgInvitationFromUrl();
     if (!userModeRequired) {
         showWorkspace();
         updateChatSessionTitle();

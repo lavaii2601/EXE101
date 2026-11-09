@@ -14,7 +14,6 @@ import {
   loadActiveChatSessionId,
   persistActiveChatSessionId,
 } from '../state/chatSession';
-import { useOrgWorkspace } from '../state/OrgWorkspaceContext';
 
 function normalizePlanSuggestion(value) {
   return {
@@ -152,7 +151,6 @@ export default function ChatScreen({
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { currentWorkspaceId } = useOrgWorkspace() || {};
 
   const [messages, setMessages] = useState([]);
   const [sessionId, setSessionId] = useState('');
@@ -270,24 +268,6 @@ export default function ChatScreen({
       mountedRef.current = false;
     };
   }, [loadForOwner]);
-
-  // This screen's state is not remounted when the user switches their
-  // active workspace (Personal <-> a Business workspace) -- without this,
-  // it would keep showing the previous workspace's messages on screen,
-  // even though chat_sessions rows are workspace-scoped server-side.
-  // workspaceMountRef starts equal to the first-render value so this
-  // effect's first run (which fires alongside the mount effect above) is a
-  // no-op; only a later, real switch triggers a reload.
-  const workspaceMountRef = useRef(currentWorkspaceId);
-  useEffect(() => {
-    if (workspaceMountRef.current === currentWorkspaceId) return;
-    workspaceMountRef.current = currentWorkspaceId;
-    let active = true;
-    loadForOwner(getChatSessionOwner(), { active: () => active });
-    return () => {
-      active = false;
-    };
-  }, [currentWorkspaceId, loadForOwner]);
 
   const handleMessagesScroll = useCallback((event) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;

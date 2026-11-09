@@ -1,14 +1,7 @@
 async function apiFetch(url, options = {}) {
     try {
         const method = String(options.method || 'GET').toUpperCase();
-        // Every /api/ call carries the active Business workspace (if any) so
-        // workspace-scoped routes (Phase 3+) can resolve tenant context
-        // without every call site doing it individually. Routes that don't
-        // scope by workspace yet simply ignore the header.
         const headers = { ...(options.headers || {}) };
-        if (currentOrgWorkspaceId && String(url).startsWith(API_BASE)) {
-            headers['X-Workspace-Id'] = currentOrgWorkspaceId;
-        }
         const resp = await fetch(url, {
             credentials: 'include',
             ...options,

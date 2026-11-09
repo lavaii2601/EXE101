@@ -85,32 +85,6 @@ let workspaceSyncAbortController = null;
 let currentSubscription = null;
 let selectedSubscriptionPlan = 'monthly';
 let selectedSubscriptionPaymentMethod = 'BANK_TRANSFER';
-// Multi-tenant Business workspace state (Worker Business Phase 1). Named
-// "orgWorkspace*" throughout to avoid colliding with the pre-existing
-// workspaceSync*/#workspaceApp vocabulary above, which means something
-// unrelated: the personal single-tenant app shell's own sync/polling cursor.
-let currentOrgWorkspaceId = null;
-let orgWorkspaces = [];
-let orgWorkspaceMembers = [];
-let orgWorkspacePendingInvitations = [];
-// Phase 2 (Subscription/Seat foundation): Business subscription status and
-// pending "need more seats" requests for the active workspace.
-let orgWorkspaceSubscription = null;
-let orgWorkspaceSeatRequests = [];
-// Phase 3 ("Work Hub"): shared projects/tasks and manual Status Reports for
-// the active Business workspace. See routes/work_hub.py.
-let workHubProjects = [];
-let workHubTasks = [];
-let workHubSelectedProjectId = null;
-let statusReportDrafts = [];
-let statusReportPublished = [];
-// Phase 5 ("Advanced workspace and AI"): workspace-curated policy/template/
-// FAQ docs Bob's RAG also searches. See routes/workspace_knowledge.py.
-let workspaceKnowledgeDocs = [];
-// Phase 4 ("Smart Inbox + privacy-first sharing"): the email currently
-// staged in the share-confirmation modal, or null when the modal is closed.
-let shareArtifactSourceEmail = null;
-let sharingCenterArtifacts = [];
 // Gmail push should be configured in production for true server-side push.
 // This short watcher is the resilient foreground fallback and feels instant
 // even when Pub/Sub is unavailable or the browser just resumed.

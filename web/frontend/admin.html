@@ -21,7 +21,7 @@
       <div>
         <p class="eyebrow">FLOWMATE OPERATIONS</p>
         <h1>Admin Console</h1>
-        <p class="subtitle">Giám sát vận hành, tài chính và Business workspace của FlowMate trong một màn hình.</p>
+        <p class="subtitle">Giám sát vận hành và tài chính của FlowMate trong một màn hình.</p>
       </div>
       <div class="top-actions">
         <span id="liveStatus" class="status waiting"><i></i> Đang kết nối</span>
@@ -132,19 +132,6 @@
           </button>
           <button id="securityTab" class="dashboard-tab" type="button" role="tab" aria-selected="false" aria-controls="securityPanel" tabindex="-1" data-dashboard-tab="security">
             <span class="tab-icon text-icon" aria-hidden="true">✓</span><span class="tab-label">Security &amp; Audit</span>
-          </button>
-          <button
-            id="workspacesTab"
-            class="dashboard-tab"
-            type="button"
-            role="tab"
-            aria-selected="false"
-            aria-controls="workspacesPanel"
-            tabindex="-1"
-            data-dashboard-tab="workspaces"
-          >
-            <svg class="tab-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v16"/><path d="M15 21V10a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v11"/><path d="M8 8h1M8 12h1M8 16h1"/></svg>
-            <span class="tab-label">Tổ chức</span>
           </button>
         </nav>
 
@@ -323,113 +310,6 @@
           </table>
         </div>
       </section>
-      </section>
-
-      <section
-        id="workspacesPanel"
-        class="dashboard-panel"
-        role="tabpanel"
-        aria-labelledby="workspacesTab"
-        data-dashboard-panel="workspaces"
-        hidden
-      >
-        <p id="workspacesError" class="finance-message error-text hidden" role="alert"></p>
-
-        <section class="hero-grid workspace-hero" aria-label="Chỉ số Business workspace">
-          <article class="hero-card">
-            <p class="metric-label">Business workspace</p>
-            <strong id="businessWorkspaces">0</strong>
-            <span id="activeBusinessWorkspaces">0 đang hoạt động</span>
-          </article>
-          <article class="hero-card accent-cyan">
-            <p class="metric-label">Ghế đang dùng</p>
-            <strong id="workspaceSeats">0 / 0</strong>
-            <span>Membership đang hoạt động</span>
-          </article>
-          <article class="hero-card accent-amber">
-            <p class="metric-label">Cần xử lý</p>
-            <strong id="attentionWorkspaces">0</strong>
-            <span>Hết hạn, grace hoặc chưa có gói</span>
-          </article>
-          <article class="hero-card accent-violet">
-            <p class="metric-label">Yêu cầu thêm ghế</p>
-            <strong id="pendingSeatRequests">0</strong>
-            <span>Đang chờ owner hoặc thanh toán</span>
-          </article>
-        </section>
-
-        <section class="panel table-panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">BUSINESS TENANTS</p>
-              <h2>Quản lý tổ chức</h2>
-            </div>
-            <span id="workspacesGeneratedAt" class="muted">—</span>
-          </div>
-          <div class="table-toolbar">
-            <label class="search-control">
-              <span class="sr-only">Tìm workspace</span>
-              <input id="workspaceSearch" type="search" placeholder="Tìm tổ chức, owner hoặc workspace ID…">
-            </label>
-            <select id="workspaceStateFilter" aria-label="Lọc trạng thái workspace">
-              <option value="all">Tất cả trạng thái</option>
-              <option value="active">Hoạt động</option>
-              <option value="grace">Grace period</option>
-              <option value="read_only">Chỉ đọc</option>
-              <option value="none">Chưa có gói</option>
-            </select>
-            <span id="workspaceResultCount" class="result-count">0 tổ chức</span>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <caption class="sr-only">Danh sách Business workspace</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Tổ chức</th>
-                  <th scope="col">Owner</th>
-                  <th scope="col">Truy cập</th>
-                  <th scope="col">Ghế</th>
-                  <th scope="col">Subscription</th>
-                  <th scope="col">Cập nhật</th>
-                  <th scope="col">Hành động</th>
-                </tr>
-              </thead>
-              <tbody id="workspacesBody"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section id="workspaceAuditPanel" class="panel table-panel" hidden>
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">NHẬT KÝ HOẠT ĐỘNG</p>
-              <h2 id="workspaceAuditTitle">Audit log</h2>
-            </div>
-            <button type="button" class="btn-link" id="closeWorkspaceAuditButton">Đóng</button>
-          </div>
-          <div class="table-toolbar">
-            <select id="auditEventTypeFilter" aria-label="Lọc theo loại sự kiện">
-              <option value="">Tất cả loại sự kiện</option>
-            </select>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <caption class="sr-only">Nhật ký hoạt động của workspace</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Thời gian</th>
-                  <th scope="col">Sự kiện</th>
-                  <th scope="col">Người thực hiện</th>
-                  <th scope="col">Đối tượng</th>
-                </tr>
-              </thead>
-              <tbody id="workspaceAuditBody"></tbody>
-            </table>
-          </div>
-          <div class="table-toolbar">
-            <button type="button" class="button ghost" id="loadMoreAuditButton" hidden>Tải thêm</button>
-          </div>
-        </section>
       </section>
 
       <section

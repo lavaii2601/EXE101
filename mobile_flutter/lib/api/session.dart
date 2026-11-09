@@ -3,7 +3,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 const _storage = FlutterSecureStorage();
 const _userIdKey = 'flowmate.mobileUserId';
 const _accessTokenKey = 'flowmate.mobileAccessToken';
-const _workspaceIdKey = 'flowmate.currentWorkspaceId';
 // Unlike RN's WebBrowser.openAuthSessionAsync (an in-app overlay that keeps
 // the app alive), google_auth.dart launches a real external browser -- the
 // OS can kill the Flutter process while the user is still in it, and
@@ -21,16 +20,9 @@ const _pendingOauthVerifierKey = 'flowmate.pendingOauthCodeVerifier';
 // mirrors mobile/src/api/session.js exactly.
 String _mobileUserId = '';
 String _mobileAccessToken = '';
-// The active Business workspace (Worker Business Phase 1). Lives alongside
-// user/token here, not in WorkspaceController, so client.dart can read it
-// synchronously the same way it reads the user id/token -- see
-// web/frontend/js/app.js's analogous X-Workspace-Id header injection in
-// apiFetch for the client this mirrors.
-String _currentWorkspaceId = '';
 
 String getMobileUserId() => _mobileUserId;
 String getMobileAccessToken() => _mobileAccessToken;
-String getCurrentWorkspaceId() => _currentWorkspaceId;
 
 Future<void> setMobileUserId(String value) async {
   _mobileUserId = value.trim();
@@ -54,15 +46,6 @@ Future<void> setMobileSession(
   ]);
 }
 
-Future<void> setCurrentWorkspaceId(String value) async {
-  _currentWorkspaceId = value.trim();
-  if (_currentWorkspaceId.isNotEmpty) {
-    await _storage.write(key: _workspaceIdKey, value: _currentWorkspaceId);
-  } else {
-    await _storage.delete(key: _workspaceIdKey);
-  }
-}
-
 /// Call once at app startup, before the first API request, so a previously
 /// signed-in user doesn't get logged out just from closing the app.
 Future<void> loadPersistedSession() async {
@@ -70,15 +53,12 @@ Future<void> loadPersistedSession() async {
     final values = await Future.wait([
       _storage.read(key: _userIdKey),
       _storage.read(key: _accessTokenKey),
-      _storage.read(key: _workspaceIdKey),
     ]);
     _mobileUserId = values[0] ?? '';
     _mobileAccessToken = values[1] ?? '';
-    _currentWorkspaceId = values[2] ?? '';
   } catch (_) {
     _mobileUserId = '';
     _mobileAccessToken = '';
-    _currentWorkspaceId = '';
   }
 }
 
@@ -97,10 +77,8 @@ Future<void> clearPendingOauthCodeVerifier() async {
 Future<void> clearPersistedSession() async {
   _mobileUserId = '';
   _mobileAccessToken = '';
-  _currentWorkspaceId = '';
   await Future.wait([
     _storage.delete(key: _userIdKey),
     _storage.delete(key: _accessTokenKey),
-    _storage.delete(key: _workspaceIdKey),
   ]);
 }

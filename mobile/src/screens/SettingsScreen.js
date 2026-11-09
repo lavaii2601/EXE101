@@ -23,12 +23,6 @@ import { activateGoogleAccount, connectGoogleAccount, listGoogleAccounts, remove
 import { logoutAllDevices } from '../api/emailAuth';
 import PricingModal from '../components/PricingModal';
 import { useGoogleAuthErrorModal } from '../components/GoogleAuthConflictModal';
-import WorkspaceMembersScreen from './WorkspaceMembersScreen';
-import WorkHubScreen from './WorkHubScreen';
-import StatusReportsScreen from './StatusReportsScreen';
-import SharingCenterScreen from './SharingCenterScreen';
-import WorkspaceKnowledgeScreen from './WorkspaceKnowledgeScreen';
-import { useOrgWorkspace } from '../state/OrgWorkspaceContext';
 
 const USAGE_LABELS = {
   email_summary: ['Tóm tắt email AI', 'AI email summaries'],
@@ -67,22 +61,9 @@ function formatSubscriptionRemaining(subscription, t) {
 export default function SettingsScreen({ profile, status, userMode, onChangeMode, onRefresh, onLogout, onAgentSync, syncEvent }) {
   const { colors, isDark, accent, toggleTheme, setAccent } = useTheme();
   const { language, setLanguage, t } = useLanguage();
-  const orgWorkspace = useOrgWorkspace();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { modal: googleAuthErrorModal, showError: showGoogleAuthError } = useGoogleAuthErrorModal();
-  // Business-workspace collaboration (Thành viên/Công việc/Báo cáo/Chia sẻ)
-  // is scoped to the "worker" and "business" user modes -- switching to
-  // another mode (student, freelancer, mentor, teacher, creator) hides
-  // these even if the account is still an active Business workspace
-  // member, since the whole Worker Business Subscription feature set is
-  // framed around the worker persona, not a general-purpose feature.
-  const canShowBusinessFeatures = userMode === 'worker' || userMode === 'business';
 
-  const [membersVisible, setMembersVisible] = useState(false);
-  const [workHubVisible, setWorkHubVisible] = useState(false);
-  const [statusReportsVisible, setStatusReportsVisible] = useState(false);
-  const [workspaceKnowledgeVisible, setWorkspaceKnowledgeVisible] = useState(false);
-  const [sharingCenterVisible, setSharingCenterVisible] = useState(false);
   const [pushNotif,     setPushNotif]     = useState(false);
   const [emailNotif,    setEmailNotif]    = useState(true);
   const [reminderNotif, setReminderNotif] = useState(true);
@@ -495,72 +476,6 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         </View>
       </View>
 
-      {/* ── Business workspace ── */}
-      {orgWorkspace.isBusiness && canShowBusinessFeatures ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>{t('DOANH NGHIỆP', 'BUSINESS')}</Text>
-          <TouchableOpacity style={styles.settingRow} onPress={() => setMembersVisible(true)} activeOpacity={0.75}>
-            <View style={[styles.iconWrap, { backgroundColor: colors.primarySoft }]}>
-              <Ionicons name="people-outline" size={18} color={colors.accentText} />
-            </View>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>{t('Thành viên', 'Members')}</Text>
-              <Text style={styles.settingSub}>{orgWorkspace.current?.name || ''}</Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.settingRow} onPress={() => setWorkHubVisible(true)} activeOpacity={0.75}>
-            <View style={[styles.iconWrap, { backgroundColor: colors.primarySoft }]}>
-              <Ionicons name="grid-outline" size={18} color={colors.accentText} />
-            </View>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>{t('Công việc', 'Work Hub')}</Text>
-              <Text style={styles.settingSub}>{t('Dự án và nhiệm vụ dùng chung', 'Shared projects and tasks')}</Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.settingRow} onPress={() => setStatusReportsVisible(true)} activeOpacity={0.75}>
-            <View style={[styles.iconWrap, { backgroundColor: colors.primarySoft }]}>
-              <Ionicons name="document-text-outline" size={18} color={colors.accentText} />
-            </View>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>{t('Báo cáo trạng thái', 'Status Reports')}</Text>
-              <Text style={styles.settingSub}>Done / Doing / Blocked / Next / Risks</Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.settingRow} onPress={() => setWorkspaceKnowledgeVisible(true)} activeOpacity={0.75}>
-            <View style={[styles.iconWrap, { backgroundColor: colors.secondaryBg }]}>
-              <Ionicons name="library-outline" size={18} color={colors.secondaryText} />
-            </View>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>{t('Kiến thức doanh nghiệp', 'Workspace Knowledge')}</Text>
-              <Text style={styles.settingSub}>{t('Policy, quy trình, template và FAQ', 'Policies, processes, templates, and FAQs')}</Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
-      {/* ── Sharing Center: not workspace-scoped, so gated on membership in
-          ANY Business workspace rather than orgWorkspace.isBusiness (which
-          only reflects the currently active one). ── */}
-      {orgWorkspace.workspaces?.some((w) => w.type === 'business') && canShowBusinessFeatures ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>{t('RIÊNG TƯ', 'PRIVACY')}</Text>
-          <TouchableOpacity style={styles.settingRow} onPress={() => setSharingCenterVisible(true)} activeOpacity={0.75}>
-            <View style={[styles.iconWrap, { backgroundColor: colors.primarySoft }]}>
-              <Ionicons name="share-social-outline" size={18} color={colors.accentText} />
-            </View>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>{t('Trung tâm chia sẻ', 'Sharing Center')}</Text>
-              <Text style={styles.settingSub}>{t('Nội dung cá nhân bạn đã chia sẻ', 'Personal content you have shared')}</Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
       {/* ── Subscription ── */}
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>{t('GÓI DỊCH VỤ', 'PLAN')}</Text>
@@ -853,11 +768,6 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         onClose={() => setPricingVisible(false)}
       />
       {googleAuthErrorModal}
-      <WorkspaceMembersScreen visible={membersVisible} onClose={() => setMembersVisible(false)} syncEvent={syncEvent} />
-      <WorkHubScreen visible={workHubVisible} onClose={() => setWorkHubVisible(false)} syncEvent={syncEvent} />
-      <StatusReportsScreen visible={statusReportsVisible} onClose={() => setStatusReportsVisible(false)} syncEvent={syncEvent} />
-      <WorkspaceKnowledgeScreen visible={workspaceKnowledgeVisible} onClose={() => setWorkspaceKnowledgeVisible(false)} syncEvent={syncEvent} />
-      <SharingCenterScreen visible={sharingCenterVisible} onClose={() => setSharingCenterVisible(false)} syncEvent={syncEvent} />
     </ScrollView>
   );
 }

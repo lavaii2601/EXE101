@@ -87,8 +87,7 @@ summary {
 }
 
 .user-profile-section,
-.user-mode-picker,
-.org-workspace-switcher {
+.user-mode-picker {
     border-color: var(--border);
     border-radius: 12px;
     background: var(--bg);
@@ -768,7 +767,6 @@ body.dark-theme .email-tools-menu summary {
     .sidebar-new-chat-btn,
     .user-profile-section,
     .user-mode-picker,
-    .org-workspace-switcher,
     .sidebar-footer {
         display: none;
     }

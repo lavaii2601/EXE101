@@ -94,7 +94,6 @@ void _handleUnauthorized(Map<String, dynamic> data) {
 Future<dynamic> _request(String path,
     {required String method, Map<String, dynamic>? body}) async {
   final accessToken = getMobileAccessToken();
-  final workspaceId = getCurrentWorkspaceId();
   final headers = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
@@ -105,10 +104,6 @@ Future<dynamic> _request(String path,
     // still meant to exist as a dev-only escape hatch (see utils/security.py),
     // just not one this production client should be the one sending.
     if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
-    // Tells the backend which tenant (Personal vs. a Business workspace)
-    // this request belongs to -- routes/chat.py's get_current_workspace_id
-    // resolves it, scoping chat history/sessions and the AI response cache.
-    if (workspaceId.isNotEmpty) 'X-Workspace-Id': workspaceId,
   };
   final uri = Uri.parse('$kApiBase$path');
 
@@ -182,10 +177,8 @@ Future<dynamic> apiGet(String path) => _request(path, method: 'GET');
 // Uint8List the server actually sent.
 Future<Uint8List> apiGetBytes(String path) async {
   final accessToken = getMobileAccessToken();
-  final workspaceId = getCurrentWorkspaceId();
   final headers = {
     if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
-    if (workspaceId.isNotEmpty) 'X-Workspace-Id': workspaceId,
   };
   final uri = Uri.parse('$kApiBase$path');
   final response =
@@ -239,13 +232,11 @@ Future<dynamic> apiPostMultipart(
   List<String> inlineImageIds = const [],
 }) async {
   final accessToken = getMobileAccessToken();
-  final workspaceId = getCurrentWorkspaceId();
   final uri = Uri.parse('$kApiBase$path');
   final request = http.MultipartRequest('POST', uri)
     ..headers.addAll({
       'Accept': 'application/json',
       if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
-      if (workspaceId.isNotEmpty) 'X-Workspace-Id': workspaceId,
     })
     ..fields.addAll(fields);
 

@@ -484,7 +484,6 @@ function renderEnhancedEmailItem(email, container) {
             <button class="email-view-detail-btn btn-secondary">${ui('Xem chi tiết', 'View details')}</button>
             <button class="email-summary-btn">${email.summary_type === 'ai_cached' ? ui('Xem tóm tắt AI', 'View AI summary') : ui('Tóm tắt bằng AI', 'Summarize with AI')}</button>
             <button class="email-read-toggle-btn btn-secondary">${email.is_unread ? ui('Đánh dấu đã đọc', 'Mark as read') : ui('Đánh dấu chưa đọc', 'Mark as unread')}</button>
-            ${orgWorkspaces.some((w) => w.type === 'business') && canShowBusinessFeatures() ? `<button class="email-share-btn btn-secondary">${ui('Chia sẻ', 'Share')}</button>` : ''}
         </div>
     `;
 
@@ -516,10 +515,6 @@ function renderEnhancedEmailItem(email, container) {
     emailDiv.querySelector('.email-read-toggle-btn').addEventListener('click', async (event) => {
         event.stopPropagation();
         await toggleEnhancedEmailReadStatus(email, emailDiv);
-    });
-    emailDiv.querySelector('.email-share-btn')?.addEventListener('click', (event) => {
-        event.stopPropagation();
-        openShareArtifactModal(email);
     });
     emailDiv.addEventListener('click', (event) => {
         if (!event.target.closest('button')) showFormattedEmailDetail(email);

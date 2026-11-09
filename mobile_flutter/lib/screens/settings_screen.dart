@@ -10,14 +10,8 @@ import '../config/user_modes.dart';
 import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
-import '../state/workspace_controller.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_screen.dart';
-import 'sharing_center_screen.dart';
-import 'status_reports_screen.dart';
-import 'work_hub_screen.dart';
-import 'workspace_knowledge_screen.dart';
-import 'workspace_members_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final VoidCallback onChangeMode;
@@ -171,10 +165,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       builder: (dialogContext) => AlertDialog(
         title: Text(t('Xóa tài khoản FlowMate?', 'Delete your FlowMate account?')),
         content: Text(t(
-          'Thao tác này xóa vĩnh viễn hồ sơ, lịch, chat, dữ liệu cá nhân, kết nối Google và gói cá nhân. '
-              'Workspace doanh nghiệp chỉ có bạn sẽ bị xóa; workspace còn thành viên sẽ được chuyển cho một thành viên đang hoạt động. Không thể hoàn tác.',
-          'This permanently deletes your profile, schedules, chats, personal data, Google connection, and personal plan. '
-              'Business workspaces with no other member are deleted; workspaces with active members are transferred to one of them. This cannot be undone.',
+          'Thao tác này xóa vĩnh viễn hồ sơ, lịch, chat, dữ liệu cá nhân, kết nối Google và gói cá nhân. Không thể hoàn tác.',
+          'This permanently deletes your profile, schedules, chats, personal data, Google connection, and personal plan. This cannot be undone.',
         )),
         actions: [
           TextButton(
@@ -351,19 +343,10 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     final theme = context.watch<ThemeController>();
     final lang = context.watch<LanguageController>();
     final appState = context.watch<AppState>();
-    final workspace = context.watch<WorkspaceController>();
     final colors = theme.colors;
     final t = lang.t;
     final profile = appState.profile;
     final mode = getUserMode(profile?['user_mode'] as String?);
-    // Business-workspace collaboration (Thành viên/Công việc/Báo cáo/Chia
-    // sẻ) is scoped to the "worker" and "business" user modes -- switching
-    // to another mode (student, freelancer, mentor, teacher, creator)
-    // hides these even if the account is still an active Business
-    // workspace member, since the whole Worker Business Subscription
-    // feature set is framed around the worker persona, not a
-    // general-purpose feature for every mode.
-    final canShowBusinessFeatures = mode.value == 'worker' || mode.value == 'business';
     final gmailReady = profile?['gmail_connected'] == true;
     final subscription = profile?['subscription'] is Map
         ? Map<String, dynamic>.from(profile!['subscription'] as Map)
@@ -524,62 +507,6 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                 ],
               ],
             ),
-            if (workspace.isBusiness && canShowBusinessFeatures)
-              _Section(
-                label: t('DOANH NGHIỆP', 'BUSINESS'),
-                children: [
-                  _Row(
-                    icon: Icons.groups_outlined,
-                    iconBg: colors.primarySoft,
-                    iconColor: colors.primary,
-                    title: t('Thành viên', 'Members'),
-                    subtitle: (workspace.current?['name'] as String?) ?? '',
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WorkspaceMembersScreen())),
-                  ),
-                  _Row(
-                    icon: Icons.dashboard_outlined,
-                    iconBg: colors.primarySoft,
-                    iconColor: colors.primary,
-                    title: t('Công việc', 'Work Hub'),
-                    subtitle: t('Dự án và nhiệm vụ dùng chung', 'Shared projects and tasks'),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WorkHubScreen())),
-                  ),
-                  _Row(
-                    icon: Icons.assignment_outlined,
-                    iconBg: colors.primarySoft,
-                    iconColor: colors.primary,
-                    title: t('Báo cáo trạng thái', 'Status Reports'),
-                    subtitle: t('Done / Doing / Blocked / Next / Risks', 'Done / Doing / Blocked / Next / Risks'),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StatusReportsScreen())),
-                  ),
-                  _Row(
-                    icon: Icons.menu_book_outlined,
-                    iconBg: colors.primarySoft,
-                    iconColor: colors.primary,
-                    title: t('Kiến thức', 'Knowledge'),
-                    subtitle: t('Policy, quy trình, FAQ dùng chung', 'Shared policies, processes, FAQs'),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WorkspaceKnowledgeScreen())),
-                  ),
-                ],
-              ),
-            // Not workspace-scoped (GET /api/user/sharing spans every
-            // workspace the caller belongs to), so gated on membership in
-            // ANY Business workspace rather than workspace.isBusiness
-            // (which only reflects the currently active one).
-            if (workspace.workspaces.any((w) => w['type'] == 'business') && canShowBusinessFeatures)
-              _Section(
-                label: t('RIÊNG TƯ', 'PRIVACY'),
-                children: [
-                  _Row(
-                    icon: Icons.share_outlined,
-                    iconBg: colors.primarySoft,
-                    iconColor: colors.primary,
-                    title: t('Trung tâm chia sẻ', 'Sharing Center'),
-                    subtitle: t('Nội dung cá nhân bạn đã chia sẻ', 'Personal content you have shared'),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SharingCenterScreen())),
-                  ),
-                ],
-              ),
             _Section(
               label: t('VỀ ỨNG DỤNG', 'ABOUT'),
               children: [
