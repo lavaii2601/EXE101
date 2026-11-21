@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../state/theme_controller.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_notice_dialog.dart';
 import 'client.dart';
 import 'session.dart';
 
@@ -51,11 +52,16 @@ const Map<String, String> _kGmailAuthErrorMessages = {
       'Tài khoản Google này đã được liên kết với một tài khoản FlowMate khác. Hãy đăng xuất khỏi tài khoản đó trên Google hoặc dùng một tài khoản Google khác.',
   'no_flowmate_account_for_google_identity':
       'Không tìm thấy tài khoản FlowMate nào từng liên kết với tài khoản Google này.',
-  'token_fetch_failed': 'Không thể hoàn tất xác thực với Google. Vui lòng thử lại.',
-  'invalid_oauth_state': 'Phiên liên kết Google đã hết hạn hoặc đã được dùng. Vui lòng thử lại.',
-  'flow_not_initialized': 'Không tìm thấy phiên liên kết Google. Vui lòng thử lại.',
-  'oauth_flow_unavailable': 'Google OAuth hiện chưa khả dụng. Vui lòng thử lại sau.',
-  'callback_error': 'Có lỗi xảy ra khi liên kết tài khoản Google. Vui lòng thử lại.',
+  'token_fetch_failed':
+      'Không thể hoàn tất xác thực với Google. Vui lòng thử lại.',
+  'invalid_oauth_state':
+      'Phiên liên kết Google đã hết hạn hoặc đã được dùng. Vui lòng thử lại.',
+  'flow_not_initialized':
+      'Không tìm thấy phiên liên kết Google. Vui lòng thử lại.',
+  'oauth_flow_unavailable':
+      'Google OAuth hiện chưa khả dụng. Vui lòng thử lại sau.',
+  'callback_error':
+      'Có lỗi xảy ra khi liên kết tài khoản Google. Vui lòng thử lại.',
 };
 
 /// RFC 7636 PKCE, generated app-side and applied to the backend->app
@@ -67,7 +73,8 @@ const Map<String, String> _kGmailAuthErrorMessages = {
 /// a POST body over HTTPS when redeeming the exchange_code, so an
 /// interceptor holding only the deep link's URL can't complete the exchange.
 ({String codeVerifier, String codeChallenge}) _generatePkcePair() {
-  final randomBytes = List<int>.generate(32, (_) => Random.secure().nextInt(256));
+  final randomBytes =
+      List<int>.generate(32, (_) => Random.secure().nextInt(256));
   final codeVerifier = _bytesToHex(randomBytes);
   final digest = sha256.convert(utf8.encode(codeVerifier));
   final codeChallenge = _base64ToBase64Url(base64.encode(digest.bytes));
@@ -78,7 +85,8 @@ const Map<String, String> _kGmailAuthErrorMessages = {
 /// cold-started Android after the OS reclaimed the process in the browser
 /// (see the pending-verifier comment in session.dart for why that matters
 /// here specifically).
-Future<({bool success, bool needsPassword})> consumeGoogleAuthCallback(Uri uri) async {
+Future<({bool success, bool needsPassword})> consumeGoogleAuthCallback(
+    Uri uri) async {
   const failure = (success: false, needsPassword: false);
   if (!isGoogleAuthCallback(uri)) return failure;
 
@@ -92,7 +100,8 @@ Future<({bool success, bool needsPassword})> consumeGoogleAuthCallback(Uri uri) 
         'exchange_code': exchangeCode,
         'code_verifier': codeVerifier,
       });
-      final accessToken = (data is Map ? data['access_token'] as String? : null) ?? '';
+      final accessToken =
+          (data is Map ? data['access_token'] as String? : null) ?? '';
       if (accessToken.isEmpty) return failure;
       await setMobileSession(
         userId: (data['user_id'] ?? data['email'] ?? '').toString(),
@@ -132,7 +141,8 @@ Future<({bool success, bool needsPassword})> consumeGoogleAuthCallback(Uri uri) 
 /// is the one exception: an existing account that only ever used Google (no
 /// password set yet) regains access, then must set one -- see
 /// GoogleAuthResult.needsPassword. There is no more implicit "login".
-Future<GoogleAuthResult> connectGoogleAccount(AppLinks appLinks, {String intent = 'link'}) async {
+Future<GoogleAuthResult> connectGoogleAccount(AppLinks appLinks,
+    {String intent = 'link'}) async {
   final pkce = _generatePkcePair();
   // Written before launching the browser, not after getting a result back --
   // an external browser (unlike RN's in-app auth session) can get this
@@ -149,7 +159,8 @@ Future<GoogleAuthResult> connectGoogleAccount(AppLinks appLinks, {String intent 
     await setMobileSession(
         userId: (data['user_id'] ?? data['email'] ?? '').toString(),
         accessToken: (data['access_token'] ?? '').toString());
-    return GoogleAuthResult(connected: true, needsPassword: data['needs_password'] == true);
+    return GoogleAuthResult(
+        connected: true, needsPassword: data['needs_password'] == true);
   }
   final authUrl = data is Map ? data['auth_url'] as String? : null;
   if (authUrl == null || authUrl.isEmpty) {
@@ -187,9 +198,11 @@ Future<GoogleAuthResult> connectGoogleAccount(AppLinks appLinks, {String intent 
     // _oauth_error_redirect) -- surface a specific message instead of
     // falling through to consumeGoogleAuthCallback's generic failure path.
     final conflictEmail = resultUri.queryParameters['email'] ?? '';
-    final message = errorCode == 'google_account_already_linked_elsewhere' && conflictEmail.isNotEmpty
+    final message = errorCode == 'google_account_already_linked_elsewhere' &&
+            conflictEmail.isNotEmpty
         ? 'Tài khoản Google $conflictEmail đã được liên kết với một tài khoản FlowMate khác. Hãy đăng xuất khỏi tài khoản đó trên Google hoặc dùng một tài khoản Google khác.'
-        : (_kGmailAuthErrorMessages[errorCode] ?? 'Không thể liên kết tài khoản Google. Vui lòng thử lại.');
+        : (_kGmailAuthErrorMessages[errorCode] ??
+            'Không thể liên kết tài khoản Google. Vui lòng thử lại.');
     throw GoogleAuthError(errorCode, message);
   }
   final result = await consumeGoogleAuthCallback(resultUri);
@@ -269,18 +282,12 @@ Future<void> showGoogleAuthErrorDialog(
       onRetry != null;
 
   if (!canRetry) {
-    return showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Đóng'),
-          ),
-        ],
-      ),
+    return showAppNoticeDialog(
+      context,
+      title: title,
+      message: message,
+      actionLabel: 'Đóng',
+      tone: AppNoticeTone.error,
     );
   }
 
@@ -298,7 +305,8 @@ Future<void> showGoogleAuthErrorDialog(
       return _GoogleAuthConflictCard(message: message, onRetry: onRetry);
     },
     transitionBuilder: (dialogContext, animation, secondaryAnimation, child) {
-      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+      final curved =
+          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
       return FadeTransition(
         opacity: curved,
         child: ScaleTransition(
@@ -320,7 +328,8 @@ class _GoogleAuthConflictCard extends StatelessWidget {
     final colors = context.watch<ThemeController>().colors;
     return Dialog(
       backgroundColor: colors.panel,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.card)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.card)),
       child: Padding(
         padding: const EdgeInsets.all(28),
         child: Column(
@@ -330,20 +339,26 @@ class _GoogleAuthConflictCard extends StatelessWidget {
               width: 56,
               height: 56,
               alignment: Alignment.center,
-              decoration: const BoxDecoration(color: Color(0xFFFFF3E0), shape: BoxShape.circle),
-              child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFE65100), size: 26),
+              decoration: const BoxDecoration(
+                  color: Color(0xFFFFF3E0), shape: BoxShape.circle),
+              child: const Icon(Icons.warning_amber_rounded,
+                  color: Color(0xFFE65100), size: 26),
             ),
             const SizedBox(height: 14),
             Text(
               'Tài khoản Google đã được liên kết',
               textAlign: TextAlign.center,
-              style: TextStyle(color: colors.text, fontWeight: FontWeight.w700, fontSize: 17),
+              style: TextStyle(
+                  color: colors.text,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 17),
             ),
             const SizedBox(height: 10),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: TextStyle(color: colors.textMuted, fontSize: 13.5, height: 1.5),
+              style: TextStyle(
+                  color: colors.textMuted, fontSize: 13.5, height: 1.5),
             ),
             const SizedBox(height: 22),
             Row(

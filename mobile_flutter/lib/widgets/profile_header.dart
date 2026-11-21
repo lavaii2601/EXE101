@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../config/user_modes.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
 
@@ -26,7 +25,6 @@ class ProfileHeader extends StatelessWidget {
     final avatarUrl = (profile?['avatar_url'] as String?) ?? '';
     final gmailReady = profile?['gmail_connected'] == true;
     final isPremium = (profile?['subscription']?['tier']) == 'premium';
-    final mode = getUserMode(profile?['user_mode'] as String?);
 
     return Container(
       constraints: const BoxConstraints(minHeight: 68),
@@ -66,19 +64,9 @@ class ProfileHeader extends StatelessWidget {
                     style: TextStyle(
                         color: colors.primary,
                         fontWeight: FontWeight.w800,
-                        fontSize: 11),
+                        fontSize: 12),
                   ),
-                  const SizedBox(height: 1),
-                  Text(
-                    '$name · ${mode.label}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: colors.textMuted,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w500),
-                  ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 5),
                   Row(
                     children: [
                       Container(

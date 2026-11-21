@@ -49,45 +49,23 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 18, 24, 14),
+                padding: const EdgeInsets.fromLTRB(20, 26, 20, 16),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 58,
-                      height: 58,
-                      decoration: BoxDecoration(
-                        boxShadow: [
-                          BoxShadow(
-                              color: const Color(0xFF0058DE)
-                                  .withValues(alpha: 0.28),
-                              blurRadius: 20,
-                              offset: const Offset(0, 8)),
-                        ],
-                      ),
-                      child: Image.asset('assets/images/logo.png',
-                          fit: BoxFit.contain),
-                    ),
-                    const SizedBox(height: 10),
-                    Text('FLOWMATE AI',
-                        style: TextStyle(
-                            color: colors.primary,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 11,
-                            letterSpacing: 1.4)),
-                    const SizedBox(height: 4),
-                    Text(t('Chọn chế độ của bạn', 'Choose your mode'),
+                    Text(
+                        t('Chọn chế độ sử dụng', 'Choose how you use FlowMate'),
                         style: TextStyle(
                             color: colors.text,
                             fontWeight: FontWeight.w900,
-                            fontSize: 24,
+                            fontSize: 23,
                             letterSpacing: -0.5)),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 7),
                     Text(
                       t(
-                        'FlowMate sẽ thay đổi ưu tiên email, gợi ý lịch và cách AI phản hồi theo vai trò.',
-                        'FlowMate adapts email priorities, schedule suggestions, and AI replies to your role.',
+                        'Chọn vai trò phù hợp nhất với công việc của bạn.',
+                        'Choose the role that best matches your work.',
                       ),
-                      textAlign: TextAlign.center,
                       style: TextStyle(
                           color: colors.textMuted, fontSize: 12.5, height: 1.4),
                     ),
@@ -111,7 +89,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 13, vertical: 11),
+                                    horizontal: 13, vertical: 10),
                                 decoration: BoxDecoration(
                                   color: active
                                       ? colors.primarySoft
@@ -134,8 +112,8 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                                 child: Row(
                                   children: [
                                     Container(
-                                      width: 42,
-                                      height: 42,
+                                      width: 36,
+                                      height: 36,
                                       decoration: BoxDecoration(
                                         color: active
                                             ? colors.primary
@@ -144,32 +122,18 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                                             AppRadius.control),
                                       ),
                                       child: Icon(mode.icon,
-                                          size: 18,
+                                          size: 17,
                                           color: active
                                               ? Colors.white
                                               : colors.primary),
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(mode.label,
-                                              style: TextStyle(
-                                                  color: colors.text,
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 14)),
-                                          const SizedBox(height: 3),
-                                          Text(mode.description,
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                  color: colors.textMuted,
-                                                  fontSize: 10.5,
-                                                  height: 1.3)),
-                                        ],
-                                      ),
+                                      child: Text(mode.label,
+                                          style: TextStyle(
+                                              color: colors.text,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 13.5)),
                                     ),
                                     Icon(
                                         active

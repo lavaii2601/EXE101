@@ -7,6 +7,7 @@ import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_notice_dialog.dart';
 import '../widgets/app_screen.dart';
 
 const _dayNamesVi = [
@@ -393,16 +394,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   void _showMessage(String title, String message) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context), child: const Text('OK'))
-        ],
-      ),
+    final t = context.read<LanguageController>().t;
+    showAppNoticeDialog(
+      context,
+      title: title,
+      message: message,
+      actionLabel: t('Đã hiểu', 'Got it'),
+      tone: AppNoticeTone.warning,
     );
   }
 
@@ -448,13 +446,17 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           title: t('Lịch', 'Calendar'),
           refreshing: loading,
           onRefresh: () => _load(syncGoogle: true),
-          actions: AppButton(
-            title: showForm ? t('Đóng', 'Close') : t('Tạo mới', 'New'),
-            variant: AppButtonVariant.secondary,
-            onPressed: () =>
-                showForm ? setState(() => showForm = false) : _openCreateForm(),
-          ),
           children: [
+            AppButton(
+              title: showForm ? t('Đóng', 'Close') : t('Tạo mới', 'New'),
+              icon: showForm ? Icons.close_rounded : Icons.add_rounded,
+              variant: showForm
+                  ? AppButtonVariant.secondary
+                  : AppButtonVariant.primary,
+              onPressed: () => showForm
+                  ? setState(() => showForm = false)
+                  : _openCreateForm(),
+            ),
             if (showForm)
               AppCard(
                 child: Column(

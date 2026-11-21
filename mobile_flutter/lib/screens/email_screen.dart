@@ -257,7 +257,6 @@ class _EmailScreenState extends State<EmailScreen> {
   bool authenticated = false;
   String filter = 'all';
 
-  bool showSearch = false;
   final searchController = TextEditingController();
   String searchKeyword = '';
   Timer? _searchDebounce;
@@ -413,8 +412,26 @@ class _EmailScreenState extends State<EmailScreen> {
     // EmailDetailScreen's "Chuyển tiếp" button pops with this signal instead
     // of opening the compose sheet itself -- the sheet lives here so it can
     // also be reused by the plain "new email" FAB.
-    if (result?['action'] == 'forward' && mounted) {
-      final forwarded = result!['email'] as Map<String, dynamic>;
+    if (!mounted || result == null) return;
+    if (result['action'] == 'reply') {
+      final replied = result['email'] as Map<String, dynamic>;
+      final rawSender = '${replied['sender'] ?? replied['from'] ?? ''}'.trim();
+      final addressMatch = RegExp(r'<([^>]+)>').firstMatch(rawSender);
+      final looseAddressMatch =
+          RegExp(r'[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}', caseSensitive: false)
+              .firstMatch(rawSender);
+      final replyTo = addressMatch?.group(1)?.trim() ??
+          looseAddressMatch?.group(0) ??
+          rawSender;
+      final subject = (replied['subject'] as String?) ?? '';
+      _openComposeSheet(
+        initialTo: replyTo,
+        initialSubject:
+            subject.toLowerCase().startsWith('re:') ? subject : 'Re: $subject',
+        mode: 'reply',
+      );
+    } else if (result['action'] == 'forward') {
+      final forwarded = result['email'] as Map<String, dynamic>;
       final subject = (forwarded['subject'] as String?) ?? '';
       final quoted = '\n\n---------- Forwarded message ---------\n'
           'Từ: ${forwarded['sender'] ?? forwarded['from'] ?? ''}\n'
@@ -520,7 +537,7 @@ class _EmailScreenState extends State<EmailScreen> {
     String initialTo = '',
     String initialSubject = '',
     String initialBody = '',
-    String mode = 'new', // 'new' | 'forward'
+    String mode = 'new', // 'new' | 'reply' | 'forward'
     String? forwardMessageId,
   }) {
     final toController = TextEditingController(text: initialTo);
@@ -647,7 +664,9 @@ class _EmailScreenState extends State<EmailScreen> {
                           Text(
                               mode == 'forward'
                                   ? t('Chuyển tiếp email', 'Forward email')
-                                  : t('Soạn email mới', 'New email'),
+                                  : mode == 'reply'
+                                      ? t('Trả lời email', 'Reply to email')
+                                      : t('Soạn email mới', 'New email'),
                               style: TextStyle(
                                   color: colors.text,
                                   fontWeight: FontWeight.w700,
@@ -741,7 +760,9 @@ class _EmailScreenState extends State<EmailScreen> {
                       AppButton(
                           title: mode == 'forward'
                               ? t('Chuyển tiếp', 'Forward')
-                              : t('Gửi email', 'Send email'),
+                              : mode == 'reply'
+                                  ? t('Gửi trả lời', 'Send reply')
+                                  : t('Gửi email', 'Send email'),
                           icon: AppIcons.emailSend,
                           onPressed: submit,
                           loading: sending),
@@ -780,6 +801,58 @@ class _EmailScreenState extends State<EmailScreen> {
             await _loadSuggestions();
           },
           children: [
+            TextField(
+              controller: searchController,
+              onChanged: (value) {
+                _onSearchChanged(value);
+                setState(() {});
+              },
+              style: TextStyle(color: colors.text, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: t('Tìm theo người gửi, tiêu đề...',
+                    'Search sender, subject...'),
+                hintStyle: TextStyle(color: colors.inputPlaceholder),
+                prefixIcon: Icon(AppIcons.emailSearch,
+                    size: 18, color: colors.textMuted),
+                suffixIcon: searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: Icon(AppIcons.emailSearchClear,
+                            size: 18, color: colors.textMuted),
+                        onPressed: () {
+                          searchController.clear();
+                          _onSearchChanged('');
+                          setState(() {});
+                        },
+                      )
+                    : null,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    title: t('Bộ lọc email', 'Email filters'),
+                    variant: AppButtonVariant.secondary,
+                    icon: AppIcons.emailFilter,
+                    onPressed: _openFilterSheet,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: AppButton(
+                    title: t('Đồng bộ email', 'Sync email'),
+                    icon: Icons.sync_rounded,
+                    loading: loading,
+                    onPressed: () async {
+                      await _load();
+                      await _loadSuggestions();
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -824,18 +897,6 @@ class _EmailScreenState extends State<EmailScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                _IconTrigger(
-                  icon: AppIcons.emailSearch,
-                  active: showSearch,
-                  onTap: () => setState(() => showSearch = !showSearch),
-                ),
-                const SizedBox(width: 8),
-                _IconTrigger(
-                  icon: AppIcons.emailFilter,
-                  active: !includeRead,
-                  onTap: _openFilterSheet,
-                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -879,44 +940,6 @@ class _EmailScreenState extends State<EmailScreen> {
                     .toList(),
               ),
             ),
-            if (showSearch) ...[
-              const SizedBox(height: 10),
-              TextField(
-                controller: searchController,
-                autofocus: true,
-                onChanged: _onSearchChanged,
-                style: TextStyle(color: colors.text, fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: t('Tìm theo người gửi, tiêu đề...',
-                      'Search sender, subject...'),
-                  hintStyle: TextStyle(color: colors.inputPlaceholder),
-                  prefixIcon: Icon(AppIcons.emailSearch,
-                      size: 18, color: colors.textMuted),
-                  suffixIcon: searchController.text.isNotEmpty
-                      ? IconButton(
-                          icon: Icon(AppIcons.emailSearchClear,
-                              size: 18, color: colors.textMuted),
-                          onPressed: () {
-                            searchController.clear();
-                            _onSearchChanged('');
-                          },
-                        )
-                      : null,
-                  filled: true,
-                  fillColor: colors.panelSoft,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: colors.border)),
-                  enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: colors.border)),
-                  focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: colors.primary)),
-                ),
-              ),
-            ],
             if (suggestions.isNotEmpty)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1228,34 +1251,6 @@ class _EmailScreenState extends State<EmailScreen> {
             const SizedBox(height: 64),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _IconTrigger extends StatelessWidget {
-  final IconData icon;
-  final bool active;
-  final VoidCallback onTap;
-  const _IconTrigger(
-      {required this.icon, required this.active, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.watch<ThemeController>().colors;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 38,
-        height: 38,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: active ? colors.primary : colors.panel,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: active ? colors.primary : colors.border),
-        ),
-        child:
-            Icon(icon, size: 18, color: active ? Colors.white : colors.primary),
       ),
     );
   }

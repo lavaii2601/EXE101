@@ -7,7 +7,9 @@ import '../api/client.dart';
 import '../config/app_icons.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
+import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_card.dart';
 
 /// aiQuota is the {action, allowed, used, limit, remaining} map every
 /// quota-gated AI route now returns on success (see utils/quota.py's
@@ -26,7 +28,8 @@ String _formatQuotaRemainingLabel(
 /// Mirrors mobile/src/utils (and web's equivalent) well enough for a simple
 /// attachment-size label -- no need for a package just for this.
 String _formatFileSize(dynamic rawSize) {
-  final bytes = rawSize is num ? rawSize.toDouble() : double.tryParse('$rawSize') ?? 0;
+  final bytes =
+      rawSize is num ? rawSize.toDouble() : double.tryParse('$rawSize') ?? 0;
   if (bytes <= 0) return '';
   const units = ['B', 'KB', 'MB', 'GB'];
   var value = bytes;
@@ -35,7 +38,8 @@ String _formatFileSize(dynamic rawSize) {
     value /= 1024;
     unitIndex++;
   }
-  final formatted = unitIndex == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(1);
+  final formatted =
+      unitIndex == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(1);
   return '$formatted ${units[unitIndex]}';
 }
 
@@ -50,9 +54,14 @@ String _formatFileSize(dynamic rawSize) {
 /// only fails to *paint*, so we also treat heavily-tabled markup as unsafe
 /// and fall back to the plain-text body instead of an empty white card.
 bool _htmlLooksRenderable(String html) {
-  final visibleText = html.replaceAll(RegExp(r'<[^>]*>'), ' ').replaceAll(RegExp(r'&[a-zA-Z#0-9]+;'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+  final visibleText = html
+      .replaceAll(RegExp(r'<[^>]*>'), ' ')
+      .replaceAll(RegExp(r'&[a-zA-Z#0-9]+;'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
   if (visibleText.length < 40) return false;
-  final tableCount = RegExp(r'<table', caseSensitive: false).allMatches(html).length;
+  final tableCount =
+      RegExp(r'<table', caseSensitive: false).allMatches(html).length;
   return tableCount < 3;
 }
 
@@ -100,12 +109,14 @@ List<_EmailSummarySection> _parseEmailSummarySections(String summary) {
       orElse: () => '',
     );
     if (matchedHeader.isNotEmpty) {
-      sections.add(_EmailSummarySection(matchedHeader, lines.skip(1).join('\n').trim()));
+      sections.add(
+          _EmailSummarySection(matchedHeader, lines.skip(1).join('\n').trim()));
     } else if (sections.isNotEmpty) {
       // A stray blank line inside one section's own body must not be
       // mistaken for the start of a new, untitled section.
       final last = sections.removeLast();
-      sections.add(_EmailSummarySection(last.title, '${last.body}\n\n$block'.trim()));
+      sections.add(
+          _EmailSummarySection(last.title, '${last.body}\n\n$block'.trim()));
     } else {
       sections.add(_EmailSummarySection(null, block.trim()));
     }
@@ -113,10 +124,12 @@ List<_EmailSummarySection> _parseEmailSummarySections(String summary) {
   return sections.where((section) => section.body.isNotEmpty).toList();
 }
 
-Widget _buildEmailSummarySections(String summary, AppColors colors, String Function(String, [String?]) t) {
+Widget _buildEmailSummarySections(
+    String summary, AppColors colors, String Function(String, [String?]) t) {
   final sections = _parseEmailSummarySections(summary);
   if (sections.isEmpty) {
-    return Text(summary, style: TextStyle(color: colors.text, fontSize: 13.5, height: 1.5));
+    return Text(summary,
+        style: TextStyle(color: colors.text, fontSize: 13.5, height: 1.5));
   }
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,8 +137,12 @@ Widget _buildEmailSummarySections(String summary, AppColors colors, String Funct
       final title = section.title;
       final icon = title != null ? _summarySectionIcons[title] : null;
       final labels = title != null ? _summarySectionLabels[title] : null;
-      final lines = section.body.split('\n').where((line) => line.trim().isNotEmpty).toList();
-      final isBulletList = lines.isNotEmpty && lines.every((line) => line.trim().startsWith('-'));
+      final lines = section.body
+          .split('\n')
+          .where((line) => line.trim().isNotEmpty)
+          .toList();
+      final isBulletList = lines.isNotEmpty &&
+          lines.every((line) => line.trim().startsWith('-'));
       return Padding(
         padding: const EdgeInsets.only(top: 8),
         child: Column(
@@ -137,11 +154,15 @@ Widget _buildEmailSummarySections(String summary, AppColors colors, String Funct
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (icon != null) Icon(icon, size: 14, color: colors.primary),
+                    if (icon != null)
+                      Icon(icon, size: 14, color: colors.primary),
                     if (icon != null) const SizedBox(width: 5),
                     Text(
                       labels != null ? t(labels[0], labels[1]) : title,
-                      style: TextStyle(color: colors.text, fontWeight: FontWeight.w700, fontSize: 11.5),
+                      style: TextStyle(
+                          color: colors.text,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11.5),
                     ),
                   ],
                 ),
@@ -151,11 +172,14 @@ Widget _buildEmailSummarySections(String summary, AppColors colors, String Funct
                     padding: const EdgeInsets.only(bottom: 2),
                     child: Text(
                       '•  ${line.trim().replaceFirst(RegExp(r'^[-•]\s*'), '')}',
-                      style: TextStyle(color: colors.text, fontSize: 13.5, height: 1.5),
+                      style: TextStyle(
+                          color: colors.text, fontSize: 13.5, height: 1.5),
                     ),
                   ))
             else
-              Text(section.body, style: TextStyle(color: colors.text, fontSize: 13.5, height: 1.5)),
+              Text(section.body,
+                  style: TextStyle(
+                      color: colors.text, fontSize: 13.5, height: 1.5)),
           ],
         ),
       );
@@ -246,7 +270,10 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
           body = fetched;
           htmlBody = fetchedHtml;
           attachments = fetchedAttachments is List
-              ? fetchedAttachments.whereType<Map>().map((a) => a.cast<String, dynamic>()).toList()
+              ? fetchedAttachments
+                  .whereType<Map>()
+                  .map((a) => a.cast<String, dynamic>())
+                  .toList()
               : [];
         });
       }
@@ -303,7 +330,8 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
           .replaceFirst(RegExp(r'^\.+'), '')
           .trim();
       final filename = safeName.isEmpty ? 'attachment' : safeName;
-      final file = File('${Directory.systemTemp.path}${Platform.pathSeparator}$filename');
+      final file = File(
+          '${Directory.systemTemp.path}${Platform.pathSeparator}$filename');
       await file.writeAsBytes(bytes);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -326,192 +354,287 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
     final colors = context.watch<ThemeController>().colors;
     final t = context.watch<LanguageController>().t;
     final email = widget.email;
-    final sender = (email['sender'] as String?) ?? (email['from'] as String?) ?? '';
-    final subject = (email['subject'] as String?)?.isNotEmpty == true ? email['subject'] as String : t('(Không tiêu đề)', '(No subject)');
+    final sender =
+        (email['sender'] as String?) ?? (email['from'] as String?) ?? '';
+    final subject = (email['subject'] as String?)?.isNotEmpty == true
+        ? email['subject'] as String
+        : t('(Không tiêu đề)', '(No subject)');
     final htmlHasText = htmlBody.isNotEmpty && _htmlLooksRenderable(htmlBody);
 
     return Scaffold(
-      backgroundColor: colors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 6, 20, 6),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: Icon(AppIcons.emailBack, color: colors.text),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  Expanded(
-                    child: Text(t('Chi tiết email', 'Email detail'),
-                        style: TextStyle(color: colors.text, fontWeight: FontWeight.w700, fontSize: 17)),
-                  ),
-                  if (widget.onToggleRead != null)
+      backgroundColor: Colors.transparent,
+      body: FlowMateBackdrop(
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 6, 20, 6),
+                child: Row(
+                  children: [
                     IconButton(
-                      icon: togglingRead
-                          ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: colors.primary))
-                          : Icon(isUnread ? Icons.mail_outline : Icons.mark_email_unread_outlined, color: colors.primary),
-                      tooltip: isUnread ? t('Đánh dấu đã đọc', 'Mark as read') : t('Đánh dấu chưa đọc', 'Mark as unread'),
-                      onPressed: togglingRead ? null : _toggleRead,
+                      icon: Icon(AppIcons.emailBack, color: colors.text),
+                      onPressed: () => Navigator.pop(context),
                     ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
-                children: [
-                  Text(subject, style: TextStyle(color: colors.text, fontWeight: FontWeight.w800, fontSize: 20, height: 1.3)),
-                  const SizedBox(height: 8),
-                  Text(sender, style: TextStyle(color: colors.textMuted, fontSize: 13)),
-                  const SizedBox(height: 20),
-                  if (summary.isNotEmpty && summaryRequested)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      margin: const EdgeInsets.only(bottom: 16),
-                      decoration: BoxDecoration(
-                        color: colors.panelSoft,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border(left: BorderSide(color: colors.primary, width: 3)),
+                    Expanded(
+                      child: Text(t('Chi tiết email', 'Email detail'),
+                          style: TextStyle(
+                              color: colors.text,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 17)),
+                    ),
+                    if (widget.onToggleRead != null)
+                      IconButton(
+                        icon: togglingRead
+                            ? SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: colors.primary))
+                            : Icon(
+                                isUnread
+                                    ? Icons.mail_outline
+                                    : Icons.mark_email_unread_outlined,
+                                color: colors.primary),
+                        tooltip: isUnread
+                            ? t('Đánh dấu đã đọc', 'Mark as read')
+                            : t('Đánh dấu chưa đọc', 'Mark as unread'),
+                        onPressed: togglingRead ? null : _toggleRead,
                       ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+                  children: [
+                    AppCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(t('AI TÓM TẮT', 'AI SUMMARY'), style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1)),
-                          const SizedBox(height: 6),
-                          _buildEmailSummarySections(summary, colors, t),
-                          if (_formatQuotaRemainingLabel(summaryQuota, t).isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Text(_formatQuotaRemainingLabel(summaryQuota, t),
-                                style: TextStyle(color: colors.textMuted, fontSize: 11.5, fontWeight: FontWeight.w600)),
-                          ],
+                          Text(subject,
+                              style: TextStyle(
+                                  color: colors.text,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 20,
+                                  height: 1.3)),
+                          const SizedBox(height: 8),
+                          Text(sender,
+                              style: TextStyle(
+                                  color: colors.textMuted, fontSize: 13)),
                         ],
                       ),
                     ),
-                  if (summaryError != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Text(summaryError!, style: TextStyle(color: colors.danger, fontSize: 12.5)),
-                    ),
-                  AppButton(
-                    title: summaryType == 'ai_cached' ? t('Tóm tắt lại bằng AI', 'Re-summarize with AI') : t('Tóm tắt bằng AI', 'Summarize with AI'),
-                    variant: AppButtonVariant.secondary,
-                    icon: AppIcons.emailSummarize,
-                    onPressed: _summarize,
-                    loading: summarizing,
-                  ),
-                  const SizedBox(height: 10),
-                  AppButton(
-                    title: t('Chuyển tiếp', 'Forward'),
-                    variant: AppButtonVariant.secondary,
-                    onPressed: () => Navigator.pop(context, {
-                      'action': 'forward',
-                      // body/widget.email['body'] can differ: _loadBody()
-                      // fetches the full content into this screen's own
-                      // state, separate from the snippet-only map the list
-                      // originally passed in -- use whichever is richer so
-                      // the forwarded quote isn't just the list snippet.
-                      'email': {
-                        ...email,
-                        if (body.isNotEmpty) 'body': body,
-                      },
-                    }),
-                  ),
-                  if (attachments.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      '${t('ĐÍNH KÈM', 'ATTACHMENTS')} (${attachments.length})',
-                      style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1),
-                    ),
-                    const SizedBox(height: 8),
-                    ...attachments.map((attachment) {
-                      final attachmentId = '${attachment['id']}';
-                      final filename = (attachment['filename'] as String?) ?? t('Tệp đính kèm', 'Attachment');
-                      final sizeLabel = _formatFileSize(attachment['size']);
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    const SizedBox(height: 12),
+                    if (summary.isNotEmpty && summaryRequested)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(
                           color: colors.panelSoft,
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border(
+                              left:
+                                  BorderSide(color: colors.primary, width: 3)),
                         ),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.attach_file, size: 18, color: colors.textMuted),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(filename, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 13)),
-                                  if (sizeLabel.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 2),
-                                      child: Text(sizeLabel, style: TextStyle(color: colors.textMuted, fontSize: 11.5)),
-                                    ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            downloadingAttachmentId == attachmentId
-                                ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: colors.primary))
-                                : IconButton(
-                                    icon: Icon(Icons.download_outlined, color: colors.primary, size: 20),
-                                    tooltip: t('Tải xuống', 'Download'),
-                                    onPressed: () => _downloadAttachment(attachment),
-                                  ),
+                            Text(t('AI TÓM TẮT', 'AI SUMMARY'),
+                                style: TextStyle(
+                                    color: colors.primary,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 10,
+                                    letterSpacing: 1)),
+                            const SizedBox(height: 6),
+                            _buildEmailSummarySections(summary, colors, t),
+                            if (_formatQuotaRemainingLabel(summaryQuota, t)
+                                .isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Text(_formatQuotaRemainingLabel(summaryQuota, t),
+                                  style: TextStyle(
+                                      color: colors.textMuted,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600)),
+                            ],
                           ],
                         ),
-                      );
-                    }),
-                  ],
-                  const SizedBox(height: 22),
-                  Divider(color: colors.border),
-                  const SizedBox(height: 18),
-                  if (loadingBody)
-                    const Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator()))
-                  else if (bodyError != null)
-                    Text('${t('Không tải được nội dung', 'Could not load content')}: $bodyError', style: TextStyle(color: colors.danger, fontSize: 13))
-                  else if (htmlHasText)
-                    // HTML emails assume a white reading surface and often set
-                    // their own inline background/text colors (which win over
-                    // our style map, same as a real browser's cascade) --
-                    // fighting that to force dark-mode text is unreliable, so
-                    // this mirrors how Gmail/Outlook render email bodies: a
-                    // fixed white card regardless of the app's theme.
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
-                      child: Html(
-                        data: htmlBody,
-                        onLinkTap: (url, attributes, element) {
-                          if (url != null) launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-                        },
-                        style: {
-                          'body': Style(
-                            margin: Margins.zero,
-                            padding: HtmlPaddings.zero,
-                            color: const Color(0xFF1A1A1A),
-                            fontSize: FontSize(14),
-                            lineHeight: const LineHeight(1.6),
-                          ),
-                          'a': Style(color: colors.primary, textDecoration: TextDecoration.underline),
-                        },
                       ),
-                    )
-                  else
-                    SelectableText(
-                      body.isEmpty ? ((email['snippet'] as String?) ?? '') : body,
-                      style: TextStyle(color: colors.text, fontSize: 14, height: 1.6),
+                    if (summaryError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(summaryError!,
+                            style: TextStyle(
+                                color: colors.danger, fontSize: 12.5)),
+                      ),
+                    AppButton(
+                      title: t('Trả lời', 'Reply'),
+                      icon: Icons.reply_rounded,
+                      onPressed: () => Navigator.pop(context, {
+                        'action': 'reply',
+                        'email': {
+                          ...email,
+                          if (body.isNotEmpty) 'body': body,
+                        },
+                      }),
                     ),
-                ],
+                    const SizedBox(height: 10),
+                    AppButton(
+                      title: t('Chuyển tiếp', 'Forward'),
+                      variant: AppButtonVariant.secondary,
+                      onPressed: () => Navigator.pop(context, {
+                        'action': 'forward',
+                        // body/widget.email['body'] can differ: _loadBody()
+                        // fetches the full content into this screen's own
+                        // state, separate from the snippet-only map the list
+                        // originally passed in -- use whichever is richer so
+                        // the forwarded quote isn't just the list snippet.
+                        'email': {
+                          ...email,
+                          if (body.isNotEmpty) 'body': body,
+                        },
+                      }),
+                    ),
+                    const SizedBox(height: 10),
+                    AppButton(
+                      title: summaryType == 'ai_cached'
+                          ? t('Tóm tắt lại bằng AI', 'Re-summarize with AI')
+                          : t('Tóm tắt bằng AI', 'Summarize with AI'),
+                      variant: AppButtonVariant.secondary,
+                      icon: AppIcons.emailSummarize,
+                      onPressed: _summarize,
+                      loading: summarizing,
+                    ),
+                    if (attachments.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        '${t('ĐÍNH KÈM', 'ATTACHMENTS')} (${attachments.length})',
+                        style: TextStyle(
+                            color: colors.primary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10,
+                            letterSpacing: 1),
+                      ),
+                      const SizedBox(height: 8),
+                      ...attachments.map((attachment) {
+                        final attachmentId = '${attachment['id']}';
+                        final filename = (attachment['filename'] as String?) ??
+                            t('Tệp đính kèm', 'Attachment');
+                        final sizeLabel = _formatFileSize(attachment['size']);
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: colors.panelSoft,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.attach_file,
+                                  size: 18, color: colors.textMuted),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(filename,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                            color: colors.text,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 13)),
+                                    if (sizeLabel.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text(sizeLabel,
+                                            style: TextStyle(
+                                                color: colors.textMuted,
+                                                fontSize: 11.5)),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              downloadingAttachmentId == attachmentId
+                                  ? SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: colors.primary))
+                                  : IconButton(
+                                      icon: Icon(Icons.download_outlined,
+                                          color: colors.primary, size: 20),
+                                      tooltip: t('Tải xuống', 'Download'),
+                                      onPressed: () =>
+                                          _downloadAttachment(attachment),
+                                    ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                    const SizedBox(height: 22),
+                    Divider(color: colors.border),
+                    const SizedBox(height: 18),
+                    if (loadingBody)
+                      const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 40),
+                          child: Center(child: CircularProgressIndicator()))
+                    else if (bodyError != null)
+                      Text(
+                          '${t('Không tải được nội dung', 'Could not load content')}: $bodyError',
+                          style: TextStyle(color: colors.danger, fontSize: 13))
+                    else if (htmlHasText)
+                      // HTML emails assume a white reading surface and often set
+                      // their own inline background/text colors (which win over
+                      // our style map, same as a real browser's cascade) --
+                      // fighting that to force dark-mode text is unreliable, so
+                      // this mirrors how Gmail/Outlook render email bodies: a
+                      // fixed white card regardless of the app's theme.
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14)),
+                        child: Html(
+                          data: htmlBody,
+                          onLinkTap: (url, attributes, element) {
+                            if (url != null) {
+                              launchUrl(Uri.parse(url),
+                                  mode: LaunchMode.externalApplication);
+                            }
+                          },
+                          style: {
+                            'body': Style(
+                              margin: Margins.zero,
+                              padding: HtmlPaddings.zero,
+                              color: const Color(0xFF1A1A1A),
+                              fontSize: FontSize(14),
+                              lineHeight: const LineHeight(1.6),
+                            ),
+                            'a': Style(
+                                color: colors.primary,
+                                textDecoration: TextDecoration.underline),
+                          },
+                        ),
+                      )
+                    else
+                      SelectableText(
+                        body.isEmpty
+                            ? ((email['snippet'] as String?) ?? '')
+                            : body,
+                        style: TextStyle(
+                            color: colors.text, fontSize: 14, height: 1.6),
+                      ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

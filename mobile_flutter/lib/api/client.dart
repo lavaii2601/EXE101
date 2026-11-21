@@ -7,6 +7,7 @@ import 'package:http_parser/http_parser.dart';
 import 'config.dart';
 import 'nav_key.dart';
 import 'session.dart';
+import '../widgets/app_notice_dialog.dart';
 
 // The http package applies no timeout on its own -- a silently-dropped
 // connection (e.g. DNS/network trouble reaching kApiBase) would otherwise
@@ -71,23 +72,15 @@ void _handleUnauthorized(Map<String, dynamic> data) {
     // days with no way for the user to get back to a clean login screen.
     _onSessionRevoked?.call();
   }
-  showDialog<void>(
-    context: context,
+  showAppNoticeDialog(
+    context,
+    title: googleOnly ? 'Cần kết nối lại Google' : 'Cần đăng nhập lại',
+    message: googleOnly
+        ? 'FlowMate vẫn đang đăng nhập, nhưng quyền Gmail/Calendar cần được cấp lại trong tab Cài đặt.'
+        : 'Phiên FlowMate trên thiết bị đã hết hạn. Vui lòng đăng nhập lại để tiếp tục đồng bộ.',
+    actionLabel: 'Đã hiểu',
+    tone: AppNoticeTone.warning,
     barrierDismissible: false,
-    builder: (dialogContext) => AlertDialog(
-      title: Text(googleOnly ? 'Cần kết nối lại Google' : 'Cần đăng nhập lại'),
-      content: Text(
-        googleOnly
-            ? 'FlowMate vẫn đang đăng nhập, nhưng quyền Gmail/Calendar cần được cấp lại trong tab Cài đặt.'
-            : 'Phiên FlowMate trên thiết bị đã hết hạn. Vui lòng đăng nhập lại để tiếp tục đồng bộ.',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(),
-          child: const Text('Đã hiểu'),
-        ),
-      ],
-    ),
   ).then((_) => _authAlertActive = false);
 }
 
@@ -185,8 +178,7 @@ Future<Uint8List> apiGetBytes(String path) async {
       await _httpClient.get(uri, headers: headers).timeout(_kRequestTimeout);
   if (response.statusCode < 200 || response.statusCode >= 300) {
     if (response.statusCode == 401) _handleUnauthorized({});
-    throw ApiException(
-        'HTTP ${response.statusCode}', response.statusCode, {});
+    throw ApiException('HTTP ${response.statusCode}', response.statusCode, {});
   }
   return response.bodyBytes;
 }
@@ -243,12 +235,14 @@ Future<dynamic> apiPostMultipart(
   for (final attachment in attachments) {
     if (attachment.bytes != null) {
       request.files.add(http.MultipartFile.fromBytes(
-        'attachments', attachment.bytes!,
+        'attachments',
+        attachment.bytes!,
         filename: attachment.filename,
       ));
     } else if (attachment.path != null) {
       request.files.add(await http.MultipartFile.fromPath(
-        'attachments', attachment.path!,
+        'attachments',
+        attachment.path!,
         filename: attachment.filename,
       ));
     }
@@ -262,13 +256,15 @@ Future<dynamic> apiPostMultipart(
         image.mimeType != null ? MediaType.parse(image.mimeType!) : null;
     if (image.bytes != null) {
       request.files.add(http.MultipartFile.fromBytes(
-        'inline_images', image.bytes!,
+        'inline_images',
+        image.bytes!,
         filename: image.filename,
         contentType: contentType,
       ));
     } else if (image.path != null) {
       request.files.add(await http.MultipartFile.fromPath(
-        'inline_images', image.path!,
+        'inline_images',
+        image.path!,
         filename: image.filename,
         contentType: contentType,
       ));

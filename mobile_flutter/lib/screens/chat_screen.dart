@@ -85,8 +85,9 @@ class _ChatScreenState extends State<ChatScreen> {
         'mode': 'worker',
         'session_id': sessionId,
       });
-      if (data is Map && data['session_id'] != null)
+      if (data is Map && data['session_id'] != null) {
         sessionId = data['session_id'] as String;
+      }
       final t = mounted ? context.read<LanguageController>().t : null;
       setState(() {
         messages.add(_ChatMessage(
@@ -169,12 +170,14 @@ class _ChatScreenState extends State<ChatScreen> {
         final userText = ((item['user_message'] as String?) ?? '').trim();
         final assistantText =
             ((item['assistant_response'] as String?) ?? '').trim();
-        if (userText.isNotEmpty)
+        if (userText.isNotEmpty) {
           loaded.add(_ChatMessage(
               id: '${item['id']}-u', role: 'user', text: userText));
-        if (assistantText.isNotEmpty)
+        }
+        if (assistantText.isNotEmpty) {
           loaded.add(_ChatMessage(
               id: '${item['id']}-a', role: 'assistant', text: assistantText));
+        }
       }
       setState(() {
         messages
@@ -190,6 +193,13 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _runSuggestion(String suggestion) {
+    inputController
+      ..text = suggestion
+      ..selection = TextSelection.collapsed(offset: suggestion.length);
+    _send();
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.watch<ThemeController>().colors;
@@ -201,40 +211,32 @@ class _ChatScreenState extends State<ChatScreen> {
         top: false,
         child: Column(
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                  color: colors.panel,
-                  border: Border(bottom: BorderSide(color: colors.border))),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 10, 10),
               child: Row(
                 children: [
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('WORKER MODE',
-                            style: TextStyle(
-                                color: colors.primary,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 10,
-                                letterSpacing: 1)),
-                        Text('FlowMate Agent',
-                            style: TextStyle(
-                                color: colors.text,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 20)),
-                      ],
+                    child: Text(
+                      t('Chat với Bob', 'Chat with Bob'),
+                      style: TextStyle(
+                        color: colors.text,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 22,
+                        letterSpacing: -0.4,
+                      ),
                     ),
                   ),
-                  TextButton(
+                  IconButton(
+                    tooltip: t('Lịch sử chat', 'Chat history'),
                     onPressed: sessionId.isEmpty ? null : _openSessions,
-                    child: Text(t('Lịch sử', 'History'),
-                        style: TextStyle(color: colors.primary)),
+                    icon: Icon(Icons.history_rounded,
+                        color: colors.textMuted, size: 21),
                   ),
-                  TextButton(
+                  IconButton(
+                    tooltip: t('Chat mới', 'New chat'),
                     onPressed: sessionId.isEmpty ? null : _startNewChat,
-                    child: Text(t('Chat mới', 'New chat'),
-                        style: TextStyle(color: colors.primary)),
+                    icon: Icon(Icons.add_rounded,
+                        color: colors.primary, size: 25),
                   ),
                 ],
               ),
@@ -243,12 +245,52 @@ class _ChatScreenState extends State<ChatScreen> {
               child: messages.isEmpty
                   ? Center(
                       child: Padding(
-                        padding: const EdgeInsets.all(30),
-                        child: Text(
-                          t('Giao việc để agent đọc email, kiểm tra lịch, tóm tắt công việc hoặc chuẩn bị lịch hẹn.',
-                              'Ask the agent to read email, check your schedule, summarize work, or prep a meeting.'),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: colors.textMuted),
+                        padding: const EdgeInsets.fromLTRB(30, 20, 30, 8),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 68,
+                              height: 68,
+                              decoration: BoxDecoration(
+                                color: colors.panel.withValues(alpha: 0.72),
+                                borderRadius: BorderRadius.circular(22),
+                                border: Border.all(color: colors.border),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color:
+                                        colors.primary.withValues(alpha: 0.14),
+                                    blurRadius: 22,
+                                    offset: const Offset(0, 9),
+                                  ),
+                                ],
+                              ),
+                              padding: const EdgeInsets.all(8),
+                              child: Image.asset('assets/images/logo.png'),
+                            ),
+                            const SizedBox(height: 18),
+                            Text(
+                              t('Hôm nay Bob có thể giúp gì cho bạn?',
+                                  'How can Bob help you today?'),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: colors.text,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 18,
+                                height: 1.25,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              t('Giao việc để Bob đọc email, kiểm tra lịch, tóm tắt công việc hoặc chuẩn bị lịch hẹn.',
+                                  'Ask Bob to read email, check your schedule, summarize work, or prep a meeting.'),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  color: colors.textMuted,
+                                  fontSize: 12,
+                                  height: 1.45),
+                            ),
+                          ],
                         ),
                       ),
                     )
@@ -314,49 +356,120 @@ class _ChatScreenState extends State<ChatScreen> {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: CircularProgressIndicator(
                       color: colors.primary, strokeWidth: 2)),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                  color: colors.panel,
-                  border: Border(top: BorderSide(color: colors.border))),
-              child: Row(
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+              child: Column(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: inputController,
-                      minLines: 1,
-                      maxLines: 4,
-                      style: TextStyle(color: colors.text, fontSize: 13),
-                      decoration: InputDecoration(
-                        hintText: t('Nhập tin nhắn...', 'Type a message...'),
-                        hintStyle: TextStyle(color: colors.inputPlaceholder),
-                        filled: true,
-                        fillColor: colors.panelSoft,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(color: colors.border)),
-                        enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(color: colors.border)),
-                        focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(color: colors.primary)),
-                      ),
+                  if (messages.isEmpty) ...[
+                    _SuggestionTile(
+                      label: t('Tóm tắt công việc hôm nay',
+                          "Summarize today's work"),
+                      onTap: _runSuggestion,
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  IntrinsicWidth(
-                    child: AppButton(
-                        title: t('Gửi', 'Send'),
-                        onPressed: loading ? null : _send,
-                        loading: false),
+                    _SuggestionTile(
+                      label: t('Email nào cần phản hồi?',
+                          'Which emails need a reply?'),
+                      onTap: _runSuggestion,
+                    ),
+                    _SuggestionTile(
+                      label: t('Lịch hôm nay của tôi', "Today's schedule"),
+                      onTap: _runSuggestion,
+                    ),
+                  ],
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(14, 3, 5, 3),
+                    decoration: BoxDecoration(
+                      color: colors.panel,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: colors.border),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 12,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: inputController,
+                            minLines: 1,
+                            maxLines: 4,
+                            style: TextStyle(color: colors.text, fontSize: 13),
+                            decoration: InputDecoration(
+                              hintText: t('Bạn muốn xử lý việc gì?',
+                                  'What would you like to handle?'),
+                              hintStyle:
+                                  TextStyle(color: colors.inputPlaceholder),
+                              filled: false,
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                          ),
+                        ),
+                        IconButton.filled(
+                          onPressed: loading ? null : _send,
+                          style: IconButton.styleFrom(
+                            backgroundColor: colors.primary,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size(38, 38),
+                          ),
+                          icon:
+                              const Icon(Icons.arrow_upward_rounded, size: 19),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SuggestionTile extends StatelessWidget {
+  final String label;
+  final ValueChanged<String> onTap;
+
+  const _SuggestionTile({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.watch<ThemeController>().colors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: colors.panel.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => onTap(label),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: colors.textMuted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Icon(Icons.north_east_rounded, color: colors.primary, size: 15),
+              ],
+            ),
+          ),
         ),
       ),
     );

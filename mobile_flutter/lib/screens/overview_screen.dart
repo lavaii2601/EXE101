@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/client.dart';
 import '../api/google_auth.dart';
+import '../config/user_modes.dart';
 import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
@@ -12,7 +13,8 @@ import '../widgets/app_screen.dart';
 
 class OverviewScreen extends StatefulWidget {
   final void Function(int tabIndex)? onNavigate;
-  const OverviewScreen({super.key, this.onNavigate});
+  final VoidCallback? onChangeMode;
+  const OverviewScreen({super.key, this.onNavigate, this.onChangeMode});
 
   @override
   State<OverviewScreen> createState() => _OverviewScreenState();
@@ -84,8 +86,9 @@ class _OverviewScreenState extends State<OverviewScreen> {
 
   void _handleWorkspaceSync() {
     final appState = _appState;
-    if (appState == null || appState.syncRevision == _lastHandledSyncRevision)
+    if (appState == null || appState.syncRevision == _lastHandledSyncRevision) {
       return;
+    }
     _lastHandledSyncRevision = appState.syncRevision;
     final targets = appState.lastSyncTargets;
     if (targets.contains('overview') ||
@@ -169,6 +172,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
     final appState = context.watch<AppState>();
     final name = (appState.profile?['name'] as String?) ?? '';
     final gmailConnected = appState.profile?['gmail_connected'] == true;
+    final mode = getUserMode(appState.profile?['user_mode'] as String?);
 
     final checklistItems = _buildChecklistItems();
     final completedCount =
@@ -203,48 +207,54 @@ class _OverviewScreenState extends State<OverviewScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(date,
-                                style: TextStyle(
-                                    color: colors.primary,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 10,
-                                    letterSpacing: 1)),
-                            const SizedBox(height: 2),
-                            Text(_greeting('', '', name),
-                                style: TextStyle(
-                                    color: colors.text,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 18)),
-                          ],
-                        ),
-                      ),
-                      Container(
+                  Text(date,
+                      style: TextStyle(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 10,
+                          letterSpacing: 1)),
+                  const SizedBox(height: 2),
+                  Text(_greeting('', '', name),
+                      style: TextStyle(
+                          color: colors.text,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 18)),
+                  const SizedBox(height: 10),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: widget.onChangeMode,
+                      child: Container(
+                        width: double.infinity,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 8),
+                            horizontal: 12, vertical: 9),
                         decoration: BoxDecoration(
-                            color: colors.primary,
-                            borderRadius: BorderRadius.circular(12)),
-                        child: Column(
+                          color: colors.panel.withValues(alpha: 0.68),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: colors.border.withValues(alpha: 0.8)),
+                        ),
+                        child: Row(
                           children: [
-                            Text('${schedules.length + emails.length}',
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 18)),
-                            Text(t('việc cần xem', 'to review'),
-                                style: const TextStyle(
-                                    color: Colors.white, fontSize: 9)),
+                            Icon(mode.icon, size: 16, color: colors.primary),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                mode.label,
+                                style: TextStyle(
+                                  color: colors.text,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                            ),
+                            Icon(Icons.keyboard_arrow_down_rounded,
+                                size: 18, color: colors.textMuted),
                           ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -272,7 +282,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                     child: _StatCard(
-                        label: t('Task', 'Tasks'), value: schedules.length)),
+                        label: t('Lịch', 'Calendar'), value: schedules.length)),
               ],
             ),
             if (!gmailConnected)
@@ -331,43 +341,63 @@ class _OverviewScreenState extends State<OverviewScreen> {
                 ),
               ),
             AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Text(t('ĐẾM NGƯỢC', 'COUNTDOWN'),
-                      style: TextStyle(
-                          color: colors.primary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 10,
-                          letterSpacing: 1)),
-                  const SizedBox(height: 2),
-                  Text(t('Deadline gần nhất', 'Nearest deadline'),
-                      style: TextStyle(
-                          color: colors.text,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14)),
-                  const SizedBox(height: 10),
-                  if (deadlines.isEmpty)
-                    AppEmptyState(
-                        icon: Icons.flag_outlined,
-                        title: t('Không có deadline sắp tới',
-                            'No upcoming deadlines'))
-                  else
-                    ...deadlines.take(3).map((d) => Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Row(
-                            children: [
-                              Icon(Icons.flag, size: 14, color: colors.danger),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                  child: Text(d['title'] as String? ?? '',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                          color: colors.text, fontSize: 13))),
-                            ],
-                          ),
-                        )),
+                  Container(
+                    width: 38,
+                    height: 38,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: colors.warning.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.flag_outlined,
+                        size: 18, color: colors.warning),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(t('ƯU TIÊN', 'PRIORITY'),
+                            style: TextStyle(
+                                color: colors.warning,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 9.5,
+                                letterSpacing: 0.8)),
+                        const SizedBox(height: 2),
+                        Text(
+                          deadlines.isEmpty
+                              ? t('Không có deadline sắp tới',
+                                  'No upcoming deadlines')
+                              : (deadlines.first['title'] as String? ??
+                                  t('Deadline gần nhất', 'Nearest deadline')),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: colors.text,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (deadlines.length > 1)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: colors.panelSoft,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text('+${deadlines.length - 1}',
+                          style: TextStyle(
+                              color: colors.textMuted,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 10)),
+                    ),
                 ],
               ),
             ),
@@ -392,12 +422,23 @@ class _OverviewScreenState extends State<OverviewScreen> {
                                     color: colors.text,
                                     fontWeight: FontWeight.w600,
                                     fontSize: 14)),
-                            const SizedBox(height: 4),
-                            Text(
-                                '$completedCount/${checklistItems.length} ${t('đã xong', 'done')}',
-                                style: TextStyle(
-                                    color: colors.textMuted, fontSize: 11)),
                           ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: colors.primarySoft,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '$completedCount/${checklistItems.length} ${t('mục', 'items')}',
+                          style: TextStyle(
+                            color: colors.primary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10.5,
+                          ),
                         ),
                       ),
                     ],

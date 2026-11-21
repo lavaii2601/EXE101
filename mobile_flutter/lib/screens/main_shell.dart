@@ -84,7 +84,10 @@ class _MainShellState extends State<MainShell> {
     const tabs = _baseTabs;
 
     final screens = [
-      OverviewScreen(onNavigate: (tab) => setState(() => tabIndex = tab)),
+      OverviewScreen(
+        onNavigate: (tab) => setState(() => tabIndex = tab),
+        onChangeMode: () => setState(() => modePickerOpen = true),
+      ),
       const ChatScreen(),
       const EmailScreen(),
       const ScheduleScreen(),

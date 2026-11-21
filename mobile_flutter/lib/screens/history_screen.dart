@@ -4,6 +4,7 @@ import '../api/client.dart';
 import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
+import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_screen.dart';
 
@@ -64,8 +65,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   void _handleWorkspaceSync() {
     final appState = _appState;
-    if (appState == null || appState.syncRevision == _lastHandledSyncRevision)
+    if (appState == null || appState.syncRevision == _lastHandledSyncRevision) {
       return;
+    }
     _lastHandledSyncRevision = appState.syncRevision;
     final targets = appState.lastSyncTargets;
     if (targets.contains('history') ||
@@ -100,32 +102,84 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   Future<void> _confirmClearAll() async {
     final t = context.read<LanguageController>().t;
-    final confirmed = await showDialog<bool>(
+    final colors = context.read<ThemeController>().colors;
+    final confirmed = await showModalBottomSheet<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(t('Xóa toàn bộ audit log?', 'Clear the entire audit log?')),
-        content: Text(t(
-          'Hành động này sẽ xóa lịch sử chat, email và lịch đã ghi nhận.',
-          'This removes recorded chat, email, and calendar activity.',
-        )),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(t('Hủy', 'Cancel'))),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(t('Xóa', 'Clear'))),
-        ],
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        decoration: BoxDecoration(
+          color: colors.panel,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(color: colors.border),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colors.border,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              t('Xóa lịch sử', 'Clear history'),
+              style: TextStyle(
+                color: colors.text,
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              t(
+                'Bạn chắc chắn muốn xóa toàn bộ lịch sử chat, email và lịch?',
+                'Are you sure you want to clear all chat, email, and calendar history?',
+              ),
+              style: TextStyle(
+                color: colors.textMuted,
+                fontSize: 13,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    title: t('Hủy', 'Cancel'),
+                    variant: AppButtonVariant.secondary,
+                    onPressed: () => Navigator.pop(ctx, false),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: AppButton(
+                    title: t('Xóa', 'Clear'),
+                    onPressed: () => Navigator.pop(ctx, true),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
     if (confirmed != true || !mounted) return;
     try {
       await apiPost('/chat/clear-all');
-      if (mounted)
+      if (mounted) {
         setState(() {
           history = [];
           expandedId = null;
         });
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -153,31 +207,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
       body: SafeArea(
         top: false,
         child: AppScreen(
-          title: 'AI Audit Log',
+          title: t('Lịch sử', 'History'),
           refreshing: loading,
           onRefresh: _load,
-          actions: history.isEmpty
-              ? null
-              : Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(13),
-                    onTap: _confirmClearAll,
-                    child: Container(
-                      width: 42,
-                      height: 42,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: colors.danger.withValues(alpha: 0.07),
-                        borderRadius: BorderRadius.circular(13),
-                        border: Border.all(
-                            color: colors.danger.withValues(alpha: 0.24)),
-                      ),
-                      child: Icon(Icons.delete_outline,
-                          size: 18, color: colors.danger),
-                    ),
-                  ),
-                ),
           children: [
             AppCard(
               child: Row(
@@ -195,9 +227,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                            t('Nhật ký quyết định & hành động',
-                                'Decisions & actions log'),
+                        Text(t('Hoạt động gần đây', 'Recent activity'),
                             style: TextStyle(
                                 color: colors.text,
                                 fontWeight: FontWeight.w600,
@@ -224,7 +254,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       current: filter,
                       onTap: (v) => setState(() => filter = v)),
                   _FilterChip(
-                      label: 'AI',
+                      label: 'Chat',
                       value: 'chat',
                       current: filter,
                       onTap: (v) => setState(() => filter = v)),
@@ -316,6 +346,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ),
                 );
               }),
+            if (history.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2, bottom: 8),
+                child: AppButton(
+                  title: t('Xóa lịch sử', 'Clear history'),
+                  variant: AppButtonVariant.secondary,
+                  icon: Icons.delete_outline_rounded,
+                  onPressed: _confirmClearAll,
+                ),
+              ),
           ],
         ),
       ),

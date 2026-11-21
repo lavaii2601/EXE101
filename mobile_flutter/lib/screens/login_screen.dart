@@ -9,6 +9,7 @@ import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_notice_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
   final VoidCallback onLoggedIn;
@@ -43,18 +44,18 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  void _showMessage(String title, String message) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Đã hiểu'))
-        ],
-      ),
+  void _showMessage(
+    String title,
+    String message, {
+    AppNoticeTone tone = AppNoticeTone.error,
+  }) {
+    final t = context.read<LanguageController>().t;
+    showAppNoticeDialog(
+      context,
+      title: title,
+      message: message,
+      actionLabel: t('Đã hiểu', 'Got it'),
+      tone: tone,
     );
   }
 
@@ -146,6 +147,7 @@ class _LoginScreenState extends State<LoginScreen> {
         t('Kiểm tra email của bạn', 'Check your email'),
         t('Nếu email này có tài khoản, chúng tôi đã gửi link đặt lại mật khẩu. Mở link đó bằng trình duyệt để đặt mật khẩu mới.',
             "If that email has an account, we've sent a reset link. Open it in your browser to set a new password."),
+        tone: AppNoticeTone.info,
       );
     }
   }
@@ -351,6 +353,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ],
                     ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  t('© 2026 FlowMate AI · Bảo mật và điều khoản',
+                      '© 2026 FlowMate AI · Privacy and terms'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: colors.textMuted,
+                    fontSize: 10.5,
+                    height: 1.4,
                   ),
                 ),
               ],
