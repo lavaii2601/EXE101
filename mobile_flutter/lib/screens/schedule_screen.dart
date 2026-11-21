@@ -441,7 +441,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final lang = context.watch<LanguageController>().language;
 
     return Scaffold(
-      backgroundColor: colors.background,
+      backgroundColor: Colors.transparent,
       body: SafeArea(
         top: false,
         child: AppScreen(

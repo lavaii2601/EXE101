@@ -130,8 +130,10 @@ class ComposeRichEditorState extends State<ComposeRichEditor> {
   Future<ComposeRichEditorSubmitData> getSubmitData() async {
     final plainText = controller.document.toPlainText().trim();
     final rawOps = controller.document.toDelta().toJson();
-    final ops = rawOps.map((op) => Map<String, dynamic>.from(op as Map)).toList();
-    var html = QuillDeltaToHtmlConverter(ops, ConverterOptions.forEmail()).convert();
+    final ops =
+        rawOps.map((op) => Map<String, dynamic>.from(op as Map)).toList();
+    var html =
+        QuillDeltaToHtmlConverter(ops, ConverterOptions.forEmail()).convert();
 
     final inlineImages = <ComposeAttachment>[];
     final inlineImageIds = <String>[];
@@ -140,15 +142,19 @@ class ComposeRichEditorState extends State<ComposeRichEditor> {
     for (final match in srcPattern.allMatches(html)) {
       final src = match.group(1);
       if (src == null || seenSrcs.contains(src)) continue;
-      if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) {
+      if (src.startsWith('http://') ||
+          src.startsWith('https://') ||
+          src.startsWith('data:')) {
         continue;
       }
-      final path = src.startsWith('file://') ? Uri.parse(src).toFilePath() : src;
+      final path =
+          src.startsWith('file://') ? Uri.parse(src).toFilePath() : src;
       final file = File(path);
       if (!await file.exists()) continue;
       seenSrcs.add(src);
       final bytes = await file.readAsBytes();
-      final contentId = 'img_${DateTime.now().microsecondsSinceEpoch}_${inlineImages.length}';
+      final contentId =
+          'img_${DateTime.now().microsecondsSinceEpoch}_${inlineImages.length}';
       final rawFilename = path.split(Platform.pathSeparator).last;
       inlineImages.add(ComposeAttachment(
         filename: rawFilename.isEmpty ? 'image.jpg' : rawFilename,
@@ -180,7 +186,8 @@ class ComposeRichEditorState extends State<ComposeRichEditor> {
             child: Container(
               decoration: BoxDecoration(
                 border: Border.all(color: colors.border),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(10)),
               ),
               child: QuillSimpleToolbar(
                 controller: controller,
@@ -214,7 +221,8 @@ class ComposeRichEditorState extends State<ComposeRichEditor> {
             child: Container(
               decoration: BoxDecoration(
                 border: Border.all(color: colors.border),
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
+                borderRadius:
+                    const BorderRadius.vertical(bottom: Radius.circular(10)),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: QuillEditor.basic(
@@ -370,7 +378,8 @@ class _EmailScreenState extends State<EmailScreen> {
     } catch (error) {
       if (mounted) {
         await showGoogleAuthErrorDialog(
-          context, error,
+          context,
+          error,
           title: t('Kết nối Gmail thất bại', 'Failed to connect Gmail'),
           onRetry: _connectGmail,
         );
@@ -413,8 +422,9 @@ class _EmailScreenState extends State<EmailScreen> {
           'Tiêu đề: $subject\n\n'
           '${forwarded['body'] ?? forwarded['summary'] ?? forwarded['snippet'] ?? ''}';
       _openComposeSheet(
-        initialSubject:
-            subject.toLowerCase().startsWith('fwd:') ? subject : 'Fwd: $subject',
+        initialSubject: subject.toLowerCase().startsWith('fwd:')
+            ? subject
+            : 'Fwd: $subject',
         initialBody: quoted,
         mode: 'forward',
         forwardMessageId: forwarded['id']?.toString(),
@@ -535,10 +545,13 @@ class _EmailScreenState extends State<EmailScreen> {
             Future<void> submit() async {
               final to = toController.text.trim();
               final subject = subjectController.text.trim();
-              final editorData = await composeEditorKey.currentState?.getSubmitData();
+              final editorData =
+                  await composeEditorKey.currentState?.getSubmitData();
               final bodyText = editorData?.plainText ?? '';
               final bodyHtml = editorData?.html ?? '';
-              if (to.isEmpty || subject.isEmpty || (bodyText.isEmpty && bodyHtml.isEmpty)) {
+              if (to.isEmpty ||
+                  subject.isEmpty ||
+                  (bodyText.isEmpty && bodyHtml.isEmpty)) {
                 setSheetState(() => error = t(
                     'Vui lòng điền người nhận, tiêu đề và nội dung.',
                     'Please fill in recipient, subject, and body.'));
@@ -574,8 +587,12 @@ class _EmailScreenState extends State<EmailScreen> {
                       .map((file) => ComposeAttachment(
                           filename: file.name, path: file.path))
                       .toList(),
-                  inlineImages: isForward ? const [] : (editorData?.inlineImages ?? const []),
-                  inlineImageIds: isForward ? const [] : (editorData?.inlineImageIds ?? const []),
+                  inlineImages: isForward
+                      ? const []
+                      : (editorData?.inlineImages ?? const []),
+                  inlineImageIds: isForward
+                      ? const []
+                      : (editorData?.inlineImageIds ?? const []),
                 );
                 if (sheetContext.mounted) Navigator.pop(sheetContext);
                 if (mounted) {
@@ -705,8 +722,7 @@ class _EmailScreenState extends State<EmailScreen> {
                             children: attachments
                                 .map((file) => Chip(
                                       label: Text(file.name,
-                                          style: const TextStyle(
-                                              fontSize: 12)),
+                                          style: const TextStyle(fontSize: 12)),
                                       onDeleted: () => setSheetState(
                                           () => attachments.remove(file)),
                                     ))
@@ -746,7 +762,7 @@ class _EmailScreenState extends State<EmailScreen> {
     final t = context.watch<LanguageController>().t;
 
     return Scaffold(
-      backgroundColor: colors.background,
+      backgroundColor: Colors.transparent,
       floatingActionButton: authenticated
           ? FloatingActionButton(
               onPressed: _openComposeSheet,

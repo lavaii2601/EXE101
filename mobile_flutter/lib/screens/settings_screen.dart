@@ -22,7 +22,8 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObserver {
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
   bool connectingGmail = false;
   bool startingPayment = false;
   bool waitingForPaymentReturn = false;
@@ -64,11 +65,14 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       await apiPost('/feedback', {'message': message});
       feedbackController.clear();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('Đã gửi góp ý', 'Feedback sent'))));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(t('Đã gửi góp ý', 'Feedback sent'))));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('Không gửi được góp ý', 'Could not send feedback'))));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text(t('Không gửi được góp ý', 'Could not send feedback'))));
       }
     } finally {
       if (mounted) setState(() => feedbackSending = false);
@@ -97,7 +101,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     final subscription = profile?['subscription'] is Map
         ? Map<String, dynamic>.from(profile!['subscription'] as Map)
         : <String, dynamic>{};
-    final isPremium = subscription['is_premium'] == true || subscription['tier'] == 'premium';
+    final isPremium =
+        subscription['is_premium'] == true || subscription['tier'] == 'premium';
     setState(() => startingPayment = true);
     try {
       final data = await apiPost('/payments/sepay/checkout', {
@@ -106,23 +111,27 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
         'payment_method': 'BANK_TRANSFER',
       });
       final checkoutUrl = data is Map ? data['checkout_url'] as String? : null;
-      final checkoutUri = checkoutUrl == null ? null : Uri.tryParse(checkoutUrl);
+      final checkoutUri =
+          checkoutUrl == null ? null : Uri.tryParse(checkoutUrl);
       if (checkoutUri == null) {
         throw const FormatException('SEPay checkout URL is missing');
       }
       waitingForPaymentReturn = true;
-      final launched = await launchUrl(checkoutUri, mode: LaunchMode.externalApplication);
+      final launched =
+          await launchUrl(checkoutUri, mode: LaunchMode.externalApplication);
       if (!launched) throw Exception('Could not open SEPay');
     } on ApiException catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${t('Không thể tạo đơn SEPay', 'Could not create SEPay checkout')}: ${error.message}'),
+          content: Text(
+              '${t('Không thể tạo đơn SEPay', 'Could not create SEPay checkout')}: ${error.message}'),
         ));
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${t('Không thể mở SEPay', 'Could not open SEPay')}: $error'),
+          content: Text(
+              '${t('Không thể mở SEPay', 'Could not open SEPay')}: $error'),
         ));
       }
     } finally {
@@ -155,7 +164,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.workspace_premium_outlined),
               title: Text(t('Premium năm', 'Annual Premium')),
-              subtitle: Text(t('520.000đ · 365 ngày', '520,000 VND · 365 days')),
+              subtitle:
+                  Text(t('520.000đ · 365 ngày', '520,000 VND · 365 days')),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
                 Navigator.pop(dialogContext);
@@ -187,7 +197,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(t('Xóa tài khoản FlowMate?', 'Delete your FlowMate account?')),
+        title:
+            Text(t('Xóa tài khoản FlowMate?', 'Delete your FlowMate account?')),
         content: Text(t(
           'Thao tác này xóa vĩnh viễn hồ sơ, lịch, chat, dữ liệu cá nhân, kết nối Google và gói cá nhân. Không thể hoàn tác.',
           'This permanently deletes your profile, schedules, chats, personal data, Google connection, and personal plan. This cannot be undone.',
@@ -222,13 +233,15 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     } on ApiException catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${t('Không thể xóa tài khoản', 'Could not delete account')}: ${error.message}'),
+          content: Text(
+              '${t('Không thể xóa tài khoản', 'Could not delete account')}: ${error.message}'),
         ));
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${t('Không thể xóa tài khoản', 'Could not delete account')}: $error'),
+          content: Text(
+              '${t('Không thể xóa tài khoản', 'Could not delete account')}: $error'),
         ));
       }
     } finally {
@@ -249,7 +262,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     } catch (error) {
       if (mounted) {
         await showGoogleAuthErrorDialog(
-          context, error,
+          context,
+          error,
           title: t('Kết nối Gmail thất bại', 'Failed to connect Gmail'),
           onRetry: _connectGmail,
         );
@@ -270,7 +284,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${t('Không chuyển được tài khoản', 'Could not switch account')}: $error')),
+          SnackBar(
+              content: Text(
+                  '${t('Không chuyển được tài khoản', 'Could not switch account')}: $error')),
         );
       }
     } finally {
@@ -289,8 +305,12 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           "Unlink $accountEmail? FlowMate will stop accessing this account's Gmail/Calendar.",
         )),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('Hủy', 'Cancel'))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('Gỡ', 'Remove'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(t('Hủy', 'Cancel'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t('Gỡ', 'Remove'))),
         ],
       ),
     );
@@ -305,7 +325,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${t('Không gỡ được tài khoản', 'Could not remove account')}: $error')),
+          SnackBar(
+              content: Text(
+                  '${t('Không gỡ được tài khoản', 'Could not remove account')}: $error')),
         );
       }
     } finally {
@@ -319,10 +341,15 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(t('Đăng xuất', 'Sign out')),
-        content: Text(t('Bạn có chắc muốn đăng xuất?', 'Are you sure you want to sign out?')),
+        content: Text(t('Bạn có chắc muốn đăng xuất?',
+            'Are you sure you want to sign out?')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('Hủy', 'Cancel'))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('Đăng xuất', 'Sign out'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(t('Hủy', 'Cancel'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t('Đăng xuất', 'Sign out'))),
         ],
       ),
     );
@@ -336,14 +363,19 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(t('Đăng xuất khỏi tất cả thiết bị?', 'Sign out of all devices?')),
+        title: Text(
+            t('Đăng xuất khỏi tất cả thiết bị?', 'Sign out of all devices?')),
         content: Text(t(
           'Mọi phiên đăng nhập trên điện thoại/máy tính khác sẽ bị hủy ngay lập tức. Dùng khi bạn nghi ngờ bị mất thiết bị hoặc lộ tài khoản.',
           'Every session on another phone or computer is revoked immediately. Use this if you suspect a device was lost or your account was compromised.',
         )),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('Hủy', 'Cancel'))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('Đăng xuất tất cả', 'Sign out everywhere'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(t('Hủy', 'Cancel'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t('Đăng xuất tất cả', 'Sign out everywhere'))),
         ],
       ),
     );
@@ -375,11 +407,12 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     final subscription = profile?['subscription'] is Map
         ? Map<String, dynamic>.from(profile!['subscription'] as Map)
         : <String, dynamic>{};
-    final isPremium = subscription['is_premium'] == true || subscription['tier'] == 'premium';
+    final isPremium =
+        subscription['is_premium'] == true || subscription['tier'] == 'premium';
     final remainingDays = subscription['remaining_days'] as num? ?? 0;
 
     return Scaffold(
-      backgroundColor: colors.background,
+      backgroundColor: Colors.transparent,
       body: SafeArea(
         top: false,
         child: AppScreen(
@@ -393,8 +426,11 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   icon: Icons.person_outline,
                   iconBg: colors.primarySoft,
                   iconColor: colors.primary,
-                  title: (profile?['name'] as String?) ?? t('Người dùng', 'User'),
-                  subtitle: (profile?['gmail_email'] as String?) ?? (profile?['email'] as String?) ?? '',
+                  title:
+                      (profile?['name'] as String?) ?? t('Người dùng', 'User'),
+                  subtitle: (profile?['gmail_email'] as String?) ??
+                      (profile?['email'] as String?) ??
+                      '',
                 ),
                 const Divider(),
                 _Row(
@@ -402,7 +438,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   iconBg: colors.primarySoft,
                   iconColor: colors.primary,
                   title: t('Chế độ người dùng', 'User mode'),
-                  subtitle: '${mode.label} · ${t('Chạm để thay đổi', 'Tap to change')}',
+                  subtitle:
+                      '${mode.label} · ${t('Chạm để thay đổi', 'Tap to change')}',
                   onTap: widget.onChangeMode,
                 ),
               ],
@@ -412,15 +449,26 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
               children: [
                 _SwitchRow(
                   icon: theme.isDark ? Icons.dark_mode : Icons.light_mode,
-                  iconBg: theme.isDark ? const Color(0xFF1E3A5F) : const Color(0xFFE8EEF8),
-                  iconColor: theme.isDark ? const Color(0xFF93C5FD) : const Color(0xFFF59E0B),
+                  iconBg: theme.isDark
+                      ? const Color(0xFF1E3A5F)
+                      : const Color(0xFFE8EEF8),
+                  iconColor: theme.isDark
+                      ? const Color(0xFF93C5FD)
+                      : const Color(0xFFF59E0B),
                   title: t('Chế độ hiển thị', 'Display theme'),
-                  subtitle: theme.isDark ? t('Đang dùng chế độ tối', 'Currently using dark mode') : t('Đang dùng chế độ sáng', 'Currently using light mode'),
+                  subtitle: theme.isDark
+                      ? t('Đang dùng chế độ tối', 'Currently using dark mode')
+                      : t('Đang dùng chế độ sáng',
+                          'Currently using light mode'),
                   value: theme.isDark,
                   onChanged: (_) => theme.toggleTheme(),
                 ),
                 const Divider(),
-                Text(t('Màu sắc chủ đạo', 'Accent color'), style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 14)),
+                Text(t('Màu sắc chủ đạo', 'Accent color'),
+                    style: TextStyle(
+                        color: colors.text,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14)),
                 const SizedBox(height: 10),
                 Row(
                   children: kAccents.entries.map((entry) {
@@ -435,8 +483,15 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                           decoration: BoxDecoration(
                             color: entry.value.primary,
                             shape: BoxShape.circle,
-                            border: selected ? Border.all(color: Colors.white, width: 3) : null,
-                            boxShadow: selected ? [const BoxShadow(color: Colors.black26, blurRadius: 4)] : null,
+                            border: selected
+                                ? Border.all(color: Colors.white, width: 3)
+                                : null,
+                            boxShadow: selected
+                                ? [
+                                    const BoxShadow(
+                                        color: Colors.black26, blurRadius: 4)
+                                  ]
+                                : null,
                           ),
                         ),
                       ),
@@ -444,13 +499,23 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   }).toList(),
                 ),
                 const Divider(),
-                Text(t('Ngôn ngữ', 'Language'), style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 14)),
+                Text(t('Ngôn ngữ', 'Language'),
+                    style: TextStyle(
+                        color: colors.text,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14)),
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    _LangChip(label: 'Tiếng Việt', selected: lang.language == 'vi', onTap: () => lang.setLanguage('vi')),
+                    _LangChip(
+                        label: 'Tiếng Việt',
+                        selected: lang.language == 'vi',
+                        onTap: () => lang.setLanguage('vi')),
                     const SizedBox(width: 8),
-                    _LangChip(label: 'English', selected: lang.language == 'en', onTap: () => lang.setLanguage('en')),
+                    _LangChip(
+                        label: 'English',
+                        selected: lang.language == 'en',
+                        onTap: () => lang.setLanguage('en')),
                   ],
                 ),
               ],
@@ -469,14 +534,23 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                           : t('FlowMate Premium', 'FlowMate Premium')),
                   subtitle: kExternalPaymentsEnabled
                       ? (isPremium
-                          ? t('Còn $remainingDays ngày · Chạm để gia hạn', '$remainingDays days left · Tap to renew')
-                          : t('Từ 49.000đ/tháng · Thanh toán qua SEPay', 'From 49,000 VND/month · Pay with SEPay'))
+                          ? t('Còn $remainingDays ngày · Chạm để gia hạn',
+                              '$remainingDays days left · Tap to renew')
+                          : t('Từ 49.000đ/tháng · Thanh toán qua SEPay',
+                              'From 49,000 VND/month · Pay with SEPay'))
                       : (isPremium
-                          ? t('Còn $remainingDays ngày', '$remainingDays days remaining')
-                          : t('Không bán gói số trong bản Google Play.', 'Digital plans are not sold in the Google Play edition.')),
-                  onTap: kExternalPaymentsEnabled && !startingPayment ? _showPremiumPlans : null,
+                          ? t('Còn $remainingDays ngày',
+                              '$remainingDays days remaining')
+                          : t('Không bán gói số trong bản Google Play.',
+                              'Digital plans are not sold in the Google Play edition.')),
+                  onTap: kExternalPaymentsEnabled && !startingPayment
+                      ? _showPremiumPlans
+                      : null,
                   trailing: kExternalPaymentsEnabled && startingPayment
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2))
                       : null,
                 ),
               ],
@@ -490,10 +564,15 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   iconColor: const Color(0xFFEA4335),
                   title: 'Gmail & Google Calendar',
                   subtitle: gmailReady
-                      ? ((profile?['gmail_email'] as String?) ?? t('Đã kết nối', 'Connected'))
+                      ? ((profile?['gmail_email'] as String?) ??
+                          t('Đã kết nối', 'Connected'))
                       : t('Chưa kết nối', 'Not connected'),
                   trailing: gmailReady
-                      ? Text(t('Đã kết nối', 'Connected'), style: TextStyle(color: colors.success, fontSize: 11, fontWeight: FontWeight.w700))
+                      ? Text(t('Đã kết nối', 'Connected'),
+                          style: TextStyle(
+                              color: colors.success,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700))
                       : null,
                 ),
                 if (!gmailReady) ...[
@@ -511,13 +590,23 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        t('Tài khoản Gmail đã liên kết', 'Linked Gmail accounts'),
-                        style: TextStyle(color: colors.textMuted, fontWeight: FontWeight.w700, fontSize: 11, letterSpacing: 0.4),
+                        t('Tài khoản Gmail đã liên kết',
+                            'Linked Gmail accounts'),
+                        style: TextStyle(
+                            color: colors.textMuted,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 11,
+                            letterSpacing: 0.4),
                       ),
                       TextButton(
                         onPressed: connectingGmail ? null : _connectGmail,
-                        style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero),
-                        child: Text('+ ${t('Thêm', 'Add')}', style: TextStyle(color: colors.primary, fontWeight: FontWeight.w600, fontSize: 12)),
+                        style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero, minimumSize: Size.zero),
+                        child: Text('+ ${t('Thêm', 'Add')}',
+                            style: TextStyle(
+                                color: colors.primary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12)),
                       ),
                     ],
                   ),
@@ -525,8 +614,10 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   ...gmailAccounts.map((account) => _LinkedAccountRow(
                         account: account,
                         busy: gmailAccountBusy == account.accountEmail,
-                        onSwitch: () => _switchGmailAccount(account.accountEmail),
-                        onRemove: () => _confirmRemoveGmailAccount(account.accountEmail),
+                        onSwitch: () =>
+                            _switchGmailAccount(account.accountEmail),
+                        onRemove: () =>
+                            _confirmRemoveGmailAccount(account.accountEmail),
                       )),
                 ],
               ],
@@ -534,7 +625,12 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             _Section(
               label: t('VỀ ỨNG DỤNG', 'ABOUT'),
               children: [
-                _Row(icon: Icons.info_outline, iconBg: colors.secondaryBg, iconColor: colors.secondaryText, title: t('Phiên bản', 'Version'), subtitle: '1.0.0 (Flutter)'),
+                _Row(
+                    icon: Icons.info_outline,
+                    iconBg: colors.secondaryBg,
+                    iconColor: colors.secondaryText,
+                    title: t('Phiên bản', 'Version'),
+                    subtitle: '1.0.0 (Flutter)'),
               ],
             ),
             _Section(
@@ -545,7 +641,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   iconBg: colors.secondaryBg,
                   iconColor: colors.secondaryText,
                   title: t('Điện thoại', 'Phone'),
-                  subtitle: t('Đội ngũ CSKH FlowMate: +84 945 999 076', 'FlowMate support team: +84 945 999 076'),
+                  subtitle: t('Đội ngũ CSKH FlowMate: +84 945 999 076',
+                      'FlowMate support team: +84 945 999 076'),
                   onTap: () => launchUrl(Uri.parse('tel:+84945999076')),
                 ),
                 _Row(
@@ -553,8 +650,10 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   iconBg: colors.secondaryBg,
                   iconColor: colors.secondaryText,
                   title: t('Email', 'Email'),
-                  subtitle: t('Đội ngũ CSKH FlowMate: lecaoduyanh123@gmail.com', 'FlowMate support team: lecaoduyanh123@gmail.com'),
-                  onTap: () => launchUrl(Uri.parse('mailto:lecaoduyanh123@gmail.com')),
+                  subtitle: t('Đội ngũ CSKH FlowMate: lecaoduyanh123@gmail.com',
+                      'FlowMate support team: lecaoduyanh123@gmail.com'),
+                  onTap: () =>
+                      launchUrl(Uri.parse('mailto:lecaoduyanh123@gmail.com')),
                 ),
               ],
             ),
@@ -568,24 +667,35 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   multiline: true,
                 ),
                 const SizedBox(height: 10),
-                AppButton(title: t('Gửi góp ý', 'Send feedback'), onPressed: _submitFeedback, loading: feedbackSending),
+                AppButton(
+                    title: t('Gửi góp ý', 'Send feedback'),
+                    onPressed: _submitFeedback,
+                    loading: feedbackSending),
               ],
             ),
             _Section(
               label: t('DỮ LIỆU', 'DATA'),
               children: [
-                AppButton(title: t('Làm mới trạng thái', 'Refresh status'), variant: AppButtonVariant.secondary, onPressed: appState.refreshShell),
+                AppButton(
+                    title: t('Làm mới trạng thái', 'Refresh status'),
+                    variant: AppButtonVariant.secondary,
+                    onPressed: appState.refreshShell),
                 const SizedBox(height: 10),
                 AppButton(
-                  title: t('Đăng xuất khỏi tất cả thiết bị', 'Sign out of all devices'),
+                  title: t('Đăng xuất khỏi tất cả thiết bị',
+                      'Sign out of all devices'),
                   variant: AppButtonVariant.secondary,
                   onPressed: () => _confirmLogoutAllDevices(context),
                 ),
                 const SizedBox(height: 10),
-                AppButton(title: t('Đăng xuất', 'Sign out'), variant: AppButtonVariant.danger, onPressed: () => _confirmLogout(context)),
+                AppButton(
+                    title: t('Đăng xuất', 'Sign out'),
+                    variant: AppButtonVariant.danger,
+                    onPressed: () => _confirmLogout(context)),
                 const SizedBox(height: 10),
                 AppButton(
-                  title: t('Xóa tài khoản vĩnh viễn', 'Delete account permanently'),
+                  title: t(
+                      'Xóa tài khoản vĩnh viễn', 'Delete account permanently'),
                   variant: AppButtonVariant.danger,
                   onPressed: _confirmDeleteAccount,
                   loading: deletingAccount,
@@ -618,7 +728,12 @@ class _Section extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1.2)),
+          Text(label,
+              style: TextStyle(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 10,
+                  letterSpacing: 1.2)),
           const SizedBox(height: 12),
           ...children,
         ],
@@ -658,7 +773,8 @@ class _Row extends StatelessWidget {
             Container(
               width: 38,
               height: 38,
-              decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(12)),
+              decoration: BoxDecoration(
+                  color: iconBg, borderRadius: BorderRadius.circular(12)),
               child: Icon(icon, size: 18, color: iconColor),
             ),
             const SizedBox(width: 12),
@@ -666,13 +782,22 @@ class _Row extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 14)),
-                  Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: colors.textMuted, fontSize: 12)),
+                  Text(title,
+                      style: TextStyle(
+                          color: colors.text,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14)),
+                  Text(subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: colors.textMuted, fontSize: 12)),
                 ],
               ),
             ),
-            if (trailing != null) trailing!
-            else if (onTap != null) Icon(Icons.chevron_right, color: colors.textMuted),
+            if (trailing != null)
+              trailing!
+            else if (onTap != null)
+              Icon(Icons.chevron_right, color: colors.textMuted),
           ],
         ),
       ),
@@ -696,7 +821,9 @@ class _LinkedAccountRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.watch<ThemeController>().colors;
-    final label = account.accountName.isNotEmpty ? account.accountName : account.accountEmail;
+    final label = account.accountName.isNotEmpty
+        ? account.accountName
+        : account.accountEmail;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
@@ -709,9 +836,15 @@ class _LinkedAccountRow extends StatelessWidget {
           CircleAvatar(
             radius: 16,
             backgroundColor: colors.primary,
-            backgroundImage: account.accountPicture.isNotEmpty ? NetworkImage(account.accountPicture) : null,
+            backgroundImage: account.accountPicture.isNotEmpty
+                ? NetworkImage(account.accountPicture)
+                : null,
             child: account.accountPicture.isEmpty
-                ? Text(label.isNotEmpty ? label[0].toUpperCase() : '?', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700))
+                ? Text(label.isNotEmpty ? label[0].toUpperCase() : '?',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700))
                 : null,
           ),
           const SizedBox(width: 10),
@@ -719,30 +852,62 @@ class _LinkedAccountRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 13)),
-                Text(account.accountEmail, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: colors.textMuted, fontSize: 11)),
+                Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: colors.text,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13)),
+                Text(account.accountEmail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: colors.textMuted, fontSize: 11)),
               ],
             ),
           ),
           if (busy)
-            const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+            const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2))
           else if (account.isActive)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-              decoration: BoxDecoration(color: colors.success.withValues(alpha: 0.13), borderRadius: BorderRadius.circular(999)),
-              child: Text('Active', style: TextStyle(color: colors.success, fontSize: 10, fontWeight: FontWeight.w700)),
+              decoration: BoxDecoration(
+                  color: colors.success.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(999)),
+              child: Text('Active',
+                  style: TextStyle(
+                      color: colors.success,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700)),
             )
           else
             TextButton(
               onPressed: onSwitch,
-              style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), minimumSize: Size.zero),
-              child: Text('Switch', style: TextStyle(color: colors.primary, fontSize: 11, fontWeight: FontWeight.w600)),
+              style: TextButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  minimumSize: Size.zero),
+              child: Text('Switch',
+                  style: TextStyle(
+                      color: colors.primary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600)),
             ),
           if (!busy)
             TextButton(
               onPressed: onRemove,
-              style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), minimumSize: Size.zero),
-              child: Text('Remove', style: TextStyle(color: colors.danger, fontSize: 11, fontWeight: FontWeight.w600)),
+              style: TextButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  minimumSize: Size.zero),
+              child: Text('Remove',
+                  style: TextStyle(
+                      color: colors.danger,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600)),
             ),
         ],
       ),
@@ -777,7 +942,8 @@ class _SwitchRow extends StatelessWidget {
         Container(
           width: 38,
           height: 38,
-          decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(
+              color: iconBg, borderRadius: BorderRadius.circular(12)),
           child: Icon(icon, size: 18, color: iconColor),
         ),
         const SizedBox(width: 12),
@@ -785,12 +951,20 @@ class _SwitchRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 14)),
-              Text(subtitle, style: TextStyle(color: colors.textMuted, fontSize: 12)),
+              Text(title,
+                  style: TextStyle(
+                      color: colors.text,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14)),
+              Text(subtitle,
+                  style: TextStyle(color: colors.textMuted, fontSize: 12)),
             ],
           ),
         ),
-        Switch(value: value, onChanged: onChanged, activeTrackColor: colors.primary),
+        Switch(
+            value: value,
+            onChanged: onChanged,
+            activeTrackColor: colors.primary),
       ],
     );
   }
@@ -800,7 +974,8 @@ class _LangChip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _LangChip({required this.label, required this.selected, required this.onTap});
+  const _LangChip(
+      {required this.label, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -813,7 +988,11 @@ class _LangChip extends StatelessWidget {
           color: selected ? colors.primary : colors.secondaryBg,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Text(label, style: TextStyle(color: selected ? Colors.white : colors.secondaryText, fontWeight: FontWeight.w700, fontSize: 13)),
+        child: Text(label,
+            style: TextStyle(
+                color: selected ? Colors.white : colors.secondaryText,
+                fontWeight: FontWeight.w700,
+                fontSize: 13)),
       ),
     );
   }

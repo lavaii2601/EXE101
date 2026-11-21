@@ -23,118 +23,125 @@ class ProfileHeader extends StatelessWidget {
     final name = (profile?['name'] as String?)?.isNotEmpty == true
         ? profile!['name'] as String
         : t('Người dùng', 'User');
-    final email = (profile?['gmail_email'] as String?) ??
-        (profile?['email'] as String?) ??
-        t('Chưa kết nối Gmail', 'Gmail not connected');
     final avatarUrl = (profile?['avatar_url'] as String?) ?? '';
     final gmailReady = profile?['gmail_connected'] == true;
     final isPremium = (profile?['subscription']?['tier']) == 'premium';
     final mode = getUserMode(profile?['user_mode'] as String?);
 
     return Container(
-      constraints: const BoxConstraints(minHeight: 76),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-      decoration: BoxDecoration(
-        color: colors.panel,
-        border: Border(bottom: BorderSide(color: colors.border)),
-      ),
+      constraints: const BoxConstraints(minHeight: 68),
+      padding: const EdgeInsets.fromLTRB(16, 10, 12, 8),
+      color: Colors.transparent,
       child: Row(
         children: [
           GestureDetector(
             onTap: onRefresh,
             child: Container(
-              width: 42,
-              height: 42,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
-                  color: colors.primary,
-                  borderRadius: BorderRadius.circular(14)),
+                color: colors.primary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+                border:
+                    Border.all(color: colors.primary.withValues(alpha: 0.14)),
+              ),
               child: avatarUrl.isNotEmpty
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
+                  ? ClipOval(
                       child: Image.network(avatarUrl,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _initial(name)),
+                          errorBuilder: (_, __, ___) => _initial(name, colors)),
                     )
-                  : _initial(name),
+                  : _initial(name, colors),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 9),
           Expanded(
             child: GestureDetector(
               onTap: onChangeMode,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('FLOWMATE AI',
-                      style: TextStyle(
-                          color: colors.primary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 9,
-                          letterSpacing: 1.2)),
+                  Text(
+                    'FlowMate AI',
+                    style: TextStyle(
+                        color: colors.primary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11),
+                  ),
                   const SizedBox(height: 1),
-                  Text(name,
-                      style: TextStyle(
-                          color: colors.text,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15)),
-                  const SizedBox(height: 2),
-                  Text('${mode.label} · $email',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: colors.textMuted, fontSize: 11)),
+                  Text(
+                    '$name · ${mode.label}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: colors.textMuted,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Container(
+                        width: 5,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: gmailReady ? colors.success : colors.warning,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          gmailReady
+                              ? t('Gmail đã kết nối', 'Gmail connected')
+                              : t('Gmail chưa kết nối', 'Gmail not connected'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: gmailReady ? colors.success : colors.warning,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 9.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (isPremium)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 5),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                  decoration: BoxDecoration(
-                      color: const Color(0xFFF59E0B),
-                      borderRadius: BorderRadius.circular(999)),
-                  child: const Text('★ Premium',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 10)),
-                ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: gmailReady
-                      ? const Color(0xFF059669)
-                      : const Color(0xFFD97706),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  gmailReady
-                      ? t('Sẵn sàng', 'Ready')
-                      : t('Cần thiết lập', 'Setup'),
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 11),
-                ),
+          if (isPremium)
+            Container(
+              margin: const EdgeInsets.only(right: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF4C364).withValues(alpha: 0.22),
+                borderRadius: BorderRadius.circular(999),
               ),
-            ],
+              child: Text('PRO',
+                  style: TextStyle(
+                      color: colors.warning,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 9)),
+            ),
+          IconButton(
+            tooltip: t('Làm mới', 'Refresh'),
+            onPressed: onRefresh,
+            visualDensity: VisualDensity.compact,
+            icon: Icon(Icons.notifications_none_rounded,
+                color: colors.primary, size: 22),
           ),
         ],
       ),
     );
   }
 
-  Widget _initial(String name) {
+  Widget _initial(String name, AppColors colors) {
     return Center(
       child: Text(
         name.isNotEmpty ? name[0].toUpperCase() : '?',
-        style: const TextStyle(
-            color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+        style: TextStyle(
+            color: colors.primary, fontWeight: FontWeight.w800, fontSize: 15),
       ),
     );
   }

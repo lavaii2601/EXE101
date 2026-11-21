@@ -26,29 +26,40 @@ class AppButton extends StatelessWidget {
     final colors = context.watch<ThemeController>().colors;
     final isSecondary = variant == AppButtonVariant.secondary;
     final isDanger = variant == AppButtonVariant.danger;
-    final background = isDanger ? colors.danger : (isSecondary ? colors.secondaryBg : colors.primary);
+    final background = isDanger
+        ? colors.danger
+        : (isSecondary ? colors.secondaryBg : colors.primary);
     final foreground = isSecondary ? colors.secondaryText : Colors.white;
 
     return SizedBox(
       width: double.infinity,
-      height: 48,
+      height: 46,
       child: ElevatedButton(
         onPressed: loading ? null : onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: background,
           foregroundColor: foreground,
           disabledBackgroundColor: background.withValues(alpha: 0.5),
-          elevation: isSecondary ? 0 : 4,
-          shadowColor: colors.primary.withValues(alpha: 0.35),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.button)),
+          elevation: isSecondary ? 0 : 2,
+          shadowColor: colors.primary.withValues(alpha: 0.24),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.button)),
         ),
         child: loading
-            ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.4, color: foreground))
+            ? SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2.4, color: foreground))
             : Row(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(title, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: foreground)),
+                  Text(title,
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: foreground)),
                   if (icon != null) ...[
                     const SizedBox(width: 8),
                     Icon(icon, size: 18, color: foreground),

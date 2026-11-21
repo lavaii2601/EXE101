@@ -64,7 +64,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   void _handleWorkspaceSync() {
     final appState = _appState;
-    if (appState == null || appState.syncRevision == _lastHandledSyncRevision) return;
+    if (appState == null || appState.syncRevision == _lastHandledSyncRevision)
+      return;
     _lastHandledSyncRevision = appState.syncRevision;
     final targets = appState.lastSyncTargets;
     if (targets.contains('history') ||
@@ -86,7 +87,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
     setState(() => loading = true);
     try {
       final data = await apiGet('/chat/history?limit=50');
-      final items = (data is Map && data['history'] is List) ? List<Map<String, dynamic>>.from(data['history']) : <Map<String, dynamic>>[];
+      final items = (data is Map && data['history'] is List)
+          ? List<Map<String, dynamic>>.from(data['history'])
+          : <Map<String, dynamic>>[];
       setState(() => history = items);
     } catch (_) {
       // keep whatever we had; a transient failure shouldn't blank the log
@@ -106,19 +109,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
           'This removes recorded chat, email, and calendar activity.',
         )),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('Hủy', 'Cancel'))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('Xóa', 'Clear'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(t('Hủy', 'Cancel'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t('Xóa', 'Clear'))),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
     try {
       await apiPost('/chat/clear-all');
-      if (mounted) setState(() { history = []; expandedId = null; });
+      if (mounted)
+        setState(() {
+          history = [];
+          expandedId = null;
+        });
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t('Không xóa được nhật ký', 'Could not clear the audit log'))),
+          SnackBar(
+              content: Text(t(
+                  'Không xóa được nhật ký', 'Could not clear the audit log'))),
         );
       }
     }
@@ -129,10 +142,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final colors = context.watch<ThemeController>().colors;
     final t = context.watch<LanguageController>().t;
 
-    final visible = filter == 'all' ? history : history.where((h) => (h['action_type'] as String? ?? '').contains(filter)).toList();
+    final visible = filter == 'all'
+        ? history
+        : history
+            .where((h) => (h['action_type'] as String? ?? '').contains(filter))
+            .toList();
 
     return Scaffold(
-      backgroundColor: colors.background,
+      backgroundColor: Colors.transparent,
       body: SafeArea(
         top: false,
         child: AppScreen(
@@ -153,9 +170,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       decoration: BoxDecoration(
                         color: colors.danger.withValues(alpha: 0.07),
                         borderRadius: BorderRadius.circular(13),
-                        border: Border.all(color: colors.danger.withValues(alpha: 0.24)),
+                        border: Border.all(
+                            color: colors.danger.withValues(alpha: 0.24)),
                       ),
-                      child: Icon(Icons.delete_outline, size: 18, color: colors.danger),
+                      child: Icon(Icons.delete_outline,
+                          size: 18, color: colors.danger),
                     ),
                   ),
                 ),
@@ -166,7 +185,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   Container(
                     width: 44,
                     height: 44,
-                    decoration: BoxDecoration(color: colors.primarySoft, borderRadius: BorderRadius.circular(14)),
+                    decoration: BoxDecoration(
+                        color: colors.primarySoft,
+                        borderRadius: BorderRadius.circular(14)),
                     child: Icon(Icons.shield_outlined, color: colors.primary),
                   ),
                   const SizedBox(width: 11),
@@ -174,10 +195,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(t('Nhật ký quyết định & hành động', 'Decisions & actions log'),
-                            style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 13)),
-                        Text(t('${history.length} sự kiện gần nhất', '${history.length} recent events'),
-                            style: TextStyle(color: colors.textMuted, fontSize: 10.5)),
+                        Text(
+                            t('Nhật ký quyết định & hành động',
+                                'Decisions & actions log'),
+                            style: TextStyle(
+                                color: colors.text,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13)),
+                        Text(
+                            t('${history.length} sự kiện gần nhất',
+                                '${history.length} recent events'),
+                            style: TextStyle(
+                                color: colors.textMuted, fontSize: 10.5)),
                       ],
                     ),
                   ),
@@ -189,15 +218,34 @@ class _HistoryScreenState extends State<HistoryScreen> {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
-                  _FilterChip(label: t('Tất cả', 'All'), value: 'all', current: filter, onTap: (v) => setState(() => filter = v)),
-                  _FilterChip(label: 'AI', value: 'chat', current: filter, onTap: (v) => setState(() => filter = v)),
-                  _FilterChip(label: t('Email', 'Email'), value: 'email', current: filter, onTap: (v) => setState(() => filter = v)),
-                  _FilterChip(label: t('Lịch', 'Calendar'), value: 'schedule', current: filter, onTap: (v) => setState(() => filter = v)),
+                  _FilterChip(
+                      label: t('Tất cả', 'All'),
+                      value: 'all',
+                      current: filter,
+                      onTap: (v) => setState(() => filter = v)),
+                  _FilterChip(
+                      label: 'AI',
+                      value: 'chat',
+                      current: filter,
+                      onTap: (v) => setState(() => filter = v)),
+                  _FilterChip(
+                      label: t('Email', 'Email'),
+                      value: 'email',
+                      current: filter,
+                      onTap: (v) => setState(() => filter = v)),
+                  _FilterChip(
+                      label: t('Lịch', 'Calendar'),
+                      value: 'schedule',
+                      current: filter,
+                      onTap: (v) => setState(() => filter = v)),
                 ],
               ),
             ),
             if (visible.isEmpty)
-              AppCard(child: AppEmptyState(icon: Icons.history_outlined, title: t('Chưa có sự kiện', 'No events yet')))
+              AppCard(
+                  child: AppEmptyState(
+                      icon: Icons.history_outlined,
+                      title: t('Chưa có sự kiện', 'No events yet')))
             else
               ...visible.map((item) {
                 final actionType = item['action_type'] as String? ?? '';
@@ -206,29 +254,49 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: GestureDetector(
-                    onTap: () => setState(() => expandedId = expanded ? null : id),
+                    onTap: () =>
+                        setState(() => expandedId = expanded ? null : id),
                     child: AppCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
-                              Icon(_actionIcons[actionType] ?? Icons.circle_outlined, size: 17, color: colors.primary),
+                              Icon(
+                                  _actionIcons[actionType] ??
+                                      Icons.circle_outlined,
+                                  size: 17,
+                                  color: colors.primary),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(_humanize(actionType),
-                                    style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 12.5)),
+                                    style: TextStyle(
+                                        color: colors.text,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12.5)),
                               ),
-                              Icon(expanded ? Icons.expand_less : Icons.expand_more, size: 16, color: colors.textMuted),
+                              Icon(
+                                  expanded
+                                      ? Icons.expand_less
+                                      : Icons.expand_more,
+                                  size: 16,
+                                  color: colors.textMuted),
                             ],
                           ),
                           Padding(
                             padding: const EdgeInsets.only(top: 8, left: 25),
                             child: Text(
-                              (item['user_message'] as String?) ?? (item['assistant_response'] as String?) ?? '',
+                              (item['user_message'] as String?) ??
+                                  (item['assistant_response'] as String?) ??
+                                  '',
                               maxLines: expanded ? null : 2,
-                              overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-                              style: TextStyle(color: colors.textMuted, fontSize: 11, height: 1.4),
+                              overflow: expanded
+                                  ? TextOverflow.visible
+                                  : TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: colors.textMuted,
+                                  fontSize: 11,
+                                  height: 1.4),
                             ),
                           ),
                           if (expanded && item['assistant_response'] != null)
@@ -236,7 +304,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               padding: const EdgeInsets.only(top: 8, left: 25),
                               child: Text(
                                 item['assistant_response'] as String,
-                                style: TextStyle(color: colors.text, fontSize: 11.5, height: 1.4),
+                                style: TextStyle(
+                                    color: colors.text,
+                                    fontSize: 11.5,
+                                    height: 1.4),
                               ),
                             ),
                         ],
@@ -263,7 +334,11 @@ class _FilterChip extends StatelessWidget {
   final String value;
   final String current;
   final ValueChanged<String> onTap;
-  const _FilterChip({required this.label, required this.value, required this.current, required this.onTap});
+  const _FilterChip(
+      {required this.label,
+      required this.value,
+      required this.current,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -281,7 +356,11 @@ class _FilterChip extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: active ? colors.primary : colors.border),
           ),
-          child: Text(label, style: TextStyle(color: active ? Colors.white : colors.textMuted, fontWeight: FontWeight.w600, fontSize: 12)),
+          child: Text(label,
+              style: TextStyle(
+                  color: active ? Colors.white : colors.textMuted,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12)),
         ),
       ),
     );

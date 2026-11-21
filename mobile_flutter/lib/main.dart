@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:flutter_quill/flutter_quill.dart' show FlutterQuillLocalizations;
+import 'package:flutter_quill/flutter_quill.dart'
+    show FlutterQuillLocalizations;
 import 'package:provider/provider.dart';
 import 'api/client.dart';
 import 'api/nav_key.dart';
@@ -152,34 +153,50 @@ class _RootFlowState extends State<_RootFlow> with WidgetsBindingObserver {
     if (appState.isAuthenticated == null) {
       return Scaffold(
         backgroundColor: colors.background,
-        body: SafeArea(
-          child: Center(
-            child: Semantics(
-              label: 'FlowMate AI is starting',
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset('assets/images/logo.png',
-                      width: 112, height: 112),
-                  const SizedBox(height: 18),
-                  Text(
-                    'FlowMate AI',
-                    style: TextStyle(
-                      color: colors.text,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
+        body: FlowMateBackdrop(
+          child: SafeArea(
+            child: Center(
+              child: Semantics(
+                label: 'FlowMate AI is starting',
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 118,
+                      height: 118,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: colors.primary.withValues(alpha: 0.12)),
+                        boxShadow: [
+                          BoxShadow(
+                              color: colors.primary.withValues(alpha: 0.16),
+                              blurRadius: 34)
+                        ],
+                      ),
+                      child: Image.asset('assets/images/logo.png'),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: colors.primary,
+                    const SizedBox(height: 18),
+                    Text(
+                      'FlowMate AI',
+                      style: TextStyle(
+                          color: colors.text,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 90),
+                    SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: colors.primary,
+                        backgroundColor: colors.primary.withValues(alpha: 0.12),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

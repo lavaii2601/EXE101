@@ -49,7 +49,11 @@ class _LoginScreenState extends State<LoginScreen> {
       builder: (_) => AlertDialog(
         title: Text(title),
         content: Text(message),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Đã hiểu'))],
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Đã hiểu'))
+        ],
       ),
     );
   }
@@ -57,12 +61,16 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleSubmit() async {
     final t = context.read<LanguageController>().t;
     if (isSignup && nameController.text.trim().isEmpty) {
-      _showMessage(t('Thiếu thông tin', 'Missing info'), t('Vui lòng nhập họ tên.', 'Please enter your full name.'));
+      _showMessage(t('Thiếu thông tin', 'Missing info'),
+          t('Vui lòng nhập họ tên.', 'Please enter your full name.'));
       return;
     }
-    if (emailController.text.trim().isEmpty || passwordController.text.isEmpty) {
-      _showMessage(t('Thiếu thông tin', 'Missing info'),
-          t('Vui lòng nhập email và mật khẩu.', 'Please enter your email and password.'));
+    if (emailController.text.trim().isEmpty ||
+        passwordController.text.isEmpty) {
+      _showMessage(
+          t('Thiếu thông tin', 'Missing info'),
+          t('Vui lòng nhập email và mật khẩu.',
+              'Please enter your email and password.'));
       return;
     }
     setState(() => submitting = true);
@@ -73,12 +81,17 @@ class _LoginScreenState extends State<LoginScreen> {
               email: emailController.text.trim(),
               password: passwordController.text,
             )
-          : await loginWithEmail(email: emailController.text.trim(), password: passwordController.text);
-      await setMobileSession(userId: result.userId, accessToken: result.accessToken);
+          : await loginWithEmail(
+              email: emailController.text.trim(),
+              password: passwordController.text);
+      await setMobileSession(
+          userId: result.userId, accessToken: result.accessToken);
       widget.onLoggedIn();
     } catch (error) {
       _showMessage(
-        isSignup ? t('Không tạo được tài khoản', 'Could not create account') : t('Không đăng nhập được', 'Sign-in failed'),
+        isSignup
+            ? t('Không tạo được tài khoản', 'Could not create account')
+            : t('Không đăng nhập được', 'Sign-in failed'),
         error.toString(),
       );
     } finally {
@@ -104,7 +117,8 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (error) {
       if (mounted) {
-        _showMessage(t('Không khôi phục được', 'Recovery failed'), error.toString());
+        _showMessage(
+            t('Không khôi phục được', 'Recovery failed'), error.toString());
       }
     } finally {
       if (mounted) setState(() => recovering = false);
@@ -114,7 +128,10 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleForgotPassword() async {
     final t = context.read<LanguageController>().t;
     if (emailController.text.trim().isEmpty) {
-      _showMessage(t('Thiếu email', 'Missing email'), t('Vui lòng nhập email ở trên trước.', 'Please enter your email above first.'));
+      _showMessage(
+          t('Thiếu email', 'Missing email'),
+          t('Vui lòng nhập email ở trên trước.',
+              'Please enter your email above first.'));
       return;
     }
     try {
@@ -140,143 +157,204 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       backgroundColor: colors.background,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'FlowMate AI',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: colors.text, fontWeight: FontWeight.w800, fontSize: 22, letterSpacing: -0.4),
-              ),
-              const SizedBox(height: 18),
-              Container(
-                padding: const EdgeInsets.all(22),
-                decoration: BoxDecoration(
-                  color: colors.panel,
-                  borderRadius: BorderRadius.circular(AppRadius.card),
-                  border: Border.all(color: colors.border),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 14, offset: const Offset(0, 6)),
-                  ],
+      body: FlowMateBackdrop(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 30),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 62,
+                    height: 62,
+                    decoration: BoxDecoration(boxShadow: [
+                      BoxShadow(
+                          color: colors.primary.withValues(alpha: 0.26),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8)),
+                    ]),
+                    child: Image.asset('assets/images/logo.png',
+                        fit: BoxFit.contain),
+                  ),
                 ),
-                child: Column(
-                  children: [
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        boxShadow: [
-                          BoxShadow(color: const Color(0xFF0058DE).withValues(alpha: 0.34), blurRadius: 16, offset: const Offset(0, 8)),
-                        ],
+                const SizedBox(height: 9),
+                Text(
+                  'FlowMate AI',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: colors.text,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 20,
+                      letterSpacing: -0.4),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+                  decoration: BoxDecoration(
+                    color: colors.panel,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                        color: colors.border.withValues(alpha: 0.82)),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.075),
+                          blurRadius: 26,
+                          offset: const Offset(0, 12)),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 30,
+                        height: 3,
+                        margin: const EdgeInsets.only(bottom: 14),
+                        decoration: BoxDecoration(
+                            color: colors.primary,
+                            borderRadius: BorderRadius.circular(3)),
                       ),
-                      child: Image.asset('assets/images/logo.png', width: 64, height: 64, fit: BoxFit.contain),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      isSignup ? t('Tạo tài khoản', 'Create Account') : t('Chào mừng trở lại', 'Welcome Back'),
-                      style: TextStyle(color: colors.text, fontWeight: FontWeight.w700, fontSize: 20),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      isSignup
-                          ? t('Tham gia FlowMate AI ngay hôm nay.', 'Join FlowMate AI today.')
-                          : t('Vui lòng nhập thông tin để đăng nhập.', 'Please enter your details to sign in.'),
-                      style: TextStyle(color: colors.textMuted, fontSize: 13),
-                    ),
-                    if (isSignup) ...[
+                      Text(
+                        isSignup
+                            ? t('Tạo tài khoản', 'Create Account')
+                            : t('Chào mừng trở lại', 'Welcome Back'),
+                        style: TextStyle(
+                            color: colors.text,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 20),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        isSignup
+                            ? t('Tham gia FlowMate AI ngay hôm nay.',
+                                'Join FlowMate AI today.')
+                            : t('Vui lòng nhập thông tin để đăng nhập.',
+                                'Please enter your details to sign in.'),
+                        style: TextStyle(color: colors.textMuted, fontSize: 13),
+                      ),
+                      if (isSignup) ...[
+                        const SizedBox(height: 18),
+                        _LabeledField(
+                          colors: colors,
+                          label: t('Họ và tên', 'Full Name'),
+                          icon: Icons.person_outline,
+                          controller: nameController,
+                          hint: t('Nhập họ và tên', 'Enter your full name'),
+                        ),
+                      ],
                       const SizedBox(height: 18),
                       _LabeledField(
                         colors: colors,
-                        label: t('Họ và tên', 'Full Name'),
-                        icon: Icons.person_outline,
-                        controller: nameController,
-                        hint: t('Nhập họ và tên', 'Enter your full name'),
+                        label: 'Email',
+                        icon: Icons.mail_outline,
+                        controller: emailController,
+                        hint: 'name@company.com',
+                        keyboardType: TextInputType.emailAddress,
                       ),
-                    ],
-                    const SizedBox(height: 18),
-                    _LabeledField(
-                      colors: colors,
-                      label: 'Email',
-                      icon: Icons.mail_outline,
-                      controller: emailController,
-                      hint: 'name@company.com',
-                      keyboardType: TextInputType.emailAddress,
-                    ),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        Text(t('Mật khẩu', 'Password'), style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 12.5)),
-                        const Spacer(),
-                        if (!isSignup)
-                          TextButton(
-                            style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero),
-                            onPressed: _handleForgotPassword,
-                            child: Text(t('Quên mật khẩu?', 'Forgot Password?'),
-                                style: TextStyle(color: colors.primary, fontWeight: FontWeight.w600, fontSize: 12)),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 7),
-                    _PasswordField(
-                      colors: colors,
-                      controller: passwordController,
-                      show: showPassword,
-                      hint: isSignup ? t('Tạo mật khẩu', 'Create a password') : '••••••••',
-                      onToggle: () => setState(() => showPassword = !showPassword),
-                    ),
-                    if (isSignup) ...[
-                      const SizedBox(height: 6),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(t('Tối thiểu 8 ký tự.', 'Must be at least 8 characters.'),
-                            style: TextStyle(color: colors.textMuted, fontSize: 11)),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Text(t('Mật khẩu', 'Password'),
+                              style: TextStyle(
+                                  color: colors.text,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12.5)),
+                          const Spacer(),
+                          if (!isSignup)
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: Size.zero),
+                              onPressed: _handleForgotPassword,
+                              child: Text(
+                                  t('Quên mật khẩu?', 'Forgot Password?'),
+                                  style: TextStyle(
+                                      color: colors.primary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12)),
+                            ),
+                        ],
                       ),
-                    ],
-                    const SizedBox(height: 22),
-                    AppButton(
-                      title: isSignup ? t('Tạo tài khoản', 'Create Account') : t('Đăng nhập', 'Sign In'),
-                      icon: isSignup ? Icons.arrow_forward : null,
-                      onPressed: _handleSubmit,
-                      loading: submitting,
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          isSignup ? t('Đã có tài khoản?', 'Already have an account?') : t('Chưa có tài khoản?', "Don't have an account?"),
-                          style: TextStyle(color: colors.textMuted, fontSize: 13),
-                        ),
-                        TextButton(
-                          onPressed: _toggleMode,
+                      const SizedBox(height: 7),
+                      _PasswordField(
+                        colors: colors,
+                        controller: passwordController,
+                        show: showPassword,
+                        hint: isSignup
+                            ? t('Tạo mật khẩu', 'Create a password')
+                            : '••••••••',
+                        onToggle: () =>
+                            setState(() => showPassword = !showPassword),
+                      ),
+                      if (isSignup) ...[
+                        const SizedBox(height: 6),
+                        Align(
+                          alignment: Alignment.centerLeft,
                           child: Text(
-                            isSignup ? t('Đăng nhập', 'Sign In') : t('Đăng ký', 'Sign up'),
-                            style: TextStyle(color: colors.primary, fontWeight: FontWeight.w700, fontSize: 13),
+                              t('Tối thiểu 8 ký tự.',
+                                  'Must be at least 8 characters.'),
+                              style: TextStyle(
+                                  color: colors.textMuted, fontSize: 11)),
+                        ),
+                      ],
+                      const SizedBox(height: 22),
+                      AppButton(
+                        title: isSignup
+                            ? t('Tạo tài khoản', 'Create Account')
+                            : t('Đăng nhập', 'Sign In'),
+                        icon: isSignup ? Icons.arrow_forward : null,
+                        onPressed: _handleSubmit,
+                        loading: submitting,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            isSignup
+                                ? t('Đã có tài khoản?',
+                                    'Already have an account?')
+                                : t('Chưa có tài khoản?',
+                                    "Don't have an account?"),
+                            style: TextStyle(
+                                color: colors.textMuted, fontSize: 13),
+                          ),
+                          TextButton(
+                            onPressed: _toggleMode,
+                            child: Text(
+                              isSignup
+                                  ? t('Đăng nhập', 'Sign In')
+                                  : t('Đăng ký', 'Sign up'),
+                              style: TextStyle(
+                                  color: colors.primary,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (!isSignup) ...[
+                        const SizedBox(height: 14),
+                        TextButton(
+                          onPressed:
+                              recovering ? null : _handleRecoverViaGoogle,
+                          child: Text(
+                            recovering
+                                ? t('Đang khôi phục...', 'Recovering...')
+                                : t('Từng đăng nhập bằng Google? Khôi phục tài khoản',
+                                    'Previously signed in with Google? Recover your account'),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: colors.textMuted,
+                                fontSize: 11.5,
+                                decoration: TextDecoration.underline),
                           ),
                         ),
                       ],
-                    ),
-                    if (!isSignup) ...[
-                      const SizedBox(height: 14),
-                      TextButton(
-                        onPressed: recovering ? null : _handleRecoverViaGoogle,
-                        child: Text(
-                          recovering
-                              ? t('Đang khôi phục...', 'Recovering...')
-                              : t('Từng đăng nhập bằng Google? Khôi phục tài khoản',
-                                  'Previously signed in with Google? Recover your account'),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: colors.textMuted, fontSize: 11.5, decoration: TextDecoration.underline),
-                        ),
-                      ),
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -306,7 +384,11 @@ class _LabeledField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 12.5)),
+        Text(label,
+            style: TextStyle(
+                color: colors.text,
+                fontWeight: FontWeight.w600,
+                fontSize: 12.5)),
         const SizedBox(height: 7),
         TextField(
           controller: controller,
@@ -362,7 +444,10 @@ class _PasswordField extends StatelessWidget {
       decoration: InputDecoration(
         prefixIcon: Icon(Icons.lock_outline, size: 18, color: colors.textMuted),
         suffixIcon: IconButton(
-          icon: Icon(show ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18, color: colors.textMuted),
+          icon: Icon(
+              show ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+              size: 18,
+              color: colors.textMuted),
           onPressed: onToggle,
         ),
         hintText: hint,

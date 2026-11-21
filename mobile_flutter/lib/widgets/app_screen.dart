@@ -25,25 +25,39 @@ class AppScreen extends StatelessWidget {
     final colors = context.watch<ThemeController>().colors;
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(title, style: TextStyle(color: colors.text, fontWeight: FontWeight.w800, fontSize: 26, letterSpacing: -0.5)),
-              ),
-              if (actions != null) IntrinsicWidth(child: actions!),
-            ],
+        if (title.isNotEmpty || actions != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 10),
+            child: Row(
+              children: [
+                if (title.isNotEmpty)
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                          color: colors.text,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 22,
+                          letterSpacing: -0.35),
+                    ),
+                  )
+                else
+                  const Spacer(),
+                if (actions != null) IntrinsicWidth(child: actions!),
+              ],
+            ),
           ),
-        ),
         Expanded(
           child: RefreshIndicator(
             color: colors.primary,
             onRefresh: onRefresh ?? () async {},
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+              padding: EdgeInsets.fromLTRB(
+                  16, title.isEmpty && actions == null ? 6 : 2, 16, 24),
               children: [
-                for (final child in children) Padding(padding: const EdgeInsets.only(bottom: 14), child: child),
+                for (final child in children)
+                  Padding(
+                      padding: const EdgeInsets.only(bottom: 14), child: child),
               ],
             ),
           ),

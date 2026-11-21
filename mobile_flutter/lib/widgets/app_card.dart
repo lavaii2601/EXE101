@@ -26,9 +26,13 @@ class AppCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: backgroundColor ?? colors.panel,
         borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: borderColor ?? colors.border),
+        border: Border.all(
+            color: borderColor ?? colors.border.withValues(alpha: 0.84)),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 14, offset: const Offset(0, 6)),
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.045),
+              blurRadius: 18,
+              offset: const Offset(0, 7)),
         ],
       ),
       child: child,
@@ -41,7 +45,11 @@ class AppEmptyState extends StatelessWidget {
   final String? detail;
   final IconData icon;
 
-  const AppEmptyState({super.key, required this.title, this.detail, this.icon = Icons.inbox_outlined});
+  const AppEmptyState(
+      {super.key,
+      required this.title,
+      this.detail,
+      this.icon = Icons.inbox_outlined});
 
   @override
   Widget build(BuildContext context) {
@@ -53,14 +61,24 @@ class AppEmptyState extends StatelessWidget {
           Container(
             width: 46,
             height: 46,
-            decoration: BoxDecoration(color: colors.primarySoft, borderRadius: BorderRadius.circular(16)),
+            decoration: BoxDecoration(
+                color: colors.primarySoft,
+                borderRadius: BorderRadius.circular(16)),
             child: Icon(icon, size: 22, color: colors.primary),
           ),
           const SizedBox(height: 10),
-          Text(title, textAlign: TextAlign.center, style: TextStyle(color: colors.text, fontWeight: FontWeight.w600, fontSize: 14)),
+          Text(title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: colors.text,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14)),
           if (detail != null) ...[
             const SizedBox(height: 6),
-            Text(detail!, textAlign: TextAlign.center, style: TextStyle(color: colors.textMuted, fontSize: 12, height: 1.4)),
+            Text(detail!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: colors.textMuted, fontSize: 12, height: 1.4)),
           ],
         ],
       ),
@@ -92,7 +110,11 @@ class AppField extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(color: colors.textMuted, fontWeight: FontWeight.w600, fontSize: 12)),
+          Text(label,
+              style: TextStyle(
+                  color: colors.textMuted,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12)),
           const SizedBox(height: 6),
           TextField(
             controller: controller,
@@ -104,7 +126,8 @@ class AppField extends StatelessWidget {
               hintStyle: TextStyle(color: colors.inputPlaceholder),
               filled: true,
               fillColor: colors.panelSoft,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppRadius.control),
                 borderSide: BorderSide(color: colors.border, width: 1.5),
