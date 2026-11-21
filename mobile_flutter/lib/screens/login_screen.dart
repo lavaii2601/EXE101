@@ -111,6 +111,28 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _handleForgotPassword() async {
+    final t = context.read<LanguageController>().t;
+    if (emailController.text.trim().isEmpty) {
+      _showMessage(t('Thiếu email', 'Missing email'), t('Vui lòng nhập email ở trên trước.', 'Please enter your email above first.'));
+      return;
+    }
+    try {
+      await forgotPassword(emailController.text.trim());
+    } catch (error) {
+      // forgot-password always succeeds server-side regardless of account
+      // existence (see routes/auth.py) -- only a real network failure
+      // reaches here, and the message below is still accurate either way.
+    }
+    if (mounted) {
+      _showMessage(
+        t('Kiểm tra email của bạn', 'Check your email'),
+        t('Nếu email này có tài khoản, chúng tôi đã gửi link đặt lại mật khẩu. Mở link đó bằng trình duyệt để đặt mật khẩu mới.',
+            "If that email has an account, we've sent a reset link. Open it in your browser to set a new password."),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.watch<ThemeController>().colors;
@@ -191,11 +213,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         if (!isSignup)
                           TextButton(
                             style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero),
-                            onPressed: () => _showMessage(
-                              t('Sắp có', 'Coming soon'),
-                              t('Khôi phục mật khẩu qua email sẽ có trong bản cập nhật tới.',
-                                  'Email password recovery is coming in a future update.'),
-                            ),
+                            onPressed: _handleForgotPassword,
                             child: Text(t('Quên mật khẩu?', 'Forgot Password?'),
                                 style: TextStyle(color: colors.primary, fontWeight: FontWeight.w600, fontSize: 12)),
                           ),

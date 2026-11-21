@@ -19,6 +19,7 @@ from models import postgres_db as pg
 from models.knowledge import KnowledgeDocument
 from models.user import User
 from models import subscription as subscription_model
+from models import feedback as feedback_model
 from models import admin_ops
 from models.sync_state import SyncState
 from utils.security import authenticated_user_id
@@ -1404,6 +1405,15 @@ def admin_security():
         'suspicious_logins': [],
     }
     return jsonify({'success': True, 'admin': admin, 'security': payload})
+
+
+@admin_bp.route('/feedback', methods=['GET'])
+def admin_feedback():
+    admin, error_response = _require_admin()
+    if error_response:
+        return error_response
+    feedback = feedback_model.list_recent() if pg.enabled() else []
+    return jsonify({'success': True, 'admin': admin, 'feedback': feedback})
 
 
 @admin_bp.route('/users/<user_id>/subscription', methods=['POST'])

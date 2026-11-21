@@ -380,6 +380,8 @@ async function initApp() {
         if (settingsLogoutBtn) settingsLogoutBtn.addEventListener('click', appLogout);
         const settingsClearDataBtn = document.getElementById('settingsClearDataBtn');
         if (settingsClearDataBtn) settingsClearDataBtn.addEventListener('click', clearAllUserHistory);
+        const settingsFeedbackBtn = document.getElementById('settingsFeedbackBtn');
+        if (settingsFeedbackBtn) settingsFeedbackBtn.addEventListener('click', submitFeedback);
         document.querySelectorAll('[data-language]').forEach((button) => {
             button.addEventListener('click', () => setLanguage(button.dataset.language));
         });

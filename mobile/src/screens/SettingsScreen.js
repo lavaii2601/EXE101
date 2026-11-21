@@ -13,6 +13,7 @@ import {
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import Button from '../components/Button';
+import Field from '../components/Field';
 import SegmentedControl from '../components/SegmentedControl';
 import { ACCENTS, radius, useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -74,6 +75,8 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
   const [pricingVisible, setPricingVisible] = useState(false);
   const [gmailAccounts,  setGmailAccounts]  = useState([]);
   const [gmailAccountBusy, setGmailAccountBusy] = useState(null);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackSending, setFeedbackSending] = useState(false);
 
   const subscription = profile?.subscription;
   const isPremiumTier = subscription?.tier === 'premium';
@@ -277,6 +280,21 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
         },
       ]
     );
+  };
+
+  const submitFeedback = async () => {
+    const message = feedbackText.trim();
+    if (!message) return;
+    setFeedbackSending(true);
+    try {
+      await apiPost('/feedback', { message });
+      setFeedbackText('');
+      Alert.alert(t('Đã gửi góp ý', 'Feedback sent'), t('Cảm ơn bạn đã góp ý!', 'Thanks for your feedback!'));
+    } catch (error) {
+      Alert.alert(t('Không gửi được góp ý', 'Could not send feedback'), error.message);
+    } finally {
+      setFeedbackSending(false);
+    }
   };
 
   return (
@@ -745,6 +763,25 @@ export default function SettingsScreen({ profile, status, userMode, onChangeMode
           </View>
           <Text style={styles.chevron}>›</Text>
         </TouchableOpacity>
+      </View>
+
+      {/* ── Feedback ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>{t('GÓP Ý', 'FEEDBACK')}</Text>
+        <Field
+          label={t('Nội dung', 'Message')}
+          value={feedbackText}
+          onChangeText={setFeedbackText}
+          placeholder={t('Chia sẻ góp ý của bạn...', 'Share your feedback...')}
+          multiline
+        />
+        <Button
+          title={t('Gửi góp ý', 'Send feedback')}
+          variant="secondary"
+          onPress={submitFeedback}
+          loading={feedbackSending}
+          disabled={!feedbackText.trim()}
+        />
       </View>
 
       {/* ── Data / Logout ── */}

@@ -27,6 +27,13 @@ Future<AuthResult> loginWithEmail({required String email, required String passwo
   return AuthResult.fromJson(data as Map<String, dynamic>);
 }
 
+/// Always succeeds server-side regardless of whether the email has an
+/// account (see routes/auth.py's forgot_password()) -- the UI must show the
+/// same "check your email" message either way.
+Future<void> forgotPassword(String email) async {
+  await apiPost('/auth/forgot-password', {'email': email});
+}
+
 /// First-time password setup for an account recovered via Google (see
 /// google_auth.dart's connectGoogleAccount(intent: 'recover')) that never
 /// had one. Requires the session connectGoogleAccount already established.

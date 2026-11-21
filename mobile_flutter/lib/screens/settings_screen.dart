@@ -11,6 +11,7 @@ import '../state/app_state.dart';
 import '../state/language_controller.dart';
 import '../state/theme_controller.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_card.dart';
 import '../widgets/app_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -28,6 +29,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   bool deletingAccount = false;
   List<GoogleAccount> gmailAccounts = [];
   String? gmailAccountBusy;
+  final feedbackController = TextEditingController();
+  bool feedbackSending = false;
 
   @override
   void initState() {
@@ -48,7 +51,28 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    feedbackController.dispose();
     super.dispose();
+  }
+
+  Future<void> _submitFeedback() async {
+    final message = feedbackController.text.trim();
+    if (message.isEmpty) return;
+    final t = context.read<LanguageController>().t;
+    setState(() => feedbackSending = true);
+    try {
+      await apiPost('/feedback', {'message': message});
+      feedbackController.clear();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('Đã gửi góp ý', 'Feedback sent'))));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('Không gửi được góp ý', 'Could not send feedback'))));
+      }
+    } finally {
+      if (mounted) setState(() => feedbackSending = false);
+    }
   }
 
   @override
@@ -532,6 +556,19 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   subtitle: t('Đội ngũ CSKH FlowMate: lecaoduyanh123@gmail.com', 'FlowMate support team: lecaoduyanh123@gmail.com'),
                   onTap: () => launchUrl(Uri.parse('mailto:lecaoduyanh123@gmail.com')),
                 ),
+              ],
+            ),
+            _Section(
+              label: t('GÓP Ý', 'FEEDBACK'),
+              children: [
+                AppField(
+                  label: t('Nội dung', 'Message'),
+                  controller: feedbackController,
+                  hint: t('Chia sẻ góp ý của bạn...', 'Share your feedback...'),
+                  multiline: true,
+                ),
+                const SizedBox(height: 10),
+                AppButton(title: t('Gửi góp ý', 'Send feedback'), onPressed: _submitFeedback, loading: feedbackSending),
               ],
             ),
             _Section(

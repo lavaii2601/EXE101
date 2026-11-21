@@ -652,6 +652,17 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient_unread
     ON notifications (recipient_user_id, created_at DESC) WHERE read_at IS NULL;
 
+-- User feedback: free-text feedback a logged-in user submits; read-only in
+-- the admin dashboard. See migrations/20261121_feedback.sql.
+CREATE TABLE IF NOT EXISTS feedback (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback (created_at DESC);
+
 -- Personal (user_id set) knowledge docs tier, alongside the pre-existing
 -- global tier (user_id IS NULL). created_by_user_id tracks who authored a
 -- doc (e.g. an admin-added global doc).

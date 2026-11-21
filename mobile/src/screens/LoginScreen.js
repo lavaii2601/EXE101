@@ -5,7 +5,7 @@ import Button from '../components/Button';
 import { radius, useTheme } from '../theme/ThemeContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { connectGoogleAccount } from '../api/googleAuth';
-import { loginWithEmail, registerWithEmail, setPassword as setPasswordApi } from '../api/emailAuth';
+import { loginWithEmail, registerWithEmail, setPassword as setPasswordApi, forgotPassword as forgotPasswordApi } from '../api/emailAuth';
 
 function InputRow({ icon, styles, colors, right, ...inputProps }) {
   return (
@@ -111,12 +111,23 @@ export default function LoginScreen({ onLoggedIn }) {
     setPassword('');
   };
 
-  const forgotPassword = () => {
+  const forgotPassword = async () => {
+    if (!email.trim()) {
+      Alert.alert(t('Thiếu email', 'Missing email'), t('Vui lòng nhập email ở trên trước.', 'Please enter your email above first.'));
+      return;
+    }
+    try {
+      await forgotPasswordApi(email.trim());
+    } catch (error) {
+      // forgot-password always succeeds server-side regardless of account
+      // existence (see routes/auth.py) -- only a real network failure
+      // reaches here, and the message below is still accurate either way.
+    }
     Alert.alert(
-      t('Sắp có', 'Coming soon'),
+      t('Kiểm tra email của bạn', 'Check your email'),
       t(
-        'Khôi phục mật khẩu qua email sẽ có trong bản cập nhật tới.',
-        'Email password recovery is coming in a future update.'
+        'Nếu email này có tài khoản, chúng tôi đã gửi link đặt lại mật khẩu. Mở link đó bằng trình duyệt để đặt mật khẩu mới.',
+        "If that email has an account, we've sent a reset link. Open it in your browser to set a new password."
       )
     );
   };

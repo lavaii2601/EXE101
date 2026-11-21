@@ -62,6 +62,12 @@ class Config:
     MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
     CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    # Password-reset emails (services/email_service.py). Empty by default --
+    # that path logs and skips sending rather than failing the request, same
+    # tolerance as every other optional provider key above.
+    RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+    RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "FlowMate <noreply@flowmate.pro>")
+    PASSWORD_RESET_TOKEN_MAX_AGE = int(os.getenv("PASSWORD_RESET_TOKEN_MAX_AGE", 30 * 60))
     # Bob calls out to a hosted provider (OpenAI/Mistral/Claude/Gemini, via
     # services/ai_service.py) whenever at least one of the keys above is
     # configured -- cheap to justify while the user base is still small.

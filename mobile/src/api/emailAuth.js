@@ -17,6 +17,13 @@ export async function loginWithEmail({ email, password }) {
   return data;
 }
 
+// Always succeeds server-side regardless of whether the email has an
+// account (see routes/auth.py's forgot_password()) -- the UI must show the
+// same "check your email" message either way.
+export async function forgotPassword(email) {
+  return apiPost('/auth/forgot-password', { email });
+}
+
 // First-time password setup for an account recovered via Google (see
 // googleAuth.js's connectGoogleAccount('recover')) that never had one.
 // Requires the session connectGoogleAccount already established.

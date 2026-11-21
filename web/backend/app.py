@@ -54,6 +54,7 @@ from routes._background import bg_bp
 from routes.admin import admin_bp, _require_admin, is_current_user_admin
 from routes.course import course_bp
 from routes.notifications import notifications_bp
+from routes.feedback import feedback_bp
 from routes.payments import payments_bp
 from utils.security import (
     active_authenticated_user_id,
@@ -152,6 +153,8 @@ def make_session_permanent():
         '/api/email/oauth-token-exchange',
         '/api/auth/register',
         '/api/auth/login',
+        '/api/auth/forgot-password',
+        '/api/auth/reset-password',
         '/api/payments/sepay/ipn',
     }
     if (
@@ -307,6 +310,7 @@ app.register_blueprint(bg_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(course_bp)
 app.register_blueprint(notifications_bp)
+app.register_blueprint(feedback_bp)
 app.register_blueprint(payments_bp)
 
 # Ensure data directory exists
@@ -358,6 +362,16 @@ def serve_terms_of_service():
 def serve_account_deletion():
     """Public account-deletion instructions required by Google Play."""
     response = send_from_directory('../frontend', 'account-deletion.html')
+    response.headers['Cache-Control'] = 'public, max-age=3600'
+    return response
+
+
+@app.route('/reset-password')
+def serve_reset_password():
+    """Public password-reset completion page -- the link emailed by
+    routes/auth.py's forgot_password() always points here, on web, even
+    when the request started on mobile (see that route's reset_url)."""
+    response = send_from_directory('../frontend', 'reset-password.html')
     response.headers['Cache-Control'] = 'public, max-age=3600'
     return response
 

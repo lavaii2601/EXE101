@@ -514,6 +514,26 @@ async function clearAllUserHistory() {
     }
 }
 
+async function submitFeedback() {
+    const input = document.getElementById('settingsFeedbackInput');
+    const message = (input?.value || '').trim();
+    if (!message) return;
+    setSettingsState(ui('Đang gửi góp ý...', 'Sending feedback...'));
+    try {
+        const response = await apiFetch(`${API_BASE}/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || ui('Không gửi được góp ý', 'Could not send feedback'));
+        input.value = '';
+        setSettingsState(ui('Đã gửi góp ý, cảm ơn bạn!', 'Feedback sent, thank you!'));
+    } catch (error) {
+        setSettingsState(`${ui('Lỗi', 'Error')}: ${error.message}`, true);
+    }
+}
+
 function renderUserModeGrid() {
     const grid = document.getElementById('userModeGrid');
     if (!grid) return;

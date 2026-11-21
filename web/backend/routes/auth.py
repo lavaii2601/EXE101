@@ -12,7 +12,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
 from models.user import User
-from utils.security import active_authenticated_user_id, issue_mobile_token
+from services.email_service import send_password_reset_email
+from utils.security import (
+    active_authenticated_user_id,
+    issue_mobile_token,
+    issue_password_reset_token,
+    verify_password_reset_token,
+)
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 logger = logging.getLogger(__name__)
@@ -176,6 +182,62 @@ def logout_all_devices():
         'success': True,
         'message': 'Đã đăng xuất khỏi tất cả thiết bị. Vui lòng đăng nhập lại.',
     })
+
+
+@auth_bp.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    """Email a password-reset link to an existing password account.
+
+    Always returns the same generic response regardless of whether the
+    account exists or has a password set yet -- same enumeration-safety
+    convention as login()'s GENERIC_LOGIN_ERROR. A Google-only account (no
+    password_hash) has nothing to reset; it uses the separate "recover via
+    Google" flow instead (routes/email/oauth.py's intent=recover).
+    """
+    data = request.get_json(silent=True) or {}
+    email = str(data.get('email') or '').strip().lower()[:254]
+    if email and EMAIL_RE.match(email):
+        user = User.get_by_email(email)
+        if user and user.get('password_hash'):
+            token = issue_password_reset_token(user['user_id'], user['password_hash'])
+            reset_url = f"{request.host_url.rstrip('/')}/reset-password?token={token}"
+            send_password_reset_email(user.get('email') or email, reset_url)
+    return jsonify({
+        'success': True,
+        'message': 'Nếu email này có tài khoản, chúng tôi đã gửi link đặt lại mật khẩu.',
+    })
+
+
+@auth_bp.route('/reset-password', methods=['POST'])
+def reset_password():
+    """Complete a forgot_password() reset: verify the emailed token and
+    overwrite password_hash. Bumps token_version so every session/mobile
+    token issued before this reset stops working, matching
+    logout_all_devices()'s revocation logic for the same class of event
+    (a credential change).
+    """
+    data = request.get_json(silent=True) or {}
+    token = str(data.get('token') or '')
+    password = str(data.get('password') or '')
+    if len(password) < MIN_PASSWORD_LENGTH or len(password) > MAX_PASSWORD_LENGTH:
+        return jsonify({
+            'success': False,
+            'error': 'weak_password',
+            'message': f'Mật khẩu phải có ít nhất {MIN_PASSWORD_LENGTH} ký tự.',
+        }), 400
+
+    user_id = verify_password_reset_token(token)
+    if not user_id:
+        return jsonify({
+            'success': False,
+            'error': 'invalid_or_expired_token',
+            'message': 'Link đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.',
+        }), 400
+
+    User.update(user_id, password_hash=generate_password_hash(password))
+    User.increment_token_version(user_id)
+    logger.info('Password reset completed for: %s', user_id)
+    return jsonify({'success': True, 'message': 'Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.'})
 
 
 @auth_bp.route('/set-password', methods=['POST'])

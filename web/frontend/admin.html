@@ -133,6 +133,9 @@
           <button id="securityTab" class="dashboard-tab" type="button" role="tab" aria-selected="false" aria-controls="securityPanel" tabindex="-1" data-dashboard-tab="security">
             <span class="tab-icon text-icon" aria-hidden="true">✓</span><span class="tab-label">Security &amp; Audit</span>
           </button>
+          <button id="feedbackTab" class="dashboard-tab" type="button" role="tab" aria-selected="false" aria-controls="feedbackPanel" tabindex="-1" data-dashboard-tab="feedback">
+            <span class="tab-icon text-icon" aria-hidden="true">✉</span><span class="tab-label">Góp ý</span>
+          </button>
         </nav>
 
         <div class="sidebar-footer">
@@ -518,12 +521,16 @@
         <section class="panel table-panel"><div class="panel-head"><div><p class="eyebrow">ADMIN ACTIVITY</p><h2>Audit log</h2></div></div><div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>Admin</th><th>Action</th><th>Target</th><th>Before → After</th><th>Request ID</th></tr></thead><tbody id="adminAuditBody"></tbody></table></div></section>
         <section class="grid two"><article class="panel table-panel"><div class="panel-head"><div><p class="eyebrow">LOGIN ANOMALY</p><h2>Đăng nhập đáng ngờ (24h)</h2></div></div><div id="suspiciousLoginList" class="metric-list"></div></article><article class="panel table-panel"><div class="panel-head"><div><p class="eyebrow">AI ANOMALY</p><h2>AI usage bất thường (24h)</h2></div></div><div id="suspiciousAiList" class="metric-list"></div></article></section>
       </section>
+
+      <section id="feedbackPanel" class="dashboard-panel" role="tabpanel" aria-labelledby="feedbackTab" data-dashboard-panel="feedback" hidden>
+        <section class="panel table-panel"><div class="panel-head"><div><p class="eyebrow">USER FEEDBACK</p><h2>Góp ý người dùng</h2></div></div><div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>Người dùng</th><th>Nội dung</th></tr></thead><tbody id="feedbackBody"></tbody></table></div></section>
+      </section>
       </div>
     </div>
   </main>
 
   <div id="adminToast" class="admin-toast" role="status" aria-live="polite"></div>
   <dialog id="userDetailDialog" class="admin-dialog"><button id="closeUserDetail" class="dialog-close" type="button" aria-label="Đóng">×</button><div id="userDetailContent"></div></dialog>
-  <script src="/js/admin.js?v=20261004-operations-01" defer></script>
+  <script src="/js/admin.js?v=20261121-feedback-01" defer></script>
 </body>
 </html>

@@ -11,13 +11,8 @@ function setupAuthGate() {
     document.getElementById('authPasswordToggle')?.addEventListener('click', toggleAuthPasswordVisibility);
     document.getElementById('authRecoverGoogleBtn')?.addEventListener('click', recoverViaGoogle);
     document.getElementById('setPasswordForm')?.addEventListener('submit', submitSetPassword);
-    document.getElementById('authForgotPasswordBtn')?.addEventListener('click', () => {
-        const status = document.getElementById('authGateStatus');
-        if (status) status.textContent = ui('Tính năng khôi phục mật khẩu sẽ sớm ra mắt.', 'Password recovery is coming soon.');
-    });
-    document.getElementById('authForgotPasswordBtnSecondary')?.addEventListener('click', () => {
-        document.getElementById('authForgotPasswordBtn')?.click();
-    });
+    document.getElementById('authForgotPasswordBtn')?.addEventListener('click', submitForgotPassword);
+    document.getElementById('authForgotPasswordBtnSecondary')?.addEventListener('click', submitForgotPassword);
     document.getElementById('adminOpenAppBtn')?.addEventListener('click', () => {
         const key = adminDestinationStorageKey();
         if (key) sessionStorage.setItem(key, 'app');
@@ -144,6 +139,32 @@ async function submitPasswordAuth(event) {
     } catch (error) {
         if (status) status.textContent = error.message || ui('Không thể đăng nhập. Vui lòng thử lại.', 'Unable to sign in. Please try again.');
         setPasswordAuthLoading(false);
+    }
+}
+
+async function submitForgotPassword() {
+    const email = document.getElementById('authEmailInput')?.value.trim() || '';
+    const status = document.getElementById('authGateStatus');
+    if (!email) {
+        if (status) status.textContent = ui('Vui lòng nhập email ở trên trước.', 'Please enter your email above first.');
+        document.getElementById('authEmailInput')?.focus();
+        return;
+    }
+    if (status) status.textContent = ui('Đang gửi email khôi phục...', 'Sending recovery email...');
+    try {
+        const response = await fetch(`${API_BASE}/auth/forgot-password`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ email })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (status) status.textContent = data.message || ui(
+            'Nếu email này có tài khoản, chúng tôi đã gửi link đặt lại mật khẩu.',
+            "If that email has an account, we've sent a reset link."
+        );
+    } catch (error) {
+        if (status) status.textContent = ui('Không gửi được email. Vui lòng thử lại.', 'Could not send email. Please try again.');
     }
 }
 

@@ -15,6 +15,7 @@ const state = {
   integrations: null,
   health: null,
   security: null,
+  feedback: [],
   loadedTabs: new Set(),
   loadingTab: null,
 };
@@ -157,7 +158,7 @@ function showGate(name, message = '') {
 }
 
 function activateTab(name, { focus = false, load = true } = {}) {
-  const validTabs = ['overview', 'users', 'finance', 'ai', 'controls', 'integrations', 'health', 'security'];
+  const validTabs = ['overview', 'users', 'finance', 'ai', 'controls', 'integrations', 'health', 'security', 'feedback'];
   const next = validTabs.includes(name) ? name : 'overview';
   state.activeTab = next;
   document.querySelectorAll('[data-dashboard-tab]').forEach((tab) => {
@@ -178,6 +179,7 @@ function activateTab(name, { focus = false, load = true } = {}) {
       integrations: loadIntegrations,
       health: loadSystemHealth,
       security: loadSecurity,
+      feedback: loadFeedback,
     };
     loaders[next]?.();
   }
@@ -892,6 +894,15 @@ async function loadSecurity() {
   } catch (error) { if (!handleAdminGate(error)) showToast(error.message, 'error'); }
 }
 
+async function loadFeedback() {
+  try {
+    const data = await api('/api/admin/feedback');
+    state.feedback = data.feedback || [];
+    $('feedbackBody').innerHTML = state.feedback.length ? state.feedback.map((item) => `<tr><td>${escapeHtml(dateTime(item.created_at))}</td><td><code>${escapeHtml(item.user_id)}</code></td><td>${escapeHtml(item.message)}</td></tr>`).join('') : '<tr><td colspan="3" class="muted">Chưa có góp ý nào.</td></tr>';
+    state.loadedTabs.add('feedback');
+  } catch (error) { if (!handleAdminGate(error)) showToast(error.message, 'error'); }
+}
+
 async function loadDashboard() {
   $('refreshButton').disabled = true;
   setConnection('waiting', 'Đang tải');
@@ -1045,6 +1056,7 @@ function refreshActiveTab() {
   const loaders = {
     users: loadAdminUsers, ai: loadAiUsage, controls: loadAiControls,
     integrations: loadIntegrations, health: loadSystemHealth, security: loadSecurity,
+    feedback: loadFeedback,
   };
   if (loaders[state.activeTab]) {
     state.loadedTabs.delete(state.activeTab);

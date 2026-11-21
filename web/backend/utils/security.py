@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import threading
 import time
@@ -69,6 +70,40 @@ def verify_mobile_token(token):
     # by this change alone).
     g._mobile_token_version = int(payload.get("ver") or 0)
     return payload.get("sub")
+
+
+def _password_stamp(password_hash):
+    return hashlib.sha256((password_hash or '').encode('utf-8')).hexdigest()[:16]
+
+
+def issue_password_reset_token(user_id, password_hash):
+    # Embeds a stamp of the password hash at issue time instead of using a
+    # separate token-storage table for single-use/invalidation: once a
+    # reset actually succeeds, password_hash changes, so replaying the same
+    # link recomputes a different stamp in verify_password_reset_token
+    # below and is rejected.
+    return _serializer().dumps({"sub": user_id, "type": "reset", "pw": _password_stamp(password_hash)})
+
+
+def verify_password_reset_token(token):
+    try:
+        payload = _serializer().loads(
+            token,
+            max_age=current_app.config.get("PASSWORD_RESET_TOKEN_MAX_AGE", 1800),
+        )
+    except (BadSignature, SignatureExpired):
+        return None
+    if payload.get("type") != "reset":
+        return None
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
+    from models.user import User
+
+    user = User.get(user_id)
+    if not user or _password_stamp(user.get("password_hash")) != payload.get("pw"):
+        return None
+    return user_id
 
 
 def bearer_user_id():
@@ -168,6 +203,11 @@ def enforce_rate_limit():
     limit = current_app.config.get("RATE_LIMIT_PER_MINUTE", 180)
     if request.path.startswith("/api/chat/") or request.path.startswith("/api/email/summary"):
         limit = current_app.config.get("AI_RATE_LIMIT_PER_MINUTE", 30)
+    elif request.path == "/api/auth/forgot-password":
+        # Sends a real email per request from an always-unauthenticated
+        # caller (identity below falls back to IP) -- the generous default
+        # limit would let one IP spam/enumerate at 180/min otherwise.
+        limit = current_app.config.get("FORGOT_PASSWORD_RATE_LIMIT_PER_MINUTE", 5)
 
     # authenticated_user_id() (not a standalone bearer/header check) so a
     # cookie-session browser login -- the primary auth path for this app --
