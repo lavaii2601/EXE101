@@ -355,6 +355,8 @@ async function loadWeekSchedule(options = {}) {
                             ? 'google'
                             : 'local';
                     eventDiv.className = `week-event source-${sourceClass}${isOngoing || isImminent ? ' is-imminent' : ''}`;
+                    eventDiv.tabIndex = 0;
+                    eventDiv.setAttribute('role', 'button');
                     const unsyncedLocal = isUnsyncedLocalSchedule(schedule, googleConnected);
                     if (unsyncedLocal) eventDiv.classList.add('is-unsynced');
                     const range = formatScheduleRange(schedule.start_time, schedule.end_time);
@@ -377,6 +379,11 @@ async function loadWeekSchedule(options = {}) {
                     `;
                     eventDiv.addEventListener('click', (event) => {
                         if (event.target.closest('a, button')) return;
+                        openEditSchedule(schedule.local_id || schedule.id);
+                    });
+                    eventDiv.addEventListener('keydown', (event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return;
+                        event.preventDefault();
                         openEditSchedule(schedule.local_id || schedule.id);
                     });
                     td.appendChild(eventDiv);
