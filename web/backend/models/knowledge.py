@@ -45,10 +45,9 @@ class KnowledgeDocument:
             )
         ''')
         # Add columns missing on pre-existing installs (created before
-        # per-user auto-learned memories / workspace-curated docs existed).
+        # per-user auto-learned memories existed).
         for column_sql in (
             'ALTER TABLE knowledge_documents ADD COLUMN user_id TEXT DEFAULT NULL',
-            'ALTER TABLE knowledge_documents ADD COLUMN workspace_id TEXT DEFAULT NULL',
             'ALTER TABLE knowledge_documents ADD COLUMN created_by_user_id TEXT DEFAULT NULL',
         ):
             try:
@@ -57,7 +56,6 @@ class KnowledgeDocument:
                 pass
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_knowledge_documents_created ON knowledge_documents(created_at DESC)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_knowledge_documents_user ON knowledge_documents(user_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_knowledge_documents_workspace ON knowledge_documents(workspace_id)')
         conn.commit()
         conn.close()
         KnowledgeDocument._initialized = True

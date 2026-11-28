@@ -208,6 +208,11 @@ def enforce_rate_limit():
         # caller (identity below falls back to IP) -- the generous default
         # limit would let one IP spam/enumerate at 180/min otherwise.
         limit = current_app.config.get("FORGOT_PASSWORD_RATE_LIMIT_PER_MINUTE", 5)
+    elif request.path in ("/api/auth/login", "/api/auth/register"):
+        # Both are always-unauthenticated (identity below falls back to IP)
+        # -- the generous 180/min default would let one IP brute-force a
+        # password or spam-register at that rate otherwise.
+        limit = current_app.config.get("LOGIN_RATE_LIMIT_PER_MINUTE", 10)
 
     # authenticated_user_id() (not a standalone bearer/header check) so a
     # cookie-session browser login -- the primary auth path for this app --

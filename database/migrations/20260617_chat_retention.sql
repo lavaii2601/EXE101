@@ -23,13 +23,10 @@ $$;
 ALTER TABLE history
     ADD COLUMN IF NOT EXISTS chat_session_id UUID REFERENCES chat_sessions(id) ON DELETE SET NULL;
 
-UPDATE chat_sessions
-SET retention_days = 90
-WHERE retention_days IS NULL;
-
-UPDATE chat_sessions
-SET expires_at = created_at + (retention_days || ' days')::INTERVAL
-WHERE expires_at IS NULL;
+-- retention_days/expires_at are NOT NULL DEFAULT columns above, so Postgres
+-- already backfills every pre-existing row when they're added -- a
+-- "WHERE ... IS NULL" UPDATE here can never match a row, on this run or any
+-- future replay. Removed as dead code (ponytail audit).
 
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_expires
     ON chat_sessions (user_id, expires_at);
