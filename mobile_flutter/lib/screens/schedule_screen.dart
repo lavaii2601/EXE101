@@ -10,6 +10,30 @@ import '../widgets/app_card.dart';
 import '../widgets/app_notice_dialog.dart';
 import '../widgets/app_screen.dart';
 
+/// One row of a server-suggested day plan (POST /schedule/quick-add's
+/// kind == 'suggested_plan') -- title is user-editable before applying,
+/// start/end/duration/reason stay as the server computed them (editing a
+/// conflict-avoiding time slot isn't supported here; deselect + re-run the
+/// quick-add text instead).
+class _PlanItem {
+  final TextEditingController title;
+  final String startTime;
+  final String? endTime;
+  final int? durationMinutes;
+  final String reason;
+  bool selected = true;
+
+  _PlanItem({
+    required String title,
+    required this.startTime,
+    this.endTime,
+    this.durationMinutes,
+    required this.reason,
+  }) : title = TextEditingController(text: title);
+
+  void dispose() => title.dispose();
+}
+
 const _dayNamesVi = [
   'Thứ 2',
   'Thứ 3',
@@ -37,6 +61,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   bool suggestionsLoading = false;
   bool showForm = false;
   Map<String, dynamic>? editingSchedule;
+
+  final quickAddController = TextEditingController();
+  bool quickAddLoading = false;
+  bool planApplying = false;
+  String? planDate;
+  List<_PlanItem>? planItems;
 
   final titleController = TextEditingController();
   final descriptionController = TextEditingController();
@@ -92,6 +122,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   @override
   void dispose() {
     _appState?.removeListener(_handleWorkspaceSync);
+    quickAddController.dispose();
+    _clearPlanItems();
     titleController.dispose();
     descriptionController.dispose();
     locationController.dispose();
@@ -215,10 +247,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
     setState(() => loading = true);
     try {
-      final start = DateTime.tryParse(startRaw) ?? DateTime.now();
+      final start = DateTime.tryParse(startRaw)?.toLocal() ?? DateTime.now();
       final endRaw = suggestion['end_time'] as String?;
       final end = (endRaw != null && endRaw.isNotEmpty)
-          ? DateTime.tryParse(endRaw)
+          ? DateTime.tryParse(endRaw)?.toLocal()
           : null;
       final data = await apiPost('/schedule/create', {
         'title':
@@ -255,8 +287,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   void _openEditForm(Map<String, dynamic> schedule) {
-    final start = DateTime.tryParse((schedule['start_time'] as String?) ?? '');
-    final end = DateTime.tryParse((schedule['end_time'] as String?) ?? '');
+    final start =
+        DateTime.tryParse((schedule['start_time'] as String?) ?? '')
+            ?.toLocal();
+    final end = DateTime.tryParse((schedule['end_time'] as String?) ?? '')
+        ?.toLocal();
     final attendees = schedule['attendees'];
     setState(() {
       editingSchedule = schedule;
@@ -432,6 +467,109 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     _load();
   }
 
+  void _clearPlanItems() {
+    for (final item in planItems ?? <_PlanItem>[]) {
+      item.dispose();
+    }
+    planItems = null;
+    planDate = null;
+  }
+
+  Future<void> _handleQuickAdd() async {
+    final t = context.read<LanguageController>().t;
+    final text = quickAddController.text.trim();
+    if (text.isEmpty) {
+      _showMessage(t('Thiếu nội dung', 'Missing text'),
+          t('Nhập một task hoặc danh sách hoạt động.',
+              'Enter a task or a list of activities.'));
+      return;
+    }
+    setState(() {
+      quickAddLoading = true;
+      _clearPlanItems();
+    });
+    try {
+      final data = await apiPost('/schedule/quick-add', {'text': text});
+      if (data is Map && data['kind'] == 'suggested_plan') {
+        final items = (data['items'] as List? ?? [])
+            .whereType<Map>()
+            .map((raw) => _PlanItem(
+                  title: (raw['title'] as String?) ?? '',
+                  startTime: (raw['start_time'] as String?) ?? '',
+                  endTime: raw['end_time'] as String?,
+                  durationMinutes: (raw['duration_minutes'] as num?)?.toInt(),
+                  reason: (raw['reason'] as String?) ?? '',
+                ))
+            .where((item) => item.startTime.isNotEmpty)
+            .toList();
+        setState(() {
+          planDate = data['date'] as String?;
+          planItems = items;
+        });
+        return;
+      }
+      quickAddController.clear();
+      final message = data is Map ? data['message'] as String? : null;
+      _showMessage(
+          t('Đã thêm', 'Added'),
+          message ??
+              (data is Map && data['kind'] == 'activity'
+                  ? t('Đã thêm vào lịch.', 'Added to your calendar.')
+                  : t('Đã thêm vào checklist.', 'Added to your checklist.')));
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        _showMessage(t('Không thêm nhanh được', 'Could not quick-add'),
+            error.toString());
+      }
+    } finally {
+      if (mounted) setState(() => quickAddLoading = false);
+    }
+  }
+
+  void _cancelPlan() => setState(_clearPlanItems);
+
+  Future<void> _applyPlan() async {
+    final t = context.read<LanguageController>().t;
+    final selected = (planItems ?? []).where((item) => item.selected).toList();
+    if (selected.isEmpty) {
+      _showMessage(t('Chưa chọn hoạt động', 'No activity selected'),
+          t('Chọn ít nhất một hoạt động để tạo lịch.',
+              'Select at least one activity to create a schedule.'));
+      return;
+    }
+    setState(() => planApplying = true);
+    try {
+      final data = await apiPost('/schedule/plan-day/apply', {
+        'date': planDate,
+        'items': selected
+            .map((item) => {
+                  'title': item.title.text.trim(),
+                  'start_time': item.startTime,
+                  'end_time': item.endTime ?? '',
+                  'duration_minutes': item.durationMinutes,
+                  'reason': item.reason,
+                })
+            .toList(),
+      });
+      quickAddController.clear();
+      setState(_clearPlanItems);
+      await _load();
+      final createdCount = data is Map ? data['created_count'] : null;
+      _showMessage(
+          t('Đã tạo lịch', 'Schedule created'),
+          t('FlowMate đã tạo ${createdCount ?? selected.length} hoạt động.',
+              'FlowMate created ${createdCount ?? selected.length} activities.'));
+    } catch (error) {
+      if (mounted) {
+        _showMessage(t('Không áp dụng được lịch', 'Could not apply the plan'),
+            error.toString());
+      }
+    } finally {
+      if (mounted) setState(() => planApplying = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.watch<ThemeController>().colors;
@@ -457,6 +595,136 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   ? setState(() => showForm = false)
                   : _openCreateForm(),
             ),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(t('TẠO NHANH BẰNG AI', 'QUICK CREATE WITH AI'),
+                      style: TextStyle(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 10,
+                          letterSpacing: 1)),
+                  const SizedBox(height: 4),
+                  Text(
+                      t('Nhập một việc hoặc cả danh sách hoạt động, FlowMate sẽ tự xếp lịch.',
+                          "Enter a task or a list of activities, FlowMate will schedule them."),
+                      style: TextStyle(color: colors.textMuted, fontSize: 12)),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: TextField(
+                      controller: quickAddController,
+                      minLines: 1,
+                      maxLines: 3,
+                      style: TextStyle(color: colors.text, fontSize: 14),
+                      decoration: InputDecoration(
+                        hintText: t(
+                            'Ví dụ: Ăn trưa lúc 12h, họp nhóm 3 giờ chiều',
+                            'E.g. Lunch at 12, team meeting at 3pm'),
+                        hintStyle: TextStyle(color: colors.inputPlaceholder),
+                        filled: true,
+                        fillColor: colors.panelSoft,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: colors.border, width: 1.5)),
+                        enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: colors.border, width: 1.5)),
+                        focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: colors.primary, width: 1.5)),
+                      ),
+                    ),
+                  ),
+                  AppButton(
+                    title: t('Tạo nhanh', 'Quick create'),
+                    onPressed: _handleQuickAdd,
+                    loading: quickAddLoading,
+                  ),
+                ],
+              ),
+            ),
+            if (planItems != null)
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                        t('Gợi ý lịch cho ${planItems!.length} hoạt động',
+                            'Suggested schedule for ${planItems!.length} activities'),
+                        style: TextStyle(
+                            color: colors.text,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14)),
+                    const SizedBox(height: 8),
+                    for (final item in planItems!)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Checkbox(
+                              value: item.selected,
+                              activeColor: colors.primary,
+                              onChanged: (value) =>
+                                  setState(() => item.selected = value ?? true),
+                            ),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  TextField(
+                                    controller: item.title,
+                                    style: TextStyle(
+                                        color: colors.text, fontSize: 13),
+                                    decoration: const InputDecoration(
+                                        isDense: true,
+                                        border: InputBorder.none,
+                                        contentPadding: EdgeInsets.zero),
+                                  ),
+                                  Text(
+                                      _formatRange(
+                                          item.startTime, item.endTime, lang),
+                                      style: TextStyle(
+                                          color: colors.primary,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 11.5)),
+                                  if (item.reason.isNotEmpty)
+                                    Text(item.reason,
+                                        style: TextStyle(
+                                            color: colors.textMuted,
+                                            fontSize: 11)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: AppButton(
+                            title: t('Áp dụng', 'Apply'),
+                            onPressed: _applyPlan,
+                            loading: planApplying,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: AppButton(
+                            title: t('Bỏ qua', 'Dismiss'),
+                            variant: AppButtonVariant.secondary,
+                            onPressed: planApplying ? null : _cancelPlan,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             if (showForm)
               AppCard(
                 child: Column(
@@ -626,7 +894,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       final s = Map<String, dynamic>.from(raw as Map);
                       final startRaw = s['start_time'] as String?;
                       final start = (startRaw != null && startRaw.isNotEmpty)
-                          ? DateTime.tryParse(startRaw)
+                          ? DateTime.tryParse(startRaw)?.toLocal()
                           : null;
                       return Padding(
                         padding: const EdgeInsets.only(top: 12),
@@ -846,9 +1114,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             else
               ...events.map((raw) {
                 final e = Map<String, dynamic>.from(raw as Map);
-                final start = DateTime.tryParse(e['start_time'] as String);
+                final start =
+                    DateTime.tryParse(e['start_time'] as String)?.toLocal();
                 final end = (e['end_time'] as String?) != null
-                    ? DateTime.tryParse(e['end_time'] as String)
+                    ? DateTime.tryParse(e['end_time'] as String)?.toLocal()
                     : null;
                 final timeText = start == null
                     ? ''
@@ -936,11 +1205,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   String _formatRange(String? startValue, String? endValue, String lang) {
     if (startValue == null) return '';
-    final start = DateTime.tryParse(startValue);
+    // .toLocal() is a no-op for an already-naive (local, no offset) string --
+    // safe here -- but required for a tz-aware "+00:00" string (every
+    // schedule read back from Postgres), which otherwise displays as raw
+    // UTC instead of Vietnam wall-clock time.
+    final start = DateTime.tryParse(startValue)?.toLocal();
     if (start == null) return startValue;
     final startText = _formatFull(start, lang);
     if (endValue == null) return startText;
-    final end = DateTime.tryParse(endValue);
+    final end = DateTime.tryParse(endValue)?.toLocal();
     if (end == null) return startText;
     return '$startText - ${_formatFull(end, lang)}';
   }

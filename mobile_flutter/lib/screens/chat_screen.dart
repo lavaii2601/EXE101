@@ -13,9 +13,37 @@ class _ChatMessage {
   final String text;
   // e.g. "Còn 3/5 lượt hôm nay" -- see _formatQuotaRemainingLabel.
   final String? meta;
+  // From /chat/message's suggested_actions -- each {type, label, email_id,
+  // context}, currently only type == 'draft_reply' (see email_agents.py's
+  // _build_draft_reply_suggestion).
+  final List<Map<String, dynamic>>? suggestedActions;
   _ChatMessage(
-      {required this.id, required this.role, required this.text, this.meta});
+      {required this.id,
+      required this.role,
+      required this.text,
+      this.meta,
+      this.suggestedActions});
 }
+
+/// Mutable draft-in-progress for the "Bob soạn trả lời" flow -- generate via
+/// /chat/generate-reply, let the user edit, then send via
+/// /chat/send-drafted-reply. Mirrors mobile/src/screens/ChatScreen.js's
+/// activeDraft state shape.
+class _ActiveDraft {
+  final String emailId;
+  final String label;
+  final TextEditingController controller = TextEditingController();
+  bool loading = true;
+  bool sending = false;
+  _ActiveDraft({required this.emailId, required this.label});
+
+  void dispose() => controller.dispose();
+}
+
+// Mirrors mobile/src/screens/ChatScreen.js's DRAFT_REPLY_CHOICE -- the fixed
+// "tone" instruction sent to /chat/generate-reply for this quick flow.
+const String _kDraftReplyChoice =
+    'Xác nhận đã nhận được email và sẽ phản hồi/xử lý sớm, văn phong lịch sự';
 
 /// aiQuota is the {action, allowed, used, limit, remaining} map every
 /// quota-gated AI route now returns on success (see utils/quota.py's
@@ -47,6 +75,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final scrollController = ScrollController();
   String sessionId = '';
   bool loading = false;
+  _ActiveDraft? activeDraft;
 
   @override
   void initState() {
@@ -58,6 +87,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     inputController.dispose();
     scrollController.dispose();
+    activeDraft?.dispose();
     super.dispose();
   }
 
@@ -89,6 +119,13 @@ class _ChatScreenState extends State<ChatScreen> {
         sessionId = data['session_id'] as String;
       }
       final t = mounted ? context.read<LanguageController>().t : null;
+      final rawActions =
+          data is Map && data['suggested_actions'] is List
+              ? (data['suggested_actions'] as List)
+                  .whereType<Map>()
+                  .map((a) => a.cast<String, dynamic>())
+                  .toList()
+              : null;
       setState(() {
         messages.add(_ChatMessage(
           id: 'a-${DateTime.now().millisecondsSinceEpoch}',
@@ -99,6 +136,8 @@ class _ChatScreenState extends State<ChatScreen> {
               ? null
               : _formatQuotaRemainingLabel(
                   data is Map ? data['ai_quota'] : null, t),
+          suggestedActions:
+              rawActions != null && rawActions.isNotEmpty ? rawActions : null,
         ));
       });
     } catch (error) {
@@ -198,6 +237,69 @@ class _ChatScreenState extends State<ChatScreen> {
       ..text = suggestion
       ..selection = TextSelection.collapsed(offset: suggestion.length);
     _send();
+  }
+
+  Future<void> _startDraftReply(Map<String, dynamic> action) async {
+    final emailId = action['email_id'] as String?;
+    if (emailId == null || emailId.isEmpty) return;
+    final t = context.read<LanguageController>().t;
+    setState(() => activeDraft = _ActiveDraft(
+          emailId: emailId,
+          label: (action['label'] as String?) ?? t('Trả lời email', 'Reply to email'),
+        ));
+    try {
+      final data = await apiPost('/chat/generate-reply', {
+        'context': (action['context'] as String?) ?? '',
+        'choice': _kDraftReplyChoice,
+      });
+      if (!mounted || activeDraft?.emailId != emailId) return;
+      setState(() {
+        activeDraft!.controller.text =
+            (data is Map ? data['reply'] as String? : null) ?? '';
+        activeDraft!.loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(t('Không tạo được bản nháp', 'Could not generate a draft'))));
+      setState(() {
+        activeDraft?.dispose();
+        activeDraft = null;
+      });
+    }
+  }
+
+  void _cancelActiveDraft() {
+    setState(() {
+      activeDraft?.dispose();
+      activeDraft = null;
+    });
+  }
+
+  Future<void> _sendActiveDraft() async {
+    final draft = activeDraft;
+    final replyText = draft?.controller.text.trim() ?? '';
+    if (draft == null || replyText.isEmpty) return;
+    final t = context.read<LanguageController>().t;
+    setState(() => draft.sending = true);
+    try {
+      await apiPost('/chat/send-drafted-reply', {
+        'email_id': draft.emailId,
+        'reply_text': replyText,
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t('Đã gửi email trả lời', 'Reply sent'))));
+      setState(() {
+        draft.dispose();
+        activeDraft = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(t('Không gửi được email', 'Could not send the email'))));
+      setState(() => draft.sending = false);
+    }
   }
 
   @override
@@ -301,52 +403,83 @@ class _ChatScreenState extends State<ChatScreen> {
                       itemBuilder: (context, index) {
                         final m = messages[index];
                         final isUser = m.role == 'user';
-                        return Align(
-                          alignment: isUser
-                              ? Alignment.centerRight
-                              : Alignment.centerLeft,
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            constraints: BoxConstraints(
-                                maxWidth:
-                                    MediaQuery.of(context).size.width * 0.8),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 11),
-                            decoration: BoxDecoration(
-                              color: isUser ? colors.primary : colors.panelSoft,
-                              borderRadius: BorderRadius.only(
-                                topLeft: const Radius.circular(12),
-                                topRight: const Radius.circular(12),
-                                bottomLeft: Radius.circular(isUser ? 12 : 4),
-                                bottomRight: Radius.circular(isUser ? 4 : 12),
+                        return Column(
+                          crossAxisAlignment: isUser
+                              ? CrossAxisAlignment.end
+                              : CrossAxisAlignment.start,
+                          children: [
+                            Align(
+                              alignment: isUser
+                                  ? Alignment.centerRight
+                                  : Alignment.centerLeft,
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                constraints: BoxConstraints(
+                                    maxWidth:
+                                        MediaQuery.of(context).size.width *
+                                            0.8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 11),
+                                decoration: BoxDecoration(
+                                  color: isUser
+                                      ? colors.primary
+                                      : colors.panelSoft,
+                                  borderRadius: BorderRadius.only(
+                                    topLeft: const Radius.circular(12),
+                                    topRight: const Radius.circular(12),
+                                    bottomLeft:
+                                        Radius.circular(isUser ? 12 : 4),
+                                    bottomRight:
+                                        Radius.circular(isUser ? 4 : 12),
+                                  ),
+                                  border: isUser
+                                      ? null
+                                      : Border.all(color: colors.border),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(m.text,
+                                        style: TextStyle(
+                                            color: isUser
+                                                ? Colors.white
+                                                : colors.text,
+                                            fontSize: 13,
+                                            height: 1.4)),
+                                    if (m.meta != null) ...[
+                                      const SizedBox(height: 4),
+                                      Text(m.meta!,
+                                          style: TextStyle(
+                                              color: isUser
+                                                  ? Colors.white70
+                                                  : colors.textMuted,
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w600)),
+                                    ],
+                                  ],
+                                ),
                               ),
-                              border: isUser
-                                  ? null
-                                  : Border.all(color: colors.border),
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(m.text,
-                                    style: TextStyle(
-                                        color:
-                                            isUser ? Colors.white : colors.text,
-                                        fontSize: 13,
-                                        height: 1.4)),
-                                if (m.meta != null) ...[
-                                  const SizedBox(height: 4),
-                                  Text(m.meta!,
-                                      style: TextStyle(
-                                          color: isUser
-                                              ? Colors.white70
-                                              : colors.textMuted,
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w600)),
-                                ],
-                              ],
-                            ),
-                          ),
+                            if (m.suggestedActions != null)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: m.suggestedActions!
+                                      .map((action) => _ActionChip(
+                                            label: (action['label']
+                                                    as String?) ??
+                                                t('Soạn trả lời',
+                                                    'Draft a reply'),
+                                            onTap: () =>
+                                                _startDraftReply(action),
+                                          ))
+                                      .toList(),
+                                ),
+                              ),
+                          ],
                         );
                       },
                     ),
@@ -356,6 +489,84 @@ class _ChatScreenState extends State<ChatScreen> {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: CircularProgressIndicator(
                       color: colors.primary, strokeWidth: 2)),
+            if (activeDraft != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(activeDraft!.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: colors.text,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13)),
+                      const SizedBox(height: 10),
+                      if (activeDraft!.loading)
+                        Center(
+                            child: CircularProgressIndicator(
+                                color: colors.primary, strokeWidth: 2))
+                      else
+                        TextField(
+                          minLines: 3,
+                          maxLines: 8,
+                          style: TextStyle(color: colors.text, fontSize: 13),
+                          controller: activeDraft!.controller,
+                          onChanged: (_) => setState(() {}),
+                          decoration: InputDecoration(
+                            hintText: t('Nội dung email trả lời...',
+                                'Reply content...'),
+                            hintStyle:
+                                TextStyle(color: colors.inputPlaceholder),
+                            filled: true,
+                            fillColor: colors.panelSoft,
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: colors.border)),
+                            enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: colors.border)),
+                            focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide:
+                                    BorderSide(color: colors.primary)),
+                          ),
+                        ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: AppButton(
+                              title: t('Gửi luôn', 'Send now'),
+                              onPressed: activeDraft!.loading ||
+                                      activeDraft!.controller.text
+                                          .trim()
+                                          .isEmpty
+                                  ? null
+                                  : _sendActiveDraft,
+                              loading: activeDraft!.sending,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: AppButton(
+                              title: t('Hủy', 'Cancel'),
+                              variant: AppButtonVariant.secondary,
+                              onPressed: activeDraft!.sending
+                                  ? null
+                                  : _cancelActiveDraft,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
               child: Column(
@@ -468,6 +679,38 @@ class _SuggestionTile extends StatelessWidget {
                 ),
                 Icon(Icons.north_east_rounded, color: colors.primary, size: 15),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _ActionChip({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.watch<ThemeController>().colors;
+    return Material(
+      color: colors.primarySoft,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: colors.primary,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
