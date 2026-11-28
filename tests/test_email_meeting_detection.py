@@ -1,6 +1,6 @@
 import sys
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,7 +16,17 @@ from routes.email import (  # noqa: E402
     _store_meeting_suggestions,
 )
 from routes.email import meeting as meeting_module  # noqa: E402
+from models.meeting_suggestion import LOCAL_TZ  # noqa: E402
 from config import Config  # noqa: E402
+
+
+def _vn_now():
+    """Vietnam wall-clock "now", naive -- matches the convention meeting
+    suggestions store their start_time/end_time in. Using this instead of
+    plain datetime.now() keeps these tests correct regardless of the
+    machine's own system timezone (the exact mismatch that let a stale
+    meeting suggestion survive for hours on a UTC server)."""
+    return datetime.now(LOCAL_TZ).replace(tzinfo=None)
 
 
 class EmailMeetingDetectionTests(unittest.TestCase):
@@ -28,8 +38,8 @@ class EmailMeetingDetectionTests(unittest.TestCase):
             self.assertEqual(pending, _prune_existing_meeting_suggestions("test.db"))
 
     def test_stale_pending_suggestion_is_dismissed_and_hidden(self):
-        past = (datetime.now() - timedelta(days=5)).isoformat()
-        upcoming = (datetime.now() + timedelta(days=2)).isoformat()
+        past = (_vn_now() - timedelta(days=5)).isoformat()
+        upcoming = (_vn_now() + timedelta(days=2)).isoformat()
         pending = [
             {"id": 1, "email_id": "old-mail", "title": "Đã trôi qua", "start_time": past},
             {"id": 2, "email_id": "new-mail", "title": "Sắp tới", "start_time": upcoming},
@@ -62,11 +72,32 @@ class EmailMeetingDetectionTests(unittest.TestCase):
     def test_is_meeting_suggestion_stale(self):
         self.assertFalse(_is_meeting_suggestion_stale({}))
         self.assertTrue(_is_meeting_suggestion_stale({
-            "start_time": (datetime.now() - timedelta(hours=1)).isoformat()
+            "start_time": (_vn_now() - timedelta(hours=1)).isoformat()
         }))
         self.assertFalse(_is_meeting_suggestion_stale({
-            "start_time": (datetime.now() + timedelta(hours=1)).isoformat()
+            "start_time": (_vn_now() + timedelta(hours=1)).isoformat()
         }))
+
+    def test_is_meeting_suggestion_stale_uses_vietnam_time_not_server_tz(self):
+        # Simulate a server whose own naive clock is UTC (no tz passed)
+        # while LOCAL_TZ (Asia/Ho_Chi_Minh, UTC+7) is 7 hours ahead -- a
+        # suggestion 3h after that naive clock is already 4h in the PAST in
+        # Vietnam. The old code compared against the naive server clock
+        # directly and would have missed this.
+        server_naive_now = datetime(2026, 1, 1, 0, 0, 0)
+
+        class FakeDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                if tz is None:
+                    return server_naive_now
+                return server_naive_now.replace(tzinfo=timezone.utc).astimezone(tz)
+
+        with patch.object(meeting_module, 'datetime', FakeDateTime):
+            suggestion = {
+                "start_time": (server_naive_now + timedelta(hours=3)).isoformat()
+            }
+            self.assertTrue(_is_meeting_suggestion_stale(suggestion))
 
     def test_detects_natural_vietnamese_meeting_email(self):
         tomorrow = (datetime.now() + timedelta(days=1)).date().isoformat()

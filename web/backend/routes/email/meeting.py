@@ -24,7 +24,7 @@ from flask import jsonify, request, session
 
 from config import Config
 from models import postgres_db as pg
-from models.meeting_suggestion import MeetingSuggestion
+from models.meeting_suggestion import LOCAL_TZ, MeetingSuggestion
 from models.schedule import Schedule
 from utils.user_context import get_current_user_id, get_user_db_path
 
@@ -324,7 +324,14 @@ def _is_meeting_suggestion_stale(suggestion):
         return False
     if reference_dt.tzinfo is not None:
         reference_dt = reference_dt.replace(tzinfo=None)
-    return reference_dt < datetime.now()
+    # reference_dt is a naive Vietnam wall-clock value (same convention as
+    # MeetingSuggestion._coerce_datetime) -- comparing it against the
+    # server process's own naive datetime.now() silently used the
+    # container's local timezone (UTC on Railway) instead, so a meeting
+    # already past in Vietnam could stay "not stale" for up to 7 more
+    # hours. Compare against Vietnam's wall clock instead.
+    now_local = datetime.now(LOCAL_TZ).replace(tzinfo=None)
+    return reference_dt < now_local
 
 
 def _is_borderline_meeting_extraction(candidate):
